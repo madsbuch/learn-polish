@@ -1,0 +1,136 @@
+{
+  "slug": "health",
+  "title_pl": "U lekarza",
+  "title_en": "At the doctor's",
+  "title_da": "Hos lægen",
+  "summary_en": "Mads goes to the doctor with a fever and a sore throat, describes his symptoms and gets a prescription.",
+  "summary_da": "Mads går til lægen med feber og ondt i halsen, beskriver sine symptomer og får en recept.",
+  "lines": [
+    {
+      "speaker": "Lekarka",
+      "pl": "Dzień dobry, proszę usiąść. Co panu dolega?",
+      "en": "Good morning, please sit down. What is troubling you?",
+      "da": "Goddag, sæt dig endelig. Hvad fejler du?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Dzień dobry. Źle się czuję od kilku dni.",
+      "en": "Good morning. I have not felt well for a few days.",
+      "da": "Goddag. Jeg har haft det dårligt i et par dage."
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Co dokładnie pana boli?",
+      "en": "What exactly hurts?",
+      "da": "Hvad gør præcis ondt?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Boli mnie gardło i głowa. Mam też kaszel.",
+      "en": "My throat and my head hurt. I also have a cough.",
+      "da": "Jeg har ondt i halsen og hovedet. Jeg har også hoste."
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Ma pan gorączkę?",
+      "en": "Do you have a fever?",
+      "da": "Har du feber?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Tak, wczoraj wieczorem miałem trzydzieści osiem i pół.",
+      "en": "Yes, yesterday evening I had thirty-eight and a half.",
+      "da": "Ja, i går aftes havde jeg otteogtredive og en halv."
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Rozumiem. Proszę otworzyć usta i powiedzieć aaa.",
+      "en": "I see. Please open your mouth and say aah.",
+      "da": "Forstået. Åbn munden og sig aah."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Aaa...",
+      "en": "Aah...",
+      "da": "Aah..."
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Gardło jest bardzo czerwone i opuchnięte. To angina.",
+      "en": "Your throat is very red and swollen. It is tonsillitis.",
+      "da": "Din hals er meget rød og hævet. Det er halsbetændelse."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "To poważne?",
+      "en": "Is that serious?",
+      "da": "Er det alvorligt?"
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Nie, ale potrzebuje pan antybiotyku. Czy ma pan alergie?",
+      "en": "No, but you need an antibiotic. Do you have any allergies?",
+      "da": "Nej, men du skal have antibiotika. Har du nogen allergier?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Nie, na nic nie jestem uczulony.",
+      "en": "No, I am not allergic to anything.",
+      "da": "Nej, jeg er ikke allergisk over for noget."
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Dobrze. Wypisuję receptę. Dwie tabletki dziennie przez tydzień.",
+      "en": "Good. I am writing a prescription. Two tablets a day for a week.",
+      "da": "Godt. Jeg skriver en recept. To tabletter om dagen i en uge."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Przed jedzeniem czy po jedzeniu?",
+      "en": "Before eating or after eating?",
+      "da": "Før eller efter måltidet?"
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Po jedzeniu, i proszę pić dużo wody.",
+      "en": "After eating, and please drink a lot of water.",
+      "da": "Efter måltidet, og drik meget vand."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Czy mogę iść jutro do pracy?",
+      "en": "Can I go to work tomorrow?",
+      "da": "Kan jeg tage på arbejde i morgen?"
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Lepiej nie. To jest zaraźliwe. Daję panu zwolnienie na trzy dni.",
+      "en": "Better not. It is contagious. I am giving you three days of sick leave.",
+      "da": "Hellere ikke. Det smitter. Jeg giver dig tre dages sygemelding."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Dziękuję. A jeśli gorączka nie spadnie?",
+      "en": "Thank you. And if the fever does not go down?",
+      "da": "Tak. Og hvis feberen ikke falder?"
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Proszę wrócić za trzy dni albo zadzwonić do przychodni.",
+      "en": "Please come back in three days or call the clinic.",
+      "da": "Kom tilbage om tre dage eller ring til klinikken."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Dobrze. Bardzo dziękuję, pani doktor.",
+      "en": "All right. Thank you very much, doctor.",
+      "da": "Godt. Mange tak, doktor."
+    },
+    {
+      "speaker": "Lekarka",
+      "pl": "Proszę odpoczywać. Szybkiego powrotu do zdrowia!",
+      "en": "Please rest. Get well soon!",
+      "da": "Hvil dig. God bedring!"
+    }
+  ]
+}

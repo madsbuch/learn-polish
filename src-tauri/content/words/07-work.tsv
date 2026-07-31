@@ -1,0 +1,202 @@
+# polish	english	danish	pos
+praca	work, job	arbejde	n-f
+zawód	profession	erhverv	n-m
+stanowisko	position, post	stilling	n-n
+kariera	career	karriere	n-f
+firma	company	firma	n-f
+biuro	office	kontor	n-n
+fabryka	factory	fabrik	n-f
+warsztat	workshop, garage	værksted	n-m
+szef	boss	chef	n-m
+pracownik	employee	medarbejder	n-m
+pracodawca	employer	arbejdsgiver	n-m
+koleżanka	female colleague	kollega	n-f
+dział	department	afdeling	n-m
+nauczyciel	teacher	lærer	n-m
+lekarz	doctor	læge	n-m
+pielęgniarka	nurse	sygeplejerske	n-f
+inżynier	engineer	ingeniør	n-m
+programista	programmer	programmør	n-m
+prawnik	lawyer	advokat	n-m
+księgowy	accountant	revisor	n-m
+sprzedawczyni	saleswoman	ekspeditrice	n-f
+mechanik	mechanic	mekaniker	n-m
+elektryk	electrician	elektriker	n-m
+hydraulik	plumber	blikkenslager	n-m
+stolarz	carpenter	tømrer	n-m
+fryzjer	hairdresser	frisør	n-m
+rolnik	farmer	landmand	n-m
+policjant	police officer	politibetjent	n-m
+strażak	firefighter	brandmand	n-m
+żołnierz	soldier	soldat	n-m
+artysta	artist	kunstner	n-m
+pisarz	writer	forfatter	n-m
+dziennikarz	journalist	journalist	n-m
+naukowiec	scientist	forsker	n-m
+umowa o pracę	employment contract	ansættelseskontrakt	n-f
+pensja	salary	løn	n-f
+wynagrodzenie	remuneration	vederlag	n-n
+premia	bonus	bonus	n-f
+etat	full-time post	fuldtidsstilling	n-m
+nadgodziny	overtime	overarbejde	n-pl
+zmiana	shift, change	vagt	n-f
+staż	internship	praktik	n-m
+rozmowa kwalifikacyjna	job interview	jobsamtale	n-f
+życiorys	CV, résumé	CV	n-m
+podanie	application	ansøgning	n-n
+awans	promotion	forfremmelse	n-m
+zwolnienie	dismissal, sick note	opsigelse	n-n
+bezrobocie	unemployment	arbejdsløshed	n-n
+emerytura	retirement pension	pension	n-f
+związek zawodowy	trade union	fagforening	n-m
+kwalifikacje	qualifications	kvalifikationer	n-pl
+doświadczenie	experience	erfaring	n-n
+umiejętność	skill	færdighed	n-f
+obowiązki	duties	pligter	n-pl
+projekt	project	projekt	n-m
+termin	deadline, date	frist	n-m
+spotkanie służbowe	business meeting	arbejdsmøde	n-n
+prezentacja	presentation	præsentation	n-f
+raport	report	rapport	n-m
+klientela	clientele	kundekreds	n-f
+kontrakt	contract	kontrakt	n-m
+konferencja	conference	konference	n-f
+nauka	learning, science	læring	n-f
+szkoła	school	skole	n-f
+przedszkole	kindergarten	børnehave	n-n
+szkoła podstawowa	primary school	folkeskole	n-f
+liceum	upper secondary school	gymnasium	n-n
+uniwersytet	university	universitet	n-m
+studia	university studies	studier	n-pl
+student	student	studerende	n-m
+uczeń	pupil	elev	n-m
+wykładowca	lecturer	underviser	n-m
+profesor	professor	professor	n-m
+klasa	class, classroom	klasse	n-f
+sala	hall, room	sal	n-f
+lekcja	lesson	lektion	n-f
+wykład	lecture	forelæsning	n-m
+ćwiczenie	exercise	øvelse	n-n
+przedmiot	subject, object	fag	n-m
+matematyka	mathematics	matematik	n-f
+historia	history, story	historie	n-f
+geografia	geography	geografi	n-f
+biologia	biology	biologi	n-f
+chemia	chemistry	kemi	n-f
+fizyka	physics	fysik	n-f
+informatyka	computer science	datalogi	n-f
+literatura	literature	litteratur	n-f
+gramatyka	grammar	grammatik	n-f
+słownictwo	vocabulary	ordforråd	n-n
+egzamin	exam	eksamen	n-m
+test	test	test	n-m
+ocena	grade, assessment	karakter	n-f
+dyplom	diploma	eksamensbevis	n-m
+stypendium	scholarship	stipendium	n-n
+praca domowa	homework	lektier	n-f
+podręcznik	textbook	lærebog	n-m
+zeszyt	exercise book	hæfte	n-m
+studiować	to study at university	at studere	v
+nauczyć się	to learn	at lære	v
+uczyć	to teach	at undervise	v
+powtarzać	to revise, to repeat	at repetere	v
+zapamiętać	to memorise	at huske	v
+zapomnieć	to forget	at glemme	v
+rozwiązywać	to solve	at løse	v
+sprawdzać	to check	at tjekke	v
+poprawić	to correct	at rette	v
+zdać	to pass an exam	at bestå	v
+oblać	to fail an exam	at dumpe	v
+czytać	to read	at læse	v
+pisać	to write	at skrive	v
+liczyć	to count, to calculate	at tælle	v
+myśleć	to think	at tænke	v
+tłumaczyć	to translate, to explain	at oversætte	v
+notować	to take notes	at notere	v
+przygotowywać się	to prepare oneself	at forberede sig	v
+zadawać pytania	to ask questions	at stille spørgsmål	v
+odpowiadać	to answer, to suit	at svare	v
+zatrudnić	to hire	at ansætte	v
+zwolnić	to fire, to slow down	at fyre	v
+zarządzać	to manage	at lede	v
+organizować	to organise	at organisere	v
+planować	to plan	at planlægge	v
+decydować	to decide	at beslutte	v
+negocjować	to negotiate	at forhandle	v
+podpisać	to sign	at underskrive	v
+współpracować	to cooperate	at samarbejde	v
+odnieść sukces	to succeed	at få succes	v
+drukarka	printer	printer	n-f
+dokument	document	dokument	n-m
+teczka	folder, briefcase	mappe	n-f
+segregator	ring binder	ringbind	n-m
+długopis	ballpoint pen	kuglepen	n-m
+ołówek	pencil	blyant	n-m
+gumka	rubber, eraser	viskelæder	n-f
+linijka	ruler	lineal	n-f
+nożyczki	scissors	saks	n-pl
+kalendarz	calendar	kalender	n-m
+notatka	note	notat	n-f
+podpis	signature	underskrift	n-m
+pieczątka	stamp, seal	stempel	n-f
+wizytówka	business card	visitkort	n-f
+kserokopiarka	photocopier	kopimaskine	n-f
+skaner	scanner	scanner	n-m
+telefon służbowy	work phone	arbejdstelefon	n-m
+poczta elektroniczna	email	e-mail	n-f
+spotkanie online	online meeting	onlinemøde	n-n
+hasło	password, slogan	kodeord	n-n
+zawodowy	professional	professionel	adj
+służbowy	work-related	tjenstlig	adj
+naukowy	scientific	videnskabelig	adj
+akademicki	academic	akademisk	adj
+obowiązkowy	compulsory	obligatorisk	adj
+dobrowolny	voluntary	frivillig	adj
+skuteczny	effective	effektiv	adj
+wydajny	efficient	produktiv	adj
+odpowiedzialny	responsible	ansvarlig	adj
+niezależny	independent	uafhængig	adj
+kreatywny	creative	kreativ	adj
+ambitny	ambitious	ambitiøs	adj
+punktualność	punctuality	punktlighed	n-f
+stres	stress	stress	n-m
+motywacja	motivation	motivation	n-f
+sukces	success	succes	n-m
+porażka	failure, defeat	nederlag	n-f
+błąd	mistake	fejl	n-m
+poprawa	improvement	forbedring	n-f
+postęp	progress	fremskridt	n-m
+cel	goal, aim	mål	n-m
+wynik	result	resultat	n-m
+wiedza	knowledge	viden	n-f
+godzina pracy	working hour	arbejdstime	n-f
+tydzień pracy	working week	arbejdsuge	n-m
+biurowiec	office building	kontorbygning	n-m
+kantyna	canteen	kantine	n-f
+sala konferencyjna	meeting room	mødelokale	n-f
+recepcjonistka	receptionist	receptionist	n-f
+asystent	assistant	assistent	n-m
+dyrektor	director	direktør	n-m
+prezes	chief executive	adm. direktør	n-m
+właścicielka	female owner	ejer	n-f
+akcjonariusz	shareholder	aktionær	n-m
+przychód	revenue	indtægt	n-m
+wydatek	expense	udgift	n-m
+zysk	profit	overskud	n-m
+strata	loss	tab	n-f
+rozliczenie	settlement, accounting	afregning	n-n
+kadry	human resources	HR	n-pl
+rekrutacja	recruitment	rekruttering	n-f
+kandydat	candidate	kandidat	n-m
+referencje	references	referencer	n-pl
+szkolenie	training	kursus	n-n
+kurs	course, rate	kursus	n-m
+warsztaty	workshop event	workshop	n-pl
+certyfikat	certificate	certifikat	n-m
+konkurs	competition	konkurrence	n-m
+nagroda	prize, reward	præmie	n-f
+kara	punishment, fine	straf	n-f
+zasada	rule, principle	regel	n-f
+przepis	regulation, recipe	forskrift	n-m
+etyka	ethics	etik	n-f
+zaangażowanie	commitment	engagement	n-n

@@ -1,0 +1,261 @@
+name: Build and publish latest
+
+# Every merge to main replaces the rolling "latest" release with fresh builds.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: latest-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Content and UI are compiled in, so builds are reproducible from the repo alone.
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev pkg-config
+
+      - run: bun install --frozen-lockfile
+
+      - name: Type-check and build the frontend
+        run: bun run build
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  macos:
+    name: macOS (universal)
+    needs: check
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: macos
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build the universal .app and .dmg
+        run: bun tauri build --target universal-apple-darwin --bundles dmg,app
+
+      - name: Collect artefacts
+        run: |
+          mkdir -p out
+          dmg=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -1)
+          cp "$dmg" "out/Polski-macos-universal.dmg"
+          # A zipped .app is handy when Gatekeeper refuses to mount the dmg.
+          ditto -c -k --sequesterRsrc --keepParent \
+            "src-tauri/target/universal-apple-darwin/release/bundle/macos/Polski.app" \
+            "out/Polski-macos-universal.app.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out/*
+          if-no-files-found: error
+
+  android:
+    name: Android (APK)
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.2.12479018"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      - run: bun install --frozen-lockfile
+
+      - name: Locate the NDK
+        run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Generate the Android project
+        run: bun tauri android init --ci
+
+      - name: Build the release APK
+        run: bun tauri android build --apk --target aarch64 --target armv7 --target x86_64
+
+      - name: Sign the APK
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          mkdir -p out
+
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > key.jks
+            store_pass="$KEYSTORE_PASSWORD"
+            key_pass="$KEY_PASSWORD"
+            alias="$KEY_ALIAS"
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            # No signing secret configured: fall back to a throwaway key so the
+            # APK is at least installable. See scripts/make-android-keystore.sh.
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — signing with a throwaway key. This build cannot upgrade a previous install."
+            store_pass="polski-ephemeral"
+            key_pass="$store_pass"
+            alias="ephemeral"
+            keytool -genkeypair -keystore key.jks -alias "$alias" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$store_pass" -keypass "$key_pass" \
+              -dname "CN=Polski CI, O=Polski, C=DK"
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Tauri names the output directory after the ABI set it built, so find
+          # the APK rather than assuming "universal".
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "No APK produced. Contents of the outputs tree:" >&2
+            find src-tauri/gen/android/app/build/outputs -type f >&2 || true
+            exit 1
+          fi
+
+          "$tools/zipalign" -p -f 4 "$apk" aligned.apk
+          "$tools/apksigner" sign \
+            --ks key.jks --ks-pass "pass:$store_pass" \
+            --ks-key-alias "$alias" --key-pass "pass:$key_pass" \
+            --out out/Polski-android-universal.apk aligned.apk
+          "$tools/apksigner" verify --print-certs out/Polski-android-universal.apk
+          rm -f key.jks aligned.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*
+          if-no-files-found: error
+
+    outputs:
+      stable-signing: ${{ steps.sign.outputs.stable }}
+
+  publish:
+    name: Publish latest
+    needs: [macos, android]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artefacts
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -lh release
+
+      - name: Move the latest tag to this commit
+        run: |
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
+
+      - name: Compose release notes
+        env:
+          # Passed through the environment so quotes and newlines in the commit
+          # message cannot break the shell.
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          cat > notes.md <<'HEADER'
+          Rolling build of `main`. Replaced on every merge.
+
+          ### Install
+
+          **Android** — download `Polski-android-universal.apk`, then open it on the
+          phone and allow installation from this source. Notifications need to be
+          granted once, in the app's Settings screen.
+
+          **macOS** — download `Polski-macos-universal.dmg` and drag the app across.
+          The build is not notarised, so the first launch needs
+          `xattr -cr /Applications/Polski.app` or right-click → Open.
+
+          HEADER
+          if [ "${{ needs.android.outputs.stable-signing }}" != "true" ]; then
+            cat >> notes.md <<'WARN'
+          > **Note** — no signing key is configured, so this APK is signed with a
+          > throwaway key and cannot upgrade an earlier install. Run
+          > `scripts/make-android-keystore.sh` once and add the four secrets it
+          > prints to make upgrades seamless.
+
+          WARN
+          fi
+          {
+            echo "### This build"
+            echo
+            echo "- Commit \`${GITHUB_SHA::7}\` — ${COMMIT_MESSAGE:-manual run}" | head -1
+            echo "- Built $(date -u '+%Y-%m-%d %H:%M UTC')"
+          } >> notes.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body_path: notes.md
+          files: release/*
+          draft: false
+          prerelease: false
+          make_latest: true
+          # Point the `latest` tag at this commit instead of leaving it behind.
+          target_commitish: ${{ github.sha }}

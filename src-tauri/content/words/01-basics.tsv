@@ -1,0 +1,211 @@
+# polish	english	danish	pos
+cześć	hi, bye	hej	interj
+dzień dobry	good morning, good day	goddag	phr
+dobry wieczór	good evening	godaften	phr
+dobranoc	good night	godnat	phr
+do widzenia	goodbye	farvel	phr
+na razie	see you, bye for now	vi ses	phr
+do zobaczenia	see you	på gensyn	phr
+do jutra	see you tomorrow	vi ses i morgen	phr
+witam	welcome (I greet you)	velkommen	v
+witaj	welcome (to you)	velkommen	interj
+hej	hey	hej	interj
+siema	hey (slang)	hejsa	interj
+pa	bye (casual)	hej hej	interj
+powitanie	greeting	hilsen	n-n
+pożegnanie	farewell	afsked	n-n
+miło mi	nice to meet you	hyggeligt at møde dig	phr
+jak się masz	how are you	hvordan har du det	phr
+co słychać	what is up	hvad så	phr
+wszystko dobrze	all good	alt er godt	phr
+trzymaj się	take care	pas på dig selv	phr
+proszę	please, here you are	værsgo	part
+dziękuję	thank you	tak	v
+dzięki	thanks	tak	interj
+przepraszam	sorry, excuse me	undskyld	v
+nie ma za co	you are welcome	det var så lidt	phr
+przykro mi	I am sorry	det gør mig ondt	phr
+oczywiście	of course	selvfølgelig	adv
+jasne	sure, clear	klart	adj
+pewnie	surely, probably	helt sikkert	adv
+chętnie	gladly	gerne	adv
+smacznego	enjoy your meal	velbekomme	phr
+na zdrowie	cheers, bless you	skål	phr
+gratulacje	congratulations	tillykke	n-pl
+wszystkiego najlepszego	all the best	alt det bedste	phr
+powodzenia	good luck	held og lykke	phr
+uprzejmy	polite	høflig	adj
+grzeczny	well-mannered	artig	adj
+miły	kind, nice	rar	adj
+sympatyczny	likeable	sympatisk	adj
+uprzejmość	politeness	høflighed	n-f
+tak	yes	ja	part
+nie	no, not	nej	part
+może	maybe	måske	adv
+dobrze	well, okay	godt	adv
+źle	badly	dårligt	adv
+bardzo	very	meget	adv
+trochę	a little	lidt	adv
+też	also	også	adv
+tylko	only	kun	adv
+już	already	allerede	adv
+jeszcze	still, yet	endnu	adv
+teraz	now	nu	adv
+zawsze	always	altid	adv
+nigdy	never	aldrig	adv
+czasami	sometimes	nogle gange	adv
+ja	I	jeg	pron
+ty	you (singular)	du	pron
+on	he	han	pron
+ona	she	hun	pron
+ono	it	det	pron
+my	we	vi	pron
+wy	you (plural)	I	pron
+oni	they (with men)	de	pron
+one	they (without men)	de	pron
+mnie	me	mig	pron
+ciebie	you (object)	dig	pron
+mój	my (masculine)	min	pron
+moja	my (feminine)	min	pron
+twój	your (masculine)	din	pron
+twoja	your (feminine)	din	pron
+nasz	our	vores	pron
+wasz	your (plural)	jeres	pron
+jego	his	hans	pron
+jej	her	hendes	pron
+ich	their	deres	pron
+kto	who	hvem	pron
+co	what	hvad	pron
+gdzie	where	hvor	adv
+kiedy	when	hvornår	adv
+dlaczego	why	hvorfor	adv
+jak	how	hvordan	adv
+ile	how much, how many	hvor meget	adv
+który	which	hvilken	pron
+jaki	what kind of	hvilken slags	pron
+czyj	whose	hvis	pron
+czy	whether (question word)	om	part
+skąd	from where	hvorfra	adv
+dokąd	where to	hvorhen	adv
+pytanie	question	spørgsmål	n-n
+odpowiedź	answer	svar	n-f
+zero	zero	nul	num
+jeden	one	en	num
+dwa	two	to	num
+trzy	three	tre	num
+cztery	four	fire	num
+pięć	five	fem	num
+sześć	six	seks	num
+siedem	seven	syv	num
+osiem	eight	otte	num
+dziewięć	nine	ni	num
+dziesięć	ten	ti	num
+jedenaście	eleven	elleve	num
+dwanaście	twelve	tolv	num
+trzynaście	thirteen	tretten	num
+czternaście	fourteen	fjorten	num
+piętnaście	fifteen	femten	num
+szesnaście	sixteen	seksten	num
+siedemnaście	seventeen	sytten	num
+osiemnaście	eighteen	atten	num
+dziewiętnaście	nineteen	nitten	num
+dwadzieścia	twenty	tyve	num
+trzydzieści	thirty	tredive	num
+czterdzieści	forty	fyrre	num
+pięćdziesiąt	fifty	halvtreds	num
+sześćdziesiąt	sixty	tres	num
+siedemdziesiąt	seventy	halvfjerds	num
+osiemdziesiąt	eighty	firs	num
+dziewięćdziesiąt	ninety	halvfems	num
+sto	hundred	hundrede	num
+tysiąc	thousand	tusind	num
+milion	million	million	num
+pierwszy	first	første	adj
+drugi	second	anden	adj
+trzeci	third	tredje	adj
+ostatni	last	sidste	adj
+Polska	Poland	Polen	n-f
+Dania	Denmark	Danmark	n-f
+Anglia	England	England	n-f
+Niemcy	Germany	Tyskland	n-pl
+Szwecja	Sweden	Sverige	n-f
+Norwegia	Norway	Norge	n-f
+Wielka Brytania	Great Britain	Storbritannien	n-f
+Stany Zjednoczone	the United States	USA	n-pl
+Francja	France	Frankrig	n-f
+Hiszpania	Spain	Spanien	n-f
+Włochy	Italy	Italien	n-pl
+Europa	Europe	Europa	n-f
+kraj	country	land	n-m
+miasto	city, town	by	n-n
+Polak	Pole (man)	polak	n-m
+Polka	Pole (woman)	polsk kvinde	n-f
+Duńczyk	Dane (man)	dansker	n-m
+Dunka	Dane (woman)	dansk kvinde	n-f
+Anglik	Englishman	englænder	n-m
+język	language, tongue	sprog	n-m
+polski	Polish	polsk	adj
+duński	Danish	dansk	adj
+angielski	English	engelsk	adj
+niemiecki	German	tysk	adj
+narodowość	nationality	nationalitet	n-f
+być	to be	at være	v
+mieć	to have	at have	v
+nazywać się	to be called	at hedde	v
+mówić	to speak, to say	at tale	v
+rozumieć	to understand	at forstå	v
+wiedzieć	to know (a fact)	at vide	v
+znać	to know (a person)	at kende	v
+mieszkać	to live, to reside	at bo	v
+pochodzić	to come from	at stamme fra	v
+pracować	to work	at arbejde	v
+uczyć się	to learn, to study	at lære	v
+poznać	to get to know	at møde	v
+przedstawić	to introduce	at præsentere	v
+powtórzyć	to repeat	at gentage	v
+imię	first name	fornavn	n-n
+nazwisko	surname	efternavn	n-n
+wiek	age	alder	n-m
+adres	address	adresse	n-m
+numer	number	nummer	n-m
+telefon	telephone	telefon	n-m
+poczta	mail, post office	post	n-f
+pan	sir, Mr	hr.	n-m
+pani	madam, Mrs	fru	n-f
+państwo	ladies and gentlemen	de herskaber	n-n
+osoba	person	person	n-f
+człowiek	human being	menneske	n-m
+kobieta	woman	kvinde	n-f
+mężczyzna	man	mand	n-m
+dziecko	child	barn	n-n
+przyjaciel	friend (man)	ven	n-m
+przyjaciółka	friend (woman)	veninde	n-f
+kolega	colleague, mate	kammerat	n-m
+sąsiad	neighbour	nabo	n-m
+gość	guest	gæst	n-m
+nowy	new	ny	adj
+stary	old	gammel	adj
+młody	young	ung	adj
+duży	big	stor	adj
+mały	small	lille	adj
+dobry	good	god	adj
+zły	bad, angry	dårlig	adj
+wesoły	cheerful	glad	adj
+smutny	sad	trist	adj
+łatwy	easy	nem	adj
+trudny	difficult	svær	adj
+i	and	og	conj
+a	and, whereas	og, men	conj
+ale	but	men	conj
+lub	or	eller	conj
+albo	or (either)	eller	conj
+bo	because	fordi	conj
+że	that	at	conj
+w	in	i	prep
+na	on	på	prep
+z	with, from	med, fra	prep
+do	to	til	prep
+od	from	fra	prep
+dla	for	for	prep
+o	about	om	prep
+po	after	efter	prep

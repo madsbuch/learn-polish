@@ -1,0 +1,202 @@
+# polish	english	danish	pos
+ciało	body	krop	n-n
+głowa	head	hoved	n-f
+włos	a single hair	hår	n-m
+czoło	forehead	pande	n-n
+oko	eye	øje	n-n
+ucho	ear	øre	n-n
+nos	nose	næse	n-m
+usta	mouth	mund	n-pl
+warga	lip	læbe	n-f
+ząb	tooth	tand	n-m
+policzek	cheek	kind	n-m
+podbródek	chin	hage	n-m
+szyja	neck	hals	n-f
+gardło	throat	svælg	n-n
+ramię	shoulder, upper arm	skulder	n-n
+ręka	hand, arm	hånd	n-f
+łokieć	elbow	albue	n-m
+nadgarstek	wrist	håndled	n-m
+palec	finger, toe	finger	n-m
+paznokieć	nail	negl	n-m
+klatka piersiowa	chest	brystkasse	n-f
+plecy	back	ryg	n-pl
+kręgosłup	spine	rygrad	n-m
+brzuch	belly, stomach	mave	n-m
+biodro	hip	hofte	n-n
+noga	leg	ben	n-f
+kolano	knee	knæ	n-n
+łydka	calf	læg	n-f
+kostka	ankle, cube	ankel	n-f
+stopa	foot	fod	n-f
+pięta	heel	hæl	n-f
+serce	heart	hjerte	n-n
+płuco	lung	lunge	n-n
+żołądek	stomach	mavesæk	n-m
+wątroba	liver	lever	n-f
+nerka	kidney	nyre	n-f
+mózg	brain	hjerne	n-m
+krew	blood	blod	n-f
+kość	bone	knogle	n-f
+mięsień	muscle	muskel	n-m
+staw	joint	led	n-m
+nerw	nerve	nerve	n-m
+żyła	vein	vene	n-f
+oddech	breath	åndedræt	n-m
+głos	voice	stemme	n-m
+zdrowie	health	helbred	n-n
+choroba	illness	sygdom	n-f
+ból	pain	smerte	n-m
+ból głowy	headache	hovedpine	n-m
+ból brzucha	stomach ache	mavepine	n-m
+gorączka	fever	feber	n-f
+temperatura	temperature	temperatur	n-f
+katar	runny nose	snue	n-m
+kaszel	cough	hoste	n-m
+kichanie	sneezing	nysen	n-n
+przeziębienie	a cold	forkølelse	n-n
+grypa	flu	influenza	n-f
+angina	tonsillitis	halsbetændelse	n-f
+zapalenie	inflammation	betændelse	n-n
+infekcja	infection	infektion	n-f
+wirus	virus	virus	n-m
+bakteria	bacterium	bakterie	n-f
+astma	asthma	astma	n-f
+cukrzyca	diabetes	sukkersyge	n-f
+nowotwór	tumour, cancer	kræft	n-m
+zawał	heart attack	blodprop i hjertet	n-m
+udar	stroke	slagtilfælde	n-m
+złamanie	fracture	brud	n-n
+skręcenie	sprain	forstuvning	n-n
+rana	wound	sår	n-f
+siniak	bruise	blåt mærke	n-m
+oparzenie	burn	forbrænding	n-n
+wysypka	rash	udslæt	n-f
+swędzenie	itching	kløe	n-n
+zawroty głowy	dizziness	svimmelhed	n-pl
+mdłości	nausea	kvalme	n-pl
+wymioty	vomiting	opkast	n-pl
+biegunka	diarrhoea	diarré	n-f
+zaparcie	constipation	forstoppelse	n-n
+bezsenność	insomnia	søvnløshed	n-f
+depresja	depression	depression	n-f
+lęk	anxiety	angst	n-m
+uzależnienie	addiction	afhængighed	n-n
+kontuzja	injury	skade	n-f
+omdlenie	fainting	besvimelse	n-n
+przychodnia	clinic	klinik	n-f
+szpital	hospital	hospital	n-m
+gabinet	consulting room, study	konsultation	n-m
+oddział	ward, branch	afdeling	n-m
+izba przyjęć	emergency room	skadestue	n-f
+karetka	ambulance	ambulance	n-f
+pogotowie	emergency service	alarmcentral	n-n
+dentysta	dentist	tandlæge	n-m
+okulista	eye doctor	øjenlæge	n-m
+chirurg	surgeon	kirurg	n-m
+specjalista	specialist	speciallæge	n-m
+ratownik	paramedic, lifeguard	redder	n-m
+pacjent	patient	patient	n-m
+wizyta	appointment, visit	konsultation	n-f
+skierowanie	referral	henvisning	n-n
+recepta	prescription	recept	n-f
+diagnoza	diagnosis	diagnose	n-f
+badanie	examination	undersøgelse	n-n
+badanie krwi	blood test	blodprøve	n-n
+prześwietlenie	X-ray	røntgen	n-n
+wynik badania	test result	prøvesvar	n-m
+zabieg	medical procedure	indgreb	n-m
+operacja	operation	operation	n-f
+znieczulenie	anaesthesia	bedøvelse	n-n
+szczepienie	vaccination	vaccination	n-n
+rehabilitacja	rehabilitation	genoptræning	n-f
+opieka	care	pleje	n-f
+karta pacjenta	patient record	patientjournal	n-f
+ubezpieczenie zdrowotne	health insurance	sygeforsikring	n-n
+lek	medicine, drug	medicin	n-m
+lekarstwo	remedy	lægemiddel	n-n
+tabletka	tablet, pill	tablet	n-f
+syrop	syrup	saft	n-m
+maść	ointment	salve	n-f
+zastrzyk	injection	indsprøjtning	n-m
+plaster	sticking plaster	plaster	n-m
+bandaż	bandage	bandage	n-m
+witamina	vitamin	vitamin	n-f
+boleć	to hurt	at gøre ondt	v
+chorować	to be ill	at være syg	v
+zachorować	to fall ill	at blive syg	v
+wyzdrowieć	to recover	at komme sig	v
+leczyć	to treat	at behandle	v
+badać	to examine	at undersøge	v
+przepisać	to prescribe	at ordinere	v
+brać leki	to take medicine	at tage medicin	v
+połknąć	to swallow	at synke	v
+oddychać	to breathe	at trække vejret	v
+kaszleć	to cough	at hoste	v
+kichać	to sneeze	at nyse	v
+krwawić	to bleed	at bløde	v
+zwymiotować	to vomit	at kaste op	v
+zemdleć	to faint	at besvime	v
+złamać	to break	at brække	v
+skaleczyć się	to cut oneself	at skære sig	v
+poparzyć się	to burn oneself	at brænde sig	v
+odpocząć	to take a rest	at hvile ud	v
+ćwiczyć	to exercise, to practise	at træne	v
+schudnąć	to lose weight	at tabe sig	v
+przytyć	to put on weight	at tage på	v
+palić	to smoke, to burn	at ryge	v
+rzucić palenie	to quit smoking	at stoppe med at ryge	v
+dbać o siebie	to look after oneself	at passe på sig selv	v
+mierzyć temperaturę	to take one's temperature	at måle temperatur	v
+wezwać pomoc	to call for help	at tilkalde hjælp	v
+umówić wizytę	to book an appointment	at bestille tid	v
+czuć się	to feel	at føle sig	v
+zwolnić się	to take time off	at melde sig fri	v
+chory	ill, sick	syg	adj
+zdrowszy	healthier	sundere	adj
+przewlekły	chronic	kronisk	adj
+nagły	sudden	pludselig	adj
+bolesny	painful	smertefuld	adj
+opuchnięty	swollen	hævet	adj
+blady	pale	bleg	adj
+osłabiony	weakened	svækket	adj
+zaraźliwy	contagious	smitsom	adj
+sprawny	fit, functioning	velfungerende	adj
+wysportowany	athletic	sporty	adj
+kondycja	fitness	kondition	n-f
+odporność	immunity	immunforsvar	n-f
+higiena	hygiene	hygiejne	n-f
+odżywianie	nutrition	ernæring	n-n
+waga	weight, scales	vægt	n-f
+wzrost	height, growth	højde	n-m
+ciśnienie	blood pressure	blodtryk	n-n
+puls	pulse	puls	n-m
+tlen	oxygen	ilt	n-m
+pomoc	help	hjælp	n-f
+pierwsza pomoc	first aid	førstehjælp	n-f
+apteczka	first aid kit	nødhjælpskasse	n-f
+termometr	thermometer	termometer	n-m
+wózek inwalidzki	wheelchair	kørestol	n-m
+kule	crutches	krykker	n-pl
+okulary korekcyjne	prescription glasses	briller	n-pl
+ryzyko	risk	risiko	n-n
+objaw	symptom	symptom	n-m
+lekarz rodzinny	general practitioner	praktiserende læge	n-m
+pediatra	paediatrician	børnelæge	n-m
+psycholog	psychologist	psykolog	n-m
+psychiatra	psychiatrist	psykiater	n-m
+położna	midwife	jordemoder	n-f
+ciąża	pregnancy	graviditet	n-f
+poród	childbirth	fødsel	n-m
+antybiotyk	antibiotic	antibiotikum	n-m
+przeciwbólowy	painkilling	smertestillende	adj
+dawka	dose	dosis	n-f
+skutek uboczny	side effect	bivirkning	n-m
+kwarantanna	quarantine	karantæne	n-f
+epidemia	epidemic	epidemi	n-f
+maseczka	face mask	mundbind	n-f
+dezynfekcja	disinfection	desinfektion	n-f
+krwiodawstwo	blood donation	bloddonation	n-n
+rekonwalescencja	convalescence	rekonvalescens	n-f
+samopoczucie	general well-being	velbefindende	n-n
+zwolnienie lekarskie	sick leave	sygemelding	n-n

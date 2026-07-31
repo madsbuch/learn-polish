@@ -1,0 +1,124 @@
+{
+  "slug": "basics",
+  "title_pl": "Pierwsze spotkanie",
+  "title_en": "Meeting for the first time",
+  "title_da": "Første møde",
+  "summary_en": "Mads has just moved to Kraków. On the stairs he meets his neighbour Anna and they introduce themselves.",
+  "summary_da": "Mads er lige flyttet til Kraków. På trappen møder han sin nabo Anna, og de præsenterer sig for hinanden.",
+  "lines": [
+    {
+      "speaker": "Anna",
+      "pl": "Dzień dobry! Pan jest nowym sąsiadem, prawda?",
+      "en": "Good morning! You are the new neighbour, right?",
+      "da": "Goddag! Du er den nye nabo, ikke sandt?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Dzień dobry. Tak, mieszkam tu od tygodnia.",
+      "en": "Good morning. Yes, I have lived here for a week.",
+      "da": "Goddag. Ja, jeg har boet her i en uge."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Bardzo mi miło. Nazywam się Anna Kowalska.",
+      "en": "Very nice to meet you. My name is Anna Kowalska.",
+      "da": "Det glæder mig. Jeg hedder Anna Kowalska."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Miło mi. Mam na imię Mads, a moje nazwisko to Buch.",
+      "en": "Nice to meet you. My first name is Mads and my surname is Buch.",
+      "da": "Hyggeligt. Jeg hedder Mads, og mit efternavn er Buch."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Buch? To nie jest polskie nazwisko. Skąd pan pochodzi?",
+      "en": "Buch? That is not a Polish surname. Where do you come from?",
+      "da": "Buch? Det er ikke et polsk efternavn. Hvor kommer du fra?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Pochodzę z Danii, z Kopenhagi.",
+      "en": "I come from Denmark, from Copenhagen.",
+      "da": "Jeg kommer fra Danmark, fra København."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Z Danii! I mówi pan po polsku? Bardzo dobrze!",
+      "en": "From Denmark! And you speak Polish? Very good!",
+      "da": "Fra Danmark! Og du taler polsk? Meget godt!"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Mówię tylko trochę. Uczę się, ale to trudny język.",
+      "en": "I only speak a little. I am learning, but it is a difficult language.",
+      "da": "Jeg taler kun lidt. Jeg lærer, men det er et svært sprog."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Proszę mówić wolno, wtedy wszystko zrozumiem.",
+      "en": "Please speak slowly, then I will understand everything.",
+      "da": "Tal langsomt, så forstår jeg det hele."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Przepraszam, nie rozumiem. Może pani powtórzyć?",
+      "en": "Sorry, I do not understand. Could you repeat that?",
+      "da": "Undskyld, jeg forstår ikke. Kan du gentage det?"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Oczywiście. Proszę. Mówić. Wolno.",
+      "en": "Of course. Please. Speak. Slowly.",
+      "da": "Selvfølgelig. Tal. Venligst. Langsomt."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Aha, teraz rozumiem! Dziękuję bardzo.",
+      "en": "Aha, now I understand! Thank you very much.",
+      "da": "Aha, nu forstår jeg! Mange tak."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Nie ma za co. Czy pan pracuje tutaj, w Krakowie?",
+      "en": "You are welcome. Do you work here, in Kraków?",
+      "da": "Det var så lidt. Arbejder du her, i Kraków?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Tak, pracuję w małej firmie. A pani?",
+      "en": "Yes, I work at a small company. And you?",
+      "da": "Ja, jeg arbejder i et lille firma. Og du?"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Jestem nauczycielką. Uczę angielskiego w szkole.",
+      "en": "I am a teacher. I teach English at a school.",
+      "da": "Jeg er lærer. Jeg underviser i engelsk på en skole."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Świetnie! Może pani pomoże mi z polskim?",
+      "en": "Great! Maybe you can help me with Polish?",
+      "da": "Fantastisk! Måske kan du hjælpe mig med polsk?"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Chętnie. Mój numer telefonu to sto dwadzieścia trzy, cztery pięć sześć.",
+      "en": "Gladly. My phone number is one hundred twenty-three, four five six.",
+      "da": "Meget gerne. Mit telefonnummer er ethundredetreogtyve, fire fem seks."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Dziękuję! Do zobaczenia, pani Anno.",
+      "en": "Thank you! See you, Mrs Anna.",
+      "da": "Tak! På gensyn, fru Anna."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Do widzenia! I powodzenia z polskim!",
+      "en": "Goodbye! And good luck with Polish!",
+      "da": "Farvel! Og held og lykke med polsk!"
+    }
+  ]
+}
