@@ -67,6 +67,60 @@ Add an [OpenRouter](https://openrouter.ai/keys) API key in Settings and you get:
 into it, and the API key never reaches JavaScript — it lives in the app's
 private SQLite database and is only ever read inside a command.
 
+**No model is hardcoded.** Model ids go stale, so the app ships without a
+default: press *Load models from OpenRouter* in Settings and pick one from the
+live catalogue. Until you do, the AI features stay off and say so.
+
+## Hearing Polish
+
+Every Polish line has a 🔊 button, and conversations have a ▶︎ that reads them
+line by line. Audio comes from whichever of these is available:
+
+1. **An OpenRouter voice.** Settings → *Load speech models from OpenRouter*
+   lists the models that can speak, each with the voices it accepts. Synthesis
+   happens in Rust through `POST /api/v1/audio/speech`.
+
+   Providers disagree about what they accept, and only tell you by rejecting
+   the request, so `synthesize` walks a short ladder: MP3 first, then PCM for
+   models that only speak PCM, then again without `speed` for models that do
+   not honour it. PCM comes back with no container, so it is wrapped in a WAV
+   header built from the rate and channel count in the response's
+   `Content-Type`.
+
+   **Not every model speaks Polish.** Verified against the live API by
+   synthesising *"Dzień dobry! Uczę się języka polskiego."* and transcribing
+   the result back:
+
+   | model | voice | comes back as |
+   |---|---|---|
+   | `x-ai/grok-voice-tts-1.0` | `eve` | "Dzień dobry, uczę się języka polskiego." ✅ |
+   | `google/gemini-3.1-flash-tts-preview` | `Kore` | "Dzień dobry. Uczę się języka polskiego." ✅ |
+   | `hexgrad/kokoro-82m` | `af_bella` | "Design dobry. Ach so, Jesika polskiego." ❌ |
+
+   Kokoro has no Polish voice, so it reads Polish spelling with an English
+   one. That is exactly why Settings has a **Test this voice on Polish**
+   button — listen before committing to a voice.
+2. **The platform's own engine**, when the webview has one. Free and instant,
+   but Android's WebView does not implement `speechSynthesis` at all, and macOS
+   needs a Polish system voice installed (System Settings → Accessibility →
+   Spoken Content → Manage Voices → Polish).
+
+The OpenRouter voice wins when configured, because it is the only option that
+works identically on both platforms.
+
+### Audio is cached
+
+Each line is generated **once** and stored in SQLite as a blob, keyed by the
+exact text plus the model and voice that produced it. After that it replays
+instantly, for free, offline. Changing voice does not serve stale audio.
+
+- Starting a session pre-fetches that day's lines in the background, so no tap
+  ever waits on the network. Toggleable in Settings.
+- *Download every sentence and dialogue* warms all 200 sentences and all ten
+  conversations in one pass, with progress reported line by line.
+- Settings shows how many of the 200 sentences are stored and how much disk
+  they take, with a button to clear them.
+
 ## Notifications
 
 A daily reminder at a time you choose, scheduled through
@@ -108,8 +162,8 @@ src-tauri/
   src/session.rs           builds the daily plan
   src/srs.rs               the scheduler
   src/stats.rs             XP, levels, streaks, achievements
-  src/ai.rs                OpenRouter, the only place that touches the network
-  src/commands.rs          the command surface
+  src/ai.rs                OpenRouter chat + speech, the only place that touches the network
+  src/commands.rs          the command surface, including the audio cache
 ```
 
 ### Editing the curriculum

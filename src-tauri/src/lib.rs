@@ -48,6 +48,13 @@ pub fn run() {
             commands::ai_clear_key,
             commands::ai_test_key,
             commands::ai_list_models,
+            commands::ai_list_speech_models,
+            commands::speak,
+            commands::audio_is_cached,
+            commands::cache_audio,
+            commands::topic_audio_lines,
+            commands::audio_cache_stats,
+            commands::clear_audio_cache,
             commands::ai_history,
             commands::ai_clear_chat,
             commands::ai_chat,
@@ -185,6 +192,56 @@ mod integration {
                 .all(|e| !seen.contains(&e.item_id)),
             "already-learned words must not come back as new"
         );
+    }
+
+    #[test]
+    fn ai_features_refuse_to_guess_a_model() {
+        let conn = scratch_db("model");
+        // Model ids go stale, so nothing is assumed on a fresh install.
+        assert_eq!(ai::stored_model(&conn, "ai_model"), "");
+        let error = ai::require_model(&conn).unwrap_err().to_string();
+        assert!(error.contains("Settings"), "unhelpful message: {error}");
+        assert!(ai::require_speech_model(&conn).is_err());
+
+        db::set_setting(&conn, "ai_model", "anthropic/claude-haiku-4.5").unwrap();
+        assert_eq!(ai::require_model(&conn).unwrap(), "anthropic/claude-haiku-4.5");
+
+        db::set_setting(&conn, "tts_model", "google/gemini-3.1-flash-tts-preview").unwrap();
+        db::set_setting(&conn, "tts_voice", "Kore").unwrap();
+        let (model, voice) = ai::require_speech_model(&conn).unwrap();
+        assert_eq!(model, "google/gemini-3.1-flash-tts-preview");
+        assert_eq!(voice, "Kore");
+    }
+
+    #[test]
+    fn audio_cache_round_trips_and_is_keyed_by_voice() {
+        let conn = scratch_db("audio");
+        let insert = |voice: &str, bytes: &[u8]| {
+            conn.execute(
+                "INSERT INTO audio_cache (cache_key, model, voice, text, mime, bytes, created_at)
+                 VALUES (?1, 'm', ?2, 'Cześć', 'audio/mpeg', ?3, 0)",
+                rusqlite::params![format!("m\u{1}{voice}\u{1}Cześć"), voice, bytes],
+            )
+            .unwrap();
+        };
+        insert("Kore", &[1, 2, 3]);
+        insert("Puck", &[9, 9]);
+
+        let stored: Vec<u8> = conn
+            .query_row(
+                "SELECT bytes FROM audio_cache WHERE voice = 'Kore'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, vec![1, 2, 3], "blobs must survive the round trip");
+
+        let total: i64 = conn
+            .query_row("SELECT COALESCE(SUM(LENGTH(bytes)), 0) FROM audio_cache", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(total, 5, "two voices of the same line are stored separately");
     }
 
     #[test]

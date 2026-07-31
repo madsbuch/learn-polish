@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AiModel,
   AnswerResult,
+  AudioCacheStats,
+  AudioClip,
+  CacheProgress,
   ChatMessage,
   Dialogue,
   Sentence,
@@ -49,6 +52,14 @@ export const api = {
   aiClearKey: () => invoke<Settings>("ai_clear_key"),
   aiTestKey: () => invoke<string>("ai_test_key"),
   aiListModels: () => invoke<AiModel[]>("ai_list_models"),
+  aiListSpeechModels: () => invoke<AiModel[]>("ai_list_speech_models"),
+
+  speak: (text: string) => invoke<AudioClip>("speak", { text }),
+  audioIsCached: (text: string) => invoke<boolean>("audio_is_cached", { text }),
+  cacheAudio: (lines: string[]) => invoke<CacheProgress>("cache_audio", { lines }),
+  topicAudioLines: (topicId: number) => invoke<string[]>("topic_audio_lines", { topicId }),
+  audioCacheStats: () => invoke<AudioCacheStats>("audio_cache_stats"),
+  clearAudioCache: () => invoke<void>("clear_audio_cache"),
   aiHistory: (topicId: number) => invoke<ChatMessage[]>("ai_history", { topicId }),
   aiClearChat: (topicId: number) => invoke<void>("ai_clear_chat", { topicId }),
   aiChat: (topicId: number, message: string) =>

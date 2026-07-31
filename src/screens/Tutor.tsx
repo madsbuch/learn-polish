@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
-import { speak } from "../lib/speech";
+import { speakQuietly } from "../lib/speech";
 import type { ChatMessage, Topic } from "../lib/types";
 
 const STARTERS = [
@@ -14,10 +14,13 @@ const STARTERS = [
 export function Tutor({
   topic,
   hasApiKey,
+  hasModel,
   onOpenSettings,
 }: {
   topic: Topic;
   hasApiKey: boolean;
+  /** A key alone is not enough — a model has to be chosen too. */
+  hasModel: boolean;
   onOpenSettings: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -68,13 +71,14 @@ export function Tutor({
     }
   }
 
-  if (!hasApiKey) {
+  if (!hasApiKey || !hasModel) {
     return (
       <div className="scroll">
         <h1>AI tutor</h1>
         <p>
-          Add an OpenRouter API key and this becomes a Polish conversation partner that
-          knows exactly which words you are working on.
+          {hasApiKey
+            ? "Your key is saved — now pick a model in Settings and the tutor is ready."
+            : "Add an OpenRouter API key and this becomes a Polish conversation partner that knows exactly which words you are working on."}
         </p>
         <div className="card">
           <h3>What you get</h3>
@@ -90,7 +94,7 @@ export function Tutor({
           </p>
         </div>
         <button className="btn primary block" onClick={onOpenSettings}>
-          Add API key in Settings
+          {hasApiKey ? "Choose a model in Settings" : "Add API key in Settings"}
         </button>
       </div>
     );
@@ -138,7 +142,7 @@ export function Tutor({
               <div style={{ marginTop: 8 }}>
                 <button
                   className="btn ghost small"
-                  onClick={() => speak(message.content.replace(/\([^)]*\)/g, ""))}
+                  onClick={() => speakQuietly(message.content.replace(/\([^)]*\)/g, ""))}
                 >
                   🔊 Listen
                 </button>

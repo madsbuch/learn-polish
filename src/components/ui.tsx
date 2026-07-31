@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
-import { canSpeak, speak } from "../lib/speech";
+import { speak } from "../lib/speech";
 
 export function Banner({ kind, children }: { kind: "error" | "info"; children: ReactNode }) {
   return <div className={`banner ${kind}`}>{children}</div>;
@@ -38,19 +38,57 @@ export function Bar({
   );
 }
 
-/** Speaker button. Renders nothing when the platform has no speech engine. */
-export function SpeakButton({ text, label }: { text: string; label?: string }) {
-  if (!canSpeak()) return null;
+/**
+ * Speaker button. Always rendered — a button that silently vanishes is more
+ * confusing than one that explains why it cannot play. Shows a spinner while
+ * the first play of a line is being synthesised, and surfaces the reason on
+ * failure instead of doing nothing.
+ */
+export function SpeakButton({
+  text,
+  label,
+  size,
+}: {
+  text: string;
+  label?: string;
+  size?: number;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const dimension = size ?? 38;
+
   return (
     <button
       className="icon-btn"
-      aria-label={label ?? `Listen to ${text}`}
-      onClick={(event) => {
+      style={size ? { width: size, height: size, fontSize: size * 0.42 } : undefined}
+      aria-label={failure ?? label ?? `Listen to ${text}`}
+      title={failure ?? undefined}
+      data-failed={failure ? "true" : undefined}
+      onClick={async (event) => {
         event.stopPropagation();
-        speak(text);
+        if (busy) return;
+        setFailure(null);
+        setBusy(true);
+        try {
+          await speak(text);
+        } catch (cause) {
+          setFailure(cause instanceof Error ? cause.message : "Could not play audio.");
+        } finally {
+          setBusy(false);
+        }
       }}
     >
-      🔊
+      {busy ? (
+        <span
+          className="spinner"
+          style={{ width: dimension * 0.4, height: dimension * 0.4 }}
+        />
+      ) : failure ? (
+        "🔇"
+      ) : (
+        "🔊"
+      )}
     </button>
   );
 }

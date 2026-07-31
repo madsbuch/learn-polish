@@ -328,6 +328,9 @@ p {
 .icon-btn:active {
   transform: scale(0.94);
 }
+.icon-btn[data-failed="true"] {
+  border-color: rgba(244, 63, 94, 0.55);
+}
 
 /* ------------------------------------------------------------------ chips + pills */
 
