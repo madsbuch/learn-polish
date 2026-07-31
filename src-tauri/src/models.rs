@@ -155,7 +155,13 @@ pub struct Settings {
     pub reminder_minute: i64,
     pub reminders_enabled: bool,
     pub has_api_key: bool,
+    /// Empty until the learner loads the catalogue and picks one.
     pub ai_model: String,
+    pub tts_model: String,
+    pub tts_voice: String,
+    pub tts_speed: f32,
+    /// Cache a session's audio up front so taps play instantly.
+    pub tts_prefetch: bool,
     pub tz_offset_minutes: i64,
 }
 
@@ -173,4 +179,37 @@ pub struct AiModel {
     pub name: String,
     pub context_length: i64,
     pub prompt_price: String,
+    /// Non-empty for speech models: the voice names the model accepts.
+    pub voices: Vec<String>,
+}
+
+/// One clip of generated speech, ready to become a `data:` URI.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioClip {
+    pub mime: String,
+    pub base64: String,
+    /// True when this replay cost nothing because it came from the cache.
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioCacheStats {
+    pub clips: i64,
+    pub bytes: i64,
+    /// How many of the app's 200 sentences already have audio stored.
+    pub sentences_cached: i64,
+    pub sentences_total: i64,
+}
+
+/// Progress of a bulk pre-cache run, emitted as a `tts://progress` event.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheProgress {
+    pub done: i64,
+    pub total: i64,
+    pub failed: i64,
+    pub finished: bool,
+    pub error: Option<String>,
 }

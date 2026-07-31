@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Banner, Loading } from "./components/ui";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
+import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
   SessionPlan,
   SessionResult,
@@ -87,6 +88,33 @@ export default function App() {
     [refresh],
   );
 
+  // The speech layer needs to know whether an OpenRouter voice is available,
+  // because that decides which of the two engines a 🔊 tap uses.
+  useEffect(() => {
+    setSpeechConfig({
+      hasKey: Boolean(settings?.hasApiKey),
+      hasVoice: Boolean(settings?.ttsModel),
+    });
+  }, [settings?.hasApiKey, settings?.ttsModel]);
+
+  /**
+   * Warms the audio cache for the session about to start, so every 🔊 tap and
+   * every auto-played card is instant instead of waiting on a round trip.
+   * Deliberately fire-and-forget: practice must never block on audio.
+   */
+  const startSession = useCallback(() => {
+    stopAudio();
+    setOverlay({ kind: "session" });
+    if (!plan || !settings?.ttsPrefetch || !settings.ttsModel || !settings.hasApiKey) return;
+    const lines = [
+      ...plan.dialogue.map((line) => line.pl),
+      ...plan.exercises.filter((e) => e.itemKind !== "dialogue").map((e) => e.pl),
+    ];
+    void api.cacheAudio([...new Set(lines)]).catch(() => {
+      /* the 🔊 buttons report per-line failures */
+    });
+  }, [plan, settings?.ttsPrefetch, settings?.ttsModel, settings?.hasApiKey]);
+
   if (error && !settings) {
     return (
       <div className="center-screen">
@@ -108,6 +136,7 @@ export default function App() {
         <Session
           plan={plan}
           onQuit={() => {
+            stopAudio();
             setOverlay({ kind: "none" });
             void refresh();
           }}
@@ -153,7 +182,7 @@ export default function App() {
         <Today
           plan={plan}
           stats={stats}
-          onStart={() => setOverlay({ kind: "session" })}
+          onStart={startSession}
           onOpenTutor={() => setTab("tutor")}
         />
       ) : null}
@@ -162,6 +191,7 @@ export default function App() {
         <Tutor
           topic={plan.topic}
           hasApiKey={settings.hasApiKey}
+          hasModel={settings.aiModel.length > 0}
           onOpenSettings={() => setTab("settings")}
         />
       ) : null}

@@ -140,7 +140,12 @@ export interface Settings {
   reminderMinute: number;
   remindersEnabled: boolean;
   hasApiKey: boolean;
+  /** Empty until the learner loads the catalogue and picks one. */
   aiModel: string;
+  ttsModel: string;
+  ttsVoice: string;
+  ttsSpeed: number;
+  ttsPrefetch: boolean;
   tzOffsetMinutes: number;
 }
 
@@ -152,6 +157,10 @@ export interface SettingsPatch {
   reminderMinute?: number;
   remindersEnabled?: boolean;
   aiModel?: string;
+  ttsModel?: string;
+  ttsVoice?: string;
+  ttsSpeed?: number;
+  ttsPrefetch?: boolean;
 }
 
 export interface SessionResult {
@@ -170,4 +179,27 @@ export interface AiModel {
   name: string;
   contextLength: number;
   promptPrice: string;
+  /** Non-empty for speech models: the voice names the model accepts. */
+  voices: string[];
+}
+
+export interface AudioClip {
+  mime: string;
+  base64: string;
+  cached: boolean;
+}
+
+export interface AudioCacheStats {
+  clips: number;
+  bytes: number;
+  sentencesCached: number;
+  sentencesTotal: number;
+}
+
+export interface CacheProgress {
+  done: number;
+  total: number;
+  failed: number;
+  finished: boolean;
+  error: string | null;
 }

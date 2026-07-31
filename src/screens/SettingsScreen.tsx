@@ -1,17 +1,26 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 
-import { Banner, Spinner } from "../components/ui";
+import { Bar, Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
-import type { AiModel, Settings, SettingsPatch } from "../lib/types";
+import { speak } from "../lib/speech";
+import type {
+  AiModel,
+  AudioCacheStats,
+  CacheProgress,
+  Settings,
+  SettingsPatch,
+} from "../lib/types";
 
-const POPULAR_MODELS = [
-  "anthropic/claude-3.5-haiku",
-  "anthropic/claude-sonnet-4.5",
-  "openai/gpt-4.1-mini",
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-3.3-70b-instruct",
-];
+/** Spoken when testing a voice, so you can hear whether it handles Polish. */
+const VOICE_TEST_LINE = "Dzień dobry! Uczę się języka polskiego.";
+
+function megabytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function SettingsScreen({
   settings,
@@ -26,12 +35,28 @@ export function SettingsScreen({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [models, setModels] = useState<AiModel[] | null>(null);
+  const [chatModels, setChatModels] = useState<AiModel[] | null>(null);
+  const [speechModels, setSpeechModels] = useState<AiModel[] | null>(null);
+  const [cache, setCache] = useState<AudioCacheStats | null>(null);
+  const [progress, setProgress] = useState<CacheProgress | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
+  const refreshCache = useCallback(() => {
+    api.audioCacheStats().then(setCache).catch(() => setCache(null));
+  }, []);
+
+  useEffect(refreshCache, [refreshCache, settings.ttsModel, settings.ttsVoice]);
+
+  // Bulk caching reports line-by-line so a 200-sentence run is not a black box.
   useEffect(() => {
-    setNotice(null);
-  }, [settings]);
+    const unlisten = listen<CacheProgress>("tts://progress", (event) => {
+      setProgress(event.payload);
+      if (event.payload.finished) refreshCache();
+    });
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, [refreshCache]);
 
   async function patch(update: SettingsPatch, label: string) {
     setBusy(label);
@@ -74,6 +99,8 @@ export function SettingsScreen({
       setBusy(null);
     }
   }
+
+  const selectedSpeechModel = speechModels?.find((m) => m.id === settings.ttsModel);
 
   return (
     <div className="scroll">
@@ -174,64 +201,36 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>AI tutor (OpenRouter)</h3>
+        <h3>OpenRouter</h3>
         <p className="small">
-          Requests are made from the app's Rust core, never from the web layer — so there
-          is no CORS involved and your key stays out of JavaScript.
+          Powers both the AI tutor and the Polish voice. Requests are made from the app's
+          Rust core, never from the web layer — so there is no CORS involved and your key
+          stays out of JavaScript.
         </p>
 
         {settings.hasApiKey ? (
-          <>
-            <div className="row" style={{ marginBottom: 12 }}>
-              <span className="chip mint">✓ Key saved</span>
-              <span className="grow" />
-              <button
-                className="btn ghost small"
-                disabled={busy === "test-key"}
-                onClick={() =>
-                  run("test-key", async () => {
-                    const reply = await api.aiTestKey();
-                    setNotice(`Model replied: "${reply}" — everything works.`);
-                  })
-                }
-              >
-                {busy === "test-key" ? <Spinner /> : "Test"}
-              </button>
-              <button
-                className="btn danger small"
-                onClick={() => run("clear-key", async () => onSettings(await api.aiClearKey()))}
-              >
-                Remove
-              </button>
-            </div>
-
-            <label className="field">
-              <span>Model</span>
-              <select
-                value={settings.aiModel}
-                onChange={(event) => patch({ aiModel: event.target.value }, "model")}
-              >
-                {(models ?? []).length === 0
-                  ? [...new Set([settings.aiModel, ...POPULAR_MODELS])].map((id) => (
-                      <option key={id} value={id}>
-                        {id}
-                      </option>
-                    ))
-                  : models!.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-              </select>
-            </label>
+          <div className="row" style={{ marginBottom: 4 }}>
+            <span className="chip mint">✓ Key saved</span>
+            <span className="grow" />
             <button
-              className="btn ghost block"
-              disabled={busy === "models"}
-              onClick={() => run("models", async () => setModels(await api.aiListModels()))}
+              className="btn ghost small"
+              disabled={busy === "test-key"}
+              onClick={() =>
+                run("test-key", async () => {
+                  const reply = await api.aiTestKey();
+                  setNotice(`Model replied: "${reply}" — everything works.`);
+                })
+              }
             >
-              {busy === "models" ? <Spinner /> : "Load all OpenRouter models"}
+              {busy === "test-key" ? <Spinner /> : "Test"}
             </button>
-          </>
+            <button
+              className="btn danger small"
+              onClick={() => run("clear-key", async () => onSettings(await api.aiClearKey()))}
+            >
+              Remove
+            </button>
+          </div>
         ) : (
           <>
             <label className="field">
@@ -265,6 +264,245 @@ export function SettingsScreen({
           </>
         )}
       </div>
+
+      <div className="card">
+        <h3>Tutor model</h3>
+        {settings.aiModel ? (
+          <p className="tiny faint" style={{ marginBottom: 10 }}>
+            Using <b className="muted">{settings.aiModel}</b>
+          </p>
+        ) : (
+          <Banner kind="info">
+            No model chosen yet. Load the catalogue and pick one — the tutor stays off
+            until you do.
+          </Banner>
+        )}
+
+        {chatModels ? (
+          <label className="field">
+            <span>{chatModels.length} models available</span>
+            <select
+              value={settings.aiModel}
+              onChange={(event) => patch({ aiModel: event.target.value }, "model")}
+            >
+              <option value="">— choose a model —</option>
+              {chatModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <button
+          className="btn ghost block"
+          disabled={busy === "models"}
+          onClick={() => run("models", async () => setChatModels(await api.aiListModels()))}
+        >
+          {busy === "models" ? <Spinner /> : "Load models from OpenRouter"}
+        </button>
+      </div>
+
+      <div className="card">
+        <h3>Polish voice</h3>
+        <p className="small">
+          Android's webview has no built-in speech engine, so the 🔊 buttons need a voice
+          from OpenRouter. Each line is generated once and then stored on the device.
+        </p>
+
+        {settings.ttsModel ? (
+          <p className="tiny faint" style={{ marginBottom: 10 }}>
+            Using <b className="muted">{settings.ttsModel}</b>
+            {settings.ttsVoice ? ` · ${settings.ttsVoice}` : ""}
+          </p>
+        ) : (
+          <Banner kind="info">
+            No voice chosen yet. Not every model speaks Polish — load the list, pick one
+            and press Test to hear it before committing.
+          </Banner>
+        )}
+
+        {speechModels ? (
+          <>
+            <label className="field">
+              <span>{speechModels.length} speech models available</span>
+              <select
+                value={settings.ttsModel}
+                onChange={(event) => {
+                  const picked = speechModels.find((m) => m.id === event.target.value);
+                  // Voice names are model-specific, so reset to the model's first.
+                  patch(
+                    { ttsModel: event.target.value, ttsVoice: picked?.voices[0] ?? "" },
+                    "tts-model",
+                  );
+                }}
+              >
+                <option value="">— choose a voice model —</option>
+                {speechModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedSpeechModel && selectedSpeechModel.voices.length > 0 ? (
+              <label className="field">
+                <span>Voice</span>
+                <select
+                  value={settings.ttsVoice}
+                  onChange={(event) => patch({ ttsVoice: event.target.value }, "tts-voice")}
+                >
+                  {selectedSpeechModel.voices.map((voice) => (
+                    <option key={voice} value={voice}>
+                      {voice}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : selectedSpeechModel ? (
+              // Some providers publish no voice list yet still reject requests
+              // without one, so the name has to be typeable.
+              <label className="field">
+                <span>Voice (optional — this model publishes no list)</span>
+                <input
+                  defaultValue={settings.ttsVoice}
+                  placeholder="leave empty, or a voice name from the provider"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onBlur={(event) => {
+                    if (event.target.value.trim() !== settings.ttsVoice) {
+                      patch({ ttsVoice: event.target.value }, "tts-voice");
+                    }
+                  }}
+                />
+              </label>
+            ) : null}
+          </>
+        ) : null}
+
+        <button
+          className="btn ghost block"
+          disabled={busy === "tts-models"}
+          onClick={() =>
+            run("tts-models", async () => setSpeechModels(await api.aiListSpeechModels()))
+          }
+        >
+          {busy === "tts-models" ? <Spinner /> : "Load speech models from OpenRouter"}
+        </button>
+
+        {settings.ttsModel ? (
+          <>
+            <label className="field" style={{ marginTop: 14 }}>
+              <span>Speaking speed — {settings.ttsSpeed.toFixed(2)}×</span>
+              <input
+                type="range"
+                min={0.5}
+                max={1.5}
+                step={0.05}
+                value={settings.ttsSpeed}
+                onChange={(event) =>
+                  patch({ ttsSpeed: Number(event.target.value) }, "tts-speed")
+                }
+              />
+            </label>
+            <button
+              className="btn ghost block"
+              disabled={busy === "tts-test"}
+              onClick={() =>
+                run("tts-test", async () => {
+                  await speak(VOICE_TEST_LINE);
+                  setNotice(`Played: "${VOICE_TEST_LINE}"`);
+                })
+              }
+            >
+              {busy === "tts-test" ? <Spinner /> : "▶︎ Test this voice on Polish"}
+            </button>
+          </>
+        ) : null}
+      </div>
+
+      {settings.ttsModel ? (
+        <div className="card">
+          <h3>Downloaded audio</h3>
+          {cache ? (
+            <>
+              <div className="row between small muted" style={{ marginBottom: 6 }}>
+                <span>
+                  {cache.sentencesCached} of {cache.sentencesTotal} sentences
+                </span>
+                <span>{megabytes(cache.bytes)}</span>
+              </div>
+              <Bar value={cache.sentencesCached} max={cache.sentencesTotal} tone="mint" />
+              <p className="tiny faint" style={{ marginTop: 8 }}>
+                {cache.clips} clips stored. Cached lines replay instantly and for free,
+                even offline.
+              </p>
+            </>
+          ) : null}
+
+          {progress && !progress.finished ? (
+            <>
+              <Bar value={progress.done} max={Math.max(1, progress.total)} />
+              <p className="tiny faint" style={{ marginTop: 8 }}>
+                Generating {progress.done} of {progress.total}…
+                {progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
+              </p>
+            </>
+          ) : null}
+
+          <label className="field" style={{ marginTop: 12 }}>
+            <span>
+              Prefetch each session's audio in the background —{" "}
+              {settings.ttsPrefetch ? "on" : "off"}
+            </span>
+            <button
+              className={`btn small ${settings.ttsPrefetch ? "success" : "ghost"}`}
+              onClick={() => patch({ ttsPrefetch: !settings.ttsPrefetch }, "prefetch")}
+            >
+              {settings.ttsPrefetch ? "On" : "Off"}
+            </button>
+          </label>
+
+          <button
+            className="btn ghost block"
+            disabled={busy === "cache-all"}
+            onClick={() =>
+              run("cache-all", async () => {
+                const lines: string[] = [];
+                for (const topic of await api.getTopicProgress()) {
+                  lines.push(...(await api.topicAudioLines(topic.topic.id)));
+                }
+                const result = await api.cacheAudio(lines);
+                setNotice(
+                  result.error
+                    ? `Stored ${result.done}. Stopped after an error: ${result.error}`
+                    : `Stored ${result.done} new clips.`,
+                );
+              })
+            }
+          >
+            {busy === "cache-all" ? <Spinner /> : "⬇ Download every sentence and dialogue"}
+          </button>
+
+          <button
+            className="btn danger block"
+            style={{ marginTop: 8 }}
+            disabled={busy === "cache-clear"}
+            onClick={() =>
+              run("cache-clear", async () => {
+                await api.clearAudioCache();
+                refreshCache();
+                setNotice("Audio cache emptied.");
+              })
+            }
+          >
+            {busy === "cache-clear" ? <Spinner /> : "Delete downloaded audio"}
+          </button>
+        </div>
+      ) : null}
 
       <div className="card">
         <h3>Danger zone</h3>

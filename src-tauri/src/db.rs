@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS achievements (
     unlocked_at  INTEGER NOT NULL
 );
 
+-- Generated speech, so a sentence is only ever paid for once and replays work
+-- offline. Keyed by the exact text plus the model and voice that produced it,
+-- so changing voice does not serve stale audio.
+CREATE TABLE IF NOT EXISTS audio_cache (
+    cache_key  TEXT PRIMARY KEY,
+    model      TEXT NOT NULL,
+    voice      TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    mime       TEXT NOT NULL,
+    bytes      BLOB NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
     id         INTEGER PRIMARY KEY,
     topic_id   INTEGER NOT NULL,

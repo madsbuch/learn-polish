@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { SpeakButton } from "./ui";
-import { speak } from "../lib/speech";
+import { speakSequence, stop } from "../lib/speech";
 import type { DialogueLine } from "../lib/types";
 
 /**
@@ -48,17 +48,7 @@ export function DialogueView({
                   <div className="pl">{line.pl}</div>
                   {isOpen ? <div className="tr fade-in">{line.meaning}</div> : null}
                 </div>
-                <button
-                  className="icon-btn"
-                  style={{ width: 30, height: 30, fontSize: 14 }}
-                  aria-label="Listen"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    speak(line.pl);
-                  }}
-                >
-                  🔊
-                </button>
+                <SpeakButton text={line.pl} size={30} label="Listen to this line" />
               </div>
               {isOpen && onExplain ? (
                 <button
@@ -89,15 +79,34 @@ export function DialogueToolbar({
   revealAll: boolean;
   onToggleReveal: () => void;
 }) {
+  const [playing, setPlaying] = useState(false);
+
   return (
     <div className="row" style={{ marginBottom: 14 }}>
       <button className="btn ghost small grow" onClick={onToggleReveal}>
         {revealAll ? "Hide translations" : "Show translations"}
       </button>
-      <SpeakButton
-        text={lines.map((l) => l.pl).join(". ")}
-        label="Listen to the whole conversation"
-      />
+      <button
+        className="icon-btn"
+        aria-label={playing ? "Stop" : "Play the whole conversation"}
+        onClick={async () => {
+          if (playing) {
+            stop();
+            setPlaying(false);
+            return;
+          }
+          setPlaying(true);
+          try {
+            await speakSequence(lines.map((line) => line.pl));
+          } catch {
+            /* the per-line buttons report why */
+          } finally {
+            setPlaying(false);
+          }
+        }}
+      >
+        {playing ? "⏹" : "▶︎"}
+      </button>
     </div>
   );
 }

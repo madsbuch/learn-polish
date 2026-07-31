@@ -1,6 +1,8 @@
-use rusqlite::Connection;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::ai;
 use crate::db::{self, Db};
@@ -76,7 +78,13 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
         reminders_enabled: db::get_setting_i64(conn, "reminders_enabled", 1) == 1,
         has_api_key: db::get_setting(conn, "openrouter_api_key")?
             .is_some_and(|k| !k.trim().is_empty()),
-        ai_model: ai::model(conn),
+        ai_model: ai::stored_model(conn, "ai_model"),
+        tts_model: ai::stored_model(conn, "tts_model"),
+        tts_voice: ai::stored_model(conn, "tts_voice"),
+        tts_speed: db::get_setting(conn, "tts_speed")?
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1.0),
+        tts_prefetch: db::get_setting_i64(conn, "tts_prefetch", 1) == 1,
         tz_offset_minutes: db::get_setting_i64(conn, "tz_offset_minutes", 0),
     })
 }
@@ -111,6 +119,10 @@ pub struct SettingsPatch {
     pub reminder_minute: Option<i64>,
     pub reminders_enabled: Option<bool>,
     pub ai_model: Option<String>,
+    pub tts_model: Option<String>,
+    pub tts_voice: Option<String>,
+    pub tts_speed: Option<f32>,
+    pub tts_prefetch: Option<bool>,
 }
 
 #[tauri::command]
@@ -139,6 +151,18 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.ai_model {
         db::set_setting(&conn, "ai_model", model.trim())?;
+    }
+    if let Some(model) = patch.tts_model {
+        db::set_setting(&conn, "tts_model", model.trim())?;
+    }
+    if let Some(voice) = patch.tts_voice {
+        db::set_setting(&conn, "tts_voice", voice.trim())?;
+    }
+    if let Some(speed) = patch.tts_speed {
+        db::set_setting(&conn, "tts_speed", &speed.clamp(0.25, 2.0).to_string())?;
+    }
+    if let Some(prefetch) = patch.tts_prefetch {
+        db::set_setting(&conn, "tts_prefetch", if prefetch { "1" } else { "0" })?;
     }
     read_settings(&conn)
 }
@@ -354,12 +378,250 @@ pub async fn ai_list_models() -> Result<Vec<AiModel>> {
     ai::list_models().await
 }
 
+#[tauri::command]
+pub async fn ai_list_speech_models() -> Result<Vec<AiModel>> {
+    ai::list_speech_models().await
+}
+
+// ---------------------------------------------------------------------------
+// Speech
+// ---------------------------------------------------------------------------
+
+/// Cache identity: the same text spoken by a different model or voice is a
+/// different clip. Unit separators keep the parts from running together.
+fn audio_key(model: &str, voice: &str, text: &str) -> String {
+    format!("{model}\u{1}{voice}\u{1}{text}")
+}
+
+fn cached_clip(conn: &Connection, key: &str) -> Result<Option<(String, Vec<u8>)>> {
+    Ok(conn
+        .query_row(
+            "SELECT mime, bytes FROM audio_cache WHERE cache_key = ?1",
+            [key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
+}
+
+fn store_clip(
+    conn: &Connection,
+    key: &str,
+    model: &str,
+    voice: &str,
+    text: &str,
+    mime: &str,
+    bytes: &[u8],
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO audio_cache (cache_key, model, voice, text, mime, bytes, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(cache_key) DO UPDATE SET
+             mime = excluded.mime, bytes = excluded.bytes",
+        rusqlite::params![key, model, voice, text, mime, bytes, db::now_secs()],
+    )?;
+    Ok(())
+}
+
+/// Everything needed to synthesise, read in one lock so the await is clean.
+struct SpeechConfig {
+    key: String,
+    model: String,
+    voice: String,
+    speed: Option<f32>,
+}
+
+fn speech_config(conn: &Connection) -> Result<SpeechConfig> {
+    let (model, voice) = ai::require_speech_model(conn)?;
+    let speed = db::get_setting(conn, "tts_speed")?
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
+    Ok(SpeechConfig { key: ai::api_key(conn)?, model, voice, speed })
+}
+
+/// Speaks a line of Polish, generating it only the first time.
+#[tauri::command]
+pub async fn speak(db: State<'_, Db>, text: String) -> Result<AudioClip> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err(Error::msg("Nothing to say."));
+    }
+
+    let (config, cached) = {
+        let conn = db.lock();
+        let config = speech_config(&conn)?;
+        let hit = cached_clip(&conn, &audio_key(&config.model, &config.voice, &text))?;
+        (config, hit)
+    };
+
+    if let Some((mime, bytes)) = cached {
+        return Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: true });
+    }
+
+    let (mime, bytes) = ai::synthesize(
+        &config.key,
+        &config.model,
+        &config.voice,
+        &text,
+        config.speed,
+    )
+    .await?;
+
+    {
+        let conn = db.lock();
+        store_clip(
+            &conn,
+            &audio_key(&config.model, &config.voice, &text),
+            &config.model,
+            &config.voice,
+            &text,
+            &mime,
+            &bytes,
+        )?;
+    }
+
+    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
+}
+
+/// True when this exact line is already stored, so the UI can show which lines
+/// will play instantly and which will cost a request.
+#[tauri::command]
+pub async fn audio_is_cached(db: State<'_, Db>, text: String) -> Result<bool> {
+    let conn = db.lock();
+    let Ok(config) = speech_config(&conn) else {
+        return Ok(false);
+    };
+    Ok(cached_clip(&conn, &audio_key(&config.model, &config.voice, text.trim()))?.is_some())
+}
+
+/// Generates and stores audio for a batch of lines, reporting progress as it
+/// goes. Used to warm a topic's sentences ahead of practice.
+#[tauri::command]
+pub async fn cache_audio(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    lines: Vec<String>,
+) -> Result<CacheProgress> {
+    let config = {
+        let conn = db.lock();
+        speech_config(&conn)?
+    };
+
+    // Drop duplicates and anything already stored before spending a request.
+    let mut pending: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    {
+        let conn = db.lock();
+        for line in lines {
+            let line = line.trim().to_string();
+            if line.is_empty() || !seen.insert(line.clone()) {
+                continue;
+            }
+            let key = audio_key(&config.model, &config.voice, &line);
+            if cached_clip(&conn, &key)?.is_none() {
+                pending.push(line);
+            }
+        }
+    }
+
+    let total = pending.len() as i64;
+    let mut done = 0;
+    let mut failed = 0;
+    let mut first_error: Option<String> = None;
+
+    for line in pending {
+        match ai::synthesize(&config.key, &config.model, &config.voice, &line, config.speed).await {
+            Ok((mime, bytes)) => {
+                let conn = db.lock();
+                let key = audio_key(&config.model, &config.voice, &line);
+                store_clip(&conn, &key, &config.model, &config.voice, &line, &mime, &bytes)?;
+                done += 1;
+            }
+            Err(error) => {
+                failed += 1;
+                if first_error.is_none() {
+                    first_error = Some(error.to_string());
+                }
+                // A bad key or model fails on every line; stop rather than
+                // hammering the API two hundred times.
+                if failed >= 3 {
+                    break;
+                }
+            }
+        }
+        let _ = app.emit(
+            "tts://progress",
+            CacheProgress { done, total, failed, finished: false, error: None },
+        );
+    }
+
+    let progress = CacheProgress {
+        done,
+        total,
+        failed,
+        finished: true,
+        error: first_error,
+    };
+    let _ = app.emit("tts://progress", progress.clone());
+    Ok(progress)
+}
+
+/// Every Polish line of a topic: its sentences and its conversation.
+#[tauri::command]
+pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<String>> {
+    let conn = db.lock();
+    let mut stmt = conn.prepare(
+        "SELECT pl FROM sentences WHERE topic_id = ?1 ORDER BY ord
+         UNION ALL
+         SELECT pl FROM conversation_lines WHERE topic_id = ?1 ORDER BY ord",
+    )?;
+    let lines = stmt
+        .query_map([topic_id], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(lines)
+}
+
+#[tauri::command]
+pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
+    let conn = db.lock();
+    let (clips, bytes): (i64, i64) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(LENGTH(bytes)), 0) FROM audio_cache",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    // Only clips made with the current voice count as usable.
+    let sentences_cached = match speech_config(&conn) {
+        Ok(config) => conn.query_row(
+            "SELECT COUNT(*) FROM sentences s
+             JOIN audio_cache a ON a.text = s.pl
+             WHERE a.model = ?1 AND a.voice = ?2",
+            rusqlite::params![config.model, config.voice],
+            |r| r.get(0),
+        )?,
+        Err(_) => 0,
+    };
+    Ok(AudioCacheStats {
+        clips,
+        bytes,
+        sentences_cached,
+        sentences_total: conn.query_row("SELECT COUNT(*) FROM sentences", [], |r| r.get(0))?,
+    })
+}
+
+#[tauri::command]
+pub async fn clear_audio_cache(db: State<'_, Db>) -> Result<()> {
+    let conn = db.lock();
+    conn.execute("DELETE FROM audio_cache", [])?;
+    // Reclaim the space; audio is by far the largest thing in the database.
+    conn.execute_batch("VACUUM")?;
+    Ok(())
+}
+
 /// Verifies the stored key with the cheapest possible round trip.
 #[tauri::command]
 pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
     let (key, model) = {
         let conn = db.lock();
-        (ai::api_key(&conn)?, ai::model(&conn))
+        (ai::api_key(&conn)?, ai::require_model(&conn)?)
     };
     ai::complete(
         &key,
@@ -393,7 +655,7 @@ pub async fn ai_chat(db: State<'_, Db>, topic_id: i64, message: String) -> Resul
     let (key, model, mut wire) = {
         let conn = db.lock();
         let key = ai::api_key(&conn)?;
-        let model = ai::model(&conn);
+        let model = ai::require_model(&conn)?;
         let topic = session::load_topic(&conn, topic_id)?;
         let source = db::source_language(&conn);
 
@@ -429,7 +691,7 @@ pub async fn ai_explain(db: State<'_, Db>, item_kind: String, item_id: i64) -> R
     let (key, model, messages) = {
         let conn = db.lock();
         let key = ai::api_key(&conn)?;
-        let model = ai::model(&conn);
+        let model = ai::require_model(&conn)?;
         let source = db::source_language(&conn);
         let meaning = if source == "da" { "da" } else { "en" };
 
@@ -458,7 +720,7 @@ pub async fn ai_feedback(
         let conn = db.lock();
         (
             ai::api_key(&conn)?,
-            ai::model(&conn),
+            ai::require_model(&conn)?,
             ai::feedback_prompt(&db::source_language(&conn), &target, &attempt),
         )
     };
@@ -471,7 +733,7 @@ pub async fn ai_drill(db: State<'_, Db>) -> Result<String> {
     let (key, model, messages) = {
         let conn = db.lock();
         let key = ai::api_key(&conn)?;
-        let model = ai::model(&conn);
+        let model = ai::require_model(&conn)?;
 
         let mut stmt = conn.prepare(
             "SELECT w.pl FROM reviews r JOIN words w ON w.id = r.item_id
@@ -503,6 +765,17 @@ mod tests {
         assert!(answers_match("dzień dobry", "  dzien   dobry "));
         assert!(answers_match("Do widzenia!", "do widzenia"));
         assert!(!answers_match("kot", "pies"));
+    }
+
+    #[test]
+    fn cache_keys_separate_voices_and_models() {
+        let a = audio_key("google/tts", "Kore", "Cześć");
+        assert_eq!(a, audio_key("google/tts", "Kore", "Cześć"));
+        assert_ne!(a, audio_key("google/tts", "Puck", "Cześć"));
+        assert_ne!(a, audio_key("openai/tts", "Kore", "Cześć"));
+        assert_ne!(a, audio_key("google/tts", "Kore", "Dobranoc"));
+        // The separator must stop adjacent fields from colliding.
+        assert_ne!(audio_key("a", "b", "c"), audio_key("ab", "", "c"));
     }
 
     #[test]

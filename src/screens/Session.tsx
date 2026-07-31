@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Bar, Banner, SpeakButton, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
-import { speak } from "../lib/speech";
+import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, Exercise, SessionPlan, SessionResult } from "../lib/types";
 
 type Phase = "answering" | "checked";
@@ -60,10 +60,11 @@ export function Session({
     return undefined;
   }, [index, exercise?.kind]);
 
-  // Pronounce new material as it appears — hearing it first anchors the spelling.
+  // Pronounce new material as it appears — hearing it first anchors the
+  // spelling. Failures stay silent here; the 🔊 button is where they surface.
   useEffect(() => {
     if (exercise && (exercise.kind === "intro" || exercise.kind === "sentenceIntro")) {
-      speak(exercise.pl);
+      speakQuietly(exercise.pl);
     }
   }, [exercise]);
 
@@ -107,7 +108,7 @@ export function Session({
       setSessionXp((xp) => xp + answer.xpGained);
       if (answer.correct) setCorrectCount((n) => n + 1);
       setPhase("checked");
-      if (answer.correct && exercise.itemKind !== "dialogue") speak(exercise.pl);
+      if (answer.correct && exercise.itemKind !== "dialogue") speakQuietly(exercise.pl);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
