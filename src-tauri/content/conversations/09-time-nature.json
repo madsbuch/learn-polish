@@ -1,0 +1,130 @@
+{
+  "slug": "time-nature",
+  "title_pl": "Plany na weekend",
+  "title_en": "Weekend plans",
+  "title_da": "Weekendplaner",
+  "summary_en": "Anna and Mads check the weather forecast and plan a walk in the mountains for Saturday.",
+  "summary_da": "Anna og Mads tjekker vejrudsigten og planlægger en tur i bjergene på lørdag.",
+  "lines": [
+    {
+      "speaker": "Anna",
+      "pl": "Masz jakieś plany na weekend?",
+      "en": "Do you have any plans for the weekend?",
+      "da": "Har du nogen planer til weekenden?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Jeszcze nie. Zależy od pogody.",
+      "en": "Not yet. It depends on the weather.",
+      "da": "Ikke endnu. Det afhænger af vejret."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Sprawdziłam prognozę. W sobotę ma być słonecznie.",
+      "en": "I checked the forecast. On Saturday it is supposed to be sunny.",
+      "da": "Jeg tjekkede vejrudsigten. På lørdag skulle det blive solrigt."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Wreszcie! Przez cały tydzień padał deszcz.",
+      "en": "Finally! It rained all week.",
+      "da": "Endelig! Det regnede hele ugen."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Wiem. A ile stopni ma być?",
+      "en": "I know. And how many degrees is it supposed to be?",
+      "da": "Det ved jeg. Og hvor mange grader skulle det blive?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Około osiemnastu. To idealna pogoda na spacer.",
+      "en": "About eighteen. That is perfect weather for a walk.",
+      "da": "Cirka atten. Det er perfekt vejr til en gåtur."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Może pojedziemy w góry? Jesienią jest tam pięknie.",
+      "en": "Maybe we could go to the mountains? It is beautiful there in autumn.",
+      "da": "Måske skulle vi tage til bjergene? Der er smukt om efteråret."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Świetny pomysł. Liście są teraz czerwone i żółte.",
+      "en": "Great idea. The leaves are red and yellow now.",
+      "da": "Fremragende idé. Bladene er røde og gule nu."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Tak. I w lesie można zbierać grzyby.",
+      "en": "Yes. And in the forest you can pick mushrooms.",
+      "da": "Ja. Og i skoven kan man samle svampe."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Nie znam się na grzybach. Boję się, że zbiorę trujące.",
+      "en": "I do not know anything about mushrooms. I am afraid I will pick poisonous ones.",
+      "da": "Jeg ved intet om svampe. Jeg er bange for at samle giftige."
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Nie martw się, ja znam. Moja babcia mnie nauczyła.",
+      "en": "Do not worry, I know them. My grandmother taught me.",
+      "da": "Bare rolig, jeg kender dem. Min bedstemor lærte mig det."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "O której wyjeżdżamy?",
+      "en": "What time are we leaving?",
+      "da": "Hvornår tager vi af sted?"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Rano, o siódmej. Wtedy zobaczymy wschód słońca.",
+      "en": "In the morning, at seven. Then we will see the sunrise.",
+      "da": "Om morgenen, klokken syv. Så ser vi solopgangen."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Siódma to bardzo wcześnie w sobotę!",
+      "en": "Seven is very early on a Saturday!",
+      "da": "Klokken syv er meget tidligt en lørdag!"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Ale rano powietrze jest najczystsze, a szlaki puste.",
+      "en": "But in the morning the air is cleanest and the trails are empty.",
+      "da": "Men om morgenen er luften renest, og stierne er tomme."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Masz rację. Ile trwa droga?",
+      "en": "You are right. How long does the drive take?",
+      "da": "Du har ret. Hvor lang tid tager turen?"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Mniej więcej dwie godziny. Wrócimy przed zmierzchem.",
+      "en": "More or less two hours. We will be back before dusk.",
+      "da": "Cirka to timer. Vi er tilbage før skumringen."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "A jeśli będzie mgła albo burza?",
+      "en": "And if there is fog or a storm?",
+      "da": "Og hvis der kommer tåge eller uvejr?"
+    },
+    {
+      "speaker": "Anna",
+      "pl": "Wtedy zostajemy w domu i pijemy herbatę. Ale nie będzie!",
+      "en": "Then we stay at home and drink tea. But there will not be!",
+      "da": "Så bliver vi hjemme og drikker te. Men det sker ikke!"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Umowa stoi. Do zobaczenia w sobotę o siódmej!",
+      "en": "It is a deal. See you on Saturday at seven!",
+      "da": "Det er en aftale. Vi ses på lørdag klokken syv!"
+    }
+  ]
+}

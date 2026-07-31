@@ -1,0 +1,136 @@
+{
+  "slug": "leisure",
+  "title_pl": "Wolny wieczór",
+  "title_en": "A free evening",
+  "title_da": "En fri aften",
+  "summary_en": "Piotr and Mads decide what to do on a free evening — cinema, concert or a match — and talk about hobbies.",
+  "summary_da": "Piotr og Mads beslutter, hvad de skal lave en fri aften — biograf, koncert eller kamp — og taler om fritidsinteresser.",
+  "lines": [
+    {
+      "speaker": "Piotr",
+      "pl": "Masz czas dziś wieczorem? Chcesz gdzieś wyjść?",
+      "en": "Do you have time this evening? Do you want to go out somewhere?",
+      "da": "Har du tid i aften? Har du lyst til at gå ud?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Tak, jestem wolny. Co proponujesz?",
+      "en": "Yes, I am free. What do you suggest?",
+      "da": "Ja, jeg er ledig. Hvad foreslår du?"
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Możemy iść do kina. Jest nowy polski film.",
+      "en": "We could go to the cinema. There is a new Polish film.",
+      "da": "Vi kan gå i biografen. Der er en ny polsk film."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Z napisami? Bez napisów jeszcze nie rozumiem wszystkiego.",
+      "en": "With subtitles? Without subtitles I still do not understand everything.",
+      "da": "Med undertekster? Uden undertekster forstår jeg stadig ikke alt."
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Są napisy po angielsku. Ale film trwa trzy godziny.",
+      "en": "There are English subtitles. But the film lasts three hours.",
+      "da": "Der er engelske undertekster. Men filmen varer tre timer."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Trzy godziny? To dużo. O czym on jest?",
+      "en": "Three hours? That is a lot. What is it about?",
+      "da": "Tre timer? Det er meget. Hvad handler den om?"
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "O rodzinie w Krakowie w latach osiemdziesiątych. Fabuła jest ciekawa.",
+      "en": "About a family in Kraków in the eighties. The plot is interesting.",
+      "da": "Om en familie i Kraków i firserne. Handlingen er interessant."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Brzmi dobrze, ale mam inną propozycję. Jest mecz!",
+      "en": "Sounds good, but I have another suggestion. There is a match!",
+      "da": "Det lyder godt, men jeg har et andet forslag. Der er kamp!"
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Racja, zapomniałem! Polska gra z Danią.",
+      "en": "Right, I forgot! Poland is playing against Denmark.",
+      "da": "Nemlig, det havde jeg glemt! Polen spiller mod Danmark."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Właśnie. Dla mnie to trudny wybór — dwie ojczyzny.",
+      "en": "Exactly. For me it is a hard choice — two homelands.",
+      "da": "Netop. For mig er det et svært valg — to fædrelande."
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Ha, ha! Komu kibicujesz?",
+      "en": "Ha, ha! Who do you support?",
+      "da": "Ha, ha! Hvem holder du med?"
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Nie powiem. To mój sekret.",
+      "en": "I will not say. That is my secret.",
+      "da": "Det siger jeg ikke. Det er min hemmelighed."
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Rozumiem. Możemy obejrzeć mecz w pubie na rynku.",
+      "en": "I understand. We can watch the match at the pub on the square.",
+      "da": "Det forstår jeg. Vi kan se kampen på pubben ved torvet."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Świetny pomysł. O której się zaczyna?",
+      "en": "Great idea. What time does it start?",
+      "da": "God idé. Hvornår starter den?"
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "O dwudziestej czterdzieści pięć. Spotkajmy się kwadrans wcześniej.",
+      "en": "At a quarter to nine. Let us meet fifteen minutes earlier.",
+      "da": "Klokken kvart i ni. Lad os mødes et kvarter før."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Dobrze. A grasz jeszcze w piłkę w soboty?",
+      "en": "All right. And do you still play football on Saturdays?",
+      "da": "Fint. Og spiller du stadig fodbold om lørdagen?"
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Tak, w amatorskiej drużynie. Zwykle przegrywamy.",
+      "en": "Yes, in an amateur team. We usually lose.",
+      "da": "Ja, på et amatørhold. Vi taber som regel."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Mogę przyjść zagrać? Grałem w Danii przez wiele lat.",
+      "en": "Can I come and play? I played in Denmark for many years.",
+      "da": "Må jeg komme og spille med? Jeg spillede i Danmark i mange år."
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "Oczywiście! Potrzebujemy dobrego zawodnika.",
+      "en": "Of course! We need a good player.",
+      "da": "Selvfølgelig! Vi mangler en god spiller."
+    },
+    {
+      "speaker": "Mads",
+      "pl": "Nie obiecuję, że jestem dobry. Ale będzie zabawa.",
+      "en": "I do not promise that I am good. But it will be fun.",
+      "da": "Jeg lover ikke, at jeg er god. Men det bliver sjovt."
+    },
+    {
+      "speaker": "Piotr",
+      "pl": "To najważniejsze. Do zobaczenia wieczorem!",
+      "en": "That is the most important thing. See you this evening!",
+      "da": "Det er det vigtigste. Vi ses i aften!"
+    }
+  ]
+}

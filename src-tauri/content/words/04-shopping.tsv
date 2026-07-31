@@ -1,0 +1,197 @@
+# polish	english	danish	pos
+sklep	shop	butik	n-m
+supermarket	supermarket	supermarked	n-m
+piekarnia	bakery	bageri	n-f
+cukiernia	patisserie	konditori	n-f
+apteka	pharmacy	apotek	n-f
+księgarnia	bookshop	boghandel	n-f
+kwiaciarnia	flower shop	blomsterhandel	n-f
+warzywniak	greengrocer	grønthandler	n-m
+sklep mięsny	butcher's shop	slagter	n-m
+kiosk	kiosk	kiosk	n-m
+centrum handlowe	shopping centre	indkøbscenter	n-n
+galeria	mall, gallery	galleri	n-f
+butik	boutique	boutique	n-m
+sklep internetowy	online shop	netbutik	n-m
+stoisko	stall, stand	stand	n-n
+kasa	checkout, till	kasse	n-f
+koszyk	basket	kurv	n-m
+wózek	trolley, pram	vogn	n-m
+pieniądze	money	penge	n-pl
+złoty	zloty (Polish currency)	zloty	n-m
+grosz	grosz (Polish cent)	øre	n-m
+korona	crown, krone	krone	n-f
+euro	euro	euro	n-n
+cena	price	pris	n-f
+koszt	cost	omkostning	n-m
+rabat	discount	rabat	n-m
+promocja	special offer	tilbud	n-f
+wyprzedaż	sale	udsalg	n-f
+paragon	receipt	kvittering	n-m
+faktura	invoice	faktura	n-f
+gotówka	cash	kontanter	n-f
+karta	card	kort	n-f
+bank	bank	bank	n-m
+bankomat	cash machine	hæveautomat	n-m
+konto	account	konto	n-n
+kredyt	credit	kredit	n-m
+pożyczka	loan	lån	n-f
+oszczędności	savings	opsparing	n-pl
+podatek	tax	skat	n-m
+reszta	change, the rest	byttepenge	n-f
+kupić	to buy	at købe	v
+sprzedać	to sell	at sælge	v
+zapłacić	to pay (once)	at betale	v
+wydać	to spend, to give change	at bruge	v
+kosztować	to cost	at koste	v
+oszczędzać	to save	at spare	v
+wybierać	to choose	at vælge	v
+przymierzyć	to try on	at prøve	v
+zwrócić	to return something	at returnere	v
+wymienić	to exchange	at bytte	v
+dostarczyć	to deliver	at levere	v
+targować się	to haggle	at prutte	v
+polecić	to recommend	at anbefale	v
+szukać	to look for	at lede efter	v
+znaleźć	to find	at finde	v
+potrzebować	to need	at have brug for	v
+pożyczyć	to lend, to borrow	at låne	v
+zarabiać	to earn	at tjene	v
+czekać	to wait	at vente	v
+ubrania	clothes	tøj	n-pl
+koszula	shirt	skjorte	n-f
+koszulka	t-shirt	t-shirt	n-f
+bluza	sweatshirt	sweatshirt	n-f
+sweter	jumper	sweater	n-m
+kurtka	jacket	jakke	n-f
+płaszcz	coat	frakke	n-m
+spodnie	trousers	bukser	n-pl
+dżinsy	jeans	jeans	n-pl
+spódnica	skirt	nederdel	n-f
+sukienka	dress	kjole	n-f
+garnitur	suit	jakkesæt	n-m
+krawat	tie	slips	n-m
+skarpetki	socks	sokker	n-pl
+bielizna	underwear	undertøj	n-f
+buty	shoes	sko	n-pl
+trampki	trainers	gummisko	n-pl
+kozaki	boots	støvler	n-pl
+sandały	sandals	sandaler	n-pl
+czapka	cap, beanie	hue	n-f
+kapelusz	hat	hat	n-m
+szalik	scarf	halstørklæde	n-m
+rękawiczki	gloves	handsker	n-pl
+pasek	belt	bælte	n-m
+torebka	handbag	håndtaske	n-f
+plecak	backpack	rygsæk	n-m
+walizka	suitcase	kuffert	n-f
+portfel	wallet	pung	n-m
+zegarek	watch	armbåndsur	n-m
+biżuteria	jewellery	smykker	n-f
+kolor	colour	farve	n-m
+biały	white	hvid	adj
+czarny	black	sort	adj
+czerwony	red	rød	adj
+żółty	yellow	gul	adj
+granatowy	navy blue	marineblå	adj
+brązowy	brown	brun	adj
+szary	grey	grå	adj
+różowy	pink	lyserød	adj
+fioletowy	purple	lilla	adj
+pomarańczowy	orange (colour)	orange	adj
+srebrny	silver	sølv	adj
+jasny	light, bright	lys	adj
+ciemny	dark	mørk	adj
+rozmiar	size	størrelse	n-m
+numer buta	shoe size	skostørrelse	n-m
+średni	medium, average	mellem	adj
+wąski	narrow	smal	adj
+szeroki	wide	bred	adj
+długi	long	lang	adj
+krótki	short	kort	adj
+luźny	loose	løs	adj
+obcisły	tight	stram	adj
+pasować	to fit, to suit	at passe	v
+wygodny	comfortable	behagelig	adj
+niewygodny	uncomfortable	ubehagelig	adj
+przymierzalnia	fitting room	prøverum	n-f
+metka	label, tag	mærkat	n-f
+materiał	material, fabric	materiale	n-m
+bawełna	cotton	bomuld	n-f
+wełna	wool	uld	n-f
+jedwab	silk	silke	n-m
+skóra	leather, skin	læder	n-f
+len	linen	hør	n-m
+plastik	plastic	plastik	n-m
+drewno	wood	træ	n-n
+metal	metal	metal	n-m
+szkło	glass (material)	glas	n-n
+papier	paper	papir	n-m
+guma	rubber	gummi	n-f
+telefon komórkowy	mobile phone	mobiltelefon	n-m
+komputer	computer	computer	n-m
+laptop	laptop	bærbar	n-m
+tablet	tablet	tablet	n-m
+ładowarka	charger	oplader	n-f
+słuchawki	headphones	høretelefoner	n-pl
+telewizor	television set	fjernsyn	n-m
+aparat	camera, device	kamera	n-m
+bateria	battery	batteri	n-f
+kabel	cable	kabel	n-m
+głośnik	speaker	højttaler	n-m
+myszka	computer mouse	mus	n-f
+klawiatura	keyboard	tastatur	n-f
+ekran	screen	skærm	n-m
+pralka	washing machine	vaskemaskine	n-f
+odkurzacz	vacuum cleaner	støvsuger	n-m
+żarówka	light bulb	pære	n-f
+narzędzie	tool	værktøj	n-n
+tani	cheap	billig	adj
+drogi	expensive, dear	dyr	adj
+darmowy	free of charge	gratis	adj
+dostępny	available	tilgængelig	adj
+niedostępny	unavailable	utilgængelig	adj
+wybór	choice, selection	udvalg	n-m
+jakość	quality	kvalitet	n-f
+gwarancja	warranty	garanti	n-f
+reklamacja	complaint	reklamation	n-f
+uszkodzony	damaged	beskadiget	adj
+używany	used, second-hand	brugt	adj
+oryginalny	original	original	adj
+marka	brand	mærke	n-f
+produkt	product	produkt	n-m
+towar	goods	vare	n-m
+opakowanie	packaging	emballage	n-n
+ile to kosztuje	how much does it cost	hvad koster det	phr
+poproszę	I would like	jeg vil gerne have	phr
+otwarte	open	åbent	adj
+zamknięte	closed	lukket	adj
+godziny otwarcia	opening hours	åbningstider	n-pl
+klient	customer	kunde	n-m
+sprzedawca	shop assistant	ekspedient	n-m
+kolejka	queue	kø	n-f
+lista zakupów	shopping list	indkøbsliste	n-f
+zakupy	shopping	indkøb	n-pl
+worek	sack, bag	sæk	n-m
+reklama	advertisement	reklame	n-f
+okazja	bargain, occasion	godt tilbud	n-f
+zwrot	return, refund	returnering	n-m
+dostawa	delivery	levering	n-f
+kurier	courier	kurer	n-m
+przesyłka	parcel	forsendelse	n-f
+koszt dostawy	delivery cost	fragtomkostning	n-m
+rata	instalment	afdrag	n-f
+cennik	price list	prisliste	n-m
+przecena	markdown	nedsættelse	n-f
+budżet	budget	budget	n-m
+drożej	more expensively	dyrere	adv
+taniej	more cheaply	billigere	adv
+najtańszy	the cheapest	billigst	adj
+najdroższy	the most expensive	dyrest	adj
+wart	worth	værd	adj
+opłacalny	worthwhile	rentabel	adj
+zbyt	too (much)	for	adv
+prawie	almost	næsten	adv
+około	about, around	cirka	adv
+dokładnie	exactly	præcis	adv
+łącznie	in total	i alt	adv

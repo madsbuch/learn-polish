@@ -1,0 +1,201 @@
+# polish	english	danish	pos
+dom	house, home	hus	n-m
+mieszkanie	flat, apartment	lejlighed	n-n
+blok	block of flats	boligblok	n-m
+willa	villa	villa	n-f
+kamienica	tenement house	etageejendom	n-f
+pokój dzienny	living room	stue	n-m
+sypialnia	bedroom	soveværelse	n-f
+łazienka	bathroom	badeværelse	n-f
+przedpokój	hallway	entré	n-m
+korytarz	corridor	gang	n-m
+balkon	balcony	altan	n-m
+taras	terrace	terrasse	n-m
+piwnica	cellar	kælder	n-f
+strych	attic	loft	n-m
+garaż	garage	garage	n-m
+podwórko	yard	gård	n-n
+klatka schodowa	stairwell	opgang	n-f
+ściana	wall	væg	n-f
+podłoga	floor	gulv	n-f
+sufit	ceiling	loft	n-m
+dach	roof	tag	n-m
+okno	window	vindue	n-n
+drzwi	door	dør	n-pl
+próg	threshold	dørtrin	n-m
+komin	chimney	skorsten	n-m
+mebel	piece of furniture	møbel	n-m
+stół	table	bord	n-m
+krzesło	chair	stol	n-n
+fotel	armchair	lænestol	n-m
+kanapa	sofa	sofa	n-f
+szafa	wardrobe	skab	n-f
+półka	shelf	hylde	n-f
+biurko	desk	skrivebord	n-n
+komoda	chest of drawers	kommode	n-f
+lustro	mirror	spejl	n-n
+dywan	carpet	tæppe	n-m
+zasłona	curtain	gardin	n-f
+poduszka	pillow, cushion	pude	n-f
+koc	blanket	tæppe	n-m
+kołdra	duvet	dyne	n-f
+prześcieradło	bed sheet	lagen	n-n
+materac	mattress	madras	n-m
+lampa	lamp	lampe	n-f
+obraz	picture, painting	maleri	n-m
+regał	bookcase	reol	n-m
+wieszak	hanger, coat rack	bøjle	n-m
+szuflada	drawer	skuffe	n-f
+zlew	sink	vask	n-m
+wanna	bathtub	badekar	n-f
+prysznic	shower	brusebad	n-m
+kran	tap	vandhane	n-m
+ręcznik	towel	håndklæde	n-m
+mydło	soap	sæbe	n-n
+szampon	shampoo	shampoo	n-m
+szczoteczka	toothbrush	tandbørste	n-f
+pasta do zębów	toothpaste	tandpasta	n-f
+papier toaletowy	toilet paper	toiletpapir	n-m
+proszek	powder, washing powder	vaskepulver	n-m
+detergent	detergent	rengøringsmiddel	n-m
+gąbka	sponge	svamp	n-f
+miotła	broom	kost	n-f
+szczotka	brush	børste	n-f
+wiadro	bucket	spand	n-n
+śmieci	rubbish	skrald	n-pl
+kosz na śmieci	rubbish bin	skraldespand	n-m
+klucze	keys	nøgler	n-pl
+zamek do drzwi	door lock	dørlås	n-m
+dzwonek	doorbell, bell	dørklokke	n-m
+skrzynka na listy	letterbox	postkasse	n-f
+świeca	candle	stearinlys	n-f
+zapałki	matches	tændstikker	n-pl
+gniazdko	power socket	stikkontakt	n-n
+włącznik	switch	kontakt	n-m
+kaloryfer	radiator	radiator	n-m
+klimatyzacja	air conditioning	aircondition	n-f
+wstawać	to get up	at stå op	v
+budzić się	to wake up	at vågne	v
+myć się	to wash oneself	at vaske sig	v
+brać prysznic	to take a shower	at gå i bad	v
+kąpać się	to have a bath	at bade	v
+myć zęby	to brush one's teeth	at børste tænder	v
+czesać się	to comb one's hair	at rede hår	v
+golić się	to shave	at barbere sig	v
+ubierać się	to get dressed	at klæde sig på	v
+rozbierać się	to undress	at klæde sig af	v
+jeść śniadanie	to have breakfast	at spise morgenmad	v
+wychodzić	to go out	at gå ud	v
+wracać do domu	to come home	at komme hjem	v
+odpoczywać	to rest	at hvile	v
+kłaść się spać	to go to bed	at gå i seng	v
+spać	to sleep	at sove	v
+śnić	to dream	at drømme	v
+sprzątać	to tidy up, to clean	at gøre rent	v
+odkurzać	to vacuum	at støvsuge	v
+zmywać	to wash the dishes	at vaske op	v
+prać	to do the laundry	at vaske tøj	v
+prasować	to iron	at stryge	v
+ścielić łóżko	to make the bed	at rede seng	v
+wynosić śmieci	to take out the rubbish	at bære skraldet ud	v
+podlewać	to water plants	at vande	v
+naprawiać	to repair	at reparere	v
+malować	to paint	at male	v
+remontować	to renovate	at renovere	v
+włączyć	to switch on	at tænde	v
+wyłączyć	to switch off	at slukke	v
+wynajmować	to rent	at leje	v
+czynsz	rent	husleje	n-m
+właściciel	owner	ejer	n-m
+lokator	tenant	lejer	n-m
+umowa	contract	kontrakt	n-f
+rachunki	bills	regninger	n-pl
+prąd	electricity	strøm	n-m
+gaz	gas	gas	n-m
+woda bieżąca	running water	rindende vand	n-f
+ogrzewanie	heating	varme	n-n
+internet	internet	internet	n-m
+adres zamieszkania	home address	bopælsadresse	n-m
+przeprowadzka	house move	flytning	n-f
+sąsiedztwo	neighbourhood	nabolag	n-n
+cisza	silence	stilhed	n-f
+hałas	noise	støj	n-m
+porządek	order, tidiness	orden	n-m
+bałagan	mess	rod	n-m
+brud	dirt	snavs	n-m
+czystość	cleanliness	renlighed	n-f
+czysty	clean	ren	adj
+brudny	dirty	snavset	adj
+przytulny	cosy	hyggelig	adj
+przestronny	spacious	rummelig	adj
+ciasny	cramped	trang	adj
+umeblowany	furnished	møbleret	adj
+nowoczesny	modern	moderne	adj
+zabytkowy	historic	historisk	adj
+praktyczny	practical	praktisk	adj
+drewniany	wooden	af træ	adj
+murowany	brick-built	muret	adj
+parterowy	single-storey	i ét plan	adj
+przeciętny	average	gennemsnitlig	adj
+głośny	loud	højlydt	adj
+cichy	quiet	stille	adj
+chłodny	cool	kølig	adj
+suchy	dry	tør	adj
+mokry	wet	våd	adj
+własny	one's own	egen	adj
+wspólny	shared, common	fælles	adj
+poranek	morning	morgen	n-m
+rano	in the morning	om morgenen	adv
+przedpołudnie	late morning	formiddag	n-n
+popołudnie	afternoon	eftermiddag	n-n
+wieczór	evening	aften	n-m
+wieczorem	in the evening	om aftenen	adv
+w nocy	at night	om natten	adv
+dzień	day	dag	n-m
+doba	twenty-four hours	døgn	n-f
+budzik	alarm clock	vækkeur	n-m
+rutyna	routine	rutine	n-f
+obowiązek	duty, obligation	pligt	n-m
+zadanie	task	opgave	n-n
+lista	list	liste	n-f
+plan dnia	daily plan	dagsplan	n-m
+przerwa	break	pause	n-f
+drzemka	nap	lur	n-f
+sen	sleep, dream	søvn	n-m
+zmęczenie	tiredness	træthed	n-n
+energia	energy	energi	n-f
+wolny czas	free time	fritid	n-m
+gotowanie	cooking	madlavning	n-n
+zakupy spożywcze	grocery shopping	dagligvareindkøb	n-pl
+sprzątanie	cleaning	rengøring	n-n
+pranie	laundry	vasketøj	n-n
+ogródek	small garden	lille have	n-m
+trawa	grass	græs	n-f
+trawnik	lawn	græsplæne	n-m
+kwiat	flower	blomst	n-m
+drzewo	tree	træ	n-n
+krzak	bush	busk	n-m
+liść	leaf	blad	n-m
+nasiona	seeds	frø	n-pl
+doniczka	flowerpot	urtepotte	n-f
+grabie	rake	rive	n-pl
+kosiarka	lawnmower	plæneklipper	n-f
+płot	fence	hegn	n-m
+furtka	garden gate	låge	n-f
+altana	gazebo	lysthus	n-f
+grill	barbecue	grill	n-m
+huśtawka	swing	gynge	n-f
+zwierzę	animal	dyr	n-n
+pies	dog	hund	n-m
+kot	cat	kat	n-m
+rybka	pet fish	akvariefisk	n-f
+ptak	bird	fugl	n-m
+chomik	hamster	hamster	n-m
+królik	rabbit	kanin	n-m
+karma	pet food	dyrefoder	n-f
+smycz	lead, leash	snor	n-f
+obroża	collar	halsbånd	n-f
+klatka	cage	bur	n-f
+weterynarz	vet	dyrlæge	n-m
+szczekać	to bark	at gø	v
+miauczeć	to meow	at miave	v

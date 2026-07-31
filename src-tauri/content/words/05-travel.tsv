@@ -1,0 +1,198 @@
+# polish	english	danish	pos
+podróż	journey, trip	rejse	n-f
+transport	transport	transport	n-m
+samochód	car	bil	n-m
+autobus	bus	bus	n-m
+tramwaj	tram	sporvogn	n-m
+metro	underground, metro	metro	n-n
+pociąg	train	tog	n-m
+samolot	aeroplane	fly	n-m
+rower	bicycle	cykel	n-m
+motocykl	motorcycle	motorcykel	n-m
+taksówka	taxi	taxa	n-f
+statek	ship	skib	n-m
+prom	ferry	færge	n-m
+łódź	boat	båd	n-f
+hulajnoga	scooter	løbehjul	n-f
+pieszo	on foot	til fods	adv
+bilet	ticket	billet	n-m
+przystanek	stop	stoppested	n-m
+dworzec	station building	banegård	n-m
+stacja	station	station	n-f
+lotnisko	airport	lufthavn	n-n
+port	port, harbour	havn	n-m
+parking	car park	parkeringsplads	n-m
+peron	platform	perron	n-m
+rozkład jazdy	timetable	køreplan	n-m
+opóźnienie	delay	forsinkelse	n-n
+ulica	street	gade	n-f
+aleja	avenue	allé	n-f
+plac	square	plads	n-m
+rynek	market square	torv	n-m
+most	bridge	bro	n-m
+skrzyżowanie	crossroads	vejkryds	n-n
+rondo	roundabout	rundkørsel	n-n
+chodnik	pavement	fortov	n-m
+droga	road, way	vej	n-f
+autostrada	motorway	motorvej	n-f
+centrum	centre	centrum	n-n
+dzielnica	district	bydel	n-f
+wieś	village, countryside	landsby	n-f
+przedmieście	suburb	forstad	n-n
+kościół	church	kirke	n-m
+zamek	castle, lock, zip	slot	n-m
+muzeum	museum	museum	n-n
+teatr	theatre	teater	n-m
+kino	cinema	biograf	n-n
+park	park	park	n-m
+ogród	garden	have	n-m
+plaża	beach	strand	n-f
+góra	mountain	bjerg	n-f
+jezioro	lake	sø	n-n
+rzeka	river	flod	n-f
+morze	sea	hav	n-n
+kierunek	direction	retning	n-m
+prawo	right side, law	højre	n-n
+lewo	left side	venstre	n-n
+prosto	straight ahead	ligeud	adv
+tył	back, rear	bagside	n-m
+przód	front	forside	n-m
+obok	next to	ved siden af	prep
+blisko	near, close	tæt på	adv
+daleko	far	langt	adv
+naprzeciwko	opposite	overfor	prep
+między	between	mellem	prep
+za	behind, beyond	bag	prep
+przed	in front of, before	foran	prep
+pod	under	under	prep
+nad	above, over	over	prep
+północ	north, midnight	nord	n-f
+południe	south, noon	syd	n-n
+wschód	east, sunrise	øst	n-m
+zachód	west, sunset	vest	n-m
+mapa	map	kort	n-f
+iść	to go on foot	at gå	v
+chodzić	to walk regularly	at gå	v
+jechać	to go by vehicle	at køre	v
+jeździć	to travel regularly	at køre	v
+lecieć	to fly	at flyve	v
+przyjechać	to arrive by vehicle	at ankomme	v
+przyjść	to arrive on foot	at komme	v
+wyjechać	to leave by vehicle	at rejse væk	v
+wrócić	to come back	at vende tilbage	v
+skręcić	to turn	at dreje	v
+zatrzymać się	to stop, to stay	at stoppe	v
+przejść	to cross, to pass	at gå over	v
+zgubić się	to get lost	at fare vild	v
+pytać o drogę	to ask for directions	at spørge om vej	v
+podróżować	to travel	at rejse	v
+zwiedzać	to go sightseeing	at bese	v
+spacerować	to stroll	at spadsere	v
+biegać	to run	at løbe	v
+prowadzić	to drive, to lead	at køre	v
+parkować	to park	at parkere	v
+tankować	to refuel	at tanke	v
+przesiadać się	to change transport	at skifte	v
+spieszyć się	to be in a hurry	at skynde sig	v
+zdążyć	to make it in time	at nå	v
+wsiadać	to board, to get on	at stige på	v
+wysiadać	to get off	at stige af	v
+hotel	hotel	hotel	n-m
+hostel	hostel	vandrerhjem	n-m
+pensjonat	guest house	pensionat	n-m
+pokój	room, peace	værelse	n-m
+recepcja	reception	reception	n-f
+klucz	key	nøgle	n-m
+łóżko	bed	seng	n-n
+piętro	floor, storey	etage	n-n
+winda	lift, elevator	elevator	n-f
+bagaż	luggage	bagage	n-m
+torba	bag	taske	n-f
+wakacje	holidays	ferie	n-pl
+urlop	time off work	orlov	n-m
+wycieczka	excursion	udflugt	n-f
+podróż służbowa	business trip	forretningsrejse	n-f
+przewodnik	guide, guidebook	guide	n-m
+turysta	tourist	turist	n-m
+zwiedzanie	sightseeing	sightseeing	n-n
+zabytek	historic landmark	seværdighed	n-m
+pamiątka	souvenir	souvenir	n-f
+zdjęcie	photo	billede	n-n
+noc	night	nat	n-f
+nocleg	overnight stay	overnatning	n-m
+rezerwacja online	online booking	onlinereservation	n-f
+zameldowanie	check-in	indtjekning	n-n
+wymeldowanie	check-out	udtjekning	n-n
+kaucja	deposit	depositum	n-f
+paszport	passport	pas	n-m
+dowód osobisty	identity card	ID-kort	n-m
+wiza	visa	visum	n-f
+prawo jazdy	driving licence	kørekort	n-n
+ubezpieczenie	insurance	forsikring	n-n
+granica	border	grænse	n-f
+celnik	customs officer	tolder	n-m
+kontrola	inspection, control	kontrol	n-f
+bezpieczeństwo	safety	sikkerhed	n-n
+bagaż podręczny	carry-on luggage	håndbagage	n-m
+odprawa	check-in desk	indtjekning	n-f
+bramka	gate	gate	n-f
+lot	flight	flyvning	n-m
+pasażer	passenger	passager	n-m
+szybki	fast	hurtig	adj
+wolny	slow, free, vacant	langsom	adj
+punktualny	punctual	punktlig	adj
+spóźniony	late, delayed	forsinket	adj
+zatłoczony	crowded	overfyldt	adj
+pusty	empty	tom	adj
+pełny	full	fuld	adj
+bezpieczny	safe	sikker	adj
+niebezpieczny	dangerous	farlig	adj
+odległość	distance	afstand	n-f
+kilometr	kilometre	kilometer	n-m
+metr	metre	meter	n-m
+prędkość	speed	hastighed	n-f
+korek	traffic jam, cork	trafikprop	n-m
+ruch	traffic, movement	trafik	n-m
+paliwo	fuel	brændstof	n-n
+benzyna	petrol	benzin	n-f
+opłata	fee, charge	gebyr	n-f
+mandat	fine, ticket	bøde	n-m
+bagażnik	boot, trunk	bagagerum	n-m
+kierowca	driver	chauffør	n-m
+konduktor	ticket inspector	konduktør	n-m
+tunel	tunnel	tunnel	n-m
+schody	stairs	trapper	n-pl
+wejście	entrance	indgang	n-n
+wyjście	exit	udgang	n-n
+brama	gate, gateway	port	n-f
+budynek	building	bygning	n-m
+wieża	tower	tårn	n-f
+pomnik	monument	mindesmærke	n-m
+fontanna	fountain	springvand	n-f
+ratusz	town hall	rådhus	n-m
+komisariat	police station	politistation	n-m
+biblioteka	library	bibliotek	n-f
+stadion	stadium	stadion	n-m
+basen	swimming pool	svømmebassin	n-m
+zoo	zoo	zoologisk have	n-n
+las	forest	skov	n-m
+pole	field	mark	n-n
+łąka	meadow	eng	n-f
+wyspa	island	ø	n-f
+wybrzeże	coast	kyst	n-n
+dolina	valley	dal	n-f
+szczyt	peak, summit	top	n-m
+ścieżka	path	sti	n-f
+szlak	trail, route	rute	n-m
+znak	sign	skilt	n-m
+światła	traffic lights	lyskryds	n-pl
+kemping	campsite	campingplads	n-m
+namiot	tent	telt	n-m
+molo	pier	mole	n-n
+kasa biletowa	ticket office	billetkontor	n-f
+bilet powrotny	return ticket	returbillet	n-m
+bilet w jedną stronę	one-way ticket	enkeltbillet	n-m
+miejsce	place, seat	plads	n-n
+wagon	carriage	vogn	n-m
+przedział	compartment	kupé	n-m
+przystanek końcowy	terminus	endestation	n-m
