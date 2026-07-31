@@ -79,8 +79,8 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
         has_api_key: db::get_setting(conn, "openrouter_api_key")?
             .is_some_and(|k| !k.trim().is_empty()),
         ai_model: ai::stored_model(conn, "ai_model"),
-        tts_model: ai::stored_model(conn, "tts_model"),
-        tts_voice: ai::stored_model(conn, "tts_voice"),
+        tts_voice_female: ai::voice_for(conn, "f"),
+        tts_voice_male: ai::voice_for(conn, "m"),
         tts_speed: db::get_setting(conn, "tts_speed")?
             .and_then(|value| value.parse().ok())
             .unwrap_or(1.0),
@@ -119,8 +119,8 @@ pub struct SettingsPatch {
     pub reminder_minute: Option<i64>,
     pub reminders_enabled: Option<bool>,
     pub ai_model: Option<String>,
-    pub tts_model: Option<String>,
-    pub tts_voice: Option<String>,
+    pub tts_voice_female: Option<String>,
+    pub tts_voice_male: Option<String>,
     pub tts_speed: Option<f32>,
     pub tts_prefetch: Option<bool>,
 }
@@ -152,11 +152,11 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     if let Some(model) = patch.ai_model {
         db::set_setting(&conn, "ai_model", model.trim())?;
     }
-    if let Some(model) = patch.tts_model {
-        db::set_setting(&conn, "tts_model", model.trim())?;
+    if let Some(voice) = patch.tts_voice_female {
+        db::set_setting(&conn, "tts_voice_female", voice.trim())?;
     }
-    if let Some(voice) = patch.tts_voice {
-        db::set_setting(&conn, "tts_voice", voice.trim())?;
+    if let Some(voice) = patch.tts_voice_male {
+        db::set_setting(&conn, "tts_voice_male", voice.trim())?;
     }
     if let Some(speed) = patch.tts_speed {
         db::set_setting(&conn, "tts_speed", &speed.clamp(0.25, 2.0).to_string())?;
@@ -323,6 +323,62 @@ pub async fn browse_words(
     Ok(words)
 }
 
+/// One catalogue page: words and sentences matching a search, plus how many
+/// matched in total so the UI can say what it is not showing.
+#[tauri::command]
+pub async fn browse_catalogue(
+    db: State<'_, Db>,
+    topic_id: Option<i64>,
+    query: String,
+    limit: i64,
+) -> Result<CataloguePage> {
+    let conn = db.lock();
+    let meaning = if db::source_language(&conn) == "da" { "da" } else { "en" };
+    let needle = query.trim();
+    let pattern = format!("%{needle}%");
+    let limit = limit.clamp(1, 1000);
+
+    // `?2 = ''` short-circuits an empty search to "everything".
+    let filter = format!(
+        "(?1 IS NULL OR topic_id = ?1) AND (?2 = '' OR pl LIKE ?3 OR {meaning} LIKE ?3)"
+    );
+
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, pl, {meaning}, pos FROM words WHERE {filter} ORDER BY topic_id, ord LIMIT ?4"
+    ))?;
+    let words = stmt
+        .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
+            Ok(Word { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, pos: r.get(3)? })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, pl, {meaning} FROM sentences WHERE {filter} ORDER BY topic_id, ord LIMIT ?4"
+    ))?;
+    let sentences = stmt
+        .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
+            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+
+    let count = |table: &str| -> Result<i64> {
+        Ok(conn.query_row(
+            &format!("SELECT COUNT(*) FROM {table} WHERE {filter}"),
+            rusqlite::params![topic_id, needle, pattern],
+            |r| r.get(0),
+        )?)
+    };
+
+    Ok(CataloguePage {
+        total_words: count("words")?,
+        total_sentences: count("sentences")?,
+        words,
+        sentences,
+    })
+}
+
 #[tauri::command]
 pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Sentence>> {
     let conn = db.lock();
@@ -378,9 +434,54 @@ pub async fn ai_list_models() -> Result<Vec<AiModel>> {
     ai::list_models().await
 }
 
+/// The voices the app can read Polish in. Shipped with the binary rather than
+/// fetched, because the speech model is pinned.
 #[tauri::command]
-pub async fn ai_list_speech_models() -> Result<Vec<AiModel>> {
-    ai::list_speech_models().await
+pub async fn list_voices() -> Result<Vec<Voice>> {
+    Ok(ai::GEMINI_VOICES
+        .iter()
+        .map(|(name, gender, description)| Voice {
+            name: (*name).to_string(),
+            gender: (*gender).to_string(),
+            description: (*description).to_string(),
+        })
+        .collect())
+}
+
+/// Plays a sample so a voice can be judged on Polish before it is chosen.
+#[tauri::command]
+pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Result<AudioClip> {
+    let (key, speed) = {
+        let conn = db.lock();
+        let speed = db::get_setting(&conn, "tts_speed")?
+            .and_then(|value| value.parse::<f32>().ok())
+            .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
+        (ai::api_key(&conn)?, speed)
+    };
+
+    let cached = {
+        let conn = db.lock();
+        cached_clip(&conn, &audio_key(ai::SPEECH_MODEL, &voice, &text))?
+    };
+    if let Some((mime, bytes)) = cached {
+        return Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: true });
+    }
+
+    let (mime, bytes) =
+        ai::synthesize(&key, ai::SPEECH_MODEL, &voice, &text, speed).await?;
+    {
+        let conn = db.lock();
+        store_clip(
+            &conn,
+            &audio_key(ai::SPEECH_MODEL, &voice, &text),
+            ai::SPEECH_MODEL,
+            &voice,
+            &text,
+            &mime,
+            &bytes,
+        )?;
+    }
+    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
 }
 
 // ---------------------------------------------------------------------------
@@ -430,25 +531,32 @@ struct SpeechConfig {
     speed: Option<f32>,
 }
 
-fn speech_config(conn: &Connection) -> Result<SpeechConfig> {
-    let (model, voice) = ai::require_speech_model(conn)?;
+/// `gender` is "f" or "m" for dialogue lines; everything else reads in the
+/// female voice.
+fn speech_config(conn: &Connection, gender: &str) -> Result<SpeechConfig> {
     let speed = db::get_setting(conn, "tts_speed")?
         .and_then(|value| value.parse::<f32>().ok())
         .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
-    Ok(SpeechConfig { key: ai::api_key(conn)?, model, voice, speed })
+    Ok(SpeechConfig {
+        key: ai::api_key(conn)?,
+        model: ai::SPEECH_MODEL.to_string(),
+        voice: ai::voice_for(conn, gender),
+        speed,
+    })
 }
 
 /// Speaks a line of Polish, generating it only the first time.
 #[tauri::command]
-pub async fn speak(db: State<'_, Db>, text: String) -> Result<AudioClip> {
+pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<AudioClip> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err(Error::msg("Nothing to say."));
     }
+    let gender = gender.unwrap_or_default();
 
     let (config, cached) = {
         let conn = db.lock();
-        let config = speech_config(&conn)?;
+        let config = speech_config(&conn, &gender)?;
         let hit = cached_clip(&conn, &audio_key(&config.model, &config.voice, &text))?;
         (config, hit)
     };
@@ -485,12 +593,20 @@ pub async fn speak(db: State<'_, Db>, text: String) -> Result<AudioClip> {
 /// True when this exact line is already stored, so the UI can show which lines
 /// will play instantly and which will cost a request.
 #[tauri::command]
-pub async fn audio_is_cached(db: State<'_, Db>, text: String) -> Result<bool> {
+pub async fn audio_is_cached(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<bool> {
     let conn = db.lock();
-    let Ok(config) = speech_config(&conn) else {
+    let Ok(config) = speech_config(&conn, &gender.unwrap_or_default()) else {
         return Ok(false);
     };
     Ok(cached_clip(&conn, &audio_key(&config.model, &config.voice, text.trim()))?.is_some())
+}
+
+/// A line to synthesise, with the gender that decides which voice reads it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeechLine {
+    pub text: String,
+    #[serde(default)]
+    pub gender: String,
 }
 
 /// Generates and stores audio for a batch of lines, reporting progress as it
@@ -499,26 +615,23 @@ pub async fn audio_is_cached(db: State<'_, Db>, text: String) -> Result<bool> {
 pub async fn cache_audio(
     app: tauri::AppHandle,
     db: State<'_, Db>,
-    lines: Vec<String>,
+    lines: Vec<SpeechLine>,
 ) -> Result<CacheProgress> {
-    let config = {
-        let conn = db.lock();
-        speech_config(&conn)?
-    };
-
     // Drop duplicates and anything already stored before spending a request.
-    let mut pending: Vec<String> = Vec::new();
+    // A line spoken by two genders is two clips, so the pair is the key.
+    let mut pending: Vec<(SpeechConfig, String)> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     {
         let conn = db.lock();
         for line in lines {
-            let line = line.trim().to_string();
-            if line.is_empty() || !seen.insert(line.clone()) {
+            let text = line.text.trim().to_string();
+            if text.is_empty() || !seen.insert((text.clone(), line.gender.clone())) {
                 continue;
             }
-            let key = audio_key(&config.model, &config.voice, &line);
+            let config = speech_config(&conn, &line.gender)?;
+            let key = audio_key(&config.model, &config.voice, &text);
             if cached_clip(&conn, &key)?.is_none() {
-                pending.push(line);
+                pending.push((config, text));
             }
         }
     }
@@ -528,7 +641,7 @@ pub async fn cache_audio(
     let mut failed = 0;
     let mut first_error: Option<String> = None;
 
-    for line in pending {
+    for (config, line) in pending {
         match ai::synthesize(&config.key, &config.model, &config.voice, &line, config.speed).await {
             Ok((mime, bytes)) => {
                 let conn = db.lock();
@@ -565,17 +678,20 @@ pub async fn cache_audio(
     Ok(progress)
 }
 
-/// Every Polish line of a topic: its sentences and its conversation.
+/// Every Polish line of a topic: its sentences, then its conversation with the
+/// gender each line should be read in.
 #[tauri::command]
-pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<String>> {
+pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<SpeechLine>> {
     let conn = db.lock();
     let mut stmt = conn.prepare(
-        "SELECT pl FROM sentences WHERE topic_id = ?1 ORDER BY ord
+        "SELECT pl, '' FROM sentences WHERE topic_id = ?1
          UNION ALL
-         SELECT pl FROM conversation_lines WHERE topic_id = ?1 ORDER BY ord",
+         SELECT pl, gender FROM conversation_lines WHERE topic_id = ?1",
     )?;
     let lines = stmt
-        .query_map([topic_id], |r| r.get::<_, String>(0))?
+        .query_map([topic_id], |r| {
+            Ok(SpeechLine { text: r.get(0)?, gender: r.get(1)? })
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(lines)
 }
@@ -588,8 +704,8 @@ pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    // Only clips made with the current voice count as usable.
-    let sentences_cached = match speech_config(&conn) {
+    // Sentences are narrated by the female voice, so that is what counts here.
+    let sentences_cached = match speech_config(&conn, "f") {
         Ok(config) => conn.query_row(
             "SELECT COUNT(*) FROM sentences s
              JOIN audio_cache a ON a.text = s.pl
@@ -680,6 +796,127 @@ pub async fn ai_chat(db: State<'_, Db>, topic_id: i64, message: String) -> Resul
     let reply = ai::complete(&key, &model, &wire).await?;
     wire.clear();
 
+    let conn = db.lock();
+    ai::append_message(&conn, topic_id, "user", &message)?;
+    ai::append_message(&conn, topic_id, "assistant", &reply)?;
+    Ok(reply)
+}
+
+/// Pushes a streamed answer to the frontend as it arrives.
+///
+/// Every stream carries a caller-supplied id, so a screen that fires two
+/// requests (or is re-entered) never renders another one's tokens.
+fn stream_to_frontend(
+    app: &tauri::AppHandle,
+    stream_id: &str,
+    delta: Option<&str>,
+    done: bool,
+    error: Option<String>,
+) {
+    let _ = app.emit(
+        "ai://stream",
+        StreamEvent {
+            id: stream_id.to_string(),
+            delta: delta.unwrap_or_default().to_string(),
+            done,
+            error,
+        },
+    );
+}
+
+async fn run_stream(
+    app: tauri::AppHandle,
+    stream_id: String,
+    key: String,
+    model: String,
+    messages: Vec<ai::Wire>,
+) -> Result<String> {
+    let emitter = app.clone();
+    let id = stream_id.clone();
+    let result = ai::complete_streaming(&key, &model, &messages, move |delta| {
+        stream_to_frontend(&emitter, &id, Some(delta), false, None);
+    })
+    .await;
+
+    match &result {
+        Ok(_) => stream_to_frontend(&app, &stream_id, None, true, None),
+        Err(error) => {
+            stream_to_frontend(&app, &stream_id, None, true, Some(error.to_string()))
+        }
+    }
+    result
+}
+
+/// Streaming counterpart of `ai_explain`. Text arrives as `ai://stream` events.
+#[tauri::command]
+pub async fn ai_explain_stream(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    item_kind: String,
+    item_id: i64,
+    stream_id: String,
+) -> Result<String> {
+    let (key, model, messages) = {
+        let conn = db.lock();
+        let key = ai::api_key(&conn)?;
+        let model = ai::require_model(&conn)?;
+        let source = db::source_language(&conn);
+        let meaning = if source == "da" { "da" } else { "en" };
+
+        let table = match item_kind.as_str() {
+            "word" => "words",
+            "sentence" => "sentences",
+            other => return Err(Error::msg(format!("cannot explain a '{other}'"))),
+        };
+        let (polish, gloss): (String, String) = conn.query_row(
+            &format!("SELECT pl, {meaning} FROM {table} WHERE id = ?1"),
+            [item_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        (key, model, ai::explain_prompt(&source, &polish, &gloss))
+    };
+    run_stream(app, stream_id, key, model, messages).await
+}
+
+/// Streaming counterpart of `ai_chat`.
+#[tauri::command]
+pub async fn ai_chat_stream(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    topic_id: i64,
+    message: String,
+    stream_id: String,
+) -> Result<String> {
+    let message = message.trim().to_string();
+    if message.is_empty() {
+        return Err(Error::msg("Write something first."));
+    }
+
+    let (key, model, wire) = {
+        let conn = db.lock();
+        let key = ai::api_key(&conn)?;
+        let model = ai::require_model(&conn)?;
+        let topic = session::load_topic(&conn, topic_id)?;
+        let source = db::source_language(&conn);
+
+        let mut stmt =
+            conn.prepare("SELECT pl FROM words WHERE topic_id = ?1 ORDER BY ord LIMIT 60")?;
+        let vocabulary: Vec<String> = stmt
+            .query_map([topic_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
+
+        let mut wire = vec![ai::Wire::system(ai::tutor_system_prompt(
+            &source,
+            &topic.title,
+            &vocabulary,
+        ))];
+        wire.extend(ai::recent_history(&conn, topic_id)?);
+        wire.push(ai::Wire::user(message.clone()));
+        (key, model, wire)
+    };
+
+    let reply = run_stream(app, stream_id, key, model, wire).await?;
     let conn = db.lock();
     ai::append_message(&conn, topic_id, "user", &message)?;
     ai::append_message(&conn, topic_id, "assistant", &reply)?;

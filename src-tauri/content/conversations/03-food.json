@@ -5,6 +5,10 @@
   "title_da": "På restauranten",
   "summary_en": "Mads orders dinner in a Polish restaurant, asks for a recommendation and pays the bill.",
   "summary_da": "Mads bestiller aftensmad på en polsk restaurant, beder om en anbefaling og betaler regningen.",
+  "speakers": {
+    "Kelner": "m",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Kelner",

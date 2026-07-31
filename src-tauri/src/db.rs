@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS conversation_lines (
     topic_id INTEGER NOT NULL REFERENCES topics(id),
     ord      INTEGER NOT NULL,
     speaker  TEXT    NOT NULL,
+    gender   TEXT    NOT NULL DEFAULT 'f',
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
     da       TEXT    NOT NULL
@@ -134,13 +135,32 @@ CREATE INDEX IF NOT EXISTS chat_topic ON chat_messages(topic_id, id);
 
 fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(SCHEMA)?;
+    // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
+    // added after the first release need an explicit, idempotent ALTER.
+    add_column(conn, "conversation_lines", "gender", "TEXT NOT NULL DEFAULT 'f'")?;
+    Ok(())
+}
+
+fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    let exists = conn
+        .prepare(&format!("PRAGMA table_info({table})"))?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|name| name == column);
+    if !exists {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
     Ok(())
 }
 
 /// Content version. Bump this when the TSV/JSON files change so existing
 /// installs re-seed while keeping their review history (keyed by row id, which
 /// is stable because rows are inserted in file order).
-const CONTENT_VERSION: i64 = 1;
+const CONTENT_VERSION: i64 = 2;
 
 fn seed(conn: &Connection) -> Result<()> {
     let seeded: Option<String> = conn
@@ -212,10 +232,18 @@ fn seed(conn: &Connection) -> Result<()> {
         // Conversation lines have no natural key, so replace them wholesale.
         conn.execute("DELETE FROM conversation_lines WHERE topic_id = ?1", [topic_id])?;
         for (i, line) in convo.lines.iter().enumerate() {
+            let gender = convo.speakers.get(&line.speaker).ok_or_else(|| {
+                Error::msg(format!(
+                    "conversation '{}' has no gender for speaker '{}'",
+                    topic.slug, line.speaker
+                ))
+            })?;
             conn.execute(
-                "INSERT INTO conversation_lines (topic_id, ord, speaker, pl, en, da)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![topic_id, i as i64, line.speaker, line.pl, line.en, line.da],
+                "INSERT INTO conversation_lines (topic_id, ord, speaker, gender, pl, en, da)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    topic_id, i as i64, line.speaker, gender, line.pl, line.en, line.da
+                ],
             )?;
         }
     }

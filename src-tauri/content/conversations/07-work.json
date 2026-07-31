@@ -5,6 +5,10 @@
   "title_da": "En samtale om arbejde",
   "summary_en": "Mads and his colleague Piotr talk about their jobs, a deadline and studying Polish after work.",
   "summary_da": "Mads og hans kollega Piotr taler om deres job, en deadline og om at læse polsk efter arbejde.",
+  "speakers": {
+    "Piotr": "m",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Piotr",

@@ -5,6 +5,10 @@
   "title_da": "Familiebilleder",
   "summary_en": "Anna shows Mads photos of her family and he tells her about his own.",
   "summary_da": "Anna viser Mads billeder af sin familie, og han fortæller om sin egen.",
+  "speakers": {
+    "Anna": "f",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Anna",

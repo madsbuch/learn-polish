@@ -46,10 +46,13 @@ export function Bar({
  */
 export function SpeakButton({
   text,
+  gender,
   label,
   size,
 }: {
   text: string;
+  /** "f" or "m" for dialogue lines; omitted elsewhere. */
+  gender?: string;
   label?: string;
   size?: number;
 }) {
@@ -71,7 +74,7 @@ export function SpeakButton({
         setFailure(null);
         setBusy(true);
         try {
-          await speak(text);
+          await speak(text, gender);
         } catch (cause) {
           setFailure(cause instanceof Error ? cause.message : "Could not play audio.");
         } finally {

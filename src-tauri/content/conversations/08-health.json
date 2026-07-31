@@ -5,6 +5,10 @@
   "title_da": "Hos lægen",
   "summary_en": "Mads goes to the doctor with a fever and a sore throat, describes his symptoms and gets a prescription.",
   "summary_da": "Mads går til lægen med feber og ondt i halsen, beskriver sine symptomer og får en recept.",
+  "speakers": {
+    "Lekarka": "f",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Lekarka",

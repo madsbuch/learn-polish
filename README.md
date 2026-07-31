@@ -62,6 +62,12 @@ Add an [OpenRouter](https://openrouter.ai/keys) API key in Settings and you get:
   you just got wrong,
 - extra drills generated from the words you keep forgetting.
 
+Answers **stream in** as they are generated, so a long explanation is readable
+from the first line rather than after the last, and they are rendered as
+markdown — headings, bold, lists and code, not raw `**asterisks**`. The
+renderer builds React elements rather than HTML, so model output can never
+inject markup and there is no sanitiser to keep in step.
+
 **Every HTTP request is made from Rust**, in `src-tauri/src/ai.rs`, using
 `reqwest`. The webview never issues a cross-origin request, so CORS never comes
 into it, and the API key never reaches JavaScript — it lives in the app's
@@ -76,30 +82,29 @@ live catalogue. Until you do, the AI features stay off and say so.
 Every Polish line has a 🔊 button, and conversations have a ▶︎ that reads them
 line by line. Audio comes from whichever of these is available:
 
-1. **An OpenRouter voice.** Settings → *Load speech models from OpenRouter*
-   lists the models that can speak, each with the voices it accepts. Synthesis
-   happens in Rust through `POST /api/v1/audio/speech`.
+1. **Gemini, through OpenRouter.** Speech is pinned to
+   `google/gemini-3.1-flash-tts-preview`: it handles Polish well, and pinning
+   it means the voice list ships with the app instead of needing a network
+   round trip to fill a dropdown. Synthesis happens in Rust through
+   `POST /api/v1/audio/speech`.
 
-   Providers disagree about what they accept, and only tell you by rejecting
-   the request, so `synthesize` walks a short ladder: MP3 first, then PCM for
-   models that only speak PCM, then again without `speed` for models that do
-   not honour it. PCM comes back with no container, so it is wrapped in a WAV
-   header built from the rate and channel count in the response's
-   `Content-Type`.
+   Gemini only accepts `response_format: pcm`, and other providers only accept
+   MP3, and neither says so until it rejects the request — so `synthesize`
+   walks a short ladder: MP3 first, then PCM, then again without `speed` for
+   models that do not honour it. PCM comes back with no container, so it is
+   wrapped in a WAV header built from the rate and channel count in the
+   response's `Content-Type`.
 
-   **Not every model speaks Polish.** Verified against the live API by
-   synthesising *"Dzień dobry! Uczę się języka polskiego."* and transcribing
-   the result back:
+   **Conversations are read in two voices.** Every speaker in the ten
+   dialogues is tagged female or male in the content files, and each line is
+   synthesised in the matching voice — so the shop assistant and the customer
+   do not sound like the same person. Both voices are chosen in Settings from
+   Gemini's thirty, each with a preview button that speaks a Polish sentence.
 
-   | model | voice | comes back as |
-   |---|---|---|
-   | `x-ai/grok-voice-tts-1.0` | `eve` | "Dzień dobry, uczę się języka polskiego." ✅ |
-   | `google/gemini-3.1-flash-tts-preview` | `Kore` | "Dzień dobry. Uczę się języka polskiego." ✅ |
-   | `hexgrad/kokoro-82m` | `af_bella` | "Design dobry. Ach so, Jesika polskiego." ❌ |
-
-   Kokoro has no Polish voice, so it reads Polish spelling with an English
-   one. That is exactly why Settings has a **Test this voice on Polish**
-   button — listen before committing to a voice.
+   Not every TTS model speaks Polish at all: `hexgrad/kokoro-82m` renders
+   *"Dzień dobry! Uczę się języka polskiego."* as *"Design dobry. Ach so,
+   Jesika polskiego."* Gemini and `x-ai/grok-voice-tts-1.0` both come back
+   verbatim, which is why Gemini is the one that is pinned.
 2. **The platform's own engine**, when the webview has one. Free and instant,
    but Android's WebView does not implement `speechSynthesis` at all, and macOS
    needs a Polish system voice installed (System Settings → Accessibility →
@@ -114,8 +119,9 @@ Each line is generated **once** and stored in SQLite as a blob, keyed by the
 exact text plus the model and voice that produced it. After that it replays
 instantly, for free, offline. Changing voice does not serve stale audio.
 
-- Starting a session pre-fetches that day's lines in the background, so no tap
-  ever waits on the network. Toggleable in Settings.
+- Starting a session pre-fetches that day's lines in the background — dialogue
+  lines in the voice that will actually read them — so no tap ever waits on
+  the network. Toggleable in Settings.
 - *Download every sentence and dialogue* warms all 200 sentences and all ten
   conversations in one pass, with progress reported line by line.
 - Settings shows how many of the 200 sentences are stored and how much disk
@@ -155,7 +161,10 @@ Tauri runtime required.
 ```
 src/                       React UI
   lib/api.ts               typed wrappers over the Tauri commands
+  lib/useAiStream.ts       accumulates a streamed answer from Tauri events
+  components/Markdown.tsx  markdown to React elements, no HTML in between
   screens/Session.tsx      the practice flow (eight exercise shapes)
+  screens/Library.tsx      the catalogue: every word, sentence and dialogue
 src-tauri/
   content/                 the curriculum: TSV word lists, TSV sentences, JSON dialogues
   src/db.rs                schema, migration and seeding
@@ -166,16 +175,22 @@ src-tauri/
   src/commands.rs          the command surface, including the audio cache
 ```
 
+## Library
+
+A searchable catalogue of the whole curriculum, whether or not you have met it
+yet: all 2007 words and 200 sentences, filterable by topic and searchable in
+both languages, plus every dialogue. Each row has its own 🔊.
+
 ### Editing the curriculum
 
 The files under `src-tauri/content/` are the source of truth. Word lists are
 `polish⇥english⇥danish⇥part-of-speech`; sentences drop the last column;
-conversations are JSON. After changing them, bump `CONTENT_VERSION` in
+conversations are JSON with a `speakers` map giving each speaker's gender. After changing them, bump `CONTENT_VERSION` in
 `src-tauri/src/db.rs` so existing installs re-seed. Review history is keyed by
 row id and survives the re-seed.
 
-`cargo test` fails if two topics define the same headword or if a topic drops
-below 190 words.
+`cargo test` fails if two topics define the same headword, if a topic drops
+below 190 words, or if a dialogue has a speaker with no gender.
 
 ---
 

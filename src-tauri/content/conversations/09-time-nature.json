@@ -5,6 +5,10 @@
   "title_da": "Weekendplaner",
   "summary_en": "Anna and Mads check the weather forecast and plan a walk in the mountains for Saturday.",
   "summary_da": "Anna og Mads tjekker vejrudsigten og planlægger en tur i bjergene på lørdag.",
+  "speakers": {
+    "Anna": "f",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Anna",

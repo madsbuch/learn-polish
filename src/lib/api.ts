@@ -6,8 +6,11 @@ import type {
   AudioCacheStats,
   AudioClip,
   CacheProgress,
+  CataloguePage,
   ChatMessage,
   Dialogue,
+  SpeechLine,
+  Voice,
   Sentence,
   SessionPlan,
   SessionResult,
@@ -45,6 +48,8 @@ export const api = {
   getDialogue: (topicId: number) => invoke<Dialogue>("get_dialogue", { topicId }),
   browseWords: (topicId: number | null, query: string, limit = 300) =>
     invoke<Word[]>("browse_words", { topicId, query, limit }),
+  browseCatalogue: (topicId: number | null, query: string, limit = 200) =>
+    invoke<CataloguePage>("browse_catalogue", { topicId, query, limit }),
   browseSentences: (topicId: number) => invoke<Sentence[]>("browse_sentences", { topicId }),
   resetProgress: () => invoke<void>("reset_progress"),
 
@@ -52,12 +57,19 @@ export const api = {
   aiClearKey: () => invoke<Settings>("ai_clear_key"),
   aiTestKey: () => invoke<string>("ai_test_key"),
   aiListModels: () => invoke<AiModel[]>("ai_list_models"),
-  aiListSpeechModels: () => invoke<AiModel[]>("ai_list_speech_models"),
+  aiExplainStream: (itemKind: string, itemId: number, streamId: string) =>
+    invoke<string>("ai_explain_stream", { itemKind, itemId, streamId }),
+  aiChatStream: (topicId: number, message: string, streamId: string) =>
+    invoke<string>("ai_chat_stream", { topicId, message, streamId }),
 
-  speak: (text: string) => invoke<AudioClip>("speak", { text }),
-  audioIsCached: (text: string) => invoke<boolean>("audio_is_cached", { text }),
-  cacheAudio: (lines: string[]) => invoke<CacheProgress>("cache_audio", { lines }),
-  topicAudioLines: (topicId: number) => invoke<string[]>("topic_audio_lines", { topicId }),
+  listVoices: () => invoke<Voice[]>("list_voices"),
+  previewVoice: (voice: string, text: string) =>
+    invoke<AudioClip>("preview_voice", { voice, text }),
+  speak: (text: string, gender?: string) => invoke<AudioClip>("speak", { text, gender }),
+  audioIsCached: (text: string, gender?: string) =>
+    invoke<boolean>("audio_is_cached", { text, gender }),
+  cacheAudio: (lines: SpeechLine[]) => invoke<CacheProgress>("cache_audio", { lines }),
+  topicAudioLines: (topicId: number) => invoke<SpeechLine[]>("topic_audio_lines", { topicId }),
   audioCacheStats: () => invoke<AudioCacheStats>("audio_cache_stats"),
   clearAudioCache: () => invoke<void>("clear_audio_cache"),
   aiHistory: (topicId: number) => invoke<ChatMessage[]>("ai_history", { topicId }),

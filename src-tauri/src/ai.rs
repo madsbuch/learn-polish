@@ -55,14 +55,67 @@ pub fn require_model(conn: &Connection) -> Result<String> {
     Ok(model)
 }
 
-pub fn require_speech_model(conn: &Connection) -> Result<(String, String)> {
-    let model = stored_model(conn, "tts_model");
-    if model.is_empty() {
-        return Err(Error::msg(
-            "No voice chosen yet. Open Settings, load the speech models from OpenRouter and pick one.",
-        ));
+/// Speech is pinned to Gemini: it handles Polish well, it is the cheapest of
+/// the models that do, and pinning it means the voice list can ship with the
+/// app instead of needing a network round trip to populate a dropdown.
+pub const SPEECH_MODEL: &str = "google/gemini-3.1-flash-tts-preview";
+pub const DEFAULT_FEMALE_VOICE: &str = "Kore";
+pub const DEFAULT_MALE_VOICE: &str = "Puck";
+
+/// Gemini's voices, with the gender and character Google publishes for each.
+pub const GEMINI_VOICES: &[(&str, &str, &str)] = &[
+    ("Achernar", "f", "soft"),
+    ("Achird", "m", "friendly"),
+    ("Algenib", "m", "gravelly"),
+    ("Algieba", "m", "smooth"),
+    ("Alnilam", "m", "firm"),
+    ("Aoede", "f", "breezy"),
+    ("Autonoe", "f", "bright"),
+    ("Callirrhoe", "f", "easy-going"),
+    ("Charon", "m", "informative"),
+    ("Despina", "f", "smooth"),
+    ("Enceladus", "m", "breathy"),
+    ("Erinome", "f", "clear"),
+    ("Fenrir", "m", "excitable"),
+    ("Gacrux", "f", "mature"),
+    ("Iapetus", "m", "clear"),
+    ("Kore", "f", "firm"),
+    ("Laomedeia", "f", "upbeat"),
+    ("Leda", "f", "youthful"),
+    ("Orus", "m", "firm"),
+    ("Puck", "m", "upbeat"),
+    ("Pulcherrima", "f", "forward"),
+    ("Rasalgethi", "m", "informative"),
+    ("Sadachbia", "m", "lively"),
+    ("Sadaltager", "m", "knowledgeable"),
+    ("Schedar", "m", "even"),
+    ("Sulafat", "f", "warm"),
+    ("Umbriel", "m", "easy-going"),
+    ("Vindemiatrix", "f", "gentle"),
+    ("Zephyr", "f", "bright"),
+    ("Zubenelgenubi", "m", "casual"),
+];
+
+fn known_voice(name: &str, gender: &str) -> bool {
+    GEMINI_VOICES
+        .iter()
+        .any(|(voice, voice_gender, _)| *voice == name && *voice_gender == gender)
+}
+
+/// The voice to read a line in. `gender` is "f" or "m"; anything else, and
+/// non-dialogue text, gets the female voice.
+pub fn voice_for(conn: &Connection, gender: &str) -> String {
+    let (key, fallback) = if gender == "m" {
+        ("tts_voice_male", DEFAULT_MALE_VOICE)
+    } else {
+        ("tts_voice_female", DEFAULT_FEMALE_VOICE)
+    };
+    let chosen = stored_model(conn, key);
+    if known_voice(&chosen, gender) {
+        chosen
+    } else {
+        fallback.to_string()
     }
-    Ok((model, stored_model(conn, "tts_voice")))
 }
 
 #[derive(Serialize)]
@@ -71,6 +124,8 @@ struct ChatRequest<'a> {
     messages: &'a [Wire],
     temperature: f32,
     max_tokens: u32,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stream: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -114,7 +169,13 @@ pub async fn complete(key: &str, model: &str, messages: &[Wire]) -> Result<Strin
         // OpenRouter uses these for attribution on its dashboard.
         .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
         .header("X-Title", "Polski")
-        .json(&ChatRequest { model, messages, temperature: 0.4, max_tokens: 1200 })
+        .json(&ChatRequest {
+            model,
+            messages,
+            temperature: 0.4,
+            max_tokens: 1200,
+            stream: false,
+        })
         .send()
         .await?;
 
@@ -142,6 +203,152 @@ pub async fn complete(key: &str, model: &str, messages: &[Wire]) -> Result<Strin
         .map(|c| c.message.content)
         .filter(|text| !text.trim().is_empty())
         .ok_or_else(|| Error::msg("OpenRouter returned an empty answer."))
+}
+
+// ---------------------------------------------------------------------------
+// Streaming
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct StreamChunk {
+    #[serde(default)]
+    choices: Vec<StreamChoice>,
+    #[serde(default)]
+    error: Option<ApiError>,
+}
+
+#[derive(Deserialize)]
+struct StreamChoice {
+    #[serde(default)]
+    delta: Delta,
+}
+
+#[derive(Deserialize, Default)]
+struct Delta {
+    #[serde(default)]
+    content: Option<String>,
+}
+
+/// What a server-sent-event line turned out to mean.
+#[derive(Debug, PartialEq)]
+pub enum SseItem {
+    Delta(String),
+    Done,
+    Failed(String),
+}
+
+/// Incremental parser for the server-sent-event body of a streaming
+/// completion.
+///
+/// TCP reads split wherever they like — mid-line, mid-UTF-8, between `data:`
+/// and its payload — so bytes are buffered until a line is complete. Keeping
+/// this separate from the HTTP call is what makes it testable.
+#[derive(Default)]
+pub struct SseParser {
+    buffer: String,
+}
+
+impl SseParser {
+    pub fn push(&mut self, chunk: &str) -> Vec<SseItem> {
+        self.buffer.push_str(chunk);
+        let mut items = Vec::new();
+
+        while let Some(newline) = self.buffer.find('\n') {
+            let line = self.buffer[..newline].trim().to_string();
+            self.buffer.drain(..=newline);
+
+            // Comment lines (": OPENROUTER PROCESSING") keep the socket warm.
+            let Some(payload) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let payload = payload.trim();
+            if payload == "[DONE]" {
+                items.push(SseItem::Done);
+                continue;
+            }
+
+            let parsed: StreamChunk = match serde_json::from_str(payload) {
+                Ok(parsed) => parsed,
+                // A fragment we cannot read is not worth aborting the answer for.
+                Err(_) => continue,
+            };
+            if let Some(error) = parsed.error {
+                items.push(SseItem::Failed(error.message));
+                continue;
+            }
+            for choice in parsed.choices {
+                match choice.delta.content {
+                    Some(text) if !text.is_empty() => items.push(SseItem::Delta(text)),
+                    _ => {}
+                }
+            }
+        }
+        items
+    }
+}
+
+/// Streams a completion, handing each new fragment of text to `on_delta` as it
+/// arrives. Returns the full text once the stream ends.
+pub async fn complete_streaming<F>(
+    key: &str,
+    model: &str,
+    messages: &[Wire],
+    mut on_delta: F,
+) -> Result<String>
+where
+    F: FnMut(&str),
+{
+    use futures_util::StreamExt;
+
+    let response = client()
+        .post(format!("{BASE_URL}/chat/completions"))
+        .bearer_auth(key)
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("X-Title", "Polski")
+        .header("Accept", "text/event-stream")
+        .json(&ChatRequest {
+            model,
+            messages,
+            temperature: 0.4,
+            max_tokens: 1200,
+            stream: true,
+        })
+        .send()
+        .await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let detail = serde_json::from_str::<ChatResponse>(&body)
+            .ok()
+            .and_then(|parsed| parsed.error.map(|e| e.message))
+            .unwrap_or_else(|| body.chars().take(300).collect());
+        return Err(Error::msg(format!("OpenRouter ({status}): {detail}")));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut parser = SseParser::default();
+    let mut answer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        for item in parser.push(&String::from_utf8_lossy(&chunk?)) {
+            match item {
+                SseItem::Delta(text) => {
+                    answer.push_str(&text);
+                    on_delta(&text);
+                }
+                SseItem::Done => return Ok(answer),
+                SseItem::Failed(message) => {
+                    return Err(Error::msg(format!("OpenRouter: {message}")))
+                }
+            }
+        }
+    }
+
+    if answer.trim().is_empty() {
+        return Err(Error::msg("OpenRouter returned an empty answer."));
+    }
+    Ok(answer)
 }
 
 #[derive(Deserialize)]
@@ -196,12 +403,6 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
 
 pub async fn list_models() -> Result<Vec<AiModel>> {
     fetch_catalogue("").await
-}
-
-/// Models that can turn text into speech. OpenRouter tags these with an output
-/// modality of `speech`; each carries the voice names it accepts.
-pub async fn list_speech_models() -> Result<Vec<AiModel>> {
-    fetch_catalogue("?output_modalities=speech").await
 }
 
 #[derive(Serialize)]
@@ -377,6 +578,52 @@ mod tests {
         assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 480);
         // 24 kHz mono 16-bit is 48 000 bytes per second.
         assert_eq!(u32::from_le_bytes(wav[28..32].try_into().unwrap()), 48_000);
+    }
+
+    fn delta(payload: &str) -> String {
+        format!("data: {{\"choices\":[{{\"delta\":{{\"content\":\"{payload}\"}}}}]}}\n")
+    }
+
+    #[test]
+    fn sse_reassembles_text_across_chunk_boundaries() {
+        let body = format!("{}{}data: [DONE]\n", delta("Dzień "), delta("dobry"));
+        // Split the body at every possible byte boundary; the parser must
+        // produce the same answer whatever the network hands it.
+        for split in 1..body.len() {
+            if !body.is_char_boundary(split) {
+                continue;
+            }
+            let mut parser = SseParser::default();
+            let mut items = parser.push(&body[..split]);
+            items.extend(parser.push(&body[split..]));
+            assert_eq!(
+                items,
+                vec![
+                    SseItem::Delta("Dzień ".into()),
+                    SseItem::Delta("dobry".into()),
+                    SseItem::Done,
+                ],
+                "split at {split}"
+            );
+        }
+    }
+
+    #[test]
+    fn sse_ignores_keepalives_and_surfaces_errors() {
+        let mut parser = SseParser::default();
+        // OpenRouter sends comment lines to hold the connection open.
+        assert!(parser.push(": OPENROUTER PROCESSING\n\n").is_empty());
+        // Empty deltas (role-only first chunk) produce nothing.
+        assert!(parser
+            .push("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n")
+            .is_empty());
+        // Malformed JSON is skipped rather than aborting the answer.
+        assert!(parser.push("data: {not json\n").is_empty());
+
+        assert_eq!(
+            parser.push("data: {\"error\":{\"message\":\"rate limited\"}}\n"),
+            vec![SseItem::Failed("rate limited".into())]
+        );
     }
 
     #[test]

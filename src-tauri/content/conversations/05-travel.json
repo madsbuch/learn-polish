@@ -5,6 +5,11 @@
   "title_da": "På banegården",
   "summary_en": "Mads buys a train ticket to Gdańsk, asks about the platform and gets directions from a stranger.",
   "summary_da": "Mads køber en togbillet til Gdańsk, spørger om perronen og får vejledning af en fremmed.",
+  "speakers": {
+    "Mads": "m",
+    "Przechodzień": "m",
+    "Kasjerka": "f"
+  },
   "lines": [
     {
       "speaker": "Mads",

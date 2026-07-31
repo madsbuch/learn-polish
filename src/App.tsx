@@ -11,18 +11,20 @@ import type {
   Stats,
   TopicProgress,
 } from "./lib/types";
+import { Library } from "./screens/Library";
 import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Today } from "./screens/Today";
-import { TopicDetail } from "./screens/TopicDetail";
+import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
 import { Tutor } from "./screens/Tutor";
 
-type Tab = "today" | "tutor" | "progress" | "settings";
+type Tab = "today" | "library" | "tutor" | "progress" | "settings";
 
 const TABS: { id: Tab; glyph: string; label: string }[] = [
   { id: "today", glyph: "🏠", label: "Today" },
+  { id: "library", glyph: "📚", label: "Library" },
   { id: "tutor", glyph: "✨", label: "Tutor" },
   { id: "progress", glyph: "📈", label: "Progress" },
   { id: "settings", glyph: "⚙️", label: "Settings" },
@@ -33,7 +35,7 @@ type Overlay =
   | { kind: "none" }
   | { kind: "session" }
   | { kind: "summary"; result: SessionResult; xp: number }
-  | { kind: "topic"; progress: TopicProgress };
+  | { kind: "topic"; progress: TopicProgress; section?: TopicSection };
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -93,9 +95,11 @@ export default function App() {
   useEffect(() => {
     setSpeechConfig({
       hasKey: Boolean(settings?.hasApiKey),
-      hasVoice: Boolean(settings?.ttsModel),
+      // Speech is pinned to Gemini, so a voice always exists; only the key
+      // decides whether audio is actually reachable.
+      hasVoice: true,
     });
-  }, [settings?.hasApiKey, settings?.ttsModel]);
+  }, [settings?.hasApiKey]);
 
   /**
    * Warms the audio cache for the session about to start, so every 🔊 tap and
@@ -105,15 +109,24 @@ export default function App() {
   const startSession = useCallback(() => {
     stopAudio();
     setOverlay({ kind: "session" });
-    if (!plan || !settings?.ttsPrefetch || !settings.ttsModel || !settings.hasApiKey) return;
+    if (!plan || !settings?.ttsPrefetch || !settings.hasApiKey) return;
+    // Dialogue lines carry their speaker's gender so each is warmed in the
+    // voice that will actually read it; everything else uses the default.
     const lines = [
-      ...plan.dialogue.map((line) => line.pl),
-      ...plan.exercises.filter((e) => e.itemKind !== "dialogue").map((e) => e.pl),
+      ...plan.dialogue.map((line) => ({ text: line.pl, gender: line.gender })),
+      ...plan.exercises
+        .filter((e) => e.itemKind !== "dialogue")
+        .map((e) => ({ text: e.pl, gender: "" })),
     ];
-    void api.cacheAudio([...new Set(lines)]).catch(() => {
+    const seen = new Set<string>();
+    const unique = lines.filter((line) => {
+      const key = `${line.gender}\u0001${line.text}`;
+      return seen.has(key) ? false : (seen.add(key), true);
+    });
+    void api.cacheAudio(unique).catch(() => {
       /* the 🔊 buttons report per-line failures */
     });
-  }, [plan, settings?.ttsPrefetch, settings?.ttsModel, settings?.hasApiKey]);
+  }, [plan, settings?.ttsPrefetch, settings?.hasApiKey]);
 
   if (error && !settings) {
     return (
@@ -170,6 +183,7 @@ export default function App() {
       <div className="app">
         <TopicDetail
           progress={overlay.progress}
+          initialSection={overlay.section}
           onBack={() => setOverlay({ kind: "none" })}
         />
       </div>
@@ -184,6 +198,15 @@ export default function App() {
           stats={stats}
           onStart={startSession}
           onOpenTutor={() => setTab("tutor")}
+        />
+      ) : null}
+
+      {tab === "library" ? (
+        <Library
+          topics={topics}
+          onOpenTopic={(progress, section) =>
+            setOverlay({ kind: "topic", progress, section })
+          }
         />
       ) : null}
 

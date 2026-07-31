@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
+import { Markdown } from "../components/Markdown";
 import { Bar, Banner, SpeakButton, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { speakQuietly } from "../lib/speech";
+import { useAiStream } from "../lib/useAiStream";
 import type { AnswerResult, Exercise, SessionPlan, SessionResult } from "../lib/types";
 
 type Phase = "answering" | "checked";
@@ -31,9 +33,8 @@ export function Session({
   const [built, setBuilt] = useState<number[]>([]);
   const [revealAll, setRevealAll] = useState(false);
 
-  // AI extras for the current card.
-  const [explanation, setExplanation] = useState<string | null>(null);
-  const [explaining, setExplaining] = useState(false);
+  // The explanation streams in, so it can be read while it is still arriving.
+  const explanation = useAiStream();
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,8 +49,7 @@ export function Session({
     setPicked(null);
     setTyped("");
     setBuilt([]);
-    setExplanation(null);
-    setExplaining(false);
+    explanation.reset();
     setError(null);
     bodyRef.current?.scrollTo({ top: 0 });
     if (exercise?.kind === "type") {
@@ -130,17 +130,11 @@ export function Session({
     }
   }
 
-  async function explain() {
-    if (!exercise || explaining) return;
-    setExplaining(true);
-    setError(null);
-    try {
-      setExplanation(await api.aiExplain(exercise.itemKind, exercise.itemId));
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setExplaining(false);
-    }
+  function explain() {
+    if (!exercise || explanation.streaming) return;
+    void explanation.run((streamId) =>
+      api.aiExplainStream(exercise.itemKind, exercise.itemId, streamId),
+    );
   }
 
   if (!exercise) {
@@ -364,19 +358,25 @@ export function Session({
                   : `${exercise.pl} — ${exercise.meaning}`}
               </div>
             ) : null}
-            {exercise.itemKind !== "dialogue" ? (
-              <button
-                className="btn ghost small"
-                style={{ marginTop: 10 }}
-                disabled={explaining}
-                onClick={explain}
-              >
-                {explaining ? <Spinner /> : "✨"} Explain with AI
+            {exercise.itemKind !== "dialogue" && !explanation.text && !explanation.streaming ? (
+              <button className="btn ghost small" style={{ marginTop: 10 }} onClick={explain}>
+                ✨ Explain with AI
               </button>
             ) : null}
-            {explanation ? (
-              <div className="ai-output selectable" style={{ marginTop: 12 }}>
-                {explanation}
+            {explanation.streaming && !explanation.text ? (
+              <div className="row small faint" style={{ marginTop: 12 }}>
+                <Spinner /> Thinking…
+              </div>
+            ) : null}
+            {explanation.text ? (
+              <div style={{ marginTop: 12 }}>
+                <Markdown text={explanation.text} />
+                {explanation.streaming ? <span className="caret" /> : null}
+              </div>
+            ) : null}
+            {explanation.error ? (
+              <div className="small" style={{ marginTop: 10, color: "var(--bad)" }}>
+                {explanation.error}
               </div>
             ) : null}
           </div>
