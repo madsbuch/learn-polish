@@ -125,7 +125,7 @@ textarea:focus {
   height: calc(var(--nav-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: rgba(14, 18, 38, 0.94);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--line-soft);
@@ -336,6 +336,7 @@ p {
 
 .chip {
   display: inline-flex;
+  border: none;
   align-items: center;
   gap: 5px;
   padding: 5px 10px;
@@ -821,6 +822,138 @@ p {
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ markdown */
+
+.md {
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: var(--text-dim);
+}
+.md > *:first-child {
+  margin-top: 0;
+}
+.md > *:last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0 0 10px;
+}
+
+.md .md-h {
+  color: var(--text);
+  line-height: 1.3;
+  margin: 16px 0 7px;
+}
+.md .md-h1 {
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+.md .md-h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+.md .md-h3,
+.md .md-h4,
+.md .md-h5,
+.md .md-h6 {
+  font-size: 13.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.md strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.md em {
+  color: var(--brand-soft);
+  font-style: italic;
+}
+
+.md .md-code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: var(--text);
+}
+
+.md .md-pre {
+  background: var(--bg-input);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  margin: 0 0 10px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.md .md-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.md .md-list li {
+  margin-bottom: 4px;
+}
+.md .md-list .md-list {
+  margin: 5px 0 0;
+}
+.md ul.md-list {
+  list-style: none;
+  padding-left: 4px;
+}
+.md ul.md-list > li {
+  position: relative;
+  padding-left: 15px;
+}
+.md ul.md-list > li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+}
+
+.md .md-quote {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--brand);
+  color: var(--text-faint);
+}
+
+.md .md-rule {
+  border: none;
+  border-top: 1px solid var(--line-soft);
+  margin: 14px 0;
+}
+
+/* Blinking cursor while an answer is still arriving. */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--brand-soft);
+  border-radius: 1px;
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .divider {

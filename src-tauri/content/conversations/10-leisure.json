@@ -5,6 +5,10 @@
   "title_da": "En fri aften",
   "summary_en": "Piotr and Mads decide what to do on a free evening — cinema, concert or a match — and talk about hobbies.",
   "summary_da": "Piotr og Mads beslutter, hvad de skal lave en fri aften — biograf, koncert eller kamp — og taler om fritidsinteresser.",
+  "speakers": {
+    "Piotr": "m",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Piotr",

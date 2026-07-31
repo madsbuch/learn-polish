@@ -42,6 +42,8 @@ pub struct Conversation {
     pub title_da: String,
     pub summary_en: String,
     pub summary_da: String,
+    /// Speaker name to "f" or "m", so each line can be read in a matching voice.
+    pub speakers: std::collections::HashMap<String, String>,
     pub lines: Vec<ConversationLine>,
 }
 
@@ -116,6 +118,19 @@ mod tests {
             assert_eq!(sentences.len(), 20, "{}", topic.slug);
             assert!(convo.lines.len() >= 10, "{}", topic.slug);
             assert_eq!(convo.slug, topic.slug);
+
+            // Every speaker needs a gender, or their lines get the wrong voice.
+            for line in &convo.lines {
+                let gender = convo.speakers.get(&line.speaker).unwrap_or_else(|| {
+                    panic!("{}: speaker '{}' has no gender", topic.slug, line.speaker)
+                });
+                assert!(
+                    gender == "f" || gender == "m",
+                    "{}: '{}' has gender '{gender}'",
+                    topic.slug,
+                    line.speaker
+                );
+            }
             total_words += words.len();
         }
         assert!(total_words >= 2000, "only {total_words} words");

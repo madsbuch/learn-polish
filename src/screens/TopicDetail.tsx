@@ -5,16 +5,19 @@ import { Banner, Loading, SpeakButton } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import type { DialogueLine, Sentence, TopicProgress, Word } from "../lib/types";
 
-type Tab = "conversation" | "words" | "sentences";
+export type TopicSection = "conversation" | "words" | "sentences";
 
 export function TopicDetail({
   progress,
+  initialSection,
   onBack,
 }: {
   progress: TopicProgress;
+  /** Which tab to land on — the Library deep-links straight to one. */
+  initialSection?: TopicSection;
   onBack: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("conversation");
+  const [tab, setTab] = useState<TopicSection>(initialSection ?? "conversation");
   const [lines, setLines] = useState<DialogueLine[] | null>(null);
   const [words, setWords] = useState<Word[] | null>(null);
   const [sentences, setSentences] = useState<Sentence[] | null>(null);

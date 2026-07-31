@@ -37,7 +37,10 @@ reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls-webpki-roots",
   "charset",
   "http2",
+  "stream",
 ] }
+# Consuming the server-sent-event body of a streaming completion.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 
 [features]

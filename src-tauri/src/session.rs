@@ -64,7 +64,7 @@ pub fn load_topic(conn: &Connection, topic_id: i64) -> Result<Topic> {
 pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLine>> {
     let meaning = meaning_column(conn);
     let sql = format!(
-        "SELECT ord, speaker, pl, {meaning} FROM conversation_lines
+        "SELECT ord, speaker, gender, pl, {meaning} FROM conversation_lines
          WHERE topic_id = ?1 ORDER BY ord"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -73,8 +73,9 @@ pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLi
             Ok(DialogueLine {
                 ord: r.get(0)?,
                 speaker: r.get(1)?,
-                pl: r.get(2)?,
-                meaning: r.get(3)?,
+                gender: r.get(2)?,
+                pl: r.get(3)?,
+                meaning: r.get(4)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

@@ -90,6 +90,11 @@ function play(mime: string, base64: string): Promise<void> {
   return player.play();
 }
 
+/** Plays an already-fetched clip, e.g. a voice preview from Settings. */
+export function playClip(clip: { mime: string; base64: string }): Promise<void> {
+  return play(clip.mime, clip.base64);
+}
+
 export function stop(): void {
   sequenceToken++;
   player?.pause();
@@ -118,13 +123,13 @@ export class SpeechError extends Error {}
  * Speaks Polish. Resolves once playback has started; rejects only when the AI
  * voice was asked for and could not deliver, so the UI can explain why.
  */
-export async function speak(text: string, rate = 0.85): Promise<void> {
+export async function speak(text: string, gender = "", rate = 0.85): Promise<void> {
   const line = text.trim();
   if (!line) return;
 
   if (aiVoiceReady()) {
     try {
-      const clip = await api.speak(line);
+      const clip = await api.speak(line, gender);
       await play(clip.mime, clip.base64);
       return;
     } catch (cause) {
@@ -143,8 +148,8 @@ export async function speak(text: string, rate = 0.85): Promise<void> {
 }
 
 /** Fire-and-forget speech for places that cannot show an error. */
-export function speakQuietly(text: string, rate = 0.85): void {
-  void speak(text, rate).catch(() => {
+export function speakQuietly(text: string, gender = "", rate = 0.85): void {
+  void speak(text, gender, rate).catch(() => {
     /* the 🔊 button reports failures; auto-play stays silent */
   });
 }
@@ -156,12 +161,15 @@ let sequenceToken = 0;
  * conversation line by line reuses the same cache entries the individual 🔊
  * buttons fill, instead of paying for one long clip that duplicates them.
  */
-export async function speakSequence(lines: string[], gapMs = 350): Promise<void> {
+export async function speakSequence(
+  lines: { text: string; gender?: string }[],
+  gapMs = 350,
+): Promise<void> {
   const token = ++sequenceToken;
   for (const line of lines) {
     // A newer sequence, or a stop(), cancels this one.
     if (token !== sequenceToken) return;
-    await speak(line);
+    await speak(line.text, line.gender ?? "");
     await finished();
     if (token !== sequenceToken) return;
     await new Promise((resolve) => setTimeout(resolve, gapMs));

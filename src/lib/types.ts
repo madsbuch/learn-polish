@@ -27,8 +27,36 @@ export interface Sentence {
 export interface DialogueLine {
   ord: number;
   speaker: string;
+  /** "f" or "m" — decides which voice reads the line. */
+  gender: string;
   pl: string;
   meaning: string;
+}
+
+export interface CataloguePage {
+  words: Word[];
+  sentences: Sentence[];
+  totalWords: number;
+  totalSentences: number;
+}
+
+export interface StreamEvent {
+  id: string;
+  delta: string;
+  done: boolean;
+  error: string | null;
+}
+
+export interface Voice {
+  name: string;
+  gender: string;
+  description: string;
+}
+
+/** A line queued for synthesis, with the voice gender to read it in. */
+export interface SpeechLine {
+  text: string;
+  gender: string;
 }
 
 export interface Dialogue {
@@ -142,8 +170,8 @@ export interface Settings {
   hasApiKey: boolean;
   /** Empty until the learner loads the catalogue and picks one. */
   aiModel: string;
-  ttsModel: string;
-  ttsVoice: string;
+  ttsVoiceFemale: string;
+  ttsVoiceMale: string;
   ttsSpeed: number;
   ttsPrefetch: boolean;
   tzOffsetMinutes: number;
@@ -157,8 +185,8 @@ export interface SettingsPatch {
   reminderMinute?: number;
   remindersEnabled?: boolean;
   aiModel?: string;
-  ttsModel?: string;
-  ttsVoice?: string;
+  ttsVoiceFemale?: string;
+  ttsVoiceMale?: string;
   ttsSpeed?: number;
   ttsPrefetch?: boolean;
 }

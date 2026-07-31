@@ -5,6 +5,10 @@
   "title_da": "Den nye lejlighed",
   "summary_en": "Mads shows Anna around his new flat and they talk about daily routines and chores.",
   "summary_da": "Mads viser Anna rundt i sin nye lejlighed, og de taler om daglige rutiner og huslige pligter.",
+  "speakers": {
+    "Anna": "f",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Anna",

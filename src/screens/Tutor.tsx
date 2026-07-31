@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
+import { Markdown } from "../components/Markdown";
 import { Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { speakQuietly } from "../lib/speech";
+import { useAiStream } from "../lib/useAiStream";
 import type { ChatMessage, Topic } from "../lib/types";
 
 const STARTERS = [
@@ -28,6 +30,7 @@ export function Tutor({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
+  const reply = useAiStream();
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,19 +39,25 @@ export function Tutor({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending]);
+  }, [messages, sending, reply.text]);
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message || sending) return;
+    if (!message || sending || reply.streaming) return;
     setDraft("");
     setError(null);
     setSending(true);
     // Show the learner's turn immediately; the backend persists both sides.
     setMessages((current) => [...current, { role: "user", content: message }]);
     try {
-      const reply = await api.aiChat(topic.id, message);
-      setMessages((current) => [...current, { role: "assistant", content: reply }]);
+      await reply.run(async (streamId) => {
+        const answer = await api.aiChatStream(topic.id, message, streamId);
+        // Once complete, the reply joins the transcript and the live bubble
+        // is retired, so history and streaming never both render it.
+        setMessages((current) => [...current, { role: "assistant", content: answer }]);
+        reply.reset();
+        return answer;
+      });
     } catch (cause) {
       setError(errorMessage(cause));
       setMessages((current) => current.slice(0, -1));
@@ -137,22 +146,33 @@ export function Tutor({
       <div className="chat">
         {messages.map((message, i) => (
           <div key={i} className={`msg ${message.role} selectable`}>
-            {message.content}
             {message.role === "assistant" ? (
-              <div style={{ marginTop: 8 }}>
-                <button
-                  className="btn ghost small"
-                  onClick={() => speakQuietly(message.content.replace(/\([^)]*\)/g, ""))}
-                >
-                  🔊 Listen
-                </button>
-              </div>
-            ) : null}
+              <>
+                <Markdown text={message.content} />
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    className="btn ghost small"
+                    onClick={() => speakQuietly(message.content.replace(/\([^)]*\)/g, ""))}
+                  >
+                    🔊 Listen
+                  </button>
+                </div>
+              </>
+            ) : (
+              message.content
+            )}
           </div>
         ))}
-        {sending ? (
+        {reply.streaming || (sending && !reply.text) ? (
           <div className="msg assistant">
-            <Spinner />
+            {reply.text ? (
+              <>
+                <Markdown text={reply.text} />
+                <span className="caret" />
+              </>
+            ) : (
+              <Spinner />
+            )}
           </div>
         ) : null}
         <div ref={endRef} />
@@ -161,7 +181,7 @@ export function Tutor({
       {drill ? (
         <div className="card">
           <h3>Drill from your weakest words</h3>
-          <div className="ai-output selectable">{drill}</div>
+          <Markdown text={drill} />
         </div>
       ) : null}
 

@@ -34,8 +34,20 @@ pub struct Sentence {
 pub struct DialogueLine {
     pub ord: i64,
     pub speaker: String,
+    /// "f" or "m" — decides which voice reads the line.
+    pub gender: String,
     pub pl: String,
     pub meaning: String,
+}
+
+/// A page of catalogue results, with the totals behind them.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CataloguePage {
+    pub words: Vec<Word>,
+    pub sentences: Vec<Sentence>,
+    pub total_words: i64,
+    pub total_sentences: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,8 +169,8 @@ pub struct Settings {
     pub has_api_key: bool,
     /// Empty until the learner loads the catalogue and picks one.
     pub ai_model: String,
-    pub tts_model: String,
-    pub tts_voice: String,
+    pub tts_voice_female: String,
+    pub tts_voice_male: String,
     pub tts_speed: f32,
     /// Cache a session's audio up front so taps play instantly.
     pub tts_prefetch: bool,
@@ -201,6 +213,26 @@ pub struct AudioCacheStats {
     /// How many of the app's 200 sentences already have audio stored.
     pub sentences_cached: i64,
     pub sentences_total: i64,
+}
+
+/// One fragment of a streamed AI answer, emitted as an `ai://stream` event.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamEvent {
+    /// Matches the id the caller passed, so concurrent streams stay separate.
+    pub id: String,
+    pub delta: String,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+/// A selectable voice, with the character Google publishes for it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Voice {
+    pub name: String,
+    pub gender: String,
+    pub description: String,
 }
 
 /// Progress of a bulk pre-cache run, emitted as a `tts://progress` event.

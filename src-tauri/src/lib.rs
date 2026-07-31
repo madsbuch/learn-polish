@@ -43,12 +43,16 @@ pub fn run() {
             commands::get_dialogue,
             commands::browse_words,
             commands::browse_sentences,
+            commands::browse_catalogue,
             commands::reset_progress,
             commands::ai_set_key,
             commands::ai_clear_key,
             commands::ai_test_key,
             commands::ai_list_models,
-            commands::ai_list_speech_models,
+            commands::ai_explain_stream,
+            commands::ai_chat_stream,
+            commands::list_voices,
+            commands::preview_voice,
             commands::speak,
             commands::audio_is_cached,
             commands::cache_audio,
@@ -195,22 +199,52 @@ mod integration {
     }
 
     #[test]
-    fn ai_features_refuse_to_guess_a_model() {
+    fn the_chat_model_is_never_guessed() {
         let conn = scratch_db("model");
         // Model ids go stale, so nothing is assumed on a fresh install.
         assert_eq!(ai::stored_model(&conn, "ai_model"), "");
         let error = ai::require_model(&conn).unwrap_err().to_string();
         assert!(error.contains("Settings"), "unhelpful message: {error}");
-        assert!(ai::require_speech_model(&conn).is_err());
 
         db::set_setting(&conn, "ai_model", "anthropic/claude-haiku-4.5").unwrap();
         assert_eq!(ai::require_model(&conn).unwrap(), "anthropic/claude-haiku-4.5");
+    }
 
-        db::set_setting(&conn, "tts_model", "google/gemini-3.1-flash-tts-preview").unwrap();
-        db::set_setting(&conn, "tts_voice", "Kore").unwrap();
-        let (model, voice) = ai::require_speech_model(&conn).unwrap();
-        assert_eq!(model, "google/gemini-3.1-flash-tts-preview");
-        assert_eq!(voice, "Kore");
+    #[test]
+    fn voices_are_chosen_by_speaker_gender() {
+        let conn = scratch_db("voices");
+        // Speech is pinned, so there are always working voices out of the box.
+        assert_eq!(ai::voice_for(&conn, "f"), ai::DEFAULT_FEMALE_VOICE);
+        assert_eq!(ai::voice_for(&conn, "m"), ai::DEFAULT_MALE_VOICE);
+        // Anything that is not a dialogue line reads in the female voice.
+        assert_eq!(ai::voice_for(&conn, ""), ai::DEFAULT_FEMALE_VOICE);
+
+        db::set_setting(&conn, "tts_voice_female", "Leda").unwrap();
+        db::set_setting(&conn, "tts_voice_male", "Charon").unwrap();
+        assert_eq!(ai::voice_for(&conn, "f"), "Leda");
+        assert_eq!(ai::voice_for(&conn, "m"), "Charon");
+
+        // A voice of the wrong gender, or one Gemini does not have, is ignored
+        // rather than sent to the API to be rejected.
+        db::set_setting(&conn, "tts_voice_female", "Charon").unwrap();
+        assert_eq!(ai::voice_for(&conn, "f"), ai::DEFAULT_FEMALE_VOICE);
+        db::set_setting(&conn, "tts_voice_male", "NotAVoice").unwrap();
+        assert_eq!(ai::voice_for(&conn, "m"), ai::DEFAULT_MALE_VOICE);
+    }
+
+    #[test]
+    fn dialogue_lines_carry_the_speaker_gender() {
+        let conn = scratch_db("gender");
+        let topic = db::require_topic_id(&conn, 4).unwrap(); // the clothes shop
+        let lines = session::dialogue_lines(&conn, topic).unwrap();
+        assert!(!lines.is_empty());
+        for line in &lines {
+            assert!(line.gender == "f" || line.gender == "m", "{:?}", line);
+        }
+        // Sprzedawczyni is a saleswoman, Mads is a man: two voices, not one.
+        let genders: std::collections::HashSet<_> =
+            lines.iter().map(|l| l.gender.clone()).collect();
+        assert_eq!(genders.len(), 2, "the shop dialogue should use both voices");
     }
 
     #[test]

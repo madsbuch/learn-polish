@@ -48,7 +48,12 @@ export function DialogueView({
                   <div className="pl">{line.pl}</div>
                   {isOpen ? <div className="tr fade-in">{line.meaning}</div> : null}
                 </div>
-                <SpeakButton text={line.pl} size={30} label="Listen to this line" />
+                <SpeakButton
+                  text={line.pl}
+                  gender={line.gender}
+                  size={30}
+                  label={`Listen to ${line.speaker}`}
+                />
               </div>
               {isOpen && onExplain ? (
                 <button
@@ -97,7 +102,9 @@ export function DialogueToolbar({
           }
           setPlaying(true);
           try {
-            await speakSequence(lines.map((line) => line.pl));
+            await speakSequence(
+              lines.map((line) => ({ text: line.pl, gender: line.gender })),
+            );
           } catch {
             /* the per-line buttons report why */
           } finally {

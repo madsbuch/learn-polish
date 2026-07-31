@@ -5,6 +5,10 @@
   "title_da": "Første møde",
   "summary_en": "Mads has just moved to Kraków. On the stairs he meets his neighbour Anna and they introduce themselves.",
   "summary_da": "Mads er lige flyttet til Kraków. På trappen møder han sin nabo Anna, og de præsenterer sig for hinanden.",
+  "speakers": {
+    "Anna": "f",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Anna",

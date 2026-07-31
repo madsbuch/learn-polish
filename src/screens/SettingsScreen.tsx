@@ -4,13 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import { Bar, Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
-import { speak } from "../lib/speech";
+import { playClip } from "../lib/speech";
 import type {
   AiModel,
   AudioCacheStats,
   CacheProgress,
   Settings,
   SettingsPatch,
+  Voice,
 } from "../lib/types";
 
 /** Spoken when testing a voice, so you can hear whether it handles Polish. */
@@ -36,7 +37,7 @@ export function SettingsScreen({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<AiModel[] | null>(null);
-  const [speechModels, setSpeechModels] = useState<AiModel[] | null>(null);
+  const [voices, setVoices] = useState<Voice[] | null>(null);
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
   const [progress, setProgress] = useState<CacheProgress | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -45,7 +46,12 @@ export function SettingsScreen({
     api.audioCacheStats().then(setCache).catch(() => setCache(null));
   }, []);
 
-  useEffect(refreshCache, [refreshCache, settings.ttsModel, settings.ttsVoice]);
+  useEffect(refreshCache, [refreshCache, settings.ttsVoiceFemale, settings.ttsVoiceMale]);
+
+  // The voice list ships with the app, so this never blocks on the network.
+  useEffect(() => {
+    api.listVoices().then(setVoices).catch(() => setVoices(null));
+  }, []);
 
   // Bulk caching reports line-by-line so a 200-sentence run is not a black box.
   useEffect(() => {
@@ -99,8 +105,6 @@ export function SettingsScreen({
       setBusy(null);
     }
   }
-
-  const selectedSpeechModel = speechModels?.find((m) => m.id === settings.ttsModel);
 
   return (
     <div className="scroll">
@@ -305,127 +309,72 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>Polish voice</h3>
+        <h3>Polish voices</h3>
         <p className="small">
-          Android's webview has no built-in speech engine, so the 🔊 buttons need a voice
-          from OpenRouter. Each line is generated once and then stored on the device.
+          Android's webview has no built-in speech engine, so the 🔊 buttons speak through
+          Gemini. Dialogue lines are read in a voice matching the speaker. Each line is
+          generated once and then stored on the device.
         </p>
 
-        {settings.ttsModel ? (
-          <p className="tiny faint" style={{ marginBottom: 10 }}>
-            Using <b className="muted">{settings.ttsModel}</b>
-            {settings.ttsVoice ? ` · ${settings.ttsVoice}` : ""}
-          </p>
-        ) : (
-          <Banner kind="info">
-            No voice chosen yet. Not every model speaks Polish — load the list, pick one
-            and press Test to hear it before committing.
-          </Banner>
-        )}
-
-        {speechModels ? (
-          <>
-            <label className="field">
-              <span>{speechModels.length} speech models available</span>
-              <select
-                value={settings.ttsModel}
-                onChange={(event) => {
-                  const picked = speechModels.find((m) => m.id === event.target.value);
-                  // Voice names are model-specific, so reset to the model's first.
-                  patch(
-                    { ttsModel: event.target.value, ttsVoice: picked?.voices[0] ?? "" },
-                    "tts-model",
-                  );
-                }}
-              >
-                <option value="">— choose a voice model —</option>
-                {speechModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {selectedSpeechModel && selectedSpeechModel.voices.length > 0 ? (
-              <label className="field">
-                <span>Voice</span>
+        {(["f", "m"] as const).map((gender) => {
+          const label = gender === "f" ? "Female voice" : "Male voice";
+          const current = gender === "f" ? settings.ttsVoiceFemale : settings.ttsVoiceMale;
+          const options = (voices ?? []).filter((voice) => voice.gender === gender);
+          return (
+            <label className="field" key={gender}>
+              <span>{label}</span>
+              <div className="row">
                 <select
-                  value={settings.ttsVoice}
-                  onChange={(event) => patch({ ttsVoice: event.target.value }, "tts-voice")}
+                  className="grow"
+                  value={current}
+                  disabled={options.length === 0}
+                  onChange={(event) =>
+                    patch(
+                      gender === "f"
+                        ? { ttsVoiceFemale: event.target.value }
+                        : { ttsVoiceMale: event.target.value },
+                      `voice-${gender}`,
+                    )
+                  }
                 >
-                  {selectedSpeechModel.voices.map((voice) => (
-                    <option key={voice} value={voice}>
-                      {voice}
+                  {options.length === 0 ? <option value={current}>{current}</option> : null}
+                  {options.map((voice) => (
+                    <option key={voice.name} value={voice.name}>
+                      {voice.name} — {voice.description}
                     </option>
                   ))}
                 </select>
-              </label>
-            ) : selectedSpeechModel ? (
-              // Some providers publish no voice list yet still reject requests
-              // without one, so the name has to be typeable.
-              <label className="field">
-                <span>Voice (optional — this model publishes no list)</span>
-                <input
-                  defaultValue={settings.ttsVoice}
-                  placeholder="leave empty, or a voice name from the provider"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  onBlur={(event) => {
-                    if (event.target.value.trim() !== settings.ttsVoice) {
-                      patch({ ttsVoice: event.target.value }, "tts-voice");
-                    }
-                  }}
-                />
-              </label>
-            ) : null}
-          </>
-        ) : null}
-
-        <button
-          className="btn ghost block"
-          disabled={busy === "tts-models"}
-          onClick={() =>
-            run("tts-models", async () => setSpeechModels(await api.aiListSpeechModels()))
-          }
-        >
-          {busy === "tts-models" ? <Spinner /> : "Load speech models from OpenRouter"}
-        </button>
-
-        {settings.ttsModel ? (
-          <>
-            <label className="field" style={{ marginTop: 14 }}>
-              <span>Speaking speed — {settings.ttsSpeed.toFixed(2)}×</span>
-              <input
-                type="range"
-                min={0.5}
-                max={1.5}
-                step={0.05}
-                value={settings.ttsSpeed}
-                onChange={(event) =>
-                  patch({ ttsSpeed: Number(event.target.value) }, "tts-speed")
-                }
-              />
+                <button
+                  className="btn ghost small"
+                  disabled={busy === `preview-${gender}`}
+                  onClick={() =>
+                    run(`preview-${gender}`, async () => {
+                      const clip = await api.previewVoice(current, VOICE_TEST_LINE);
+                      await playClip(clip);
+                    })
+                  }
+                >
+                  {busy === `preview-${gender}` ? <Spinner /> : "▶︎"}
+                </button>
+              </div>
             </label>
-            <button
-              className="btn ghost block"
-              disabled={busy === "tts-test"}
-              onClick={() =>
-                run("tts-test", async () => {
-                  await speak(VOICE_TEST_LINE);
-                  setNotice(`Played: "${VOICE_TEST_LINE}"`);
-                })
-              }
-            >
-              {busy === "tts-test" ? <Spinner /> : "▶︎ Test this voice on Polish"}
-            </button>
-          </>
-        ) : null}
+          );
+        })}
+
+        <label className="field" style={{ marginBottom: 0 }}>
+          <span>Speaking speed — {settings.ttsSpeed.toFixed(2)}×</span>
+          <input
+            type="range"
+            min={0.5}
+            max={1.5}
+            step={0.05}
+            value={settings.ttsSpeed}
+            onChange={(event) => patch({ ttsSpeed: Number(event.target.value) }, "tts-speed")}
+          />
+        </label>
       </div>
 
-      {settings.ttsModel ? (
-        <div className="card">
+      <div className="card">
           <h3>Downloaded audio</h3>
           {cache ? (
             <>
@@ -471,7 +420,7 @@ export function SettingsScreen({
             disabled={busy === "cache-all"}
             onClick={() =>
               run("cache-all", async () => {
-                const lines: string[] = [];
+                const lines = [];
                 for (const topic of await api.getTopicProgress()) {
                   lines.push(...(await api.topicAudioLines(topic.topic.id)));
                 }
@@ -501,8 +450,7 @@ export function SettingsScreen({
           >
             {busy === "cache-clear" ? <Spinner /> : "Delete downloaded audio"}
           </button>
-        </div>
-      ) : null}
+      </div>
 
       <div className="card">
         <h3>Danger zone</h3>

@@ -5,6 +5,10 @@
   "title_da": "I tøjbutikken",
   "summary_en": "Mads buys a jacket: he asks about size and colour, tries it on and pays.",
   "summary_da": "Mads køber en jakke: han spørger om størrelse og farve, prøver den og betaler.",
+  "speakers": {
+    "Sprzedawczyni": "f",
+    "Mads": "m"
+  },
   "lines": [
     {
       "speaker": "Sprzedawczyni",
