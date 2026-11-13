@@ -484,3 +484,30 @@ export interface CastState {
   /** The speaker has moved on to something that is not ours. */
   detached: boolean;
 }
+
+/** What one AI feature cost, over a day or a window. */
+export interface FeatureCost {
+  feature: string;
+  costUsd: number;
+  calls: number;
+  /** Requests whose price the provider did not report (speech). */
+  unpriced: number;
+}
+
+export interface DayCost {
+  day: number;
+  costUsd: number;
+  calls: number;
+  features: FeatureCost[];
+}
+
+export interface CostSummary {
+  today: number;
+  days: number;
+  todayUsd: number;
+  totalUsd: number;
+  allTimeUsd: number;
+  features: FeatureCost[];
+  /** Days with any AI use, newest first. */
+  perDay: DayCost[];
+}

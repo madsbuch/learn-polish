@@ -677,7 +677,13 @@ pub fn parse_task(data: &serde_json::Value) -> TaskState {
     }
 }
 
-async fn task_state(key: &str, task_id: &str) -> Result<TaskState> {
+/// The kie.ai credits a finished task used, when the answer says.
+pub fn credits_consumed(data: &serde_json::Value) -> Option<f64> {
+    let value = data.get("creditsConsumed")?;
+    value.as_f64().or_else(|| value.as_str().and_then(|s| s.trim().parse().ok()))
+}
+
+async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)> {
     let data = kie_json(
         client()
             .get(format!("{KIE_BASE_URL}/jobs/recordInfo"))
@@ -685,7 +691,7 @@ async fn task_state(key: &str, task_id: &str) -> Result<TaskState> {
             .bearer_auth(key),
     )
     .await?;
-    Ok(parse_task(&data))
+    Ok((parse_task(&data), credits_consumed(&data)))
 }
 
 /// Downloads a file to `path` and returns its bytes, which are also kept in
@@ -1130,14 +1136,27 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
     let started = std::time::Instant::now();
     let tracks = loop {
         match task_state(&key, &task_id).await {
-            Ok(TaskState::Done(tracks)) => break tracks,
-            Ok(TaskState::Failed(reason)) => {
+            Ok((TaskState::Done(tracks), credits)) => {
+                // Logged once per task, however often a retry polls it again.
+                let db = app.state::<Db>();
+                let _ = crate::costs::record_once(
+                    &db.lock(),
+                    crate::costs::SONGS,
+                    "kie.ai",
+                    &model,
+                    credits.map(|c| c * crate::costs::KIE_USD_PER_CREDIT),
+                    &credits.map(|c| format!("{c} credits")).unwrap_or_default(),
+                    Some(&format!("kie:{task_id}")),
+                );
+                break tracks;
+            }
+            Ok((TaskState::Failed(reason), _)) => {
                 // The task is spent; a retry must start a new one.
                 let db = app.state::<Db>();
                 db.lock().execute("UPDATE songs SET task_id = NULL WHERE id = ?1", [song_id])?;
                 return Err(Error::msg(reason));
             }
-            Ok(TaskState::Pending) => {}
+            Ok((TaskState::Pending, _)) => {}
             // A dropped connection mid-wait is not worth abandoning the song.
             Err(error) if started.elapsed() > POLL_LIMIT => return Err(error),
             Err(_) => {}
@@ -1264,7 +1283,15 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (messages, length) = messages;
     // A long song needs room for its lyrics in the answer.
     let reply = ai::complete_with(&key, &model, &messages, 0.8, 5000).await?;
-    let mut draft = parse_draft(&reply)?;
+    let _ = crate::costs::record(
+        &db.lock(),
+        crate::costs::SONGWRITER,
+        "openrouter",
+        &model,
+        reply.cost,
+        "",
+    );
+    let mut draft = parse_draft(&reply.text)?;
     if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
     }
@@ -1495,6 +1522,9 @@ mod tests {
         assert!(matches!(parse_task(&data), TaskState::Done(t) if t[0].id == "c"));
 
         assert_eq!(parse_task(&serde_json::json!({ "state": "generating" })), TaskState::Pending);
+        assert_eq!(credits_consumed(&serde_json::json!({ "creditsConsumed": 12 })), Some(12.0));
+        assert_eq!(credits_consumed(&serde_json::json!({ "creditsConsumed": "6.5" })), Some(6.5));
+        assert_eq!(credits_consumed(&serde_json::json!({})), None);
         assert_eq!(
             parse_task(&serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" })),
             TaskState::Failed("lyrics rejected".into())

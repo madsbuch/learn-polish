@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
+import { CostCenter } from "../components/CostCenter";
 import { PlayerIcon } from "../components/icons";
 import {
   Banner,
@@ -617,6 +618,8 @@ export function SettingsScreen({
           }
         />
       </Section>
+
+      <CostCenter />
 
       <Section
         title="Your data"

@@ -245,6 +245,19 @@ instantly, for free, offline. Changing voice does not serve stale audio.
 - Settings shows how many of the 200 sentences are stored and how much disk
   they take, with a button to clear them.
 
+## AI costs
+
+**Settings → AI costs** shows what the AI features cost today, over the last
+7, 30 or 90 days, and all time — per feature (tutor, check-ins, song lyrics,
+song audio, explanations, speech) and day by day with each day's features.
+
+Every paid request is logged in the `ai_costs` table. Chat requests ask
+OpenRouter for usage accounting and store the `usage.cost` it reports (also on
+streamed answers). Suno songs store the `creditsConsumed` kie.ai reports,
+converted at about $0.005 a credit, once per task. OpenRouter's speech endpoint
+reports no price, so speech is counted in clips (with the characters spoken)
+and shown as unpriced. Costs survive a progress reset.
+
 ## Your data
 
 Everything the app keeps is in one SQLite database: progress and review

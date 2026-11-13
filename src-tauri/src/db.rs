@@ -254,6 +254,23 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (
     ord         INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS playlist_tracks_order ON playlist_tracks(playlist_id, ord);
+
+-- What each AI request cost, for the cost center in Settings. `cost_usd` is
+-- NULL when the provider does not report a price (speech). `ref` dedupes a
+-- charge that could be seen twice, such as a Suno task polled again.
+CREATE TABLE IF NOT EXISTS ai_costs (
+    id         INTEGER PRIMARY KEY,
+    day        INTEGER NOT NULL,
+    feature    TEXT NOT NULL,
+    provider   TEXT NOT NULL,
+    model      TEXT NOT NULL DEFAULT '',
+    cost_usd   REAL,
+    detail     TEXT NOT NULL DEFAULT '',
+    ref        TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
+CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
 "#;
 
 fn migrate(conn: &Connection) -> Result<()> {

@@ -247,6 +247,7 @@ async fn turn(
     finished_stream(None);
 
     let conn = db.lock();
+    let _ = crate::costs::record(&conn, crate::costs::EXAMINER, "openrouter", &model, turn.cost, "");
     let reply = turn.text.trim().to_string();
     if !reply.is_empty() {
         append(&conn, checkin_id, "assistant", &reply)?;

@@ -3,6 +3,7 @@ mod blocks;
 mod cast;
 mod commands;
 mod content;
+mod costs;
 mod db;
 mod error;
 mod examiner;
@@ -79,6 +80,7 @@ pub fn run() {
             tutor::tutor_delete,
             commands::programme_delete,
             commands::export_database,
+            commands::costs_summary,
             commands::list_voices,
             commands::preview_voice,
             commands::speak,

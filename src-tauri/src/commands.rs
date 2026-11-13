@@ -2,10 +2,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::ai;
 use crate::blocks;
+use crate::costs;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
@@ -592,6 +593,7 @@ pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Re
         ai::synthesize(&key, ai::SPEECH_MODEL, &voice, &text, speed).await?;
     {
         let conn = db.lock();
+        record_speech(&conn, ai::SPEECH_MODEL, &text);
         store_clip(
             &conn,
             &audio_key(ai::SPEECH_MODEL, &voice, &text),
@@ -697,6 +699,7 @@ pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> R
 
     {
         let conn = db.lock();
+        record_speech(&conn, &config.model, &text);
         store_clip(
             &conn,
             &audio_key(&config.model, &config.voice, &text),
@@ -766,6 +769,7 @@ pub async fn cache_audio(
         match ai::synthesize(&config.key, &config.model, &config.voice, &line, config.speed).await {
             Ok((mime, bytes)) => {
                 let conn = db.lock();
+                record_speech(&conn, &config.model, &line);
                 let key = audio_key(&config.model, &config.voice, &line);
                 store_clip(&conn, &key, &config.model, &config.voice, &line, &mime, &bytes)?;
                 done += 1;
@@ -853,6 +857,19 @@ pub async fn clear_audio_cache(db: State<'_, Db>) -> Result<()> {
     Ok(())
 }
 
+/// What the AI features cost, per day and per feature, over the last `days`.
+#[tauri::command]
+pub async fn costs_summary(db: State<'_, Db>, days: i64) -> Result<costs::CostSummary> {
+    costs::summary(&db.lock(), days)
+}
+
+/// OpenRouter's speech endpoint reports no price, so speech is logged as a
+/// count with the characters spoken.
+fn record_speech(conn: &Connection, model: &str, text: &str) {
+    let detail = format!("{} characters", text.chars().count());
+    let _ = costs::record(conn, costs::SPEECH, "openrouter", model, None, &detail);
+}
+
 /// Verifies the stored key with the cheapest possible round trip.
 #[tauri::command]
 pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
@@ -860,13 +877,9 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
         let conn = db.lock();
         (ai::api_key(&conn)?, ai::require_model(&conn)?)
     };
-    ai::complete(
-        &key,
-        &model,
-        &[ai::Wire::user("Reply with exactly: OK")],
-    )
-    .await
-    .map(|reply| reply.trim().to_string())
+    let reply = ai::complete(&key, &model, &[ai::Wire::user("Reply with exactly: OK")]).await?;
+    let _ = costs::record(&db.lock(), costs::KEY_TEST, "openrouter", &model, reply.cost, "");
+    Ok(reply.text.trim().to_string())
 }
 
 /// Pushes a streamed answer to the frontend as it arrives.
@@ -897,6 +910,7 @@ async fn run_stream(
     key: String,
     model: String,
     messages: Vec<ai::Wire>,
+    feature: &str,
 ) -> Result<String> {
     let emitter = app.clone();
     let id = stream_id.clone();
@@ -906,12 +920,16 @@ async fn run_stream(
     .await;
 
     match &result {
-        Ok(_) => stream_to_frontend(&app, &stream_id, None, true, None),
+        Ok(reply) => {
+            stream_to_frontend(&app, &stream_id, None, true, None);
+            let db = app.state::<Db>();
+            let _ = costs::record(&db.lock(), feature, "openrouter", &model, reply.cost, "");
+        }
         Err(error) => {
             stream_to_frontend(&app, &stream_id, None, true, Some(error.to_string()))
         }
     }
-    result
+    result.map(|reply| reply.text)
 }
 
 /// Explains a word or sentence. Text arrives as `ai://stream` events.
@@ -939,7 +957,7 @@ pub async fn ai_explain_stream(
         )?;
         (key, model, ai::explain_prompt(&polish, &gloss))
     };
-    run_stream(app, stream_id, key, model, messages).await
+    run_stream(app, stream_id, key, model, messages, costs::EXPLAIN).await
 }
 
 // ---------------------------------------------------------------------------

@@ -1445,6 +1445,14 @@ pub async fn tutor_send(
             })
             .await
             .map_err(|e| explain_failure(e, &model))?;
+            let _ = crate::costs::record(
+                &db.lock(),
+                crate::costs::TUTOR,
+                "openrouter",
+                &model,
+                turn.cost,
+                "",
+            );
 
             if !turn.text.trim().is_empty() {
                 if !reply.trim().is_empty() {

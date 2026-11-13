@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  CostSummary,
   AiModel,
   Block,
   BlockDetail,
@@ -104,6 +105,8 @@ export const api = {
   /** Resolves to where the file went, or null if the dialog was cancelled. */
   exportDatabase: (includeKeys: boolean) =>
     invoke<string | null>("export_database", { includeKeys }),
+
+  costsSummary: (days: number) => invoke<CostSummary>("costs_summary", { days }),
 
   listVoices: () => invoke<Voice[]>("list_voices"),
   previewVoice: (voice: string, text: string) =>

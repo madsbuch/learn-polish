@@ -129,6 +129,27 @@ struct ChatRequest<'a> {
     /// OpenAI-style function definitions, for the tutor.
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<&'a serde_json::Value>,
+    /// Asks OpenRouter to report what the request cost, for the cost center.
+    usage: UsageRequest,
+}
+
+#[derive(Serialize)]
+struct UsageRequest {
+    include: bool,
+}
+
+/// OpenRouter's accounting for one request. `cost` is in USD credits.
+#[derive(Deserialize, Default)]
+struct Usage {
+    #[serde(default)]
+    cost: Option<f64>,
+}
+
+/// A finished, non-streamed answer and what it cost, when reported.
+#[derive(Debug)]
+pub struct Reply {
+    pub text: String,
+    pub cost: Option<f64>,
 }
 
 /// One message on the wire. `content` is null on an assistant turn that only
@@ -208,6 +229,8 @@ struct ChatResponse {
     choices: Vec<Choice>,
     #[serde(default)]
     error: Option<ApiError>,
+    #[serde(default)]
+    usage: Option<Usage>,
 }
 
 #[derive(Deserialize)]
@@ -221,7 +244,7 @@ struct ApiError {
 }
 
 /// Sends a completion request and returns the assistant's text.
-pub async fn complete(key: &str, model: &str, messages: &[Wire]) -> Result<String> {
+pub async fn complete(key: &str, model: &str, messages: &[Wire]) -> Result<Reply> {
     complete_with(key, model, messages, 0.4, 1200).await
 }
 
@@ -232,7 +255,7 @@ pub async fn complete_with(
     messages: &[Wire],
     temperature: f32,
     max_tokens: u32,
-) -> Result<String> {
+) -> Result<Reply> {
     let response = client()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
@@ -246,6 +269,7 @@ pub async fn complete_with(
             max_tokens,
             stream: false,
             tools: None,
+            usage: UsageRequest { include: true },
         })
         .send()
         .await?;
@@ -267,12 +291,14 @@ pub async fn complete_with(
         return Err(Error::msg(format!("OpenRouter returned HTTP {status}")));
     }
 
+    let cost = parsed.usage.and_then(|u| u.cost);
     parsed
         .choices
         .into_iter()
         .next()
         .and_then(|c| c.message.content)
         .filter(|text| !text.trim().is_empty())
+        .map(|text| Reply { text, cost })
         .ok_or_else(|| Error::msg("OpenRouter returned an empty answer."))
 }
 
@@ -286,6 +312,9 @@ struct StreamChunk {
     choices: Vec<StreamChoice>,
     #[serde(default)]
     error: Option<ApiError>,
+    /// Sent on the last chunk, before `[DONE]`.
+    #[serde(default)]
+    usage: Option<Usage>,
 }
 
 #[derive(Deserialize)]
@@ -332,6 +361,8 @@ pub enum SseItem {
         name: Option<String>,
         arguments: String,
     },
+    /// What the whole request cost, in USD credits.
+    Cost(f64),
     Done,
     Failed(String),
 }
@@ -375,6 +406,9 @@ impl SseParser {
                 items.push(SseItem::Failed(error.message));
                 continue;
             }
+            if let Some(cost) = parsed.usage.and_then(|u| u.cost) {
+                items.push(SseItem::Cost(cost));
+            }
             for choice in parsed.choices {
                 match choice.delta.content {
                     Some(text) if !text.is_empty() => items.push(SseItem::Delta(text)),
@@ -400,7 +434,7 @@ pub async fn complete_streaming<F>(
     model: &str,
     messages: &[Wire],
     on_delta: F,
-) -> Result<String>
+) -> Result<Reply>
 where
     F: FnMut(&str),
 {
@@ -408,7 +442,7 @@ where
     if turn.text.trim().is_empty() {
         return Err(Error::msg("OpenRouter returned an empty answer."));
     }
-    Ok(turn.text)
+    Ok(Reply { text: turn.text, cost: turn.cost })
 }
 
 /// One streamed assistant turn: whatever text it wrote, and the tools it
@@ -417,6 +451,8 @@ where
 pub struct Turn {
     pub text: String,
     pub tool_calls: Vec<ToolCall>,
+    /// What the request cost, when OpenRouter reported it.
+    pub cost: Option<f64>,
 }
 
 /// Collects tool-call fragments, keyed by the index the model gives them.
@@ -488,6 +524,7 @@ where
             max_tokens: if tools.is_some() { 8000 } else { 1200 },
             stream: true,
             tools,
+            usage: UsageRequest { include: true },
         })
         .send()
         .await?;
@@ -506,6 +543,7 @@ where
     let mut parser = SseParser::default();
     let mut text = String::new();
     let mut calls = ToolCallAssembler::default();
+    let mut cost = None;
 
     'read: while let Some(chunk) = stream.next().await {
         for item in parser.push(&String::from_utf8_lossy(&chunk?)) {
@@ -517,6 +555,7 @@ where
                 SseItem::ToolCall { index, id, name, arguments } => {
                     calls.push(index, id, name, &arguments)
                 }
+                SseItem::Cost(value) => cost = Some(value),
                 SseItem::Done => break 'read,
                 SseItem::Failed(message) => {
                     return Err(Error::msg(format!("OpenRouter: {message}")))
@@ -529,7 +568,7 @@ where
     if text.trim().is_empty() && tool_calls.is_empty() {
         return Err(Error::msg("OpenRouter returned an empty answer."));
     }
-    Ok(Turn { text, tool_calls })
+    Ok(Turn { text, tool_calls, cost })
 }
 
 #[derive(Deserialize)]
@@ -810,6 +849,19 @@ mod tests {
             parser.push("data: {\"error\":{\"message\":\"rate limited\"}}\n"),
             vec![SseItem::Failed("rate limited".into())]
         );
+    }
+
+    #[test]
+    fn sse_reports_the_cost_from_the_usage_chunk() {
+        let mut parser = SseParser::default();
+        assert_eq!(
+            parser.push(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"cost\":0.00042}}\n"
+            ),
+            vec![SseItem::Cost(0.00042)]
+        );
+        // Usage without a price says nothing.
+        assert!(parser.push("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10}}\n").is_empty());
     }
 
     #[test]
