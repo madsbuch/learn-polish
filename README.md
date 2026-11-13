@@ -1,8 +1,9 @@
 # Polski
 
-A Polish learning app for English speakers. One check-in a day: today's
-conversation, the words that belong to it, and its sentences — plus practice
-programmes on any theme you like, built for you by the tutor.
+A Polish learning app for English speakers. Everything is a small block —
+a quick drill or a short lesson with a check-in — filed in courses: the
+starter courses the app comes with, and courses on any theme you like, built
+for you by the tutor.
 
 Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 **Android** app. (Tauri can also build it for macOS locally; CI no longer does.)
@@ -13,16 +14,18 @@ Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 
 | | |
 |---|---|
-| **2007 words** | Across ten topics, each with an English gloss and a part of speech |
+| **2007 words** | Across ten starter courses, each with an English gloss and a part of speech |
 | **200 sentences** | Twenty per topic, with their English translation |
 | **10 conversations** | 207 lines of natural dialogue, one per topic |
 
-The ten topics: basics & greetings · family & people · food & restaurant ·
+The ten starter courses: basics & greetings · family & people · food & restaurant ·
 shopping & money · travel & directions · home & daily life · work & study ·
 health & body · time, weather & nature · leisure, media & technology.
 
-All of it is compiled into the binary, so a fresh install works offline and
-there is nothing to download.
+All of it is compiled into the binary and written once, on a fresh install,
+as ordinary courses (plus *Grammar essentials*, holding the starter lessons).
+From then on it is your data like anything else: add to it, rename, edit or
+delete any course or block — nothing is re-seeded over your changes.
 
 ## Blocks
 
@@ -52,13 +55,19 @@ period, each further pass doubles the gap (up to four months), a partial pass
 repeats the period, and a fail brings it back tomorrow. The period can be
 changed on the block's page.
 
-The **Exercises** tab shows what is due now, what to start next, and the study
-lessons. The ten course topics are cut into blocks automatically — the dialogue,
-words in eights, sentences in fives — and seven built-in lessons
-(`src-tauri/content/lessons/`) cover być, mieć, the three present-tense
-patterns, gender, the seven cases and ty vs. Pan/Pani. The **tutor** builds
-more: programmes on any theme (cut into drills the same way), single drills in
-a chosen format, and study blocks with their own lessons and objectives.
+Every block lives in a **course**: a folder on one theme with its words,
+sentences and an optional dialogue, cut into drills automatically — the
+dialogue, words in eights, sentences in fives — plus any lessons and drills
+filed under it. The starter lessons (`src-tauri/content/lessons/`: być, mieć,
+the three present-tense patterns, gender, the seven cases, ty vs. Pan/Pani)
+are in *Grammar essentials*; listening blocks for songs go in *Listening*, and
+a lesson the tutor writes without a better home goes in *Lessons*. The
+**tutor** builds more: courses on any theme, single drills in a chosen format,
+and study blocks with their own lessons and objectives.
+
+The **Exercises** tab reads top to bottom: **today** (the XP ring and the next
+thing to do), **Due now** (blocks whose check-in has come), **Start next** (the
+next unstarted blocks from your newest courses), and **Courses**.
 
 Practising any block counts toward the day's streak.
 
@@ -86,21 +95,21 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 
 | Tool | What it does |
 |---|---|
-| `create_programme` | Builds a programme on a theme: words, sentences, a dialogue — cut into drills |
+| `create_course` | Builds a course on a theme: words, sentences, a dialogue — cut into drills |
 | `create_study_block`, `create_drill_block`, `create_listening_block` | Writes a lesson with objectives, one drill in a chosen format, or a listening block for a song |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
-| `add_to_programme`, `edit_programme`, `delete_programme` | Changes your programmes (course topics are read-only) |
+| `add_to_course`, `edit_course`, `delete_course` | Changes any course, starter ones included |
 | `update_practice_settings` | Daily XP goal |
-| `list_topics`, `get_topic`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
+| `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |
 
 You can keep **several conversations**: the Tutor tab lists them, newest
 first, each titled after its first question, and each with its own history —
-so a grammar question does not drag along last week's programme. Rename or
+so a grammar question does not drag along last week's course. Rename or
 delete one from its ⋯ menu; what the tutor made in the app stays.
 
 So *"Can you build me a programme for learning the colours?"* produces a
-programme you can start from a button under the reply. What the tutor did is
+course you can open from a button under the reply. What the tutor did is
 stored with each message, so later turns know the ids of what it made.
 
 The tutor needs a model that supports tool calling; Settings marks those with
@@ -277,7 +286,7 @@ and shown as unpriced. Costs survive a progress reset.
 ## Your data
 
 Everything the app keeps is in one SQLite database: progress and review
-history, programmes, the tutor conversation, every setting (including the
+history, courses, the tutor conversations, every setting (including the
 theme and the player's repeat mode), cached speech and the songs themselves.
 
 **Settings → Your data → Export** writes a consistent copy (`VACUUM INTO`) to a
@@ -312,7 +321,7 @@ cd src-tauri && cargo test          # unit + integration, including a full sessi
 
 The integration tests in `src-tauri/src/lib.rs` open a real SQLite database,
 seed it, build a day's session, grade it and assert the rotation advances; they
-also drive the tutor's tools to build, practise, focus and delete a programme,
+also drive the tutor's tools to build, practise and delete a course,
 and upgrade a database from before the English-only schema — no Tauri runtime
 required.
 
@@ -322,6 +331,15 @@ The UI is built from a small design system in `src/design/` — tokens for
 every size and colour, and components for every screen element. Read
 [DESIGN.md](DESIGN.md) before adding a screen; `bun run build` checks the
 rules (`bun run check:design` runs the check alone).
+
+### The keyboard on Android
+
+The app draws edge to edge, which stops Android from shrinking it when the
+keyboard opens (it would pan the whole screen up instead, sliding the header
+away). `src-tauri/android/MainActivity.kt` replaces the activity `tauri android
+init` generates — CI copies it in and sets `adjustResize` — and turns the
+keyboard's height into bottom padding, so the page lays out above it.
+`src/lib/keyboard.ts` then hides the tab bar and player bar while you type.
 
 ### Layout
 
@@ -333,7 +351,7 @@ src/                       React UI
   components/Markdown.tsx  markdown to React elements, no HTML in between
   screens/Session.tsx      the practice flow (ten exercise shapes)
   components/SetExercises.tsx  memory cards and fill-the-gaps
-  screens/Exercises.tsx    the home tab: today's check-in, programmes, the course
+  screens/Exercises.tsx    the home tab: today, due, start next, courses
   screens/Search.tsx       search every word and sentence
   screens/Music.tsx        the music library: songs, playlists, a song's page
   screens/Player.tsx       the full-screen player
@@ -350,7 +368,7 @@ src-tauri/
   src/stats.rs             XP, levels, streaks, achievements
   src/ai.rs                OpenRouter chat (with streamed tool calls) + speech
   src/tutor.rs             the tutor: prompt, tools and the agent loop
-  src/programmes.rs        creating, changing and deleting programmes
+  src/courses.rs           creating, changing and deleting courses
   src/songs.rs             songwriter prompt, kie.ai/Suno generation and song downloads
   src/commands.rs          the command surface, including the audio cache
 ```
@@ -359,9 +377,9 @@ src-tauri/
 
 Four tabs: **Exercises**, **Tutor**, **Music** and **Settings**.
 
-Exercises is the home screen: today's check-in on top, then your programmes
-and the ten course topics, each opening to its dialogue, words and sentences
-with *Practise now*. Two screens open from it rather than taking a tab:
+Exercises is the home screen: today on top, what is due, what to start next,
+then your courses, each opening to its blocks, its dialogue, words and
+sentences, and *Rename* / *Delete course*. Two screens open from it rather than taking a tab:
 
 - **Progress** — tap the streak or level chip, or *Your progress*: stats,
   the 18-week activity map, per-topic progress and achievements.
@@ -373,9 +391,12 @@ with *Practise now*. Two screens open from it rather than taking a tab:
 
 The files under `src-tauri/content/` are the source of truth. Word lists are
 `polish⇥english⇥part-of-speech`; sentences drop the last column;
-conversations are JSON with a `speakers` map giving each speaker's gender. After changing them, bump `CONTENT_VERSION` in
-`src-tauri/src/db.rs` so existing installs re-seed. Review history is keyed by
-row id and survives the re-seed.
+conversations are JSON with a `speakers` map giving each speaker's gender.
+They are the *starter* content: written once on a fresh install
+(`seed_starter` in `src-tauri/src/db.rs`) and never re-seeded, since after
+that the courses belong to the learner. Databases from before courses were
+unified are converted by `unify_courses`: built-in topics and programmes
+become courses, loose lessons are filed, and review history is kept.
 
 `cargo test` fails if two topics define the same headword, if a topic drops
 below 190 words, or if a dialogue has a speaker with no gender.

@@ -66,6 +66,23 @@
   margin-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--player-bar-space));
 }
 
+/* While the keyboard is up (lib/keyboard.ts) the tab bar and the player bar
+   step aside, so the message box sits right on the keyboard. */
+[data-keyboard] .nav,
+[data-keyboard] .mini-player {
+  display: none;
+}
+[data-keyboard] .screen-footer,
+[data-keyboard] .app:has(.mini-player) .screen-footer[data-nav="true"] {
+  margin-bottom: 0;
+  /* The web view ends a navigation bar's height below the keyboard's top
+     edge (MainActivity.kt), and the safe-area inset is that height. */
+  padding-bottom: calc(var(--safe-bottom) + var(--space-2));
+}
+[data-keyboard] .screen[data-footer="true"] {
+  padding-bottom: var(--space-2);
+}
+
 .screen-header {
   display: flex;
   align-items: center;

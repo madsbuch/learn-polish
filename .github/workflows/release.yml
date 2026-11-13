@@ -111,6 +111,18 @@ jobs:
       - name: Use the app's launcher icons
         run: cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
 
+      # The generated activity draws edge to edge but never makes room for
+      # the keyboard, so Android pans the whole screen up. Ours shrinks the
+      # app above the keyboard instead (see src-tauri/android/MainActivity.kt).
+      - name: Make the app resize above the keyboard
+        run: |
+          activity=$(find src-tauri/gen/android/app/src/main -name MainActivity.kt | head -1)
+          test -n "$activity"
+          cp src-tauri/android/MainActivity.kt "$activity"
+          manifest=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          sed -i 's|android:name=".MainActivity"|android:name=".MainActivity"\n            android:windowSoftInputMode="adjustResize"|' "$manifest"
+          grep -q 'adjustResize' "$manifest"
+
       # Phones only: 64-bit and 32-bit ARM. x86_64 was for emulators and cost a
       # third of the Rust compile time.
       - name: Build the release APK
