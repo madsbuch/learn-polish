@@ -220,6 +220,14 @@ pub fn add_block(conn: &Connection, topic_id: i64, block_id: i64) -> Result<()> 
          VALUES (?1, ?2, (SELECT COALESCE(MAX(ord), 0) + 1 FROM course_blocks WHERE topic_id = ?1))",
         [topic_id, block_id],
     )?;
+    // A listening block filed in a real course gives a song without one its
+    // course, so the song is known to belong there from now on.
+    conn.execute(
+        "UPDATE songs SET topic_id = ?1
+         WHERE topic_id IS NULL AND id = (SELECT song_id FROM blocks WHERE id = ?2)
+           AND (SELECT slug FROM topics WHERE id = ?1) != 'listening'",
+        [topic_id, block_id],
+    )?;
     Ok(())
 }
 

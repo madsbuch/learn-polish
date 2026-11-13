@@ -73,8 +73,10 @@ page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it.
 the three present-tense patterns, gender, the seven cases, ty vs. Pan/Pani)
 are in *Grammar essentials*, and a lesson the tutor writes without a better
 home goes in *Lessons*. A song remembers the course whose words it uses, and
-its listening block is filed there (only a song with no course goes in
-*Listening*); like any block it can be moved or shared afterwards. The
+its listening block is filed there; like any block it can be moved or shared
+afterwards. The tutor files songs itself: it picks the course a new song fits,
+and reads the lyrics of songs left in *Listening* to move them where they
+belong. The
 **tutor** builds more: courses on any theme, single drills in a chosen format,
 and study blocks with their own lessons and objectives.
 
@@ -115,7 +117,7 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |
 | `update_practice_settings` | Daily XP goal |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
-| `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |
+| `make_song`, `list_songs`, `get_song`, `delete_songs` | Has a song written and sung (filed in the course it fits); reads a song's lyrics to file it; tidies up songs |
 | `list_playlists`, `create_playlist`, `add_to_playlist`, `remove_from_playlist`, `rename_playlist`, `delete_playlist` | Manages playlists by song (a song's most-played take goes in) |
 
 You can keep **several conversations**: the Tutor tab lists them, newest

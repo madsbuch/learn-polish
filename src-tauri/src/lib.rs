@@ -913,6 +913,30 @@ mod integration {
             serde_json::json!({ "song_id": 3, "course_id": basics }),
         );
         assert_eq!(blocks::load(&conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap().course_ids, vec![basics]);
+
+        // The tutor reads a song's lyrics and files a course-less one itself.
+        conn.execute_batch(
+            r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+               VALUES (4, 'Pociąg', 'Gdzie jest dworzec?', 'Where is the station?', 'pop',
+                       '[{"kind":"chorus","lines":[{"en":"Where is the station?","pl":"Gdzie jest dworzec?"}]}]',
+                       '', 'V6', 'ready', 0);"#,
+        )
+        .unwrap();
+        let block = blocks::create_listening(&conn, 4, None, None, None, "you").unwrap();
+        assert_eq!(block.topic_title.as_deref(), Some("Listening"));
+        let song = tutor::run_tool_for_test(&conn, "get_song", serde_json::json!({ "song_id": 4 }));
+        assert_eq!(song["lyrics"][0]["lines"][0]["pl"], "Gdzie jest dworzec?");
+        assert_eq!(song["filed"]["listening_block_in"][0]["title"], "Listening");
+        assert!(song["filed"]["written_from_course"].is_null());
+        let travel = db::require_topic_id(&conn, 5).unwrap();
+        let listening = block.topic_id.unwrap();
+        tutor::run_tool_for_test(
+            &conn,
+            "move_block",
+            serde_json::json!({ "block_id": block.id, "from_course_id": listening, "to_course_id": travel }),
+        );
+        let song = tutor::run_tool_for_test(&conn, "get_song", serde_json::json!({ "song_id": 4 }));
+        assert_eq!(song["filed"]["written_from_course"]["course_id"], travel, "the song now knows its course");
         songs::delete_song(&conn, 1).unwrap();
         assert!(blocks::load(&conn, id).is_err());
     }

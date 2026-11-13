@@ -75,9 +75,13 @@ What the app does — learning happens in blocks:
   remove_block_from_course and order_course_blocks to rearrange. The app started with a set of courses (greetings, \
   food, numbers… and Grammar essentials); they are ordinary courses — you can add to, edit or \
   delete any course or block. Lessons with no better home go in \"Lessons\". A song's listening \
-  block goes in the course the song was written from (or the course_id you give); only a \
-  song with no course goes in \"Listening\". Listening blocks are ordinary blocks: they \
-  can be moved, shared and reordered like any other.
+  block goes in the course the song was written from (or the course_id you give). Listening \
+  blocks are ordinary blocks: they move, share and reorder like any other.
+- File songs yourself: when you make a song, pass the course_id of the course it fits best, \
+  even when the learner did not name one. For a song with no course (its listening block sits \
+  in \"Listening\"), read its lyrics with get_song, decide which course its words and theme \
+  belong to, and move the block there with move_block (or share it into two courses if it \
+  fits both). Keep \"Listening\" only for songs that fit no course.
 
 Using tools:
 - When the learner asks for practice on a theme (colours, numbers, a trip…), build a \
@@ -174,7 +178,7 @@ fn system_prompt(conn: &Connection) -> Result<String> {
          - Due now ({due_count}):\n{due}\n\
          - Study blocks:\n{lessons}\n\
          - Courses:\n{courses}\n\
-         - Songs: {song_count} in the Music tab{song_note}.\n\
+         - Songs: {song_count} in the Music tab{song_note}{unsorted}.\n\
          - Playlists: {playlists}.",
         level = stats.level,
         xp = stats.total_xp,
@@ -187,6 +191,19 @@ fn system_prompt(conn: &Connection) -> Result<String> {
         lessons = if lessons.is_empty() { none() } else { lessons.join("\n") },
         courses = if courses.is_empty() { none() } else { courses.join("\n") },
         song_count = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| r.get::<_, i64>(0))?,
+        unsorted = match conn.query_row(
+            "SELECT COUNT(*) FROM course_blocks c JOIN topics t ON t.id = c.topic_id
+             WHERE t.slug = 'listening'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )? {
+            0 => String::new(),
+            n => format!(
+                "; {n} listening block{} still in \"Listening\" with no course — when it fits the \
+                 conversation, offer to read their lyrics and file them",
+                if n == 1 { " is" } else { "s are" }
+            ),
+        },
         playlists = {
             let list = playlists::list(conn)?;
             if list.is_empty() {
@@ -570,6 +587,16 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({ "type": "object", "properties": {} }),
         ),
         tool(
+            "get_song",
+            "Reading the lyrics…",
+            "One song in full: its lyrics (Polish with English, by section), the course it was written from, and where its listening block is filed.",
+            json!({
+                "type": "object",
+                "properties": { "song_id": { "type": "integer" } },
+                "required": ["song_id"]
+            }),
+        ),
+        tool(
             "delete_songs",
             "Deleting songs…",
             "Permanently delete songs (all their takes). Only after the learner confirmed.",
@@ -850,6 +877,38 @@ struct ListeningArgs {
     complexity: Option<String>,
     #[serde(default)]
     focus: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SongArg {
+    song_id: i64,
+}
+
+/// Which course a song was written from, and where its listening block is.
+fn song_placement(conn: &Connection, song_id: i64) -> Result<Value> {
+    let course: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT t.id, t.title_en FROM songs s JOIN topics t ON t.id = s.topic_id WHERE s.id = ?1",
+            [song_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    let block: Option<i64> = conn
+        .query_row("SELECT id FROM blocks WHERE song_id = ?1", [song_id], |r| r.get(0))
+        .ok();
+    let block_courses: Vec<Value> = match block {
+        Some(id) => blocks::detail(conn, id)?
+            .courses
+            .into_iter()
+            .map(|(id, title, _)| json!({ "course_id": id, "title": title }))
+            .collect(),
+        None => vec![],
+    };
+    Ok(json!({
+        "written_from_course": course.map(|(id, title)| json!({ "course_id": id, "title": title })),
+        "listening_block_id": block,
+        "listening_block_in": block_courses,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1253,10 +1312,34 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                         "status": song.status,
                         "takes": song.tracks.len(),
                         "plays": song.tracks.iter().map(|t| t.play_count).sum::<i64>(),
+                        "filed": song_placement(conn, song.id).unwrap_or(Value::Null),
                     })
                 })
                 .collect();
             Ok(Outcome::data(Value::Array(list)))
+        }
+        "get_song" => {
+            let args: SongArg = parse(arguments)?;
+            let song = songs::load_song(conn, args.song_id)?;
+            let lyrics: Vec<Value> = song
+                .sections
+                .iter()
+                .map(|section| {
+                    json!({
+                        "section": section.kind,
+                        "lines": section.lines.iter().map(|l| json!({ "pl": l.pl, "en": l.en })).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            Ok(Outcome::data(json!({
+                "song_id": song.id,
+                "title": song.title,
+                "chorus_pl": song.chorus_pl,
+                "chorus_en": song.chorus_en,
+                "status": song.status,
+                "lyrics": lyrics,
+                "filed": song_placement(conn, song.id)?,
+            })))
         }
         "delete_songs" => {
             let args: DeleteSongsArgs = parse(arguments)?;
