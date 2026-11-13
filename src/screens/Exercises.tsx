@@ -1,6 +1,7 @@
 import { Logo } from "../components/icons";
-import { Bar, Stat } from "../components/ui";
-import type { SessionPlan, Stats } from "../lib/types";
+import { TopicList } from "../components/TopicList";
+import { Bar } from "../components/ui";
+import type { SessionPlan, Stats, TopicProgress } from "../lib/types";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -9,23 +10,37 @@ function greeting(): string {
   return "Dobry wieczór";
 }
 
-export function Today({
+/**
+ * Everything to practise in one place: today's check-in on top, then your
+ * programmes and the course. Progress and the word search open from here.
+ */
+export function Exercises({
   plan,
   stats,
-  courseSize,
+  topics,
+  focusTopicId,
   onStart,
+  onOpenTopic,
   onOpenTutor,
+  onOpenProgress,
+  onOpenSearch,
   onBackToCourse,
 }: {
   plan: SessionPlan;
   stats: Stats;
-  /** How many built-in topics the course rotates through. */
-  courseSize: number;
+  topics: TopicProgress[];
+  focusTopicId: number | null;
   onStart: () => void;
+  onOpenTopic: (progress: TopicProgress) => void;
   onOpenTutor: () => void;
+  onOpenProgress: () => void;
+  onOpenSearch: () => void;
   /** Ends the daily focus on a programme. */
   onBackToCourse: () => void;
 }) {
+  const course = topics.filter((entry) => entry.topic.kind === "course");
+  const programmes = topics.filter((entry) => entry.topic.kind === "programme");
+  const courseSize = course.length;
   const programme = plan.topic.kind === "programme";
   const goalPct = Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
   const goalMet = stats.dayXp >= stats.dailyGoal;
@@ -41,12 +56,19 @@ export function Today({
             <div className="eyebrow" style={{ marginBottom: 1 }}>
               {greeting()}
             </div>
-            <h1 style={{ marginBottom: 0, fontSize: 23 }}>Today's practice</h1>
+            <h1 style={{ marginBottom: 0, fontSize: 23 }}>Exercises</h1>
           </div>
         </div>
         <div className="row" style={{ gap: 6 }}>
-          <span className="chip crimson">🔥 {stats.currentStreak}</span>
-          <span className="chip gold">Lv {stats.level}</span>
+          <button className="chip crimson" onClick={onOpenProgress} aria-label="Your progress">
+            🔥 {stats.currentStreak}
+          </button>
+          <button className="chip gold" onClick={onOpenProgress} aria-label="Your progress">
+            Lv {stats.level}
+          </button>
+          <button className="icon-btn" onClick={onOpenSearch} aria-label="Search words and sentences">
+            🔍
+          </button>
         </div>
       </div>
 
@@ -123,32 +145,32 @@ export function Today({
         </div>
       ) : null}
 
-      <div className="stat-grid" style={{ marginBottom: 14 }}>
-        <Stat value={stats.wordsSeen} label="words met" />
-        <Stat value={stats.wordsMastered} label="mastered" />
-        <Stat value={stats.dueToday} label="due today" />
-        <Stat value={`${Math.round(stats.accuracy * 100)}%`} label="accuracy" />
-      </div>
-
-      <div className="card">
-        <h3>Level {stats.level}</h3>
-        <Bar value={stats.xpIntoLevel} max={stats.xpForNextLevel} />
-        <div className="row between tiny faint" style={{ marginTop: 8 }}>
-          <span>{stats.totalXp} XP total</span>
-          <span>{stats.xpForNextLevel - stats.xpIntoLevel} XP to level {stats.level + 1}</span>
-        </div>
-      </div>
-
-      <button className="card row" style={{ width: "100%", textAlign: "left" }} onClick={onOpenTutor}>
-        <span style={{ fontSize: 26 }}>✨</span>
+      <button className="card row" style={{ width: "100%", textAlign: "left" }} onClick={onOpenProgress}>
+        <span style={{ fontSize: 24 }}>📈</span>
         <span className="grow">
-          <span style={{ display: "block", fontWeight: 700 }}>Ask the tutor</span>
+          <span style={{ display: "block", fontWeight: 700 }}>Your progress</span>
           <span className="small faint">
-            Get a practice programme on any theme, or ask anything about Polish
+            {stats.wordsSeen} words met · {stats.wordsMastered} mastered · {stats.dueToday} due
           </span>
         </span>
         <span className="faint">›</span>
       </button>
+
+      <h3 style={{ margin: "18px 0 8px" }}>Your programmes</h3>
+      {programmes.length === 0 ? (
+        <button className="card row" style={{ width: "100%", textAlign: "left" }} onClick={onOpenTutor}>
+          <span style={{ fontSize: 22 }}>✨</span>
+          <span className="grow small">
+            None yet. Ask the tutor, e.g. <i>“Build me a programme for learning the colours”</i>.
+          </span>
+          <span className="faint">›</span>
+        </button>
+      ) : (
+        <TopicList entries={programmes} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
+      )}
+
+      <h3 style={{ margin: "18px 0 8px" }}>Course</h3>
+      <TopicList entries={course} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
     </div>
   );
 }

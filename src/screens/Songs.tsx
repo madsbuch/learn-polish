@@ -99,7 +99,7 @@ export function Songs({
       <div className="row between" style={{ marginBottom: 4 }}>
         <TitleWithInfo
           as="h1"
-          title="Songs"
+          title="Music"
           info={
             <>
               <p>

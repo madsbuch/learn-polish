@@ -15,40 +15,46 @@ import type {
   Stats,
   TopicProgress,
 } from "./lib/types";
-import { Library } from "./screens/Library";
+import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { Search } from "./screens/Search";
 import { Songs } from "./screens/Songs";
-import { Today } from "./screens/Today";
 import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
 import { Tutor } from "./screens/Tutor";
 
-type Tab = "today" | "library" | "songs" | "tutor" | "progress" | "settings";
+type Tab = "exercises" | "tutor" | "music" | "settings";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "today", label: "Today" },
-  { id: "library", label: "Library" },
-  { id: "songs", label: "Songs" },
-  { id: "tutor", label: "Tutor" },
-  { id: "progress", label: "Progress" },
-  { id: "settings", label: "Settings" },
+const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
+  { id: "exercises", label: "Exercises", icon: "library" },
+  { id: "tutor", label: "Tutor", icon: "tutor" },
+  { id: "music", label: "Music", icon: "songs" },
+  { id: "settings", label: "Settings", icon: "settings" },
 ];
 
-/** Either a tab, or a full-screen view that replaces the tab bar. */
+/** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
 type Overlay =
   | { kind: "none" }
   | { kind: "session"; plan: SessionPlan }
   | { kind: "summary"; result: SessionResult; xp: number }
-  | { kind: "topic"; progress: TopicProgress; section?: TopicSection };
+  | { kind: "progress" }
+  | { kind: "search" }
+  | {
+      kind: "topic";
+      progress: TopicProgress;
+      section?: TopicSection;
+      /** Where the back button goes. */
+      back: Overlay;
+    };
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [topics, setTopics] = useState<TopicProgress[]>([]);
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTab] = useState<Tab>("exercises");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
   const [error, setError] = useState<string | null>(null);
 
@@ -211,7 +217,7 @@ export default function App() {
           sessionXp={overlay.xp}
           onDone={() => {
             setOverlay({ kind: "none" });
-            setTab("today");
+            setTab("exercises");
             void refresh();
           }}
         />
@@ -226,13 +232,13 @@ export default function App() {
           progress={overlay.progress}
           initialSection={overlay.section}
           isFocus={settings.focusTopicId === overlay.progress.topic.id}
-          onBack={() => setOverlay({ kind: "none" })}
+          onBack={() => setOverlay(overlay.back)}
           onPractise={() => void startSession(overlay.progress.topic.id)}
           onFocus={async (focused) => {
             applySettings(await api.setFocus(focused ? overlay.progress.topic.id : null));
           }}
           onDeleted={() => {
-            setOverlay({ kind: "none" });
+            setOverlay(overlay.back);
             void reloadAll();
           }}
         />
@@ -240,31 +246,48 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "progress") {
+    return (
+      <div className="app">
+        <Progress
+          stats={stats}
+          topics={topics}
+          focusTopicId={settings.focusTopicId}
+          onBack={() => setOverlay({ kind: "none" })}
+          onOpenTopic={(progress) =>
+            setOverlay({ kind: "topic", progress, back: { kind: "progress" } })
+          }
+        />
+      </div>
+    );
+  }
+
+  if (overlay.kind === "search") {
+    return (
+      <div className="app">
+        <Search topics={topics} onBack={() => setOverlay({ kind: "none" })} />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
-      {tab === "today" ? (
-        <Today
+      {tab === "exercises" ? (
+        <Exercises
           plan={plan}
           stats={stats}
-          courseSize={topics.filter((entry) => entry.topic.kind === "course").length}
+          topics={topics}
+          focusTopicId={settings.focusTopicId}
           onStart={() => void startSession()}
+          onOpenTopic={(progress) => setOverlay({ kind: "topic", progress, back: { kind: "none" } })}
           onOpenTutor={() => setTab("tutor")}
+          onOpenProgress={() => setOverlay({ kind: "progress" })}
+          onOpenSearch={() => setOverlay({ kind: "search" })}
           onBackToCourse={async () => applySettings(await api.setFocus(null))}
         />
       ) : null}
 
-      {tab === "library" ? (
-        <Library
-          topics={topics}
-          focusTopicId={settings.focusTopicId}
-          onOpenTutor={() => setTab("tutor")}
-          onOpenTopic={(progress, section) =>
-            setOverlay({ kind: "topic", progress, section })
-          }
-        />
-      ) : null}
-
-      {tab === "songs" ? (
+      {tab === "music" ? (
         <Songs
           settings={settings}
           topics={topics}
@@ -283,14 +306,6 @@ export default function App() {
         />
       ) : null}
 
-      {tab === "progress" ? (
-        <Progress
-          stats={stats}
-          topics={topics}
-          onOpenTopic={(progress) => setOverlay({ kind: "topic", progress })}
-        />
-      ) : null}
-
       {tab === "settings" ? (
         <SettingsScreen
           settings={settings}
@@ -305,11 +320,11 @@ export default function App() {
         </button>
       ) : null}
 
-      {tab !== "songs" ? <MiniPlayer onOpen={() => setTab("songs")} /> : null}
+      {tab !== "music" ? <MiniPlayer onOpen={() => setTab("music")} /> : null}
 
       <nav className="nav">
         {TABS.map((entry) => {
-          const Icon = NavIcon[entry.id];
+          const Icon = NavIcon[entry.icon];
           return (
             <button
               key={entry.id}

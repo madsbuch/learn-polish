@@ -41,7 +41,7 @@ repetition schedule decides what actually needs your attention.
 ### Practising what you choose
 
 Every topic — the ten course topics and your own programmes — has a
-**Practise now** button (Library → Topics, or under the tutor's reply). That
+**Practise now** button (on the Exercises tab, or under the tutor's reply). That
 builds the same kind of session for that topic, with your due reviews mixed in,
 without moving the course along.
 
@@ -117,7 +117,7 @@ live catalogue. Until you do, the AI features stay off and say so.
 
 ## Songs (optional)
 
-Songs are one of the best ways to get Polish stuck in your head. The **Songs**
+Songs are one of the best ways to get Polish stuck in your head. The **Music**
 tab makes them to order:
 
 - **The shape:** each verse pairs a short English line with the same line in
@@ -257,7 +257,8 @@ src/                       React UI
   lib/useAiStream.ts       accumulates a streamed answer from Tauri events
   components/Markdown.tsx  markdown to React elements, no HTML in between
   screens/Session.tsx      the practice flow (eight exercise shapes)
-  screens/Library.tsx      the catalogue: every word, sentence and dialogue
+  screens/Exercises.tsx    the home tab: today's check-in, programmes, the course
+  screens/Search.tsx       search every word and sentence
   screens/Songs.tsx        song library, player and the songwriter
   lib/player.ts            the app-wide music player and queue
 src-tauri/
@@ -273,11 +274,19 @@ src-tauri/
   src/commands.rs          the command surface, including the audio cache
 ```
 
-## Library
+## Navigation
 
-A searchable catalogue of everything, whether or not you have met it yet: your
-programmes and the ten course topics, and all words and sentences, filterable
-by topic and searchable in Polish or English. Each row has its own 🔊.
+Four tabs: **Exercises**, **Tutor**, **Music** and **Settings**.
+
+Exercises is the home screen: today's check-in on top, then your programmes
+and the ten course topics, each opening to its dialogue, words and sentences
+with *Practise now*. Two screens open from it rather than taking a tab:
+
+- **Progress** — tap the streak or level chip, or *Your progress*: stats,
+  the 18-week activity map, per-topic progress and achievements.
+- **Search** — the 🔍 button: every word and sentence in the app, whether or
+  not you have met it yet, filterable by topic and searchable in Polish or
+  English. Each row has its own 🔊.
 
 ### Editing the curriculum
 

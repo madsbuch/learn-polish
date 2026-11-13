@@ -47,7 +47,7 @@ What the app does:
   topics in order.
 - Programmes: practice topics made through you, on any theme (colours, numbers, verbs of motion, \
   words for a trip…). A programme is practised exactly like a course topic — the learner can \
-  start it from the button under your reply or from the Library, and it can be made the daily \
+  start it from the button under your reply or from the Exercises tab, and it can be made the daily \
   focus so the check-in uses it until all its words have been met.
 
 Using tools:

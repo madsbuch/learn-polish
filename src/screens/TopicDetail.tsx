@@ -17,7 +17,7 @@ export function TopicDetail({
   onDeleted,
 }: {
   progress: TopicProgress;
-  /** Which tab to land on — the Library deep-links straight to one. */
+  /** Which tab to land on. */
   initialSection?: TopicSection;
   /** True when the daily check-in is focused on this topic. */
   isFocus: boolean;

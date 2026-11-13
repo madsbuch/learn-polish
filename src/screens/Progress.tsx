@@ -1,3 +1,4 @@
+import { TopicList } from "../components/TopicList";
 import { Bar, Stat } from "../components/ui";
 import type { Stats, TopicProgress } from "../lib/types";
 
@@ -17,16 +18,27 @@ function Heatmap({ stats }: { stats: Stats }) {
 export function Progress({
   stats,
   topics,
+  focusTopicId,
   onOpenTopic,
+  onBack,
 }: {
   stats: Stats;
   topics: TopicProgress[];
+  focusTopicId: number | null;
   onOpenTopic: (progress: TopicProgress) => void;
+  onBack: () => void;
 }) {
   return (
-    <div className="scroll">
-      <h1>Progress</h1>
-      <p className="small">Everything you have learned so far.</p>
+    <div className="scroll no-nav">
+      <div className="row" style={{ marginBottom: 14 }}>
+        <button className="icon-btn" onClick={onBack} aria-label="Back">
+          ‹
+        </button>
+        <div className="grow">
+          <h1 style={{ marginBottom: 0, fontSize: 21 }}>Progress</h1>
+          <div className="small faint">Everything you have learned so far.</div>
+        </div>
+      </div>
 
       <div className="stat-grid" style={{ marginBottom: 14 }}>
         <Stat value={stats.currentStreak} label="day streak" />
@@ -59,36 +71,8 @@ export function Progress({
         <Bar value={stats.sentencesSeen} max={stats.sentencesTotal} tone="gold" />
       </div>
 
-      <h2 style={{ marginTop: 22 }}>Conversations</h2>
-      <div className="card flush">
-        {topics.map((entry) => {
-          const pct = Math.round((entry.seenWords / Math.max(1, entry.totalWords)) * 100);
-          return (
-            <button
-              key={entry.topic.id}
-              className="list-row"
-              onClick={() => onOpenTopic(entry)}
-            >
-              <span
-                className="avatar"
-                style={{ background: pct > 0 ? "var(--brand)" : "var(--line)" }}
-              >
-                {entry.topic.ord}
-              </span>
-              <span className="grow">
-                <span className="pl">{entry.topic.titlePl}</span>
-                <span className="tr">{entry.topic.title}</span>
-                <span style={{ display: "block", marginTop: 7 }}>
-                  <Bar value={entry.seenWords} max={entry.totalWords} />
-                </span>
-              </span>
-              <span className="small faint" style={{ flex: "none" }}>
-                {pct}%
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <h2 style={{ marginTop: 22 }}>Topics</h2>
+      <TopicList entries={topics} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
 
       <h2 style={{ marginTop: 22 }}>Achievements</h2>
       <div className="badge-grid">
