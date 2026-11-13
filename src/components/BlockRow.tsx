@@ -1,7 +1,7 @@
 import { Avatar, Badge, ListItem } from "../design";
 import { complexityTone, dueLabel, kindName, minutes } from "../lib/blocks";
 import type { Block } from "../lib/types";
-import { DrillIcon, StudyIcon } from "./icons";
+import { DrillIcon, NavIcon, StudyIcon } from "./icons";
 
 /**
  * A block in a list: what kind it is, how long it takes, and when it is due.
@@ -26,7 +26,9 @@ export function BlockRow({
   return (
     <ListItem
       leading={
-        <Avatar muted={block.reps === 0}>{block.kind === "study" ? <StudyIcon /> : <DrillIcon />}</Avatar>
+        <Avatar muted={block.reps === 0}>
+          {block.format === "song" ? <NavIcon.songs /> : block.kind === "study" ? <StudyIcon /> : <DrillIcon />}
+        </Avatar>
       }
       title={block.title}
       subtitle={parts.join(" · ")}

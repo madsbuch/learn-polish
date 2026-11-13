@@ -25,6 +25,24 @@ const SENTENCES_PER_BLOCK: usize = 5;
 const MAX_INTERVAL: i64 = 120;
 
 pub const FORMATS: &[&str] = &["words", "memory", "typing", "sentences", "gaps", "dialogue"];
+
+/// What a listening block checks, by complexity: understanding first, then
+/// picking out words, then the grammar of what was sung.
+fn listening_objectives(complexity: &str) -> Vec<String> {
+    let mut objectives = vec![
+        "Say what the chorus means".to_string(),
+        "Pick out familiar words heard in the song".to_string(),
+    ];
+    if complexity != "low" {
+        objectives.push("Translate a line heard in a verse".into());
+        objectives.push("Fill in a missing word in a line of the song".into());
+    }
+    if complexity == "high" {
+        objectives.push("Explain the grammar of a line (case, verb form, agreement)".into());
+        objectives.push("Retell what the song is about in simple Polish".into());
+    }
+    objectives
+}
 pub const COMPLEXITIES: &[&str] = &["low", "medium", "high"];
 
 /// A sensible check-in period for a new block, in days.
@@ -65,6 +83,8 @@ pub struct Block {
     pub last_result: Option<String>,
     pub reps: i64,
     pub items: i64,
+    /// A listening block's song.
+    pub song_id: Option<i64>,
 }
 
 /// A block with everything its page shows.
@@ -99,7 +119,7 @@ pub struct Overview {
 const SELECT: &str = "SELECT b.id, b.kind, b.format, b.title, b.summary, b.complexity, b.topic_id,
         t.title_en, b.origin, b.period_days, b.interval_days, b.due_day, b.last_day,
         b.last_result, b.reps,
-        (SELECT COUNT(*) FROM block_items i WHERE i.block_id = b.id)
+        (SELECT COUNT(*) FROM block_items i WHERE i.block_id = b.id), b.song_id
      FROM blocks b LEFT JOIN topics t ON t.id = b.topic_id";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Block> {
@@ -120,6 +140,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Block> {
         last_result: r.get(13)?,
         reps: r.get(14)?,
         items: r.get(15)?,
+        song_id: r.get(16)?,
     })
 }
 
@@ -347,6 +368,54 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
     load(conn, conn.last_insert_rowid())
 }
 
+/// A listening block: listen to a song, then the examiner asks about it.
+/// One per song — asking again returns the existing block.
+pub fn create_listening(
+    conn: &Connection,
+    song_id: i64,
+    complexity: Option<&str>,
+    focus: Option<&str>,
+    origin: &str,
+) -> Result<Block> {
+    if let Some(id) = conn
+        .query_row("SELECT id FROM blocks WHERE song_id = ?1", [song_id], |r| r.get::<_, i64>(0))
+        .optional()?
+    {
+        return load(conn, id);
+    }
+    let title: String = conn
+        .query_row("SELECT title FROM songs WHERE id = ?1", [song_id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| Error::msg("That song no longer exists."))?;
+    let complexity = complexity.unwrap_or("medium");
+    check_complexity(complexity)?;
+    // The "lesson" is only a note: the lyrics stay hidden until asked for,
+    // since the point is to understand them by ear.
+    let lesson = match focus.map(clean).filter(|f| !f.is_empty()) {
+        Some(focus) => format!("Listen to the song a couple of times. Pay attention to: {focus}"),
+        None => "Listen to the song a couple of times, then check in. Try it without the lyrics first.".into(),
+    };
+    let ord = next_ord(conn, None)?;
+    conn.execute(
+        "INSERT INTO blocks (kind, format, topic_id, ord, title, summary, complexity, lesson,
+             objectives, period_days, origin, created_at, song_id)
+         VALUES ('study', 'song', NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            ord,
+            format!("Listen: {title}"),
+            "Listen to the song, then answer questions about what you heard.",
+            complexity,
+            lesson,
+            serde_json::to_string(&listening_objectives(complexity))?,
+            default_period("study", complexity),
+            origin,
+            db::now_secs(),
+            song_id
+        ],
+    )?;
+    load(conn, conn.last_insert_rowid())
+}
+
 fn next_ord(conn: &Connection, topic_id: Option<i64>) -> Result<i64> {
     Ok(conn.query_row(
         "SELECT COALESCE(MAX(ord), 0) + 1 FROM blocks WHERE topic_id IS ?1",
@@ -485,7 +554,7 @@ pub fn update(conn: &Connection, id: i64, changes: BlockChanges) -> Result<Block
 /// Deletes a block the tutor or learner made. Course and built-in blocks stay.
 pub fn delete(conn: &Connection, id: i64) -> Result<String> {
     let block = load(conn, id)?;
-    if block.origin != "tutor" {
+    if block.origin == "course" || block.origin == "builtin" {
         return Err(Error::msg("Built-in blocks cannot be deleted."));
     }
     conn.execute("DELETE FROM blocks WHERE id = ?1", [id])?;

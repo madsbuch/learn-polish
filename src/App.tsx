@@ -44,7 +44,7 @@ type Overlay =
   | { kind: "none" }
   | { kind: "block"; blockId: number; back: Overlay }
   | { kind: "session"; plan: SessionPlan; back: Overlay }
-  | { kind: "checkin"; blockId: number; title: string; back: Overlay }
+  | { kind: "checkin"; blockId: number; title: string; songId: number | null; back: Overlay }
   | {
       kind: "summary";
       result: SessionResult;
@@ -285,7 +285,13 @@ export default function App() {
           onStartDrill={(blockId) => void startDrill(blockId, overlay)}
           onCheckIn={async (blockId) => {
             const detail = await api.blockDetail(blockId).catch(() => null);
-            setOverlay({ kind: "checkin", blockId, title: detail?.title ?? "Check-in", back: overlay });
+            setOverlay({
+              kind: "checkin",
+              blockId,
+              title: detail?.title ?? "Check-in",
+              songId: detail?.songId ?? null,
+              back: overlay,
+            });
           }}
           onDeleted={() => {
             setOverlay(overlay.back);
@@ -301,6 +307,7 @@ export default function App() {
       <div className="app">
         <CheckIn
           blockId={overlay.blockId}
+          songId={overlay.songId}
           title={overlay.title}
           onClose={() => {
             setOverlay(overlay.back);
@@ -381,6 +388,7 @@ export default function App() {
           topics={topics}
           openSongId={musicSong}
           onSongOpened={clearMusicSong}
+          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: { kind: "none" } })}
           onOpenSettings={() => setTab("settings")}
         />
       ) : null}

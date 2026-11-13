@@ -38,6 +38,36 @@ fn system_prompt(conn: &Connection, block: &blocks::BlockDetail) -> Result<Strin
         )
         .optional()?
         .flatten();
+    let song = match block.block.song_id {
+        Some(id) => Some(crate::songs::load_song(conn, id)?),
+        None => None,
+    };
+    let listening = song
+        .map(|song| {
+            let lyrics: Vec<String> = song
+                .sections
+                .iter()
+                .map(|section| {
+                    let lines: Vec<String> = section
+                        .lines
+                        .iter()
+                        .map(|l| if l.en.is_empty() { l.pl.clone() } else { format!("{} — {}", l.pl, l.en) })
+                        .collect();
+                    format!("[{}]\n{}", section.kind, lines.join("\n"))
+                })
+                .collect();
+            format!(
+                "\nThis is a LISTENING block. The learner has just listened to the song \"{}\" and can \
+                 replay it during the check-in. Ask about what they heard, not about the lesson \
+                 note: what the chorus means, which word fills a gap in a line you quote with one \
+                 word blanked, what a line means, what happens in the song, and — for harder \
+                 blocks — why a word has the form it has. Quote at most one short line per \
+                 question; never paste the lyrics.\nThe lyrics (Polish — English):\n{}\n",
+                song.title,
+                lyrics.join("\n\n")
+            )
+        })
+        .unwrap_or_default();
     Ok(format!(
         "You are a friendly examiner in Polski, an app where an English speaker learns Polish. \
          You check whether the learner has understood one study block, by interviewing them.
@@ -62,12 +92,13 @@ Objectives:
 
 The lesson the learner studied:
 {lesson}
-{previous}",
+{listening}{previous}",
         plan = question_plan(&block.block.complexity),
         title = block.block.title,
         complexity = block.block.complexity,
         objectives = block.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
         lesson = block.lesson,
+        listening = listening,
         previous = previous
             .map(|feedback| format!("\nLast check-in's verdict, to follow up on: {feedback}"))
             .unwrap_or_default(),

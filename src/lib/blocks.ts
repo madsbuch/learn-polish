@@ -20,10 +20,12 @@ const FORMAT_NAMES: Record<string, string> = {
   sentences: "Sentences",
   gaps: "Fill the gaps",
   dialogue: "Conversation",
+  song: "Listening",
 };
 
 /** "Study" or the drill's format, e.g. "Memory cards". */
 export function kindName(block: Block): string {
+  if (block.format === "song") return "Listening";
   return block.kind === "study" ? "Study" : (FORMAT_NAMES[block.format] ?? "Drill");
 }
 

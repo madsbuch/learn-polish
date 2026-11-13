@@ -10,6 +10,7 @@ import {
   MoreIcon,
   PlayerIcon,
   PlusIcon,
+  SpeakerIcon,
 } from "../components/icons";
 import { Lyrics } from "../components/Lyrics";
 import { AddToPlaylist, useTrackExport } from "../components/TrackActions";
@@ -72,6 +73,7 @@ export function Music({
   openSongId,
   onOpenSettings,
   onSongOpened,
+  onOpenBlock,
 }: {
   settings: Settings;
   topics: TopicProgress[];
@@ -79,6 +81,8 @@ export function Music({
   openSongId: number | null;
   onOpenSettings: () => void;
   onSongOpened: () => void;
+  /** Opens a block's page (a song's listening block). */
+  onOpenBlock: (blockId: number) => void;
 }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
@@ -169,6 +173,13 @@ export function Music({
               refresh();
             }}
             onMessage={message}
+            onPractise={async () => {
+              try {
+                onOpenBlock((await api.blockForSong(song.id)).id);
+              } catch (cause) {
+                setError(errorMessage(cause));
+              }
+            }}
           />
         ) : songs === null ? (
           <Spinner />
@@ -533,6 +544,7 @@ function SongPage({
   onChanged,
   onDeleted,
   onMessage,
+  onPractise,
 }: {
   song: Song;
   /** Every song, so a take plays on into the next song — not the other take. */
@@ -540,6 +552,8 @@ function SongPage({
   onChanged: () => void;
   onDeleted: () => void;
   onMessage: (message: string, isError?: boolean) => void;
+  /** Opens (or makes) the song's listening block. */
+  onPractise: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<number | null>(null);
@@ -647,6 +661,19 @@ function SongPage({
                 />
               );
             })}
+          </List>
+        </Section>
+      ) : null}
+
+      {song.status === "ready" ? (
+        <Section title="Practise">
+          <List>
+            <ListItem
+              leading={<SpeakerIcon />}
+              title="Listen and answer questions"
+              subtitle="A listening block: the examiner asks about what you heard"
+              onClick={onPractise}
+            />
           </List>
         </Section>
       ) : null}

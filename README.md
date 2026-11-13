@@ -38,6 +38,13 @@ Learning happens in **blocks**: small units with one job each.
   block), gives a line of feedback after each answer, and ends with a verdict:
   pass, partial or fail, plus what to review (`src-tauri/src/examiner.rs`).
 
+- **Listening blocks** tie a study block to a song: play it (the lyrics stay
+  hidden unless asked for), then the examiner asks about what you heard —
+  what the chorus means, the missing word in a line, a line to translate, and
+  for deeper blocks the grammar of what is sung. The song can be replayed
+  during the check-in. Every song the tutor makes gets one; any song's page
+  has *Listen and answer questions*.
+
 Every block has a **complexity** — low (1–2 min), medium (5–10 min) or deep
 (20+ min) — set by how hard its subject is, not by how much is in it. And every
 block has its own **check-in period**: the first pass brings it back after the
@@ -80,7 +87,7 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | Tool | What it does |
 |---|---|
 | `create_programme` | Builds a programme on a theme: words, sentences, a dialogue — cut into drills |
-| `create_study_block`, `create_drill_block` | Writes a lesson with objectives, or one drill in a chosen format |
+| `create_study_block`, `create_drill_block`, `create_listening_block` | Writes a lesson with objectives, one drill in a chosen format, or a listening block for a song |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
 | `add_to_programme`, `edit_programme`, `delete_programme` | Changes your programmes (course topics are read-only) |
 | `update_practice_settings` | Daily XP goal |

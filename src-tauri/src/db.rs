@@ -275,6 +275,8 @@ fn migrate(conn: &Connection) -> Result<()> {
         "INTEGER REFERENCES tutor_conversations(id) ON DELETE CASCADE",
     )?;
     adopt_loose_tutor_messages(conn)?;
+    // Listening blocks belong to a song, and go when it goes.
+    add_column(conn, "blocks", "song_id", "INTEGER REFERENCES songs(id) ON DELETE CASCADE")?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     Ok(())
 }

@@ -57,6 +57,7 @@ pub fn run() {
             commands::block_set_period,
             commands::block_due_now,
             commands::block_delete,
+            commands::block_for_song,
             commands::checkin_summary,
             examiner::checkin_start,
             examiner::checkin_send,            commands::get_stats,
@@ -570,6 +571,29 @@ mod integration {
         let id = tutor::create_conversation(&conn, "How do numbers work?").unwrap();
         assert_eq!(tutor::load_history(&conn, id).unwrap().len(), 0, "a new one starts empty");
         assert_eq!(tutor::list_conversations(&conn).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_song_gets_a_listening_block_that_goes_with_it() {
+        let conn = scratch_db("listening");
+        conn.execute_batch(
+            r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+               VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop',
+                       '[{"kind":"chorus","lines":[{"en":"A coffee, please","pl":"Poproszę kawę"}]}]',
+                       '', 'V6', 'ready', 0);"#,
+        )
+        .unwrap();
+        let made = tutor::run_tool_for_test(&conn, "create_listening_block", serde_json::json!({ "song_id": 1, "complexity": "high" }));
+        let id = made["_action"]["blockId"].as_i64().expect("made");
+        let block = blocks::load(&conn, id).unwrap();
+        assert_eq!((block.kind.as_str(), block.format.as_str(), block.song_id), ("study", "song", Some(1)));
+        assert!(blocks::detail(&conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
+        // One per song: asking again returns the same block.
+        assert_eq!(blocks::create_listening(&conn, 1, None, None, "tutor").unwrap().id, id);
+        // It is a lesson on the home screen, and goes when the song goes.
+        assert!(blocks::overview(&conn).unwrap().lessons.iter().any(|b| b.id == id));
+        songs::delete_song(&conn, 1).unwrap();
+        assert!(blocks::load(&conn, id).is_err());
     }
 
     #[test]

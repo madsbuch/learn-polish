@@ -355,6 +355,12 @@ pub async fn block_due_now(db: State<'_, Db>, block_id: i64) -> Result<blocks::B
     blocks::due_now(&db.lock(), block_id)
 }
 
+/// The listening block for a song, made on first ask.
+#[tauri::command]
+pub async fn block_for_song(db: State<'_, Db>, song_id: i64) -> Result<blocks::Block> {
+    blocks::create_listening(&db.lock(), song_id, None, None, "tutor")
+}
+
 #[tauri::command]
 pub async fn block_delete(db: State<'_, Db>, block_id: i64) -> Result<()> {
     blocks::delete(&db.lock(), block_id).map(|_| ())

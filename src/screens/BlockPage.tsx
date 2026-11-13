@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { DrillIcon, PlayerIcon, StudyIcon } from "../components/icons";
+import { DrillIcon, NavIcon, PlayerIcon, StudyIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
+import { SongToListen } from "../components/SongToListen";
 import { SpeakButton } from "../components/ui";
 import {
   Badge,
@@ -70,6 +71,7 @@ export function BlockPage({
   }
 
   const study = block.kind === "study";
+  const listening = block.songId !== null;
   const started = block.dueDay !== null;
   const period = String(block.periodDays);
   const periodOptions = PERIOD_CHOICES.some((choice) => choice.value === period)
@@ -79,14 +81,14 @@ export function BlockPage({
       );
 
   return (
-    <Screen title={block.title} subtitle={block.topicTitle ?? "Study"} onBack={onBack} nav={false}>
+    <Screen title={block.title} subtitle={block.topicTitle ?? (block.songId !== null ? "Listening" : "Study")} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
 
       <Stack gap={3}>
         <Inline gap={2} wrap>
           <Badge tone="brand">
             <Inline gap={1}>
-              {study ? <StudyIcon /> : <DrillIcon />}
+              {listening ? <NavIcon.songs /> : study ? <StudyIcon /> : <DrillIcon />}
               {kindName(block)}
             </Inline>
           </Badge>
@@ -107,9 +109,23 @@ export function BlockPage({
           icon={<PlayerIcon.play size={18} />}
           onClick={() => (study ? onCheckIn(block.id) : onStartDrill(block.id))}
         >
-          {study ? (started ? "Check in" : "I've studied it — check me") : started ? "Practise again" : "Start"}
+          {study
+            ? started
+              ? "Check in"
+              : listening
+                ? "I've listened — check me"
+                : "I've studied it — check me"
+            : started
+              ? "Practise again"
+              : "Start"}
         </Button>
       </Stack>
+
+      {listening ? (
+        <Section title="Listen">
+          <SongToListen songId={block.songId!} />
+        </Section>
+      ) : null}
 
       {study ? (
         <>
@@ -120,7 +136,7 @@ export function BlockPage({
               ))}
             </List>
           </Section>
-          <Section title="Lesson">
+          <Section title={listening ? "Note" : "Lesson"}>
             <Card>
               <div className="selectable">
                 <Markdown text={block.lesson} />

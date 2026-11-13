@@ -146,6 +146,8 @@ export interface Block {
   lastResult: BlockResult | null;
   reps: number;
   items: number;
+  /** A listening block's song. */
+  songId: number | null;
 }
 
 export interface BlockDetail extends Block {

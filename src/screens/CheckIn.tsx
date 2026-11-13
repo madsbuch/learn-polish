@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { SendIcon } from "../components/icons";
+import { PlayerIcon, SendIcon } from "../components/icons";
+import { playSong, useSongItem } from "../components/SongToListen";
 import { Markdown } from "../components/Markdown";
 import {
   Badge,
@@ -18,6 +19,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/blocks";
 import type { Assessment, StreamEvent } from "../lib/types";
 
@@ -40,11 +42,14 @@ interface Line {
  */
 export function CheckIn({
   blockId,
+  songId,
   title,
   onClose,
   onFinished,
 }: {
   blockId: number;
+  /** For a listening block: its song, playable during the check-in. */
+  songId: number | null;
   title: string;
   onClose: () => void;
   /** The verdict is in; `first` is true when it earned today's streak. */
@@ -61,6 +66,9 @@ export function CheckIn({
   const activeStream = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
+  const song = useSongItem(songId).item;
+  const player = usePlayer();
+  const songCurrent = song !== null && currentItem(player)?.track.id === song.track.id;
 
   useEffect(() => {
     const off = listen<StreamEvent>("ai://stream", (event) => {
@@ -129,6 +137,16 @@ export function CheckIn({
       subtitle="Check-in"
       onClose={onClose}
       nav={false}
+      actions={
+        song ? (
+          <IconButton
+            variant="tinted"
+            icon={songCurrent && player.playing ? <PlayerIcon.pause size={18} /> : <PlayerIcon.play size={18} />}
+            label={songCurrent && player.playing ? "Pause the song" : "Play the song"}
+            onClick={() => playSong(song, songCurrent)}
+          />
+        ) : undefined
+      }
       footer={
         assessment ? (
           <Button variant="primary" size="lg" block onClick={() => onFinished(first)}>

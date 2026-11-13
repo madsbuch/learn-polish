@@ -52,6 +52,9 @@ What the app does — learning happens in blocks:
   - study: a short lesson in markdown — a conjugation, a grammar point, culture — with \
     objectives. Its check-in is an interview by an examiner agent that asks questions and \
     decides pass, partial or fail.
+  - listening: a study block tied to a song. The learner listens (lyrics hidden), then the \
+    examiner asks about what they heard. make_song makes one with each new song; \
+    create_listening_block makes one for an existing song.
 - Complexity comes from how hard the subject is, not from how much is in it:
   - low (1–2 min): one small idea. 6–8 words; one verb's present tense; one politeness rule.
   - medium (5–10 min): a pattern with variations. A conjugation group; gender and adjective \
@@ -361,6 +364,19 @@ pub fn tool_definitions() -> Value {
             }),
         ),
         function(
+            "create_listening_block",
+            "Make a listening block for a song: the learner listens, then the examiner asks about what they heard (meaning, missing words, translation, grammar). One per song.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "song_id": { "type": "integer" },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "low: the gist and the chorus; medium: lines and missing words; high: also the grammar of what is sung" },
+                    "focus": { "type": "string", "description": "Optional: what to listen out for, e.g. \"the verbs in the first verse\"" }
+                },
+                "required": ["song_id"]
+            }),
+        ),
+        function(
             "list_blocks",
             "List blocks: those due now, a topic's or programme's blocks, or the study blocks.",
             json!({
@@ -452,7 +468,8 @@ pub fn tool_definitions() -> Value {
                         "type": "string",
                         "enum": ["short", "medium", "long"],
                         "description": "short ≈ 2 min, medium ≈ 3 min, long ≈ 4–5 min. Leave out to use the learner's setting."
-                    }
+                    },
+                    "listening_block": { "type": "boolean", "description": "Also make a listening block for the song (default true)" }
                 },
                 "required": ["about"]
             }),
@@ -522,6 +539,7 @@ fn status_label(name: &str) -> &'static str {
         "get_progress" => "Checking your progress…",
         "create_study_block" => "Writing the lesson…",
         "create_drill_block" => "Making the drill…",
+        "create_listening_block" => "Making the listening block…",
         "list_blocks" | "get_block" => "Looking at your blocks…",
         "update_block" | "schedule_block" => "Updating the block…",
         "delete_block" => "Deleting the block…",
@@ -661,6 +679,21 @@ struct SongArgs {
     vocal_gender: String,
     #[serde(default)]
     length: String,
+    #[serde(default = "yes")]
+    listening_block: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+struct ListeningArgs {
+    song_id: i64,
+    #[serde(default)]
+    complexity: Option<String>,
+    #[serde(default)]
+    focus: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -821,6 +854,22 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                 json!({ "created": block_json(&block), "programme_id": topic_id }),
                 "blockCreated",
                 format!("Made “{}” — {} drill, {} items", block.title, complexity_label(&block.complexity), block.items),
+                block.id,
+            ))
+        }
+        "create_listening_block" => {
+            let args: ListeningArgs = parse(arguments)?;
+            let block = blocks::create_listening(
+                conn,
+                args.song_id,
+                args.complexity.as_deref(),
+                args.focus.as_deref(),
+                "tutor",
+            )?;
+            Ok(Outcome::block(
+                json!({ "created": block_json(&block) }),
+                "blockCreated",
+                format!("Made “{}” — {} listening block", block.title, complexity_label(&block.complexity)),
                 block.id,
             ))
         }
@@ -1117,11 +1166,26 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
         .await?;
         let title = draft.title.clone();
         let chorus = format!("{} — {}", draft.chorus_pl, draft.chorus_en);
+        let listen = args.listening_block;
         let song_id = songs::start_song(app, db, draft)?;
+        let block = if listen {
+            Some(blocks::create_listening(&db.lock(), song_id, None, None, "tutor")?)
+        } else {
+            None
+        };
         Ok(Outcome::song(
-            json!({ "song_id": song_id, "title": title, "chorus": chorus, "status": "Suno is singing it now; ready in 2–4 minutes" }),
+            json!({
+                "song_id": song_id,
+                "title": title,
+                "chorus": chorus,
+                "status": "Suno is singing it now; ready in 2–4 minutes",
+                "listening_block_id": block.as_ref().map(|b| b.id),
+            }),
             "songStarted",
-            format!("Writing “{title}” — Suno is singing it now"),
+            format!(
+                "Writing “{title}” — Suno is singing it now{}",
+                if block.is_some() { ", with a listening block" } else { "" }
+            ),
             Some(song_id),
         ))
     }

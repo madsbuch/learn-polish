@@ -65,6 +65,8 @@ export const api = {
     invoke<Block>("block_set_period", { blockId, periodDays }),
   blockDueNow: (blockId: number) => invoke<Block>("block_due_now", { blockId }),
   blockDelete: (blockId: number) => invoke<void>("block_delete", { blockId }),
+  /** The listening block for a song, made on first ask. */
+  blockForSong: (songId: number) => invoke<Block>("block_for_song", { songId }),
   checkinStart: (blockId: number, streamId: string) =>
     invoke<CheckinTurn>("checkin_start", { blockId, streamId }),
   checkinSend: (checkinId: number, message: string, streamId: string) =>
