@@ -1,13 +1,23 @@
 name: Build and publish latest
 
 # Every merge to main replaces the rolling "latest" release with fresh builds.
+# Pull requests only run the tests, so problems show up before the merge.
 on:
   push:
     branches: [main]
+    # Docs and the icon script do not change what ships.
+    paths-ignore:
+      - "**.md"
+      - "scripts/**"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "scripts/**"
   workflow_dispatch:
 
 concurrency:
-  group: latest-release
+  # A newer push to the same branch makes an older run pointless.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -34,6 +44,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Pull requests read the cache but never overwrite main's.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux build dependencies
         run: |
@@ -50,10 +62,13 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+  # The builds start alongside the tests instead of waiting for them; only
+  # publishing waits for the tests to pass.
   macos:
     name: macOS (universal)
-    needs: check
+    if: github.event_name != 'pull_request'
     runs-on: macos-14
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -93,8 +108,9 @@ jobs:
 
   android:
     name: Android (APK)
-    needs: check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -107,13 +123,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Caches Gradle's downloads and build cache between runs.
+      - uses: gradle/actions/setup-gradle@v4
+
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.2.12479018"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -128,8 +147,10 @@ jobs:
       - name: Generate the Android project
         run: bun tauri android init --ci
 
+      # Phones only: 64-bit and 32-bit ARM. x86_64 was for emulators and cost a
+      # third of the Rust compile time.
       - name: Build the release APK
-        run: bun tauri android build --apk --target aarch64 --target armv7 --target x86_64
+        run: bun tauri android build --apk --target aarch64 --target armv7
 
       - name: Sign the APK
         id: sign
@@ -191,7 +212,13 @@ jobs:
 
   publish:
     name: Publish latest
-    needs: [macos, android]
+    needs: [check, macos, android]
+    # Publish whatever built: a flaky macOS runner must not hold back the APK.
+    # Tests must still pass, and at least one platform must have built.
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' &&
+      needs.check.result == 'success' &&
+      (needs.macos.result == 'success' || needs.android.result == 'success')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -240,6 +267,16 @@ jobs:
 
           WARN
           fi
+          for platform in macos android; do
+            result=$([ "$platform" = macos ] && echo "${{ needs.macos.result }}" || echo "${{ needs.android.result }}")
+            if [ "$result" != "success" ]; then
+              cat >> notes.md <<MISSING
+          > **Note** — the $platform build did not finish for this commit, so the
+          > $platform download below is from an earlier build.
+
+          MISSING
+            fi
+          done
           {
             echo "### This build"
             echo
