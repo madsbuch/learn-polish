@@ -1,106 +1,71 @@
-// Generates src-tauri/icons/source.png (1024x1024) with no image dependencies.
-// `bun tauri icon` derives every platform icon from it.
-import { deflateSync } from "node:zlib";
-import { writeFileSync, mkdirSync } from "node:fs";
+// Regenerates every app icon from the vector logo in public/icon.svg.
+//
+//   node scripts/make-icon.mjs
+//
+// 1. Renders public/icon.svg to src-tauri/icons/source.png (1024x1024).
+// 2. Runs `tauri icon` to derive the desktop, iOS and Android icons from it.
+// 3. Replaces the Android adaptive-icon foregrounds with
+//    scripts/icon-foreground.svg (the bubble alone, inside the safe zone) and
+//    sets the matching background colour, so launchers that mask icons into
+//    circles or squircles do not show a squircle-inside-a-circle.
+//
+// Rendering uses Playwright's Chromium, which draws the SVG gradients and
+// shadows exactly as the browser shows the in-app logo.
+import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SIZE = 1024;
-const out = resolve(dirname(fileURLToPath(import.meta.url)), "../src-tauri/icons/source.png");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const icons = resolve(root, "src-tauri/icons");
 
-/** Signed distance to a rounded rectangle centred at (cx, cy). */
-function roundRect(x, y, cx, cy, hw, hh, r) {
-  const dx = Math.abs(x - cx) - (hw - r);
-  const dy = Math.abs(y - cy) - (hh - r);
-  const ox = Math.max(dx, 0);
-  const oy = Math.max(dy, 0);
-  return Math.min(Math.max(dx, dy), 0) + Math.hypot(ox, oy) - r;
+let chromium;
+try {
+  ({ chromium } = createRequire(import.meta.url)("playwright"));
+} catch {
+  console.error("Playwright is needed to render the SVG: `npm i -g playwright && npx playwright install chromium`.");
+  process.exit(1);
 }
 
-/** Antialiased coverage from a signed distance (1 inside, 0 outside). */
-const cov = (d) => Math.min(1, Math.max(0, 0.5 - d));
+const browser = await chromium.launch();
+const page = await browser.newPage();
 
-const over = (dst, src, a) => dst * (1 - a) + src * a;
-
-const px = Buffer.alloc(SIZE * SIZE * 4);
-
-for (let y = 0; y < SIZE; y++) {
-  for (let x = 0; x < SIZE; x++) {
-    const t = y / SIZE;
-
-    // Background: indigo -> violet vertical gradient inside a squircle.
-    let r = 0x4f + (0x7c - 0x4f) * t;
-    let g = 0x46 + (0x3a - 0x46) * t;
-    let b = 0xe5 + (0xed - 0xe5) * t;
-
-    // Flag plate: white over crimson, the Polish colours.
-    const plate = cov(roundRect(x, y, SIZE / 2, SIZE / 2, 300, 208, 44));
-    if (plate > 0) {
-      const white = y < SIZE / 2;
-      r = over(r, white ? 0xff : 0xdc, plate);
-      g = over(g, white ? 0xff : 0x14, plate);
-      b = over(b, white ? 0xff : 0x3c, plate);
-    }
-
-    // Speech-bubble tail, so the mark reads as "conversation" not "flag".
-    const tail = cov(roundRect(x, y, SIZE / 2 - 150, SIZE / 2 + 250, 74, 74, 24));
-    if (tail > 0) {
-      r = over(r, 0xdc, tail);
-      g = over(g, 0x14, tail);
-      b = over(b, 0x3c, tail);
-    }
-
-    const alpha = cov(roundRect(x, y, SIZE / 2, SIZE / 2, SIZE / 2, SIZE / 2, 220)) * 255;
-    const i = (y * SIZE + x) * 4;
-    px[i] = r;
-    px[i + 1] = g;
-    px[i + 2] = b;
-    px[i + 3] = alpha;
-  }
+async function render(svgPath, size, outPath) {
+  const svg = readFileSync(svgPath, "utf8").replace("<svg ", `<svg width="${size}" height="${size}" `);
+  await page.setViewportSize({ width: size, height: size });
+  await page.setContent(
+    `<html><body style="margin:0;background:transparent">${svg}</body></html>`,
+  );
+  const png = await page.locator("svg").screenshot({ omitBackground: true });
+  writeFileSync(outPath, png);
 }
 
-// Raw PNG scanlines: one filter byte (0 = None) per row.
-const raw = Buffer.alloc(SIZE * (SIZE * 4 + 1));
-for (let y = 0; y < SIZE; y++) {
-  raw[y * (SIZE * 4 + 1)] = 0;
-  px.copy(raw, y * (SIZE * 4 + 1) + 1, y * SIZE * 4, (y + 1) * SIZE * 4);
-}
+const source = resolve(icons, "source.png");
+await render(resolve(root, "public/icon.svg"), 1024, source);
+console.log("wrote", source);
 
-const crcTable = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
+execFileSync(resolve(root, "node_modules/.bin/tauri"), ["icon", source], {
+  cwd: root,
+  stdio: "inherit",
 });
-const crc32 = (buf) => {
-  let c = 0xffffffff;
-  for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-};
 
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
+const densities = { mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
+for (const [density, size] of Object.entries(densities)) {
+  await render(
+    resolve(root, "scripts/icon-foreground.svg"),
+    size,
+    resolve(icons, `android/mipmap-${density}/ic_launcher_foreground.png`),
+  );
 }
-
-const ihdr = Buffer.alloc(13);
-ihdr.writeUInt32BE(SIZE, 0);
-ihdr.writeUInt32BE(SIZE, 4);
-ihdr[8] = 8; // bit depth
-ihdr[9] = 6; // RGBA
-
-mkdirSync(dirname(out), { recursive: true });
 writeFileSync(
-  out,
-  Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(raw, { level: 9 })),
-    chunk("IEND", Buffer.alloc(0)),
-  ]),
+  resolve(icons, "android/values/ic_launcher_background.xml"),
+  `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ic_launcher_background">#5236E0</color>
+</resources>
+`,
 );
+console.log("wrote Android adaptive foregrounds");
 
-console.log("wrote", out);
+await browser.close();

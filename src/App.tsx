@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { NavIcon } from "./components/icons";
 import { Banner, Loading } from "./components/ui";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
@@ -22,12 +23,12 @@ import { Tutor } from "./screens/Tutor";
 
 type Tab = "today" | "library" | "tutor" | "progress" | "settings";
 
-const TABS: { id: Tab; glyph: string; label: string }[] = [
-  { id: "today", glyph: "🏠", label: "Today" },
-  { id: "library", glyph: "📚", label: "Library" },
-  { id: "tutor", glyph: "✨", label: "Tutor" },
-  { id: "progress", glyph: "📈", label: "Progress" },
-  { id: "settings", glyph: "⚙️", label: "Settings" },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "library", label: "Library" },
+  { id: "tutor", label: "Tutor" },
+  { id: "progress", label: "Progress" },
+  { id: "settings", label: "Settings" },
 ];
 
 /** Either a tab, or a full-screen view that replaces the tab bar. */
@@ -236,16 +237,22 @@ export default function App() {
       ) : null}
 
       <nav className="nav">
-        {TABS.map((entry) => (
-          <button
-            key={entry.id}
-            data-active={tab === entry.id}
-            onClick={() => setTab(entry.id)}
-          >
-            <span className="glyph">{entry.glyph}</span>
-            {entry.label}
-          </button>
-        ))}
+        {TABS.map((entry) => {
+          const Icon = NavIcon[entry.id];
+          return (
+            <button
+              key={entry.id}
+              data-active={tab === entry.id}
+              aria-current={tab === entry.id ? "page" : undefined}
+              onClick={() => setTab(entry.id)}
+            >
+              <span className="glyph">
+                <Icon />
+              </span>
+              {entry.label}
+            </button>
+          );
+        })}
       </nav>
     </div>
   );

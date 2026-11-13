@@ -1,3 +1,4 @@
+import { Logo } from "../components/icons";
 import { Bar, Stat } from "../components/ui";
 import type { SessionPlan, Stats } from "../lib/types";
 
@@ -26,12 +27,15 @@ export function Today({
 
   return (
     <div className="scroll">
-      <div className="row between" style={{ marginBottom: 14 }}>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 2 }}>
-            {greeting()}
+      <div className="row between" style={{ marginBottom: 16 }}>
+        <div className="row" style={{ gap: 11 }}>
+          <Logo size={40} />
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 1 }}>
+              {greeting()}
+            </div>
+            <h1 style={{ marginBottom: 0, fontSize: 23 }}>Today's practice</h1>
           </div>
-          <h1 style={{ marginBottom: 0 }}>Today's practice</h1>
         </div>
         <div className="row" style={{ gap: 6 }}>
           <span className="chip crimson">🔥 {stats.currentStreak}</span>
@@ -53,7 +57,7 @@ export function Today({
             </div>
           </div>
           <div className="grow">
-            <div className="eyebrow" style={{ color: "rgba(255,255,255,0.65)" }}>
+            <div className="eyebrow">
               Conversation {plan.topic.ord} of {stats.dialoguesTotal}
             </div>
             <div style={{ fontSize: 19, fontWeight: 750, lineHeight: 1.25 }}>
@@ -65,7 +69,7 @@ export function Today({
           </div>
         </div>
 
-        <p style={{ color: "rgba(255,255,255,0.82)", margin: "16px 0 14px", fontSize: 13.5 }}>
+        <p style={{ margin: "16px 0 14px", fontSize: 13.5 }}>
           {plan.topic.summary}
         </p>
 
@@ -76,7 +80,7 @@ export function Today({
           <span className="chip">📝 {plan.newSentences + plan.reviewSentences} sentences</span>
         </div>
 
-        <button className="btn primary block" onClick={onStart}>
+        <button className="btn on-hero block" onClick={onStart}>
           {stats.completedToday ? "Practise again" : "Start today's check-in"}
           {items > 0 ? ` · ~${Math.max(3, Math.round(items * 0.4))} min` : ""}
         </button>

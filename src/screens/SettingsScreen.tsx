@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { Bar, Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
+import { useThemePreference, type ThemePreference } from "../lib/theme";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
 import { playClip } from "../lib/speech";
 import type {
@@ -41,6 +42,7 @@ export function SettingsScreen({
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
   const [progress, setProgress] = useState<CacheProgress | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [theme, setTheme] = useThemePreference();
 
   const refreshCache = useCallback(() => {
     api.audioCacheStats().then(setCache).catch(() => setCache(null));
@@ -112,6 +114,23 @@ export function SettingsScreen({
 
       {error ? <Banner kind="error">{error}</Banner> : null}
       {notice ? <Banner kind="info">{notice}</Banner> : null}
+
+      <div className="card">
+        <h3>Appearance</h3>
+        <div className="segmented">
+          {(
+            [
+              ["system", "System"],
+              ["light", "Light"],
+              ["dark", "Dark"],
+            ] as [ThemePreference, string][]
+          ).map(([value, label]) => (
+            <button key={value} data-active={theme === value} onClick={() => setTheme(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="card">
         <h3>I am learning Polish from</h3>
