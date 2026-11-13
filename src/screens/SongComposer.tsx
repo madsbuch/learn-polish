@@ -15,7 +15,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { sectionsToText, textToSections } from "../lib/lyrics";
-import type { Sentence, Settings, SongDraft, TopicProgress } from "../lib/types";
+import type { Sentence, Settings, SongDraft, SongLength, TopicProgress } from "../lib/types";
 
 // ------------------------------------------------------------------ composer
 
@@ -47,6 +47,7 @@ export function SongComposer({
   const [customChorus, setCustomChorus] = useState("");
   const [style, setStyle] = useState(STYLE_PRESETS[0]);
   const [vocalGender, setVocalGender] = useState("");
+  const [length, setLength] = useState<SongLength>(settings.songLength);
 
   const [draft, setDraft] = useState<SongDraft | null>(null);
   const [lyricsText, setLyricsText] = useState("");
@@ -155,6 +156,17 @@ export function SongComposer({
                 <Field label="Style for Suno">
                   <input value={style} onChange={(event) => setStyle(event.target.value)} />
                 </Field>
+                <Field label="Length">
+                  <Segmented
+                    value={length}
+                    onChange={setLength}
+                    options={[
+                      { value: "short", label: "~2 min" },
+                      { value: "medium", label: "~3 min" },
+                      { value: "long", label: "4–5 min" },
+                    ]}
+                  />
+                </Field>
                 <Field label="Voice">
                   <Segmented
                     value={vocalGender}
@@ -179,7 +191,7 @@ export function SongComposer({
               disabled={busy !== null || !songwriter || (chorusChoice === "custom" && !chorus)}
               onClick={() =>
                 run("draft", async () =>
-                  accept(await api.songDraft({ brief, topicId, chorusPl: chorus, style, vocalGender })),
+                  accept(await api.songDraft({ brief, topicId, chorusPl: chorus, style, vocalGender, length })),
                 )
               }
             >

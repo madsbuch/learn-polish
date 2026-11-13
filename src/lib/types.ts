@@ -199,6 +199,8 @@ export interface Settings {
   hasKieKey: boolean;
   sunoModel: string;
   sunoModels: string[];
+  /** What the songwriter writes for: about 2, 3 or 4–5 minutes. */
+  songLength: SongLength;
   /** The topic the daily check-in is focused on, or null for the course. */
   focusTopicId: number | null;
   /** Empty until first stored. */
@@ -219,6 +221,7 @@ export interface SettingsPatch {
   ttsPrefetch?: boolean;
   songwriterModel?: string;
   sunoModel?: string;
+  songLength?: SongLength;
   theme?: "system" | "light" | "dark";
   playerRepeat?: "off" | "all" | "one";
 }
@@ -370,7 +373,10 @@ export interface Playlist {
   entries: PlaylistEntry[];
 }
 
+export type SongLength = "short" | "medium" | "long";
+
 export interface DraftRequest {
+  length?: SongLength;
   brief?: string;
   topicId?: number | null;
   chorusPl?: string;

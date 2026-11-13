@@ -91,6 +91,7 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
         has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
+        song_length: songs::song_length(conn),
         focus_topic_id: session::focus_topic_id(conn),
         theme: db::get_setting(conn, "theme")?
             .filter(|t| matches!(t.as_str(), "system" | "light" | "dark"))
@@ -136,6 +137,7 @@ pub struct SettingsPatch {
     pub tts_prefetch: Option<bool>,
     pub songwriter_model: Option<String>,
     pub suno_model: Option<String>,
+    pub song_length: Option<String>,
     pub theme: Option<String>,
     pub player_repeat: Option<String>,
 }
@@ -187,6 +189,12 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.songwriter_model {
         db::set_setting(&conn, "songwriter_model", model.trim())?;
+    }
+    if let Some(length) = patch.song_length {
+        if !songs::SONG_LENGTHS.contains(&length.as_str()) {
+            return Err(Error::msg(format!("Unknown song length '{length}'.")));
+        }
+        db::set_setting(&conn, "song_length", &length)?;
     }
     if let Some(model) = patch.suno_model {
         if !songs::SUNO_MODELS.contains(&model.as_str()) {

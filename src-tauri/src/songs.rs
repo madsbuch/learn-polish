@@ -158,6 +158,8 @@ pub struct DraftRequest {
     pub chorus_pl: String,
     pub style: String,
     pub vocal_gender: String,
+    /// "short" | "medium" | "long"; empty uses the setting.
+    pub length: String,
     /// When refining: the current draft and what to change about it.
     pub previous: Option<SongDraft>,
     pub feedback: String,
@@ -320,7 +322,7 @@ const SONGWRITER_RULES: &str = r#"You write songs that teach Polish to an adult 
 How the songs work:
 - Verses are made of pairs: a short English line, then the same meaning in Polish. Both are sung, English first. 2–7 words per line.
 - The chorus is ONE Polish sentence (the hook) that the learner should get stuck in their head. It is sung only in Polish, usually 2–4 times. Give its English meaning.
-- Structure: verse, chorus, verse, chorus, bridge (optional), chorus. 4 pairs per verse.
+- Follow the structure and length given in the brief exactly; Suno sings as long as the lyrics are.
 - Polish must be natural, grammatical and use correct diacritics (ą ć ę ł ń ó ś ź ż). Prefer the present tense and everyday words.
 - Reuse the target words; repeating a word across verses helps it stick.
 - style is a Suno style prompt under 200 characters: genre, tempo, mood, voice. Always include "clear vocals" and "clear diction". Never name real artists.
@@ -398,7 +400,7 @@ fn gather_context(conn: &Connection, topic_id: Option<i64>) -> Result<SongContex
     })
 }
 
-fn songwriter_messages(request: &DraftRequest, context: &SongContext) -> Vec<ai::Wire> {
+fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &str) -> Vec<ai::Wire> {
     let mut brief = String::new();
     if let Some(previous) = &request.previous {
         brief.push_str("Here is the current draft:\n");
@@ -419,6 +421,8 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext) -> Vec<ai:
     if let Some(topic) = &context.topic {
         brief.push_str(&format!("Theme: {topic}\n"));
     }
+    brief.push_str(structure_for(length));
+    brief.push('\n');
     if request.chorus_pl.trim().is_empty() {
         brief.push_str(
             "Choose the chorus sentence yourself — ideally one of the sentences below.\n",
@@ -469,6 +473,43 @@ pub fn songwriter_model(conn: &Connection) -> Result<String> {
     }
     ai::require_model(conn)
 }
+
+/// How long a song should be. Suno has no duration setting: a song lasts as
+/// long as its lyrics, so each length is a structure for the songwriter.
+pub const SONG_LENGTHS: &[&str] = &["short", "medium", "long"];
+pub const DEFAULT_SONG_LENGTH: &str = "long";
+
+pub fn song_length(conn: &Connection) -> String {
+    let chosen = ai::stored_model(conn, "song_length");
+    if SONG_LENGTHS.contains(&chosen.as_str()) {
+        chosen
+    } else {
+        DEFAULT_SONG_LENGTH.to_string()
+    }
+}
+
+/// The song's shape at each length, as the songwriter is told it.
+pub fn structure_for(length: &str) -> &'static str {
+    match length {
+        "short" => {
+            "Length: short, about 2 minutes. Structure: verse, chorus, verse, chorus. \
+             4 pairs per verse; the chorus sung 2 times each time."
+        }
+        "medium" => {
+            "Length: about 3 minutes. Structure: verse, chorus, verse, chorus, bridge, chorus. \
+             4 pairs per verse; the chorus sung 3 times each time."
+        }
+        _ => {
+            "Length: a full song of 4–5 minutes, so write plenty of lyrics. Structure: intro, \
+             verse, chorus, verse, chorus, bridge, verse, chorus, outro. 6 pairs per verse, a \
+             4-pair bridge that uses new words, the chorus sung 4 times each time, a short \
+             intro and an outro that repeats the chorus sentence."
+        }
+    }
+}
+
+/// Added to the style of long songs, so Suno arranges at full length.
+const LONG_STYLE: &str = "full-length song, instrumental break, long outro";
 
 pub fn suno_model(conn: &Connection) -> String {
     let chosen = ai::stored_model(conn, "suno_model");
@@ -1209,14 +1250,24 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (key, model, messages) = {
         let conn = db.lock();
         let context = gather_context(&conn, request.topic_id)?;
+        let length = if SONG_LENGTHS.contains(&request.length.as_str()) {
+            request.length.clone()
+        } else {
+            song_length(&conn)
+        };
         (
             ai::api_key(&conn)?,
             songwriter_model(&conn)?,
-            songwriter_messages(&request, &context),
+            (songwriter_messages(&request, &context, &length), length),
         )
     };
-    let reply = ai::complete_with(&key, &model, &messages, 0.8, 2500).await?;
+    let (messages, length) = messages;
+    // A long song needs room for its lyrics in the answer.
+    let reply = ai::complete_with(&key, &model, &messages, 0.8, 5000).await?;
     let mut draft = parse_draft(&reply)?;
+    if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
+        draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
+    }
     // The learner's explicit choices beat the model's.
     if request.previous.is_none() {
         if !request.chorus_pl.trim().is_empty() {
@@ -1373,6 +1424,15 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn every_length_has_a_structure() {
+        for length in SONG_LENGTHS {
+            assert!(structure_for(length).contains("Structure"), "{length}");
+        }
+        assert!(structure_for("long").contains("4–5 minutes"));
+        assert!(structure_for("nonsense").contains("4–5 minutes"), "unknown means the default");
     }
 
     #[test]

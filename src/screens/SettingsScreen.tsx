@@ -426,6 +426,22 @@ export function SettingsScreen({
               }
             />
             <SettingRow
+              label="Song length"
+              description="Suno sings as long as the lyrics are; this sets how much the songwriter writes."
+              stacked
+              control={
+                <Segmented
+                  value={settings.songLength}
+                  onChange={(length) => patch({ songLength: length }, "song-length")}
+                  options={[
+                    { value: "short", label: "~2 min" },
+                    { value: "medium", label: "~3 min" },
+                    { value: "long", label: "4–5 min" },
+                  ]}
+                />
+              }
+            />
+            <SettingRow
               label="Suno model"
               stacked
               control={

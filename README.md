@@ -138,6 +138,10 @@ tab makes them to order:
   optionally, the exact chorus sentence. It drafts title, style and lyrics from
   your words, leaning on the ones you keep forgetting. Edit the lyrics by hand
   (`English | Polish` per line) or ask it for changes before anything is sung.
+- **Length** is a setting (and a choice when composing): about 2, 3 or
+  4–5 minutes, the default. Suno has no duration parameter — a song lasts
+  as long as its lyrics — so each length is a structure the songwriter
+  follows, and long songs also ask Suno for a full-length arrangement.
 - **Suno sings it** through [kie.ai](https://kie.ai) — add a kie.ai key in
   Settings and pick the Suno model (V6, V6 Mini or V6 Wild). Each song comes
   in two takes. Generation runs in Rust in the background and survives leaving

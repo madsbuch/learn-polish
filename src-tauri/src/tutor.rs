@@ -314,7 +314,12 @@ pub fn tool_definitions() -> Value {
                     "topic_id": { "type": "integer", "description": "Take vocabulary from this topic or programme" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
                     "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
-                    "vocal_gender": { "type": "string", "enum": ["f", "m", ""] }
+                    "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
+                    "length": {
+                        "type": "string",
+                        "enum": ["short", "medium", "long"],
+                        "description": "short ≈ 2 min, medium ≈ 3 min, long ≈ 4–5 min. Leave out to use the learner's setting."
+                    }
                 },
                 "required": ["about"]
             }),
@@ -452,6 +457,8 @@ struct SongArgs {
     style: String,
     #[serde(default)]
     vocal_gender: String,
+    #[serde(default)]
+    length: String,
 }
 
 #[derive(Deserialize)]
@@ -809,6 +816,7 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
                 chorus_pl: args.chorus_pl,
                 style: args.style,
                 vocal_gender: args.vocal_gender,
+                length: args.length,
                 ..Default::default()
             },
         )

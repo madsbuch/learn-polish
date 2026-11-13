@@ -209,6 +209,8 @@ pub struct Settings {
     /// The Suno version songs are sung with.
     pub suno_model: String,
     pub suno_models: Vec<String>,
+    /// "short" | "medium" | "long" — what the songwriter writes for.
+    pub song_length: String,
     /// The programme the daily check-in is focused on, if any.
     pub focus_topic_id: Option<i64>,
     /// "system" | "light" | "dark", or empty if never stored (the webview's
