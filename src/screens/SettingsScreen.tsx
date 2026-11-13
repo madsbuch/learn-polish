@@ -34,6 +34,7 @@ export function SettingsScreen({
   onReset: () => void;
 }) {
   const [keyDraft, setKeyDraft] = useState("");
+  const [kieDraft, setKieDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -226,7 +227,7 @@ export function SettingsScreen({
       <div className="card">
         <h3>OpenRouter</h3>
         <p className="small">
-          Powers both the AI tutor and the Polish voice. Requests are made from the app's
+          Powers the AI tutor, the songwriter and the Polish voice. Requests are made from the app's
           Rust core, never from the web layer — so there is no CORS involved and your key
           stays out of JavaScript.
         </p>
@@ -289,7 +290,7 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>Tutor model</h3>
+        <h3>AI models</h3>
         {settings.aiModel ? (
           <p className="tiny faint" style={{ marginBottom: 10 }}>
             Using <b className="muted">{settings.aiModel}</b>
@@ -301,21 +302,45 @@ export function SettingsScreen({
           </Banner>
         )}
 
+        {settings.songwriterModel ? (
+          <p className="tiny faint" style={{ marginBottom: 10 }}>
+            Songwriter: <b className="muted">{settings.songwriterModel}</b>
+          </p>
+        ) : null}
+
         {chatModels ? (
-          <label className="field">
-            <span>{chatModels.length} models available</span>
-            <select
-              value={settings.aiModel}
-              onChange={(event) => patch({ aiModel: event.target.value }, "model")}
-            >
-              <option value="">— choose a model —</option>
-              {chatModels.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <>
+            <label className="field">
+              <span>Tutor — {chatModels.length} models available</span>
+              <select
+                value={settings.aiModel}
+                onChange={(event) => patch({ aiModel: event.target.value }, "model")}
+              >
+                <option value="">— choose a model —</option>
+                {chatModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Songwriter — writes the song lyrics</span>
+              <select
+                value={settings.songwriterModel}
+                onChange={(event) =>
+                  patch({ songwriterModel: event.target.value }, "songwriter-model")
+                }
+              >
+                <option value="">Same as the tutor</option>
+                {chatModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
         ) : null}
 
         <button
@@ -325,6 +350,82 @@ export function SettingsScreen({
         >
           {busy === "models" ? <Spinner /> : "Load models from OpenRouter"}
         </button>
+      </div>
+
+      <div className="card">
+        <h3>Songs — Suno via kie.ai</h3>
+        <p className="small">
+          Suno sings the learning songs. Requests go from the app's Rust core straight to
+          kie.ai; finished songs are downloaded and kept on this device.
+        </p>
+
+        {settings.hasKieKey ? (
+          <div className="row" style={{ marginBottom: 12 }}>
+            <span className="chip mint">✓ Key saved</span>
+            <span className="grow" />
+            <button
+              className="btn ghost small"
+              disabled={busy === "kie-credits"}
+              onClick={() =>
+                run("kie-credits", async () => {
+                  const credits = await api.kieCredits();
+                  setNotice(`kie.ai works — ${credits} credits left.`);
+                })
+              }
+            >
+              {busy === "kie-credits" ? <Spinner /> : "Check credits"}
+            </button>
+            <button
+              className="btn danger small"
+              onClick={() => run("kie-clear", async () => onSettings(await api.kieClearKey()))}
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <>
+            <label className="field">
+              <span>kie.ai API key</span>
+              <input
+                value={kieDraft}
+                type="password"
+                placeholder="Paste your kie.ai key"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                onChange={(event) => setKieDraft(event.target.value)}
+              />
+            </label>
+            <button
+              className="btn primary block"
+              style={{ marginBottom: 12 }}
+              disabled={kieDraft.trim().length === 0 || busy === "kie-save"}
+              onClick={() =>
+                run("kie-save", async () => {
+                  onSettings(await api.kieSetKey(kieDraft));
+                  setKieDraft("");
+                })
+              }
+            >
+              {busy === "kie-save" ? <Spinner /> : "Save key"}
+            </button>
+          </>
+        )}
+
+        <label className="field" style={{ marginBottom: 0 }}>
+          <span>Suno model</span>
+          <div className="segmented">
+            {settings.sunoModels.map((model) => (
+              <button
+                key={model}
+                data-active={settings.sunoModel === model}
+                onClick={() => patch({ sunoModel: model }, "suno-model")}
+              >
+                {model === "V6" ? "V6" : model === "V6_MINI" ? "V6 Mini" : model === "V6_WILD" ? "V6 Wild" : model}
+              </button>
+            ))}
+          </div>
+        </label>
       </div>
 
       <div className="card">

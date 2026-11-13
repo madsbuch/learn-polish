@@ -9,6 +9,9 @@ import type {
   CataloguePage,
   ChatMessage,
   Dialogue,
+  DraftRequest,
+  Song,
+  SongDraft,
   SpeechLine,
   Voice,
   Sentence,
@@ -81,6 +84,17 @@ export const api = {
   aiFeedback: (target: string, attempt: string) =>
     invoke<string>("ai_feedback", { target, attempt }),
   aiDrill: () => invoke<string>("ai_drill"),
+
+  kieSetKey: (key: string) => invoke<Settings>("kie_set_key", { key }),
+  kieClearKey: () => invoke<Settings>("kie_clear_key"),
+  kieCredits: () => invoke<number>("kie_credits"),
+  songsList: () => invoke<Song[]>("songs_list"),
+  songDraft: (request: DraftRequest) => invoke<SongDraft>("song_draft", { request }),
+  songCreate: (draft: SongDraft) => invoke<Song>("song_create", { draft }),
+  songRetry: (songId: number) => invoke<Song>("song_retry", { songId }),
+  songDelete: (songId: number) => invoke<void>("song_delete", { songId }),
+  songTrackDelete: (trackId: number) => invoke<void>("song_track_delete", { trackId }),
+  songTrackPlayed: (trackId: number) => invoke<void>("song_track_played", { trackId }),
 };
 
 /** Tauri rejects with a plain string built from our Error::Display impl. */

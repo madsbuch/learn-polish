@@ -5,6 +5,7 @@ mod db;
 mod error;
 mod models;
 mod session;
+mod songs;
 mod srs;
 mod stats;
 
@@ -29,6 +30,7 @@ pub fn run() {
 
             let connection = db::open(&path).map_err(|e| e.to_string())?;
             app.manage(Db(Mutex::new(connection)));
+            songs::resume_pending(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -65,6 +67,16 @@ pub fn run() {
             commands::ai_explain,
             commands::ai_feedback,
             commands::ai_drill,
+            commands::kie_set_key,
+            commands::kie_clear_key,
+            songs::kie_credits,
+            songs::songs_list,
+            songs::song_draft,
+            songs::song_create,
+            songs::song_retry,
+            songs::song_delete,
+            songs::song_track_delete,
+            songs::song_track_played,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
@@ -276,6 +288,46 @@ mod integration {
             })
             .unwrap();
         assert_eq!(total, 5, "two voices of the same line are stored separately");
+    }
+
+    #[test]
+    fn songs_round_trip_with_their_lyrics_and_takes() {
+        let conn = scratch_db("songs");
+        let draft = songs::normalize_draft(songs::SongDraft {
+            title: "Kawa".into(),
+            chorus_pl: "Poproszę kawę".into(),
+            chorus_en: "A coffee, please".into(),
+            style: String::new(),
+            vocal_gender: "f".into(),
+            sections: vec![songs::SongSection {
+                kind: "chorus".into(),
+                lines: vec![songs::SongLine { en: "A coffee, please".into(), pl: "Poproszę kawę".into() }],
+            }],
+        })
+        .unwrap();
+        assert!(!draft.style.is_empty(), "a default style is filled in");
+
+        assert_eq!(songs::suno_model(&conn), songs::DEFAULT_SUNO_MODEL);
+        let id = songs::insert_song(&conn, &draft, "V6").unwrap();
+        conn.execute(
+            "INSERT INTO song_tracks (song_id, ord, remote_id, audio_path, duration)
+             VALUES (?1, 0, 'r1', '/tmp/a.mp3', 120.5)",
+            [id],
+        )
+        .unwrap();
+
+        let listed = songs::list_songs(&conn).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].status, "generating");
+        assert_eq!(listed[0].sections, draft.sections, "lyrics survive storage");
+        assert_eq!(listed[0].tracks.len(), 1);
+        assert_eq!(listed[0].tracks[0].duration, 120.5);
+
+        // The songwriter falls back to the tutor model until it has its own.
+        db::set_setting(&conn, "ai_model", "tutor/model").unwrap();
+        assert_eq!(songs::songwriter_model(&conn).unwrap(), "tutor/model");
+        db::set_setting(&conn, "songwriter_model", "writer/model").unwrap();
+        assert_eq!(songs::songwriter_model(&conn).unwrap(), "writer/model");
     }
 
     #[test]

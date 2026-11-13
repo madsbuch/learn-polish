@@ -131,6 +131,38 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS chat_topic ON chat_messages(topic_id, id);
+
+-- Learning songs. `sections` is the structured lyrics (JSON) the app shows;
+-- `lyrics` is exactly what was sent to Suno.
+CREATE TABLE IF NOT EXISTS songs (
+    id           INTEGER PRIMARY KEY,
+    title        TEXT    NOT NULL,
+    chorus_pl    TEXT    NOT NULL,
+    chorus_en    TEXT    NOT NULL,
+    style        TEXT    NOT NULL,
+    vocal_gender TEXT    NOT NULL DEFAULT '',
+    sections     TEXT    NOT NULL,
+    lyrics       TEXT    NOT NULL,
+    suno_model   TEXT    NOT NULL,
+    task_id      TEXT,
+    status       TEXT    NOT NULL,          -- generating | ready | failed
+    error        TEXT,
+    created_at   INTEGER NOT NULL
+);
+
+-- Suno sings every song twice; each take is downloaded to the device.
+CREATE TABLE IF NOT EXISTS song_tracks (
+    id             INTEGER PRIMARY KEY,
+    song_id        INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    ord            INTEGER NOT NULL,
+    remote_id      TEXT    NOT NULL,
+    audio_path     TEXT    NOT NULL,
+    image_path     TEXT,
+    duration       REAL    NOT NULL DEFAULT 0,
+    play_count     INTEGER NOT NULL DEFAULT 0,
+    last_played_at INTEGER,
+    UNIQUE (song_id, remote_id)
+);
 "#;
 
 fn migrate(conn: &Connection) -> Result<()> {

@@ -206,7 +206,7 @@ button:focus-visible {
   height: calc(var(--nav-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   padding-top: 6px;
   background: var(--nav-bg);
   backdrop-filter: saturate(1.4) blur(18px);
@@ -221,15 +221,15 @@ button:focus-visible {
   justify-content: center;
   gap: 3px;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   transition: color 0.15s;
 }
 .nav button .glyph {
   display: grid;
   place-items: center;
-  width: 52px;
+  width: 46px;
   height: 30px;
   border-radius: 999px;
   transition: background 0.18s, transform 0.18s;
@@ -1089,4 +1089,196 @@ label.field > span {
   font-weight: 650;
   color: var(--text-dim);
   margin-bottom: 6px;
+}
+
+/* ------------------------------------------------------------------ songs */
+
+.link {
+  color: var(--brand-soft);
+  font-weight: 700;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.cover {
+  flex: none;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--hero);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.now-playing .cover {
+  border-radius: 14px;
+  box-shadow: 0 10px 22px -10px rgba(10, 5, 50, 0.7);
+}
+.now-playing .cover.placeholder {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.scrubber {
+  margin: 16px 0 4px;
+  accent-color: #fff;
+}
+
+.transport {
+  justify-content: center;
+  gap: 22px;
+  margin-top: 8px;
+}
+.play-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #3b22c4;
+  box-shadow: 0 12px 24px -12px rgba(10, 5, 50, 0.8);
+  transition: transform 0.1s;
+}
+.play-btn:active {
+  transform: scale(0.94);
+}
+.icon-btn.ghost-light {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: transparent;
+  color: #fff;
+}
+
+.song {
+  border-bottom: 1px solid var(--line-soft);
+}
+.song:last-child {
+  border-bottom: none;
+}
+.song .list-row {
+  border-bottom: none;
+}
+.song[data-current="true"] {
+  background: var(--brand-tint);
+}
+.takes {
+  gap: 6px;
+  padding: 0 16px 13px 76px;
+}
+.chip.take,
+.chip.preset {
+  cursor: pointer;
+  padding: 6px 11px;
+}
+.chip.take[data-active="true"],
+.chip.preset[data-active="true"] {
+  background: var(--brand);
+  color: #fff;
+}
+.song-detail {
+  padding: 2px 16px 16px;
+}
+
+.lyrics {
+  background: var(--bg-input);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.lyric-section {
+  margin-bottom: 12px;
+}
+.lyric-section:last-child {
+  margin-bottom: 0;
+}
+.lyric-section .eyebrow {
+  margin-bottom: 4px;
+}
+.lyric-line {
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+.lyric-line .en {
+  display: block;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+.lyric-line .pl {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+}
+.lyric-section[data-kind="chorus"] {
+  border-left: 3px solid var(--crimson);
+  padding-left: 10px;
+}
+.lyric-section[data-kind="chorus"] .pl {
+  color: var(--crimson-ink);
+}
+
+.lyrics-editor {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.mini-player {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 8px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  z-index: 2;
+}
+.mini-player .cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+.mini-open {
+  gap: 10px;
+  text-align: left;
+  min-width: 0;
+}
+.mini-title,
+.mini-sub {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-title {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.mini-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.mini-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--brand);
+  transition: width 0.25s linear;
+}
+/* Room for the mini player so it never hides the end of a page. */
+.app:has(.mini-player) .scroll {
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 90px);
 }

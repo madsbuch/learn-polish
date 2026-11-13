@@ -1,0 +1,1109 @@
+//! Learning songs: an AI songwriter drafts bilingual lyrics, Suno (through
+//! kie.ai) sings them, and the finished tracks are downloaded so they can be
+//! replayed forever — kie.ai deletes generated files after 14 days.
+//!
+//! The song shape is the one that works for learning: verses pair a short
+//! English line with the same line in Polish, sung right after it, and the
+//! chorus is a single Polish sentence repeated until it sticks.
+
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::time::Duration;
+
+use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::ai;
+use crate::db::{self, Db};
+use crate::error::{Error, Result};
+
+const KIE_BASE_URL: &str = "https://api.kie.ai/api/v1";
+/// kie.ai's Suno generation endpoint, as named in its unified task API.
+const KIE_MUSIC_MODEL: &str = "ai-music-api/generate";
+
+/// Suno versions kie.ai currently accepts for new songs.
+pub const SUNO_MODELS: &[&str] = &["V6", "V6_MINI", "V6_WILD"];
+pub const DEFAULT_SUNO_MODEL: &str = "V6";
+
+/// Suno usually finishes in two to four minutes.
+const POLL_INTERVAL: Duration = Duration::from_secs(8);
+const POLL_LIMIT: Duration = Duration::from_secs(15 * 60);
+
+const TITLE_LIMIT: usize = 80;
+const STYLE_LIMIT: usize = 1000;
+const LYRICS_LIMIT: usize = 5000;
+
+/// Steers Suno away from delivery that is hard to understand.
+const NEGATIVE_TAGS: &str = "rap, spoken word, screaming, mumbled vocals, heavy distortion";
+
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn client() -> &'static reqwest::Client {
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            // Long enough to download a five-minute MP3 on a slow connection.
+            .timeout(Duration::from_secs(180))
+            .user_agent(concat!("learn-polish/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .expect("failed to build HTTP client")
+    })
+}
+
+fn unreachable(error: reqwest::Error) -> Error {
+    Error::msg(format!("Could not reach kie.ai: {error}"))
+}
+
+// ---------------------------------------------------------------------------
+// Types shared with the frontend
+// ---------------------------------------------------------------------------
+
+/// One phrase of a song: the English line and the Polish line sung after it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SongLine {
+    pub en: String,
+    pub pl: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SongSection {
+    /// verse | chorus | bridge | intro | outro
+    pub kind: String,
+    pub lines: Vec<SongLine>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SongDraft {
+    pub title: String,
+    /// The hook: the one Polish sentence the song is built to plant.
+    pub chorus_pl: String,
+    pub chorus_en: String,
+    /// Suno style prompt: genre, tempo, voice.
+    pub style: String,
+    /// "f", "m" or "" for no preference.
+    pub vocal_gender: String,
+    pub sections: Vec<SongSection>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongTrack {
+    pub id: i64,
+    pub song_id: i64,
+    pub ord: i64,
+    /// Absolute path on this device; the webview plays it via the asset protocol.
+    pub audio_path: String,
+    pub image_path: Option<String>,
+    pub duration: f64,
+    pub play_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Song {
+    pub id: i64,
+    pub title: String,
+    pub chorus_pl: String,
+    pub chorus_en: String,
+    pub style: String,
+    pub vocal_gender: String,
+    pub sections: Vec<SongSection>,
+    /// generating | ready | failed
+    pub status: String,
+    pub error: Option<String>,
+    pub created_at: i64,
+    pub tracks: Vec<SongTrack>,
+}
+
+/// What the songwriter is asked for.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DraftRequest {
+    /// Free text: what the song should be about.
+    pub brief: String,
+    /// Draw vocabulary from this conversation topic.
+    pub topic_id: Option<i64>,
+    /// A fixed chorus sentence; empty lets the songwriter choose.
+    pub chorus_pl: String,
+    pub style: String,
+    pub vocal_gender: String,
+    /// When refining: the current draft and what to change about it.
+    pub previous: Option<SongDraft>,
+    pub feedback: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongsChanged {
+    pub song_id: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Lyrics
+// ---------------------------------------------------------------------------
+
+fn section_label(kind: &str) -> &'static str {
+    match kind {
+        "chorus" => "Chorus",
+        "bridge" => "Bridge",
+        "intro" => "Intro",
+        "outro" => "Outro",
+        _ => "Verse",
+    }
+}
+
+/// Lyrics in the form Suno sings. Verses give each English line and then its
+/// Polish twin; the chorus is sung in Polish only, so the hook is pure Polish.
+pub fn render_lyrics(draft: &SongDraft) -> String {
+    let mut out = String::new();
+    let mut verse = 0;
+    for section in &draft.sections {
+        let kind = section.kind.as_str();
+        let label = section_label(kind);
+        let header = if label == "Verse" {
+            verse += 1;
+            format!("[Verse {verse}]")
+        } else {
+            format!("[{label}]")
+        };
+        let mut body = Vec::new();
+        for line in &section.lines {
+            let en = line.en.trim();
+            let pl = line.pl.trim();
+            if kind == "chorus" {
+                if !pl.is_empty() {
+                    body.push(pl.to_string());
+                }
+            } else {
+                if !en.is_empty() {
+                    body.push(en.to_string());
+                }
+                if !pl.is_empty() {
+                    body.push(pl.to_string());
+                }
+            }
+        }
+        if body.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&header);
+        out.push('\n');
+        for line in body {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+    out.trim_end().to_string()
+}
+
+fn truncate(text: &str, limit: usize) -> String {
+    text.trim().chars().take(limit).collect()
+}
+
+/// Cleans a draft from the model or the editor so Suno never rejects it.
+pub fn normalize_draft(mut draft: SongDraft) -> Result<SongDraft> {
+    draft.title = truncate(&draft.title, TITLE_LIMIT);
+    draft.chorus_pl = draft.chorus_pl.trim().to_string();
+    draft.chorus_en = draft.chorus_en.trim().to_string();
+    draft.style = truncate(&draft.style, STYLE_LIMIT);
+    draft.vocal_gender = match draft.vocal_gender.trim() {
+        "f" | "female" => "f".into(),
+        "m" | "male" => "m".into(),
+        _ => String::new(),
+    };
+    for section in &mut draft.sections {
+        section.kind = match section.kind.trim().to_lowercase().as_str() {
+            k if k.starts_with("chorus") || k == "hook" || k == "refrain" => "chorus",
+            k if k.starts_with("bridge") => "bridge",
+            k if k.starts_with("intro") => "intro",
+            k if k.starts_with("outro") => "outro",
+            _ => "verse",
+        }
+        .to_string();
+        for line in &mut section.lines {
+            line.en = line.en.trim().to_string();
+            line.pl = line.pl.trim().to_string();
+        }
+        section.lines.retain(|l| !l.en.is_empty() || !l.pl.is_empty());
+    }
+    draft.sections.retain(|s| !s.lines.is_empty());
+
+    if draft.chorus_pl.is_empty() {
+        // Fall back to the first Polish line of the first chorus.
+        draft.chorus_pl = draft
+            .sections
+            .iter()
+            .find(|s| s.kind == "chorus")
+            .and_then(|s| s.lines.iter().find(|l| !l.pl.is_empty()))
+            .map(|l| l.pl.clone())
+            .unwrap_or_default();
+    }
+    if draft.title.is_empty() {
+        draft.title = truncate(&draft.chorus_pl, TITLE_LIMIT);
+    }
+    if draft.sections.is_empty() {
+        return Err(Error::msg("The song has no lyrics yet."));
+    }
+    if draft.title.is_empty() {
+        return Err(Error::msg("Give the song a title."));
+    }
+    if draft.style.is_empty() {
+        draft.style = "catchy acoustic pop, mid tempo, clear vocals, clear diction".into();
+    }
+    let lyrics = render_lyrics(&draft);
+    if lyrics.chars().count() > LYRICS_LIMIT {
+        return Err(Error::msg(format!(
+            "The lyrics are {} characters; Suno accepts at most {LYRICS_LIMIT}.",
+            lyrics.chars().count()
+        )));
+    }
+    Ok(draft)
+}
+
+/// Pulls the JSON object out of a model reply that may wrap it in prose or
+/// a code fence.
+pub fn parse_draft(reply: &str) -> Result<SongDraft> {
+    let start = reply.find('{');
+    let end = reply.rfind('}');
+    let (Some(start), Some(end)) = (start, end) else {
+        return Err(Error::msg("The songwriter did not return any lyrics. Try again."));
+    };
+    if end <= start {
+        return Err(Error::msg("The songwriter did not return any lyrics. Try again."));
+    }
+    let draft: SongDraft = serde_json::from_str(&reply[start..=end]).map_err(|e| {
+        Error::msg(format!("The songwriter's answer was not readable ({e}). Try again."))
+    })?;
+    normalize_draft(draft)
+}
+
+// ---------------------------------------------------------------------------
+// Songwriter prompt
+// ---------------------------------------------------------------------------
+
+const SONGWRITER_RULES: &str = r#"You write songs that teach Polish to an adult beginner who speaks English. The learner will listen to each song many times, so it must be catchy, simple and correct.
+
+How the songs work:
+- Verses are made of pairs: a short English line, then the same meaning in Polish. Both are sung, English first. 2–7 words per line.
+- The chorus is ONE Polish sentence (the hook) that the learner should get stuck in their head. It is sung only in Polish, usually 2–4 times. Give its English meaning.
+- Structure: verse, chorus, verse, chorus, bridge (optional), chorus. 4 pairs per verse.
+- Polish must be natural, grammatical and use correct diacritics (ą ć ę ł ń ó ś ź ż). Prefer the present tense and everyday words.
+- Reuse the target words; repeating a word across verses helps it stick.
+- style is a Suno style prompt under 200 characters: genre, tempo, mood, voice. Always include "clear vocals" and "clear diction". Never name real artists.
+
+Reply with ONLY a JSON object, no prose, in exactly this shape:
+{
+  "title": "short title",
+  "chorusPl": "the Polish hook sentence",
+  "chorusEn": "its English meaning",
+  "style": "suno style prompt",
+  "vocalGender": "f" | "m" | "",
+  "sections": [
+    {"kind": "verse", "lines": [{"en": "I would like a coffee", "pl": "Poproszę kawę"}]},
+    {"kind": "chorus", "lines": [{"en": "A coffee with milk, please", "pl": "Poproszę kawę z mlekiem"}]}
+  ]
+}"#;
+
+struct SongContext {
+    topic: Option<String>,
+    words: Vec<String>,
+    sentences: Vec<String>,
+    weak_words: Vec<String>,
+    existing_choruses: Vec<String>,
+}
+
+fn gather_context(conn: &Connection, topic_id: Option<i64>) -> Result<SongContext> {
+    let strings = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Result<Vec<String>> {
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt
+            .query_map(params, |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    };
+    let topic = match topic_id {
+        Some(id) => conn
+            .query_row("SELECT title_en FROM topics WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?,
+        None => None,
+    };
+    let (words, sentences) = match topic_id {
+        Some(id) => (
+            strings(
+                "SELECT pl || ' = ' || en FROM words WHERE topic_id = ?1 ORDER BY ord LIMIT 40",
+                &[&id],
+            )?,
+            strings(
+                "SELECT pl || ' = ' || en FROM sentences WHERE topic_id = ?1 ORDER BY ord LIMIT 20",
+                &[&id],
+            )?,
+        ),
+        // Without a topic, sing what the learner has actually met.
+        None => (
+            strings(
+                "SELECT w.pl || ' = ' || w.en FROM reviews r JOIN words w ON w.id = r.item_id
+                 WHERE r.kind = 'word' ORDER BY r.last_day DESC LIMIT 40",
+                &[],
+            )?,
+            strings(
+                "SELECT s.pl || ' = ' || s.en FROM reviews r JOIN sentences s ON s.id = r.item_id
+                 WHERE r.kind = 'sentence' ORDER BY r.last_day DESC LIMIT 20",
+                &[],
+            )?,
+        ),
+    };
+    Ok(SongContext {
+        topic,
+        words,
+        sentences,
+        weak_words: strings(
+            "SELECT w.pl FROM reviews r JOIN words w ON w.id = r.item_id
+             WHERE r.kind = 'word' ORDER BY r.lapses DESC, r.ease ASC LIMIT 10",
+            &[],
+        )?,
+        existing_choruses: strings("SELECT chorus_pl FROM songs ORDER BY id DESC LIMIT 30", &[])?,
+    })
+}
+
+fn songwriter_messages(request: &DraftRequest, context: &SongContext) -> Vec<ai::Wire> {
+    let mut brief = String::new();
+    if let Some(previous) = &request.previous {
+        brief.push_str("Here is the current draft:\n");
+        brief.push_str(&serde_json::to_string_pretty(previous).unwrap_or_default());
+        brief.push_str("\n\nRevise it as follows, keeping everything else:\n");
+        brief.push_str(if request.feedback.trim().is_empty() {
+            "Make it catchier."
+        } else {
+            request.feedback.trim()
+        });
+        brief.push_str("\n\nReturn the whole revised song as JSON.");
+        return vec![ai::Wire::system(SONGWRITER_RULES), ai::Wire::user(brief)];
+    }
+
+    if !request.brief.trim().is_empty() {
+        brief.push_str(&format!("The song is about: {}\n", request.brief.trim()));
+    }
+    if let Some(topic) = &context.topic {
+        brief.push_str(&format!("Theme: {topic}\n"));
+    }
+    if request.chorus_pl.trim().is_empty() {
+        brief.push_str(
+            "Choose the chorus sentence yourself — ideally one of the sentences below.\n",
+        );
+    } else {
+        brief.push_str(&format!(
+            "The chorus sentence MUST be exactly: {}\n",
+            request.chorus_pl.trim()
+        ));
+    }
+    if !request.style.trim().is_empty() {
+        brief.push_str(&format!("Musical style: {}\n", request.style.trim()));
+    }
+    match request.vocal_gender.as_str() {
+        "f" => brief.push_str("Sung by a female voice.\n"),
+        "m" => brief.push_str("Sung by a male voice.\n"),
+        _ => {}
+    }
+    if !context.words.is_empty() {
+        brief.push_str(&format!("\nTarget words:\n{}\n", context.words.join("\n")));
+    }
+    if !context.sentences.is_empty() {
+        brief.push_str(&format!("\nUseful sentences:\n{}\n", context.sentences.join("\n")));
+    }
+    if !context.weak_words.is_empty() {
+        brief.push_str(&format!(
+            "\nThe learner keeps forgetting these, so work some in: {}\n",
+            context.weak_words.join(", ")
+        ));
+    }
+    if !context.existing_choruses.is_empty() {
+        brief.push_str(&format!(
+            "\nThese choruses already exist — use a different one: {}\n",
+            context.existing_choruses.join(" | ")
+        ));
+    }
+    if brief.trim().is_empty() {
+        brief.push_str("Write a song about everyday life for a complete beginner.\n");
+    }
+    vec![ai::Wire::system(SONGWRITER_RULES), ai::Wire::user(brief)]
+}
+
+/// The model that writes lyrics: its own setting, else the tutor's model.
+pub fn songwriter_model(conn: &Connection) -> Result<String> {
+    let model = ai::stored_model(conn, "songwriter_model");
+    if !model.is_empty() {
+        return Ok(model);
+    }
+    ai::require_model(conn)
+}
+
+pub fn suno_model(conn: &Connection) -> String {
+    let chosen = ai::stored_model(conn, "suno_model");
+    if SUNO_MODELS.contains(&chosen.as_str()) {
+        chosen
+    } else {
+        DEFAULT_SUNO_MODEL.to_string()
+    }
+}
+
+pub fn kie_key(conn: &Connection) -> Result<String> {
+    db::get_setting(conn, "kie_api_key")?
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| Error::msg("No kie.ai API key yet. Add one in Settings to make songs."))
+}
+
+// ---------------------------------------------------------------------------
+// kie.ai
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct KieEnvelope {
+    code: i64,
+    #[serde(default)]
+    msg: String,
+    #[serde(default)]
+    data: serde_json::Value,
+}
+
+/// kie.ai answers HTTP 200 even for failures; the real status is in `code`.
+async fn kie_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value> {
+    let response = request.send().await.map_err(unreachable)?;
+    let status = response.status();
+    let body = response.text().await.map_err(unreachable)?;
+    let envelope: KieEnvelope = serde_json::from_str(&body).map_err(|_| {
+        Error::msg(format!(
+            "kie.ai returned an unexpected response ({status}): {}",
+            body.chars().take(300).collect::<String>()
+        ))
+    })?;
+    if envelope.code != 200 {
+        let hint = match envelope.code {
+            401 => " Check the kie.ai key in Settings.",
+            402 => " Top up your kie.ai credits.",
+            429 => " Wait a moment and try again.",
+            _ => "",
+        };
+        return Err(Error::msg(format!("kie.ai ({}): {}{hint}", envelope.code, envelope.msg)));
+    }
+    Ok(envelope.data)
+}
+
+pub async fn credits(key: &str) -> Result<f64> {
+    let data = kie_json(client().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
+    data.as_f64()
+        .ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
+}
+
+async fn create_task(key: &str, model: &str, draft: &SongDraft) -> Result<String> {
+    let mut input = serde_json::json!({
+        "custom_mode": true,
+        "instrumental": false,
+        "model": model,
+        "title": draft.title,
+        "lyrics": render_lyrics(draft),
+        "style": draft.style,
+        "negative_tags": NEGATIVE_TAGS,
+    });
+    if !draft.vocal_gender.is_empty() {
+        input["vocal_gender"] = draft.vocal_gender.clone().into();
+    }
+    let data = kie_json(
+        client()
+            .post(format!("{KIE_BASE_URL}/jobs/createTask"))
+            .bearer_auth(key)
+            .json(&serde_json::json!({ "model": KIE_MUSIC_MODEL, "input": input })),
+    )
+    .await?;
+    data.get("taskId")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| Error::msg("kie.ai accepted the song but returned no task id."))
+}
+
+/// A finished take, as kie.ai reports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteTrack {
+    pub id: String,
+    pub audio_url: String,
+    pub image_url: Option<String>,
+    pub duration: f64,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TaskState {
+    Pending,
+    Done(Vec<RemoteTrack>),
+    Failed(String),
+}
+
+fn tracks_from(value: &serde_json::Value) -> Vec<RemoteTrack> {
+    let list = value
+        .get("data")
+        .or_else(|| value.get("sunoData"))
+        .and_then(|v| v.as_array())
+        .or_else(|| value.as_array());
+    let Some(list) = list else { return Vec::new() };
+    list.iter()
+        .filter_map(|item| {
+            let audio_url = item
+                .get("audio_url")
+                .or_else(|| item.get("audioUrl"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())?
+                .to_string();
+            Some(RemoteTrack {
+                id: item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| audio_url.clone()),
+                audio_url,
+                image_url: item
+                    .get("image_url")
+                    .or_else(|| item.get("imageUrl"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+                duration: item.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            })
+        })
+        .collect()
+}
+
+/// Reads a `recordInfo` payload. The tracks normally sit in `response.data`;
+/// `resultJson` (a JSON string) is the fallback.
+pub fn parse_task(data: &serde_json::Value) -> TaskState {
+    let state = data.get("state").and_then(|v| v.as_str()).unwrap_or("");
+    match state {
+        "success" => {
+            let mut tracks = data.get("response").map(tracks_from).unwrap_or_default();
+            if tracks.is_empty() {
+                if let Some(parsed) = data
+                    .get("resultJson")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                {
+                    tracks = tracks_from(&parsed);
+                }
+            }
+            if tracks.is_empty() {
+                TaskState::Failed("Suno finished but returned no audio.".into())
+            } else {
+                TaskState::Done(tracks)
+            }
+        }
+        "fail" => TaskState::Failed(
+            data.get("failMsg")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Suno could not make this song.")
+                .to_string(),
+        ),
+        _ => TaskState::Pending,
+    }
+}
+
+async fn task_state(key: &str, task_id: &str) -> Result<TaskState> {
+    let data = kie_json(
+        client()
+            .get(format!("{KIE_BASE_URL}/jobs/recordInfo"))
+            .query(&[("taskId", task_id)])
+            .bearer_auth(key),
+    )
+    .await?;
+    Ok(parse_task(&data))
+}
+
+async fn download(url: &str, path: &Path) -> Result<()> {
+    let response = client().get(url).send().await.map_err(unreachable)?;
+    if !response.status().is_success() {
+        return Err(Error::msg(format!("Could not download the song ({}).", response.status())));
+    }
+    let bytes = response.bytes().await.map_err(unreachable)?;
+    if bytes.is_empty() {
+        return Err(Error::msg("The downloaded song was empty."));
+    }
+    // Write then rename, so a crash never leaves a half file that looks done.
+    let partial = path.with_extension("part");
+    std::fs::write(&partial, &bytes)?;
+    std::fs::rename(&partial, path)?;
+    Ok(())
+}
+
+fn extension(url: &str, fallback: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or("");
+    path.rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .filter(|ext| ext.len() <= 4 && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------
+
+pub fn songs_dir(app: &AppHandle) -> Result<PathBuf> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| Error::msg(format!("no app data directory: {e}")))?
+        .join("songs");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn load_tracks(conn: &Connection, song_id: i64) -> Result<Vec<SongTrack>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, song_id, ord, audio_path, image_path, duration, play_count
+         FROM song_tracks WHERE song_id = ?1 ORDER BY ord",
+    )?;
+    let tracks = stmt
+        .query_map([song_id], |r| {
+            Ok(SongTrack {
+                id: r.get(0)?,
+                song_id: r.get(1)?,
+                ord: r.get(2)?,
+                audio_path: r.get(3)?,
+                image_path: r.get(4)?,
+                duration: r.get(5)?,
+                play_count: r.get(6)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(tracks)
+}
+
+fn row_to_song(r: &rusqlite::Row) -> rusqlite::Result<Song> {
+    let sections: String = r.get(6)?;
+    Ok(Song {
+        id: r.get(0)?,
+        title: r.get(1)?,
+        chorus_pl: r.get(2)?,
+        chorus_en: r.get(3)?,
+        style: r.get(4)?,
+        vocal_gender: r.get(5)?,
+        sections: serde_json::from_str(&sections).unwrap_or_default(),
+        status: r.get(7)?,
+        error: r.get(8)?,
+        created_at: r.get(9)?,
+        tracks: Vec::new(),
+    })
+}
+
+const SONG_COLUMNS: &str =
+    "id, title, chorus_pl, chorus_en, style, vocal_gender, sections, status, error, created_at";
+
+pub fn load_song(conn: &Connection, id: i64) -> Result<Song> {
+    let mut song = conn
+        .query_row(
+            &format!("SELECT {SONG_COLUMNS} FROM songs WHERE id = ?1"),
+            [id],
+            row_to_song,
+        )
+        .optional()?
+        .ok_or_else(|| Error::msg("That song no longer exists."))?;
+    song.tracks = load_tracks(conn, id)?;
+    Ok(song)
+}
+
+pub fn list_songs(conn: &Connection) -> Result<Vec<Song>> {
+    let mut stmt = conn.prepare(&format!("SELECT {SONG_COLUMNS} FROM songs ORDER BY id DESC"))?;
+    let mut songs = stmt
+        .query_map([], row_to_song)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    for song in &mut songs {
+        song.tracks = load_tracks(conn, song.id)?;
+    }
+    Ok(songs)
+}
+
+pub fn insert_song(conn: &Connection, draft: &SongDraft, suno_model: &str) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO songs (title, chorus_pl, chorus_en, style, vocal_gender, sections, lyrics,
+                            suno_model, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'generating', ?9)",
+        rusqlite::params![
+            draft.title,
+            draft.chorus_pl,
+            draft.chorus_en,
+            draft.style,
+            draft.vocal_gender,
+            serde_json::to_string(&draft.sections)?,
+            render_lyrics(draft),
+            suno_model,
+            db::now_secs(),
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+fn set_status(conn: &Connection, id: i64, status: &str, error: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE songs SET status = ?2, error = ?3 WHERE id = ?1",
+        rusqlite::params![id, status, error],
+    )?;
+    Ok(())
+}
+
+fn draft_of(song: &Song) -> SongDraft {
+    SongDraft {
+        title: song.title.clone(),
+        chorus_pl: song.chorus_pl.clone(),
+        chorus_en: song.chorus_en.clone(),
+        style: song.style.clone(),
+        vocal_gender: song.vocal_gender.clone(),
+        sections: song.sections.clone(),
+    }
+}
+
+fn notify(app: &AppHandle, song_id: i64) {
+    let _ = app.emit("songs://changed", SongsChanged { song_id });
+}
+
+// ---------------------------------------------------------------------------
+// Generation
+// ---------------------------------------------------------------------------
+
+/// Waits for Suno, then downloads every take. Runs detached from the command
+/// that started it, so leaving the screen (or the app) does not lose the song;
+/// unfinished songs are picked up again at the next launch.
+pub fn spawn_generation(app: AppHandle, song_id: i64) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = generate(&app, song_id).await {
+            let db = app.state::<Db>();
+            let conn = db.lock();
+            let _ = set_status(&conn, song_id, "failed", Some(&error.to_string()));
+            drop(conn);
+            notify(&app, song_id);
+        }
+    });
+}
+
+async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
+    let (key, task_id, model, draft) = {
+        let db = app.state::<Db>();
+        let conn = db.lock();
+        let song = load_song(&conn, song_id)?;
+        let task_id: Option<String> =
+            conn.query_row("SELECT task_id FROM songs WHERE id = ?1", [song_id], |r| r.get(0))?;
+        let model: String =
+            conn.query_row("SELECT suno_model FROM songs WHERE id = ?1", [song_id], |r| r.get(0))?;
+        (kie_key(&conn)?, task_id, model, draft_of(&song))
+    };
+
+    let task_id = match task_id {
+        Some(id) if !id.is_empty() => id,
+        _ => {
+            let id = create_task(&key, &model, &draft).await?;
+            let db = app.state::<Db>();
+            db.lock().execute(
+                "UPDATE songs SET task_id = ?2 WHERE id = ?1",
+                rusqlite::params![song_id, id],
+            )?;
+            id
+        }
+    };
+
+    let started = std::time::Instant::now();
+    let tracks = loop {
+        match task_state(&key, &task_id).await {
+            Ok(TaskState::Done(tracks)) => break tracks,
+            Ok(TaskState::Failed(reason)) => {
+                // The task is spent; a retry must start a new one.
+                let db = app.state::<Db>();
+                db.lock().execute("UPDATE songs SET task_id = NULL WHERE id = ?1", [song_id])?;
+                return Err(Error::msg(reason));
+            }
+            Ok(TaskState::Pending) => {}
+            // A dropped connection mid-wait is not worth abandoning the song.
+            Err(error) if started.elapsed() > POLL_LIMIT => return Err(error),
+            Err(_) => {}
+        }
+        if started.elapsed() > POLL_LIMIT {
+            return Err(Error::msg(
+                "Suno is taking unusually long. Tap retry to check on it again.",
+            ));
+        }
+        tokio::time::sleep(POLL_INTERVAL).await;
+    };
+
+    let dir = songs_dir(app)?;
+    for (ord, track) in tracks.iter().enumerate() {
+        let audio = dir.join(format!(
+            "song-{song_id}-{ord}.{}",
+            extension(&track.audio_url, "mp3")
+        ));
+        download(&track.audio_url, &audio).await?;
+        let image = match &track.image_url {
+            Some(url) => {
+                let path = dir.join(format!("song-{song_id}-{ord}.{}", extension(url, "jpg")));
+                // Cover art is a nicety; a failed download must not lose the song.
+                download(url, &path).await.ok().map(|_| path)
+            }
+            None => None,
+        };
+        let db = app.state::<Db>();
+        db.lock().execute(
+            "INSERT INTO song_tracks (song_id, ord, remote_id, audio_path, image_path, duration)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(song_id, remote_id) DO UPDATE SET
+                 audio_path = excluded.audio_path, image_path = excluded.image_path,
+                 duration = excluded.duration",
+            rusqlite::params![
+                song_id,
+                ord as i64,
+                track.id,
+                audio.to_string_lossy(),
+                image.map(|p| p.to_string_lossy().to_string()),
+                track.duration,
+            ],
+        )?;
+    }
+
+    let db = app.state::<Db>();
+    set_status(&db.lock(), song_id, "ready", None)?;
+    notify(app, song_id);
+    Ok(())
+}
+
+/// Resumes songs that were still being made when the app last closed.
+pub fn resume_pending(app: &AppHandle) {
+    let pending: Vec<i64> = {
+        let db = app.state::<Db>();
+        let conn = db.lock();
+        conn.prepare("SELECT id FROM songs WHERE status = 'generating'")
+            .and_then(|mut stmt| {
+                stmt.query_map([], |r| r.get(0))?
+                    .collect::<rusqlite::Result<Vec<i64>>>()
+            })
+            .unwrap_or_default()
+    };
+    for id in pending {
+        spawn_generation(app.clone(), id);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
+    list_songs(&db.lock())
+}
+
+/// Asks the songwriter for a draft, or a revision of one.
+#[tauri::command]
+pub async fn song_draft(db: State<'_, Db>, request: DraftRequest) -> Result<SongDraft> {
+    let (key, model, messages) = {
+        let conn = db.lock();
+        let context = gather_context(&conn, request.topic_id)?;
+        (
+            ai::api_key(&conn)?,
+            songwriter_model(&conn)?,
+            songwriter_messages(&request, &context),
+        )
+    };
+    let reply = ai::complete_with(&key, &model, &messages, 0.8, 2500).await?;
+    let mut draft = parse_draft(&reply)?;
+    // The learner's explicit choices beat the model's.
+    if request.previous.is_none() {
+        if !request.chorus_pl.trim().is_empty() {
+            draft.chorus_pl = request.chorus_pl.trim().to_string();
+        }
+        if !request.vocal_gender.is_empty() {
+            draft.vocal_gender = request.vocal_gender.clone();
+        }
+    }
+    Ok(draft)
+}
+
+/// Saves the song and starts Suno on it. Returns at once; progress arrives as
+/// `songs://changed` events.
+#[tauri::command]
+pub async fn song_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft) -> Result<Song> {
+    let draft = normalize_draft(draft)?;
+    let id = {
+        let conn = db.lock();
+        kie_key(&conn)?;
+        let model = suno_model(&conn);
+        insert_song(&conn, &draft, &model)?
+    };
+    spawn_generation(app, id);
+    load_song(&db.lock(), id)
+}
+
+#[tauri::command]
+pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Result<Song> {
+    {
+        let conn = db.lock();
+        kie_key(&conn)?;
+        set_status(&conn, song_id, "generating", None)?;
+    }
+    spawn_generation(app, song_id);
+    load_song(&db.lock(), song_id)
+}
+
+#[tauri::command]
+pub async fn song_delete(db: State<'_, Db>, song_id: i64) -> Result<()> {
+    let conn = db.lock();
+    for track in load_tracks(&conn, song_id)? {
+        let _ = std::fs::remove_file(&track.audio_path);
+        if let Some(image) = track.image_path {
+            let _ = std::fs::remove_file(image);
+        }
+    }
+    conn.execute("DELETE FROM song_tracks WHERE song_id = ?1", [song_id])?;
+    conn.execute("DELETE FROM songs WHERE id = ?1", [song_id])?;
+    Ok(())
+}
+
+/// Removes one take, keeping the song and its other takes.
+#[tauri::command]
+pub async fn song_track_delete(db: State<'_, Db>, track_id: i64) -> Result<()> {
+    let conn = db.lock();
+    let paths: Option<(String, Option<String>)> = conn
+        .query_row(
+            "SELECT audio_path, image_path FROM song_tracks WHERE id = ?1",
+            [track_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    if let Some((audio, image)) = paths {
+        let _ = std::fs::remove_file(audio);
+        if let Some(image) = image {
+            let _ = std::fs::remove_file(image);
+        }
+    }
+    conn.execute("DELETE FROM song_tracks WHERE id = ?1", [track_id])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn song_track_played(db: State<'_, Db>, track_id: i64) -> Result<()> {
+    db.lock().execute(
+        "UPDATE song_tracks SET play_count = play_count + 1, last_played_at = ?2 WHERE id = ?1",
+        rusqlite::params![track_id, db::now_secs()],
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn kie_credits(db: State<'_, Db>) -> Result<f64> {
+    let key = kie_key(&db.lock())?;
+    credits(&key).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn draft() -> SongDraft {
+        SongDraft {
+            title: "Kawa".into(),
+            chorus_pl: "Poproszę kawę z mlekiem".into(),
+            chorus_en: "A coffee with milk, please".into(),
+            style: "acoustic pop".into(),
+            vocal_gender: "".into(),
+            sections: vec![
+                SongSection {
+                    kind: "verse".into(),
+                    lines: vec![
+                        SongLine { en: "Good morning".into(), pl: "Dzień dobry".into() },
+                        SongLine { en: "I am hungry".into(), pl: "Jestem głodny".into() },
+                    ],
+                },
+                SongSection {
+                    kind: "chorus".into(),
+                    lines: vec![SongLine {
+                        en: "A coffee with milk, please".into(),
+                        pl: "Poproszę kawę z mlekiem".into(),
+                    }],
+                },
+                SongSection {
+                    kind: "verse".into(),
+                    lines: vec![SongLine { en: "Thank you".into(), pl: "Dziękuję".into() }],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn verses_sing_english_then_polish_and_the_chorus_only_polish() {
+        assert_eq!(
+            render_lyrics(&draft()),
+            "[Verse 1]\nGood morning\nDzień dobry\nI am hungry\nJestem głodny\n\n\
+             [Chorus]\nPoproszę kawę z mlekiem\n\n\
+             [Verse 2]\nThank you\nDziękuję"
+        );
+    }
+
+    #[test]
+    fn drafts_are_read_out_of_chatty_replies() {
+        let reply = format!(
+            "Here you go!\n```json\n{}\n```\nEnjoy.",
+            serde_json::to_string(&draft()).unwrap()
+        );
+        assert_eq!(parse_draft(&reply).unwrap(), draft());
+        assert!(parse_draft("no json here").is_err());
+    }
+
+    #[test]
+    fn normalizing_fixes_what_a_model_gets_loosely_right() {
+        let mut loose = draft();
+        loose.sections[1].kind = "Chorus 1".into();
+        loose.sections[0].kind = "VERSE".into();
+        loose.vocal_gender = "female".into();
+        loose.chorus_pl = String::new();
+        loose.title = "x".repeat(200);
+        loose.sections.push(SongSection { kind: "bridge".into(), lines: vec![SongLine::default()] });
+        let clean = normalize_draft(loose).unwrap();
+        assert_eq!(clean.sections[1].kind, "chorus");
+        assert_eq!(clean.sections[0].kind, "verse");
+        assert_eq!(clean.vocal_gender, "f");
+        assert_eq!(clean.chorus_pl, "Poproszę kawę z mlekiem", "taken from the chorus");
+        assert_eq!(clean.title.chars().count(), TITLE_LIMIT);
+        assert_eq!(clean.sections.len(), 3, "empty sections are dropped");
+    }
+
+    #[test]
+    fn finished_tasks_yield_their_tracks() {
+        let data = serde_json::json!({
+            "state": "success",
+            "response": { "data": [
+                { "id": "a", "audio_url": "https://x/a.mp3", "image_url": "https://x/a.jpeg", "duration": 182.5 },
+                { "id": "b", "audio_url": "https://x/b.mp3", "duration": 175.0 }
+            ]}
+        });
+        let TaskState::Done(tracks) = parse_task(&data) else { panic!("not done") };
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].image_url.as_deref(), Some("https://x/a.jpeg"));
+        assert_eq!(tracks[1].image_url, None);
+
+        // Older payloads only carry the result as a JSON string.
+        let data = serde_json::json!({
+            "state": "success",
+            "resultJson": "{\"data\":[{\"id\":\"c\",\"audio_url\":\"https://x/c.mp3\"}]}"
+        });
+        assert!(matches!(parse_task(&data), TaskState::Done(t) if t[0].id == "c"));
+
+        assert_eq!(parse_task(&serde_json::json!({ "state": "generating" })), TaskState::Pending);
+        assert_eq!(
+            parse_task(&serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" })),
+            TaskState::Failed("lyrics rejected".into())
+        );
+    }
+
+    #[test]
+    fn file_extensions_come_from_the_url() {
+        assert_eq!(extension("https://cdn/x/abc.mp3?sig=1", "bin"), "mp3");
+        assert_eq!(extension("https://cdn/x/abc", "mp3"), "mp3");
+        assert_eq!(extension("https://cdn/x/cover.JPEG", "jpg"), "jpeg");
+    }
+}

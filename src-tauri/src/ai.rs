@@ -163,6 +163,17 @@ struct ApiError {
 
 /// Sends a completion request and returns the assistant's text.
 pub async fn complete(key: &str, model: &str, messages: &[Wire]) -> Result<String> {
+    complete_with(key, model, messages, 0.4, 1200).await
+}
+
+/// `complete` with explicit sampling: songs want more creativity and room.
+pub async fn complete_with(
+    key: &str,
+    model: &str,
+    messages: &[Wire],
+    temperature: f32,
+    max_tokens: u32,
+) -> Result<String> {
     let response = client()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
@@ -172,8 +183,8 @@ pub async fn complete(key: &str, model: &str, messages: &[Wire]) -> Result<Strin
         .json(&ChatRequest {
             model,
             messages,
-            temperature: 0.4,
-            max_tokens: 1200,
+            temperature,
+            max_tokens,
             stream: false,
         })
         .send()

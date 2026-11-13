@@ -175,6 +175,12 @@ pub struct Settings {
     /// Cache a session's audio up front so taps play instantly.
     pub tts_prefetch: bool,
     pub tz_offset_minutes: i64,
+    /// Writes song lyrics; empty means "same as the tutor model".
+    pub songwriter_model: String,
+    pub has_kie_key: bool,
+    /// The Suno version songs are sung with.
+    pub suno_model: String,
+    pub suno_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

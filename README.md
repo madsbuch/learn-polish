@@ -77,6 +77,31 @@ private SQLite database and is only ever read inside a command.
 default: press *Load models from OpenRouter* in Settings and pick one from the
 live catalogue. Until you do, the AI features stay off and say so.
 
+## Songs (optional)
+
+Songs are one of the best ways to get Polish stuck in your head. The **Songs**
+tab makes them to order:
+
+- **The shape:** each verse pairs a short English line with the same line in
+  Polish, sung right after it. The chorus is a single Polish sentence, sung only
+  in Polish, so it is the thing you end up humming.
+- **The songwriter** is an AI model on OpenRouter (its own model choice in
+  Settings, or the tutor's). Give it a theme, a vocabulary topic and,
+  optionally, the exact chorus sentence. It drafts title, style and lyrics from
+  your words, leaning on the ones you keep forgetting. Edit the lyrics by hand
+  (`English | Polish` per line) or ask it for changes before anything is sung.
+- **Suno sings it** through [kie.ai](https://kie.ai) — add a kie.ai key in
+  Settings and pick the Suno model (V6, V6 Mini or V6 Wild). Each song comes
+  in two takes. Generation runs in Rust in the background and survives leaving
+  the screen or restarting the app.
+- **Songs are kept.** kie.ai deletes generated files after 14 days, so both
+  takes and their cover art are downloaded into the app's data folder and play
+  from disk, offline, for good.
+- **Built for repetition:** play all, shuffle, repeat all / one, play counts,
+  and a mini player above the tab bar so the music keeps going while you
+  practise. Lock-screen controls use the Media Session API where the webview
+  supports it.
+
 ## Hearing Polish
 
 Every Polish line has a 🔊 button, and conversations have a ▶︎ that reads them
@@ -165,13 +190,16 @@ src/                       React UI
   components/Markdown.tsx  markdown to React elements, no HTML in between
   screens/Session.tsx      the practice flow (eight exercise shapes)
   screens/Library.tsx      the catalogue: every word, sentence and dialogue
+  screens/Songs.tsx        song library, player and the songwriter
+  lib/player.ts            the app-wide music player and queue
 src-tauri/
   content/                 the curriculum: TSV word lists, TSV sentences, JSON dialogues
   src/db.rs                schema, migration and seeding
   src/session.rs           builds the daily plan
   src/srs.rs               the scheduler
   src/stats.rs             XP, levels, streaks, achievements
-  src/ai.rs                OpenRouter chat + speech, the only place that touches the network
+  src/ai.rs                OpenRouter chat + speech
+  src/songs.rs             songwriter prompt, kie.ai/Suno generation and song downloads
   src/commands.rs          the command surface, including the audio cache
 ```
 

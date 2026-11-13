@@ -52,6 +52,13 @@ function Glyph({ children }: { children: ReactNode }) {
 }
 
 export const NavIcon = {
+  songs: () => (
+    <Glyph>
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </Glyph>
+  ),
   today: () => (
     <Glyph>
       <path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z" />
@@ -78,6 +85,55 @@ export const NavIcon = {
     <Glyph>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </Glyph>
+  ),
+};
+
+function Solid({ children, size = 22 }: { children: ReactNode; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+export const PlayerIcon = {
+  play: ({ size }: { size?: number }) => (
+    <Solid size={size}>
+      <path d="M8 5.2v13.6a1 1 0 0 0 1.5.86l11-6.8a1 1 0 0 0 0-1.72l-11-6.8A1 1 0 0 0 8 5.2z" />
+    </Solid>
+  ),
+  pause: ({ size }: { size?: number }) => (
+    <Solid size={size}>
+      <rect x="6" y="5" width="4.2" height="14" rx="1.2" />
+      <rect x="13.8" y="5" width="4.2" height="14" rx="1.2" />
+    </Solid>
+  ),
+  next: () => (
+    <Solid>
+      <path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75L15 13v4.5a1 1 0 0 0 2 0v-11a1 1 0 0 0-2 0V11L6.4 5.45A.9.9 0 0 0 5 6.2z" />
+    </Solid>
+  ),
+  previous: () => (
+    <Solid>
+      <path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9 13v4.5a1 1 0 0 1-2 0v-11a1 1 0 0 1 2 0V11l8.6-5.55A.9.9 0 0 1 19 6.2z" />
+    </Solid>
+  ),
+  repeat: () => (
+    <Glyph>
+      <path d="M17 2l3 3-3 3" />
+      <path d="M4 11V9a4 4 0 0 1 4-4h12" />
+      <path d="M7 22l-3-3 3-3" />
+      <path d="M20 13v2a4 4 0 0 1-4 4H4" />
+    </Glyph>
+  ),
+  shuffle: () => (
+    <Glyph>
+      <path d="M16 3h5v5" />
+      <path d="M4 20 21 3" />
+      <path d="M21 16v5h-5" />
+      <path d="M15 15l6 6" />
+      <path d="M4 4l5 5" />
     </Glyph>
   ),
 };

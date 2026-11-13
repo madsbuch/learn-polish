@@ -9,6 +9,7 @@ use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
 use crate::session;
+use crate::songs;
 use crate::srs;
 use crate::stats;
 
@@ -86,6 +87,10 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
             .unwrap_or(1.0),
         tts_prefetch: db::get_setting_i64(conn, "tts_prefetch", 1) == 1,
         tz_offset_minutes: db::get_setting_i64(conn, "tz_offset_minutes", 0),
+        songwriter_model: ai::stored_model(conn, "songwriter_model"),
+        has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
+        suno_model: songs::suno_model(conn),
+        suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
     })
 }
 
@@ -123,6 +128,8 @@ pub struct SettingsPatch {
     pub tts_voice_male: Option<String>,
     pub tts_speed: Option<f32>,
     pub tts_prefetch: Option<bool>,
+    pub songwriter_model: Option<String>,
+    pub suno_model: Option<String>,
 }
 
 #[tauri::command]
@@ -163,6 +170,15 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(prefetch) = patch.tts_prefetch {
         db::set_setting(&conn, "tts_prefetch", if prefetch { "1" } else { "0" })?;
+    }
+    if let Some(model) = patch.songwriter_model {
+        db::set_setting(&conn, "songwriter_model", model.trim())?;
+    }
+    if let Some(model) = patch.suno_model {
+        if !songs::SUNO_MODELS.contains(&model.as_str()) {
+            return Err(Error::msg(format!("Unknown Suno model '{model}'.")));
+        }
+        db::set_setting(&conn, "suno_model", &model)?;
     }
     read_settings(&conn)
 }
@@ -426,6 +442,24 @@ pub async fn ai_set_key(db: State<'_, Db>, key: String) -> Result<Settings> {
 pub async fn ai_clear_key(db: State<'_, Db>) -> Result<Settings> {
     let conn = db.lock();
     conn.execute("DELETE FROM settings WHERE key = 'openrouter_api_key'", [])?;
+    read_settings(&conn)
+}
+
+#[tauri::command]
+pub async fn kie_set_key(db: State<'_, Db>, key: String) -> Result<Settings> {
+    let conn = db.lock();
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(Error::msg("The API key cannot be empty."));
+    }
+    db::set_setting(&conn, "kie_api_key", key)?;
+    read_settings(&conn)
+}
+
+#[tauri::command]
+pub async fn kie_clear_key(db: State<'_, Db>) -> Result<Settings> {
+    let conn = db.lock();
+    conn.execute("DELETE FROM settings WHERE key = 'kie_api_key'", [])?;
     read_settings(&conn)
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { NavIcon } from "./components/icons";
+import { MiniPlayer } from "./components/MiniPlayer";
 import { Banner, Loading } from "./components/ui";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
@@ -17,15 +18,17 @@ import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { Songs } from "./screens/Songs";
 import { Today } from "./screens/Today";
 import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
 import { Tutor } from "./screens/Tutor";
 
-type Tab = "today" | "library" | "tutor" | "progress" | "settings";
+type Tab = "today" | "library" | "songs" | "tutor" | "progress" | "settings";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "today", label: "Today" },
   { id: "library", label: "Library" },
+  { id: "songs", label: "Songs" },
   { id: "tutor", label: "Tutor" },
   { id: "progress", label: "Progress" },
   { id: "settings", label: "Settings" },
@@ -211,6 +214,14 @@ export default function App() {
         />
       ) : null}
 
+      {tab === "songs" ? (
+        <Songs
+          settings={settings}
+          topics={topics}
+          onOpenSettings={() => setTab("settings")}
+        />
+      ) : null}
+
       {tab === "tutor" ? (
         <Tutor
           topic={plan.topic}
@@ -235,6 +246,8 @@ export default function App() {
           onReset={() => void refresh()}
         />
       ) : null}
+
+      {tab !== "songs" ? <MiniPlayer onOpen={() => setTab("songs")} /> : null}
 
       <nav className="nav">
         {TABS.map((entry) => {

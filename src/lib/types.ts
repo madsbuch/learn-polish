@@ -175,6 +175,11 @@ export interface Settings {
   ttsSpeed: number;
   ttsPrefetch: boolean;
   tzOffsetMinutes: number;
+  /** Empty means the songwriter uses the tutor model. */
+  songwriterModel: string;
+  hasKieKey: boolean;
+  sunoModel: string;
+  sunoModels: string[];
 }
 
 export interface SettingsPatch {
@@ -189,6 +194,8 @@ export interface SettingsPatch {
   ttsVoiceMale?: string;
   ttsSpeed?: number;
   ttsPrefetch?: boolean;
+  songwriterModel?: string;
+  sunoModel?: string;
 }
 
 export interface SessionResult {
@@ -230,4 +237,57 @@ export interface CacheProgress {
   failed: number;
   finished: boolean;
   error: string | null;
+}
+
+// ------------------------------------------------------------------ songs
+
+/** One phrase: sung in English, then in Polish (choruses: Polish only). */
+export interface SongLine {
+  en: string;
+  pl: string;
+}
+
+export type SongSectionKind = "verse" | "chorus" | "bridge" | "intro" | "outro";
+
+export interface SongSection {
+  kind: SongSectionKind;
+  lines: SongLine[];
+}
+
+export interface SongDraft {
+  title: string;
+  chorusPl: string;
+  chorusEn: string;
+  style: string;
+  /** "f", "m" or "" for no preference. */
+  vocalGender: string;
+  sections: SongSection[];
+}
+
+export interface SongTrack {
+  id: number;
+  songId: number;
+  ord: number;
+  audioPath: string;
+  imagePath: string | null;
+  duration: number;
+  playCount: number;
+}
+
+export interface Song extends SongDraft {
+  id: number;
+  status: "generating" | "ready" | "failed";
+  error: string | null;
+  createdAt: number;
+  tracks: SongTrack[];
+}
+
+export interface DraftRequest {
+  brief?: string;
+  topicId?: number | null;
+  chorusPl?: string;
+  style?: string;
+  vocalGender?: string;
+  previous?: SongDraft;
+  feedback?: string;
 }
