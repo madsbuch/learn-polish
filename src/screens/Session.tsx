@@ -123,7 +123,7 @@ export function Session({
     }
     setBusy(true);
     try {
-      onFinished(await api.completeSession(), sessionXp);
+      onFinished(await api.completeSession(plan.topic.id), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);

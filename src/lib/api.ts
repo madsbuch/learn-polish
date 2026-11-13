@@ -38,7 +38,8 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("update_settings", { patch }),
 
-  getSession: () => invoke<SessionPlan>("get_session"),
+  /** Today's check-in, or a session for one topic or programme. */
+  getSession: (topicId?: number) => invoke<SessionPlan>("get_session", { topicId }),
   submitAnswer: (answer: {
     kind: string;
     itemKind: string;
@@ -47,7 +48,7 @@ export const api = {
     expected: string;
     given: string;
   }) => invoke<AnswerResult>("submit_answer", { answer }),
-  completeSession: () => invoke<SessionResult>("complete_session"),
+  completeSession: (topicId: number) => invoke<SessionResult>("complete_session", { topicId }),
 
   getStats: () => invoke<Stats>("get_stats"),
   getTopicProgress: () => invoke<TopicProgress[]>("get_topic_progress"),
@@ -65,8 +66,16 @@ export const api = {
   aiListModels: () => invoke<AiModel[]>("ai_list_models"),
   aiExplainStream: (itemKind: string, itemId: number, streamId: string) =>
     invoke<string>("ai_explain_stream", { itemKind, itemId, streamId }),
-  aiChatStream: (topicId: number, message: string, streamId: string) =>
-    invoke<string>("ai_chat_stream", { topicId, message, streamId }),
+
+  tutorSend: (message: string, streamId: string) =>
+    invoke<ChatMessage>("tutor_send", { message, streamId }),
+  tutorHistory: () => invoke<ChatMessage[]>("tutor_history"),
+  tutorClear: () => invoke<void>("tutor_clear"),
+  programmeDelete: (topicId: number) => invoke<void>("programme_delete", { topicId }),
+  setFocus: (topicId: number | null) => invoke<Settings>("set_focus", { topicId }),
+  /** Resolves to where the file went, or null if the dialog was cancelled. */
+  exportDatabase: (includeKeys: boolean) =>
+    invoke<string | null>("export_database", { includeKeys }),
 
   listVoices: () => invoke<Voice[]>("list_voices"),
   previewVoice: (voice: string, text: string) =>
@@ -78,15 +87,6 @@ export const api = {
   topicAudioLines: (topicId: number) => invoke<SpeechLine[]>("topic_audio_lines", { topicId }),
   audioCacheStats: () => invoke<AudioCacheStats>("audio_cache_stats"),
   clearAudioCache: () => invoke<void>("clear_audio_cache"),
-  aiHistory: (topicId: number) => invoke<ChatMessage[]>("ai_history", { topicId }),
-  aiClearChat: (topicId: number) => invoke<void>("ai_clear_chat", { topicId }),
-  aiChat: (topicId: number, message: string) =>
-    invoke<string>("ai_chat", { topicId, message }),
-  aiExplain: (itemKind: string, itemId: number) =>
-    invoke<string>("ai_explain", { itemKind, itemId }),
-  aiFeedback: (target: string, attempt: string) =>
-    invoke<string>("ai_feedback", { target, attempt }),
-  aiDrill: () => invoke<string>("ai_drill"),
 
   kieSetKey: (key: string) => invoke<Settings>("kie_set_key", { key }),
   kieClearKey: () => invoke<Settings>("kie_clear_key"),

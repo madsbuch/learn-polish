@@ -5,7 +5,8 @@ import { MiniPlayer } from "./components/MiniPlayer";
 import { Banner, Loading } from "./components/ui";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
-import { resumeCast } from "./lib/player";
+import { resumeCast, syncRepeatFromSettings } from "./lib/player";
+import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
   SessionPlan,
@@ -38,7 +39,7 @@ const TABS: { id: Tab; label: string }[] = [
 /** Either a tab, or a full-screen view that replaces the tab bar. */
 type Overlay =
   | { kind: "none" }
-  | { kind: "session" }
+  | { kind: "session"; plan: SessionPlan }
   | { kind: "summary"; result: SessionResult; xp: number }
   | { kind: "topic"; progress: TopicProgress; section?: TopicSection };
 
@@ -69,6 +70,9 @@ export default function App() {
         const loaded = await api.init();
         if (cancelled) return;
         setSettings(loaded);
+        // Display preferences live in the database; adopt them (or seed them).
+        syncThemeFromSettings(loaded.theme);
+        syncRepeatFromSettings(loaded.playerRepeat);
         // A speaker may still be playing from before a reload.
         resumeCast();
         await refresh();
@@ -88,7 +92,7 @@ export default function App() {
     };
   }, [refresh]);
 
-  // Changing the source language re-renders every string from the backend.
+  // Settings can change what today's check-in is (the daily focus).
   const applySettings = useCallback(
     (next: Settings) => {
       setSettings(next);
@@ -109,31 +113,61 @@ export default function App() {
   }, [settings?.hasApiKey]);
 
   /**
-   * Warms the audio cache for the session about to start, so every 🔊 tap and
+   * Warms the audio cache for a session about to start, so every 🔊 tap and
    * every auto-played card is instant instead of waiting on a round trip.
    * Deliberately fire-and-forget: practice must never block on audio.
    */
-  const startSession = useCallback(() => {
-    stopAudio();
-    setOverlay({ kind: "session" });
-    if (!plan || !settings?.ttsPrefetch || !settings.hasApiKey) return;
-    // Dialogue lines carry their speaker's gender so each is warmed in the
-    // voice that will actually read it; everything else uses the default.
-    const lines = [
-      ...plan.dialogue.map((line) => ({ text: line.pl, gender: line.gender })),
-      ...plan.exercises
-        .filter((e) => e.itemKind !== "dialogue")
-        .map((e) => ({ text: e.pl, gender: "" })),
-    ];
-    const seen = new Set<string>();
-    const unique = lines.filter((line) => {
-      const key = `${line.gender}\u0001${line.text}`;
-      return seen.has(key) ? false : (seen.add(key), true);
-    });
-    void api.cacheAudio(unique).catch(() => {
-      /* the 🔊 buttons report per-line failures */
-    });
-  }, [plan, settings?.ttsPrefetch, settings?.hasApiKey]);
+  const prefetchAudio = useCallback(
+    (session: SessionPlan) => {
+      if (!settings?.ttsPrefetch || !settings.hasApiKey) return;
+      // Dialogue lines carry their speaker's gender so each is warmed in the
+      // voice that will actually read it; everything else uses the default.
+      const lines = [
+        ...session.dialogue.map((line) => ({ text: line.pl, gender: line.gender })),
+        ...session.exercises
+          .filter((e) => e.itemKind !== "dialogue")
+          .map((e) => ({ text: e.pl, gender: "" })),
+      ];
+      const seen = new Set<string>();
+      const unique = lines.filter((line) => {
+        const key = `${line.gender}\u0001${line.text}`;
+        return seen.has(key) ? false : (seen.add(key), true);
+      });
+      void api.cacheAudio(unique).catch(() => {
+        /* the 🔊 buttons report per-line failures */
+      });
+    },
+    [settings?.ttsPrefetch, settings?.hasApiKey],
+  );
+
+  /** Today's check-in, or — with a topic id — a session for that topic. */
+  const startSession = useCallback(
+    async (topicId?: number) => {
+      stopAudio();
+      try {
+        const session =
+          topicId === undefined || topicId === plan?.topic.id
+            ? plan
+            : await api.getSession(topicId);
+        if (!session) return;
+        setOverlay({ kind: "session", plan: session });
+        prefetchAudio(session);
+      } catch (cause) {
+        setError(errorMessage(cause));
+      }
+    },
+    [plan, prefetchAudio],
+  );
+
+  /** Something changed behind the screens' backs (the tutor acted). */
+  const reloadAll = useCallback(async () => {
+    try {
+      setSettings(await api.getSettings());
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }, [refresh]);
 
   if (error && !settings) {
     return (
@@ -154,7 +188,7 @@ export default function App() {
     return (
       <div className="app">
         <Session
-          plan={plan}
+          plan={overlay.plan}
           onQuit={() => {
             stopAudio();
             setOverlay({ kind: "none" });
@@ -191,7 +225,16 @@ export default function App() {
         <TopicDetail
           progress={overlay.progress}
           initialSection={overlay.section}
+          isFocus={settings.focusTopicId === overlay.progress.topic.id}
           onBack={() => setOverlay({ kind: "none" })}
+          onPractise={() => void startSession(overlay.progress.topic.id)}
+          onFocus={async (focused) => {
+            applySettings(await api.setFocus(focused ? overlay.progress.topic.id : null));
+          }}
+          onDeleted={() => {
+            setOverlay({ kind: "none" });
+            void reloadAll();
+          }}
         />
       </div>
     );
@@ -203,14 +246,18 @@ export default function App() {
         <Today
           plan={plan}
           stats={stats}
-          onStart={startSession}
+          courseSize={topics.filter((entry) => entry.topic.kind === "course").length}
+          onStart={() => void startSession()}
           onOpenTutor={() => setTab("tutor")}
+          onBackToCourse={async () => applySettings(await api.setFocus(null))}
         />
       ) : null}
 
       {tab === "library" ? (
         <Library
           topics={topics}
+          focusTopicId={settings.focusTopicId}
+          onOpenTutor={() => setTab("tutor")}
           onOpenTopic={(progress, section) =>
             setOverlay({ kind: "topic", progress, section })
           }
@@ -227,10 +274,12 @@ export default function App() {
 
       {tab === "tutor" ? (
         <Tutor
-          topic={plan.topic}
           hasApiKey={settings.hasApiKey}
           hasModel={settings.aiModel.length > 0}
+          focusTopicId={settings.focusTopicId}
           onOpenSettings={() => setTab("settings")}
+          onPractise={(topicId) => void startSession(topicId)}
+          onChanged={() => void reloadAll()}
         />
       ) : null}
 
@@ -248,6 +297,12 @@ export default function App() {
           onSettings={applySettings}
           onReset={() => void refresh()}
         />
+      ) : null}
+
+      {error ? (
+        <button className="toast" onClick={() => setError(null)}>
+          {error} <span className="faint">· dismiss</span>
+        </button>
       ) : null}
 
       {tab !== "songs" ? <MiniPlayer onOpen={() => setTab("songs")} /> : null}

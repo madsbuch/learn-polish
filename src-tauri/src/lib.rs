@@ -5,10 +5,12 @@ mod content;
 mod db;
 mod error;
 mod models;
+mod programmes;
 mod session;
 mod songs;
 mod srs;
 mod stats;
+mod tutor;
 
 use std::sync::Mutex;
 
@@ -22,6 +24,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_songplayer::init())
         .setup(|app| {
             let path = app
@@ -34,6 +38,7 @@ pub fn run() {
             app.manage(Db(Mutex::new(connection)));
             app.manage(cast::CastSessions::default());
             songs::resume_pending(app.handle());
+            songs::sync_media(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -55,7 +60,12 @@ pub fn run() {
             commands::ai_test_key,
             commands::ai_list_models,
             commands::ai_explain_stream,
-            commands::ai_chat_stream,
+            tutor::tutor_send,
+            tutor::tutor_history,
+            tutor::tutor_clear,
+            commands::programme_delete,
+            commands::set_focus,
+            commands::export_database,
             commands::list_voices,
             commands::preview_voice,
             commands::speak,
@@ -64,12 +74,6 @@ pub fn run() {
             commands::topic_audio_lines,
             commands::audio_cache_stats,
             commands::clear_audio_cache,
-            commands::ai_history,
-            commands::ai_clear_chat,
-            commands::ai_chat,
-            commands::ai_explain,
-            commands::ai_feedback,
-            commands::ai_drill,
             commands::kie_set_key,
             commands::kie_clear_key,
             songs::kie_credits,
@@ -187,8 +191,8 @@ mod integration {
         }
         assert!(graded > 0);
 
-        assert!(stats::complete_day(&conn, today).unwrap(), "first completion");
-        assert!(!stats::complete_day(&conn, today).unwrap(), "not counted twice");
+        assert!(stats::complete_day(&conn, today, plan.topic.id).unwrap(), "first completion");
+        assert!(!stats::complete_day(&conn, today, plan.topic.id).unwrap(), "not counted twice");
 
         let summary = stats::collect(&conn).unwrap();
         assert_eq!(summary.current_streak, 1);
@@ -341,16 +345,157 @@ mod integration {
     }
 
     #[test]
-    fn switching_source_language_swaps_every_gloss() {
-        let conn = scratch_db("lang");
-        let english = session::build(&conn).unwrap();
+    fn the_tutor_builds_a_programme_that_can_be_practised() {
+        let conn = scratch_db("programme");
+        let course_topic = session::build(&conn).unwrap().topic.id;
 
-        db::set_setting(&conn, "source_language", "da").unwrap();
-        let danish = session::build(&conn).unwrap();
+        // "Can you build me a programme for learning the colours?"
+        let result = tutor::run_tool_for_test(
+            &conn,
+            "create_programme",
+            serde_json::json!({
+                "title": "Colours",
+                "title_pl": "Kolory",
+                "summary": "The basic colours.",
+                "words": [
+                    { "pl": "czerwony", "en": "red", "pos": "adj" },
+                    { "pl": "niebieski", "en": "blue", "pos": "adj" },
+                    { "pl": "zielony", "en": "green", "pos": "Adjective" },
+                    { "pl": "kolor", "en": "colour", "pos": "n-m" },
+                    // A duplicate is skipped, not an error.
+                    { "pl": "czerwony", "en": "red", "pos": "adj" }
+                ],
+                "sentences": [
+                    { "pl": "Mój samochód jest czerwony.", "en": "My car is red." },
+                    { "pl": "Niebo jest niebieskie.", "en": "The sky is blue." }
+                ],
+                "dialogue": [
+                    { "speaker": "Ola", "gender": "f", "pl": "Jaki jest twój ulubiony kolor?", "en": "What is your favourite colour?" },
+                    { "speaker": "Tomek", "gender": "m", "pl": "Zielony.", "en": "Green." }
+                ]
+            }),
+        );
+        assert!(result.get("error").is_none(), "{result}");
+        let created = &result["created"];
+        assert_eq!(created["words"], 4);
+        assert_eq!(created["sentences"], 2);
+        assert_eq!(created["dialogue_lines"], 2);
+        assert_eq!(created["skipped_duplicates"], 1);
+        assert_eq!(result["_action"]["kind"], "programmeCreated");
+        let topic_id = created["topic_id"].as_i64().unwrap();
 
-        assert_ne!(english.topic.title, danish.topic.title);
-        assert_eq!(english.topic.title_pl, danish.topic.title_pl);
-        assert!(!danish.dialogue.is_empty());
-        assert_ne!(danish.dialogue[0].meaning, english.dialogue[0].meaning);
+        // A course word can appear in a programme too.
+        let shared: i64 = conn
+            .query_row("SELECT COUNT(*) FROM words WHERE pl = 'kolor'", [], |r| r.get(0))
+            .unwrap();
+        assert!(shared >= 1);
+
+        // Practising it on demand works like any topic, and leaves the course alone.
+        let plan = session::build_for(&conn, topic_id).unwrap();
+        assert_eq!(plan.topic.kind, "programme");
+        assert_eq!(plan.new_words, 4);
+        assert_eq!(plan.exercises[0].kind, "dialogueRead");
+        assert_eq!(session::build(&conn).unwrap().topic.id, course_topic);
+
+        // The daily focus moves the check-in to the programme…
+        let focus = tutor::run_tool_for_test(&conn, "set_daily_focus", serde_json::json!({ "topic_id": topic_id }));
+        assert_eq!(focus["_action"]["kind"], "focusSet");
+        assert_eq!(session::build(&conn).unwrap().topic.id, topic_id);
+
+        // …until every word in it has been met; then the course takes over again.
+        let today = db::today(&conn);
+        for exercise in &plan.exercises {
+            if exercise.item_kind == "word" {
+                srs::save(&conn, "word", exercise.item_id, &srs::grade(srs::ReviewState::fresh(today), srs::GOOD, today)).unwrap();
+            }
+        }
+        assert!(stats::complete_day(&conn, today, topic_id).unwrap());
+        assert_eq!(session::focus_topic_id(&conn), None);
+        assert_eq!(session::build(&conn).unwrap().topic.id, course_topic, "rotation did not move");
+
+        // Course topics are read-only; programmes can be deleted with their history.
+        let refused = tutor::run_tool_for_test(&conn, "add_to_programme", serde_json::json!({ "topic_id": course_topic, "words": [] }));
+        assert!(refused["error"].as_str().unwrap().contains("built-in"));
+        let deleted = tutor::run_tool_for_test(&conn, "delete_programme", serde_json::json!({ "topic_id": topic_id }));
+        assert_eq!(deleted["deleted"], "Colours");
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM words WHERE topic_id = ?1", [topic_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn the_tutor_reports_progress_and_finds_vocabulary() {
+        let conn = scratch_db("tutor-read");
+        let progress = tutor::run_tool_for_test(&conn, "get_progress", serde_json::json!({}));
+        assert_eq!(progress["words_met"], 0);
+        let found = tutor::run_tool_for_test(&conn, "search_vocabulary", serde_json::json!({ "query": "dzień dobry" }));
+        assert!(!found["words"].as_array().unwrap().is_empty());
+        let topics = tutor::run_tool_for_test(&conn, "list_topics", serde_json::json!({}));
+        assert_eq!(topics.as_array().unwrap().len(), 10);
+        let unknown = tutor::run_tool_for_test(&conn, "fly_to_the_moon", serde_json::json!({}));
+        assert!(unknown["error"].is_string());
+    }
+
+    #[test]
+    fn a_danish_era_database_is_upgraded_in_place() {
+        let path = std::env::temp_dir()
+            .join("learn-polish-tests")
+            .join(format!("legacy-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        {
+            let old = Connection::open(&path).unwrap();
+            old.execute_batch(
+                "CREATE TABLE topics (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, ord INTEGER NOT NULL,
+                     title_pl TEXT NOT NULL, title_en TEXT NOT NULL, title_da TEXT NOT NULL,
+                     summary_en TEXT NOT NULL, summary_da TEXT NOT NULL);
+                 CREATE TABLE words (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL REFERENCES topics(id),
+                     ord INTEGER NOT NULL, pl TEXT NOT NULL UNIQUE, en TEXT NOT NULL, da TEXT NOT NULL, pos TEXT NOT NULL);
+                 CREATE TABLE sentences (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL REFERENCES topics(id),
+                     ord INTEGER NOT NULL, pl TEXT NOT NULL UNIQUE, en TEXT NOT NULL, da TEXT NOT NULL);
+                 CREATE TABLE conversation_lines (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL REFERENCES topics(id),
+                     ord INTEGER NOT NULL, speaker TEXT NOT NULL, pl TEXT NOT NULL, en TEXT NOT NULL, da TEXT NOT NULL);
+                 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 CREATE TABLE reviews (kind TEXT NOT NULL, item_id INTEGER NOT NULL, due_day INTEGER NOT NULL,
+                     interval INTEGER NOT NULL, ease REAL NOT NULL, reps INTEGER NOT NULL, lapses INTEGER NOT NULL,
+                     last_day INTEGER NOT NULL, PRIMARY KEY (kind, item_id));
+                 CREATE TABLE chat_messages (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL, role TEXT NOT NULL,
+                     content TEXT NOT NULL, created_at INTEGER NOT NULL);
+                 INSERT INTO topics VALUES (1, 'basics', 1, 'Pierwsze spotkanie', 'Meeting', 'Møde', 'Hi', 'Hej');
+                 INSERT INTO words VALUES (7, 1, 0, 'cześć', 'hi, bye', 'hej', 'interj');
+                 INSERT INTO reviews VALUES ('word', 7, 100, 3, 2.5, 2, 0, 97);
+                 INSERT INTO settings VALUES ('source_language', 'da'), ('content_version', '2');",
+            )
+            .unwrap();
+        }
+
+        let conn = db::open(&path).expect("upgrade");
+        let (id, en): (i64, String) = conn
+            .query_row("SELECT id, en FROM words WHERE pl = 'cześć'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(id, 7, "row ids survive, so review history does too");
+        assert_eq!(en, "hi, bye");
+        assert_eq!(srs::load(&conn, "word", 7).unwrap().unwrap().reps, 2);
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('words')")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(!columns.contains(&"da".to_string()));
+        assert_eq!(db::get_setting(&conn, "source_language").unwrap(), None);
+        // The rest of the curriculum seeds on top, without duplicating.
+        let topics: i64 = conn.query_row("SELECT COUNT(*) FROM topics", [], |r| r.get(0)).unwrap();
+        assert_eq!(topics, 10);
+        let basics_words: i64 = conn
+            .query_row("SELECT COUNT(*) FROM words WHERE pl = 'cześć'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(basics_words, 1);
+
+        // Opening again is a no-op.
+        drop(conn);
+        db::open(&path).expect("second open");
     }
 }

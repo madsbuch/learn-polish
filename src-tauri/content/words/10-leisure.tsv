@@ -1,204 +1,204 @@
-# polish	english	danish	pos
-hobby	hobby	hobby	n-n
-zainteresowanie	interest	interesse	n-n
-sport	sport	sport	n-m
-piłka nożna	football	fodbold	n-f
-koszykówka	basketball	basketball	n-f
-siatkówka	volleyball	volleyball	n-f
-tenis	tennis	tennis	n-m
-pływanie	swimming	svømning	n-n
-bieganie	running	løb	n-n
-kolarstwo	cycling	cykling	n-n
-narciarstwo	skiing	skiløb	n-n
-łyżwy	ice skates	skøjter	n-pl
-wspinaczka	climbing	klatring	n-f
-joga	yoga	yoga	n-f
-siłownia	gym	fitnesscenter	n-f
-trening	training session	træning	n-m
-mecz	match	kamp	n-m
-drużyna	team	hold	n-f
-zawodnik	player, competitor	spiller	n-m
-trener	coach	træner	n-m
-sędzia	referee, judge	dommer	n-m
-kibic	supporter, fan	tilhænger	n-m
-gol	goal scored	mål	n-m
-punkt	point	point	n-m
-zwycięstwo	victory	sejr	n-n
-remis	draw	uafgjort	n-m
-turniej	tournament	turnering	n-m
-mistrzostwa	championship	mesterskab	n-pl
-medal	medal	medalje	n-m
-puchar	cup, trophy	pokal	n-m
-rekord	record	rekord	n-m
-piłka	ball	bold	n-f
-rakieta	racket, rocket	ketsjer	n-f
-rower górski	mountain bike	mountainbike	n-m
-narty	skis	ski	n-pl
-kask	helmet	hjelm	n-m
-boisko	sports pitch	bane	n-n
-sala gimnastyczna	gymnasium	gymnastiksal	n-f
-wygrać	to win	at vinde	v
-przegrać	to lose	at tabe	v
-trenować	to train	at træne	v
-grać	to play	at spille	v
-skakać	to jump	at hoppe	v
-rzucać	to throw	at kaste	v
-kultura	culture	kultur	n-f
-sztuka	art, play	kunst	n-f
-muzyka	music	musik	n-f
-piosenka	song	sang	n-f
-utwór	piece, track	musikstykke	n-m
-zespół muzyczny	band	band	n-m
-koncert	concert	koncert	n-m
-piosenkarz	singer	sanger	n-m
-muzyk	musician	musiker	n-m
-instrument	instrument	instrument	n-m
-gitara	guitar	guitar	n-f
-pianino	piano	klaver	n-n
-skrzypce	violin	violin	n-pl
-perkusja	drums	trommer	n-f
-taniec	dance	dans	n-m
-film	film	film	n-m
-serial	TV series	serie	n-m
-aktor	actor	skuespiller	n-m
-reżyser	film director	instruktør	n-m
-scenariusz	screenplay	manuskript	n-m
-napisy	subtitles	undertekster	n-pl
-lektor	voice-over reader	speaker	n-m
-bilet do kina	cinema ticket	biografbillet	n-m
-przedstawienie	performance	forestilling	n-n
-opera	opera	opera	n-f
-balet	ballet	ballet	n-m
-wystawa	exhibition	udstilling	n-f
-galeria sztuki	art gallery	kunstgalleri	n-f
-rzeźba	sculpture	skulptur	n-f
-malarstwo	painting as an art	malerkunst	n-n
-fotografia	photography	fotografi	n-f
-książka	book	bog	n-f
-powieść	novel	roman	n-f
-wiersz	poem	digt	n-m
-poezja	poetry	poesi	n-f
-autor	author	forfatter	n-m
-rozdział	chapter	kapitel	n-m
-strona	page, side	side	n-f
-bohater	hero, character	helt	n-m
-fabuła	plot	handling	n-f
-technologia	technology	teknologi	n-f
-aplikacja	app	app	n-f
-program	programme	program	n-m
-oprogramowanie	software	software	n-n
-sprzęt	hardware, equipment	udstyr	n-m
-urządzenie	device	apparat	n-n
-strona internetowa	website	hjemmeside	n-f
-przeglądarka	browser	browser	n-f
-wyszukiwarka	search engine	søgemaskine	n-f
-serwer	server	server	n-m
-chmura obliczeniowa	cloud computing	cloud	n-f
-plik	file	fil	n-m
-folder	folder	mappe	n-m
-kopia zapasowa	backup	sikkerhedskopi	n-f
-pobierać	to download	at downloade	v
-wysyłać	to send	at sende	v
-klikać	to click	at klikke	v
-przewijać	to scroll	at scrolle	v
-zainstalować	to install	at installere	v
-usunąć	to delete	at slette	v
-zapisać	to save	at gemme	v
-udostępnić	to share	at dele	v
-zalogować się	to log in	at logge ind	v
-wylogować się	to log out	at logge ud	v
-media społecznościowe	social media	sociale medier	n-pl
-wiadomość	message, piece of news	besked	n-f
-powiadomienie	notification	notifikation	n-n
-komentarz	comment	kommentar	n-m
-profil	profile	profil	n-m
-konto użytkownika	user account	brugerkonto	n-n
-prywatność	privacy	privatliv	n-f
-bezpieczeństwo danych	data security	datasikkerhed	n-n
-sztuczna inteligencja	artificial intelligence	kunstig intelligens	n-f
-podcast	podcast	podcast	n-m
-gra	game	spil	n-f
-gra komputerowa	computer game	computerspil	n-f
-konsola	games console	konsol	n-f
-telewizja	television as a medium	fjernsyn	n-f
-radio	radio	radio	n-n
-gazeta	newspaper	avis	n-f
-czasopismo	magazine	magasin	n-n
-artykuł	article	artikel	n-m
-reportaż	feature report	reportage	n-m
-wywiad	interview	interview	n-m
-odcinek	episode	afsnit	n-m
-spotykać się	to meet up	at mødes	v
-umawiać się	to arrange to meet	at aftale	v
-rozmawiać	to talk	at snakke	v
-opowiadać	to tell a story	at fortælle	v
-słuchać	to listen	at lytte	v
-oglądać	to watch	at se	v
-patrzeć	to look	at kigge	v
-śmiać się	to laugh	at grine	v
-płakać	to cry	at græde	v
-bawić się	to have fun	at more sig	v
-tańczyć	to dance	at danse	v
-śpiewać	to sing	at synge	v
-relaksować się	to relax	at slappe af	v
-fotografować	to photograph	at fotografere	v
-rysować	to draw	at tegne	v
-zbierać znaczki	to collect stamps	at samle frimærker	v
-majsterkować	to do DIY	at gøre det selv	v
-łowić ryby	to fish	at fiske	v
-żeglować	to sail	at sejle	v
-biwakować	to camp	at campere	v
-imprezować	to party	at feste	v
-zaprosić na kawę	to invite for a coffee	at invitere på kaffe	v
-przyjaźń	friendship	venskab	n-f
-towarzystwo	company, society	selskab	n-n
-impreza	party	fest	n-f
-klub	club	klub	n-m
-dyskoteka	nightclub	diskotek	n-f
-pub	pub	pub	n-m
-rozrywka	entertainment	underholdning	n-f
-nuda	boredom	kedsomhed	n-f
-zabawa	fun, a game	leg	n-f
-przygoda	adventure	eventyr	n-f
-ciekawy	interesting, curious	interessant	adj
-nudny	boring	kedelig	adj
-ekscytujący	exciting	spændende	adj
-popularny	popular	populær	adj
-online	online	online	adj
-ulubiona piosenka	favourite song	yndlingssang	n-f
-Boże Narodzenie	Christmas	jul	n-n
-Wigilia	Christmas Eve	juleaften	n-f
-Wielkanoc	Easter	påske	n-f
-Sylwester	New Year's Eve	nytårsaften	n-m
-Nowy Rok	New Year	nytår	n-m
-Dzień Matki	Mother's Day	mors dag	n-m
-kolęda	Christmas carol	julesang	n-f
-choinka	Christmas tree	juletræ	n-f
-fajerwerki	fireworks	fyrværkeri	n-pl
-ognisko	bonfire	bål	n-n
-karnawał	carnival	karneval	n-m
-festiwal	festival	festival	n-m
-jarmark	fair, market fair	kræmmermarked	n-m
-parada	parade	parade	n-f
-opowieść	tale	fortælling	n-f
-legenda	legend	legende	n-f
-bajka	fairy tale	eventyrfortælling	n-f
-żart	joke	vittighed	n-m
-plotka	gossip	sladder	n-f
-temat	topic	emne	n-m
-opinia	opinion	mening	n-f
-pomysł	idea	idé	n-m
-rada	advice	råd	n-f
-sekret	secret	hemmelighed	n-m
-prawda	truth	sandhed	n-f
-kłamstwo	a lie	løgn	n-n
-zdanie	sentence, opinion	sætning	n-n
-słowo	word	ord	n-n
-wyrażenie	expression	udtryk	n-n
-akcent	accent	accent	n-m
-wymowa	pronunciation	udtale	n-f
-płynnie	fluently	flydende	adv
-naprawdę	really	virkelig	adv
-właśnie	exactly, just	netop	adv
-niestety	unfortunately	desværre	adv
-na szczęście	fortunately	heldigvis	adv
+# polish	english	pos
+hobby	hobby	n-n
+zainteresowanie	interest	n-n
+sport	sport	n-m
+piłka nożna	football	n-f
+koszykówka	basketball	n-f
+siatkówka	volleyball	n-f
+tenis	tennis	n-m
+pływanie	swimming	n-n
+bieganie	running	n-n
+kolarstwo	cycling	n-n
+narciarstwo	skiing	n-n
+łyżwy	ice skates	n-pl
+wspinaczka	climbing	n-f
+joga	yoga	n-f
+siłownia	gym	n-f
+trening	training session	n-m
+mecz	match	n-m
+drużyna	team	n-f
+zawodnik	player, competitor	n-m
+trener	coach	n-m
+sędzia	referee, judge	n-m
+kibic	supporter, fan	n-m
+gol	goal scored	n-m
+punkt	point	n-m
+zwycięstwo	victory	n-n
+remis	draw	n-m
+turniej	tournament	n-m
+mistrzostwa	championship	n-pl
+medal	medal	n-m
+puchar	cup, trophy	n-m
+rekord	record	n-m
+piłka	ball	n-f
+rakieta	racket, rocket	n-f
+rower górski	mountain bike	n-m
+narty	skis	n-pl
+kask	helmet	n-m
+boisko	sports pitch	n-n
+sala gimnastyczna	gymnasium	n-f
+wygrać	to win	v
+przegrać	to lose	v
+trenować	to train	v
+grać	to play	v
+skakać	to jump	v
+rzucać	to throw	v
+kultura	culture	n-f
+sztuka	art, play	n-f
+muzyka	music	n-f
+piosenka	song	n-f
+utwór	piece, track	n-m
+zespół muzyczny	band	n-m
+koncert	concert	n-m
+piosenkarz	singer	n-m
+muzyk	musician	n-m
+instrument	instrument	n-m
+gitara	guitar	n-f
+pianino	piano	n-n
+skrzypce	violin	n-pl
+perkusja	drums	n-f
+taniec	dance	n-m
+film	film	n-m
+serial	TV series	n-m
+aktor	actor	n-m
+reżyser	film director	n-m
+scenariusz	screenplay	n-m
+napisy	subtitles	n-pl
+lektor	voice-over reader	n-m
+bilet do kina	cinema ticket	n-m
+przedstawienie	performance	n-n
+opera	opera	n-f
+balet	ballet	n-m
+wystawa	exhibition	n-f
+galeria sztuki	art gallery	n-f
+rzeźba	sculpture	n-f
+malarstwo	painting as an art	n-n
+fotografia	photography	n-f
+książka	book	n-f
+powieść	novel	n-f
+wiersz	poem	n-m
+poezja	poetry	n-f
+autor	author	n-m
+rozdział	chapter	n-m
+strona	page, side	n-f
+bohater	hero, character	n-m
+fabuła	plot	n-f
+technologia	technology	n-f
+aplikacja	app	n-f
+program	programme	n-m
+oprogramowanie	software	n-n
+sprzęt	hardware, equipment	n-m
+urządzenie	device	n-n
+strona internetowa	website	n-f
+przeglądarka	browser	n-f
+wyszukiwarka	search engine	n-f
+serwer	server	n-m
+chmura obliczeniowa	cloud computing	n-f
+plik	file	n-m
+folder	folder	n-m
+kopia zapasowa	backup	n-f
+pobierać	to download	v
+wysyłać	to send	v
+klikać	to click	v
+przewijać	to scroll	v
+zainstalować	to install	v
+usunąć	to delete	v
+zapisać	to save	v
+udostępnić	to share	v
+zalogować się	to log in	v
+wylogować się	to log out	v
+media społecznościowe	social media	n-pl
+wiadomość	message, piece of news	n-f
+powiadomienie	notification	n-n
+komentarz	comment	n-m
+profil	profile	n-m
+konto użytkownika	user account	n-n
+prywatność	privacy	n-f
+bezpieczeństwo danych	data security	n-n
+sztuczna inteligencja	artificial intelligence	n-f
+podcast	podcast	n-m
+gra	game	n-f
+gra komputerowa	computer game	n-f
+konsola	games console	n-f
+telewizja	television as a medium	n-f
+radio	radio	n-n
+gazeta	newspaper	n-f
+czasopismo	magazine	n-n
+artykuł	article	n-m
+reportaż	feature report	n-m
+wywiad	interview	n-m
+odcinek	episode	n-m
+spotykać się	to meet up	v
+umawiać się	to arrange to meet	v
+rozmawiać	to talk	v
+opowiadać	to tell a story	v
+słuchać	to listen	v
+oglądać	to watch	v
+patrzeć	to look	v
+śmiać się	to laugh	v
+płakać	to cry	v
+bawić się	to have fun	v
+tańczyć	to dance	v
+śpiewać	to sing	v
+relaksować się	to relax	v
+fotografować	to photograph	v
+rysować	to draw	v
+zbierać znaczki	to collect stamps	v
+majsterkować	to do DIY	v
+łowić ryby	to fish	v
+żeglować	to sail	v
+biwakować	to camp	v
+imprezować	to party	v
+zaprosić na kawę	to invite for a coffee	v
+przyjaźń	friendship	n-f
+towarzystwo	company, society	n-n
+impreza	party	n-f
+klub	club	n-m
+dyskoteka	nightclub	n-f
+pub	pub	n-m
+rozrywka	entertainment	n-f
+nuda	boredom	n-f
+zabawa	fun, a game	n-f
+przygoda	adventure	n-f
+ciekawy	interesting, curious	adj
+nudny	boring	adj
+ekscytujący	exciting	adj
+popularny	popular	adj
+online	online	adj
+ulubiona piosenka	favourite song	n-f
+Boże Narodzenie	Christmas	n-n
+Wigilia	Christmas Eve	n-f
+Wielkanoc	Easter	n-f
+Sylwester	New Year's Eve	n-m
+Nowy Rok	New Year	n-m
+Dzień Matki	Mother's Day	n-m
+kolęda	Christmas carol	n-f
+choinka	Christmas tree	n-f
+fajerwerki	fireworks	n-pl
+ognisko	bonfire	n-n
+karnawał	carnival	n-m
+festiwal	festival	n-m
+jarmark	fair, market fair	n-m
+parada	parade	n-f
+opowieść	tale	n-f
+legenda	legend	n-f
+bajka	fairy tale	n-f
+żart	joke	n-m
+plotka	gossip	n-f
+temat	topic	n-m
+opinia	opinion	n-f
+pomysł	idea	n-m
+rada	advice	n-f
+sekret	secret	n-m
+prawda	truth	n-f
+kłamstwo	a lie	n-n
+zdanie	sentence, opinion	n-n
+słowo	word	n-n
+wyrażenie	expression	n-n
+akcent	accent	n-m
+wymowa	pronunciation	n-f
+płynnie	fluently	adv
+naprawdę	really	adv
+właśnie	exactly, just	adv
+niestety	unfortunately	adv
+na szczęście	fortunately	adv

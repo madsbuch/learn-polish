@@ -60,9 +60,12 @@ pub fn record_answer(conn: &Connection, day: i64, xp: i64, correct: bool) -> Res
     Ok(())
 }
 
-/// Marks the day finished and advances the topic rotation, so tomorrow brings
-/// the next conversation. Calling it twice on one day is a no-op.
-pub fn complete_day(conn: &Connection, day: i64) -> Result<bool> {
+/// Marks the day finished with the topic that was practised. Finishing the
+/// course topic due today advances the rotation, so tomorrow brings the next
+/// conversation; finishing a focused programme whose words have all been met
+/// hands the daily check-in back to the course. Calling it twice on one day is
+/// a no-op.
+pub fn complete_day(conn: &Connection, day: i64, topic_id: i64) -> Result<bool> {
     let already: i64 = conn
         .query_row("SELECT completed FROM day_log WHERE day = ?1", [day], |r| {
             r.get(0)
@@ -72,15 +75,32 @@ pub fn complete_day(conn: &Connection, day: i64) -> Result<bool> {
         return Ok(false);
     }
 
-    let topic = session::topic_for_day(conn)?;
     conn.execute(
         "INSERT INTO day_log (day, completed, topic_id) VALUES (?1, 1, ?2)
          ON CONFLICT(day) DO UPDATE SET completed = 1, topic_id = excluded.topic_id",
-        rusqlite::params![day, topic.id],
+        rusqlite::params![day, topic_id],
     )?;
 
-    let next = db::get_setting_i64(conn, "lesson_index", 0) + 1;
-    db::set_setting(conn, "lesson_index", &next.to_string())?;
+    match session::focus_topic_id(conn) {
+        Some(focus) if focus == topic_id => {
+            let unseen: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM words w WHERE w.topic_id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.kind = 'word' AND r.item_id = w.id)",
+                [topic_id],
+                |r| r.get(0),
+            )?;
+            if unseen == 0 {
+                conn.execute("DELETE FROM settings WHERE key = 'focus_topic_id'", [])?;
+            }
+        }
+        Some(_) => {}
+        None => {
+            if session::rotation_topic_id(conn)? == topic_id {
+                let next = db::get_setting_i64(conn, "lesson_index", 0) + 1;
+                db::set_setting(conn, "lesson_index", &next.to_string())?;
+            }
+        }
+    }
     Ok(true)
 }
 
@@ -146,9 +166,11 @@ fn counts(conn: &Connection, today: i64) -> Result<Counts> {
         )?,
         sentences_total: one("SELECT COUNT(*) FROM sentences", &[])?,
         sentences_seen: one("SELECT COUNT(*) FROM reviews WHERE kind = 'sentence'", &[])?,
-        dialogues_total: one("SELECT COUNT(*) FROM topics", &[])?,
+        dialogues_total: one("SELECT COUNT(DISTINCT topic_id) FROM conversation_lines", &[])?,
         dialogues_seen: one(
-            "SELECT COUNT(DISTINCT topic_id) FROM day_log WHERE completed = 1 AND topic_id IS NOT NULL",
+            "SELECT COUNT(DISTINCT d.topic_id) FROM day_log d
+             WHERE d.completed = 1
+               AND EXISTS (SELECT 1 FROM conversation_lines c WHERE c.topic_id = d.topic_id)",
             &[],
         )?,
         due_today: one(
@@ -228,7 +250,11 @@ pub fn collect(conn: &Connection) -> Result<Stats> {
 }
 
 pub fn topic_progress(conn: &Connection) -> Result<Vec<TopicProgress>> {
-    let mut stmt = conn.prepare("SELECT id FROM topics ORDER BY ord")?;
+    // The course first, in order, then programmes newest first.
+    let mut stmt = conn.prepare(
+        "SELECT id FROM topics
+         ORDER BY kind = 'programme', CASE WHEN kind = 'course' THEN ord ELSE -created_at END, id DESC",
+    )?;
     let ids: Vec<i64> = stmt
         .query_map([], |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;

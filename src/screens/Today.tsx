@@ -12,14 +12,21 @@ function greeting(): string {
 export function Today({
   plan,
   stats,
+  courseSize,
   onStart,
   onOpenTutor,
+  onBackToCourse,
 }: {
   plan: SessionPlan;
   stats: Stats;
+  /** How many built-in topics the course rotates through. */
+  courseSize: number;
   onStart: () => void;
   onOpenTutor: () => void;
+  /** Ends the daily focus on a programme. */
+  onBackToCourse: () => void;
 }) {
+  const programme = plan.topic.kind === "programme";
   const goalPct = Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
   const goalMet = stats.dayXp >= stats.dailyGoal;
   const items =
@@ -58,7 +65,7 @@ export function Today({
           </div>
           <div className="grow">
             <div className="eyebrow">
-              Conversation {plan.topic.ord} of {stats.dialoguesTotal}
+              {programme ? "Your programme" : `Course · topic ${plan.topic.ord} of ${courseSize}`}
             </div>
             <div style={{ fontSize: 19, fontWeight: 750, lineHeight: 1.25 }}>
               {plan.topic.titlePl}
@@ -69,12 +76,14 @@ export function Today({
           </div>
         </div>
 
-        <p style={{ margin: "16px 0 14px", fontSize: 13.5 }}>
-          {plan.topic.summary}
-        </p>
+        {plan.topic.summary ? (
+          <p style={{ margin: "16px 0 14px", fontSize: 13.5 }}>{plan.topic.summary}</p>
+        ) : (
+          <div style={{ height: 16 }} />
+        )}
 
         <div className="row wrap" style={{ gap: 6, marginBottom: 16 }}>
-          <span className="chip">💬 1 conversation</span>
+          {plan.dialogue.length > 0 ? <span className="chip">💬 1 conversation</span> : null}
           <span className="chip">🆕 {plan.newWords} new words</span>
           <span className="chip">🔁 {plan.reviewWords} to review</span>
           <span className="chip">📝 {plan.newSentences + plan.reviewSentences} sentences</span>
@@ -89,6 +98,16 @@ export function Today({
           <div className="center tiny" style={{ marginTop: 10, opacity: 0.85 }}>
             ✓ Done for today — your streak is safe
           </div>
+        ) : null}
+
+        {programme ? (
+          <button
+            className="btn ghost small block"
+            style={{ marginTop: 10, color: "inherit" }}
+            onClick={onBackToCourse}
+          >
+            Back to the course
+          </button>
         ) : null}
       </div>
 
@@ -123,9 +142,9 @@ export function Today({
       <button className="card row" style={{ width: "100%", textAlign: "left" }} onClick={onOpenTutor}>
         <span style={{ fontSize: 26 }}>✨</span>
         <span className="grow">
-          <span style={{ display: "block", fontWeight: 700 }}>Talk to the AI tutor</span>
+          <span style={{ display: "block", fontWeight: 700 }}>Ask the tutor</span>
           <span className="small faint">
-            Practise {plan.topic.title.toLowerCase()} in a free conversation
+            Get a practice programme on any theme, or ask anything about Polish
           </span>
         </span>
         <span className="faint">›</span>

@@ -2,9 +2,7 @@
   "slug": "shopping",
   "title_pl": "W sklepie z ubraniami",
   "title_en": "In the clothes shop",
-  "title_da": "I tøjbutikken",
   "summary_en": "Mads buys a jacket: he asks about size and colour, tries it on and pays.",
-  "summary_da": "Mads køber en jakke: han spørger om størrelse og farve, prøver den og betaler.",
   "speakers": {
     "Sprzedawczyni": "f",
     "Mads": "m"
@@ -13,128 +11,107 @@
     {
       "speaker": "Sprzedawczyni",
       "pl": "Dzień dobry! W czym mogę pomóc?",
-      "en": "Good morning! How can I help you?",
-      "da": "Goddag! Hvad kan jeg hjælpe med?"
+      "en": "Good morning! How can I help you?"
     },
     {
       "speaker": "Mads",
       "pl": "Dzień dobry. Szukam ciepłej kurtki na zimę.",
-      "en": "Good morning. I am looking for a warm jacket for winter.",
-      "da": "Goddag. Jeg leder efter en varm jakke til vinteren."
+      "en": "Good morning. I am looking for a warm jacket for winter."
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Jaki rozmiar pan nosi?",
-      "en": "What size do you wear?",
-      "da": "Hvilken størrelse bruger du?"
+      "en": "What size do you wear?"
     },
     {
       "speaker": "Mads",
       "pl": "Chyba średni, ale nie jestem pewien.",
-      "en": "Medium, I think, but I am not sure.",
-      "da": "Nok mellem, men jeg er ikke sikker."
+      "en": "Medium, I think, but I am not sure."
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Mamy tę kurtkę w czarnym i granatowym kolorze.",
-      "en": "We have this jacket in black and navy blue.",
-      "da": "Vi har denne jakke i sort og marineblå."
+      "en": "We have this jacket in black and navy blue."
     },
     {
       "speaker": "Mads",
       "pl": "Wolę granatową. Czy mogę ją przymierzyć?",
-      "en": "I prefer the navy one. May I try it on?",
-      "da": "Jeg foretrækker den marineblå. Må jeg prøve den?"
+      "en": "I prefer the navy one. May I try it on?"
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Oczywiście. Przymierzalnia jest po prawej stronie.",
-      "en": "Of course. The fitting room is on the right.",
-      "da": "Selvfølgelig. Prøverummet er til højre."
+      "en": "Of course. The fitting room is on the right."
     },
     {
       "speaker": "Mads",
       "pl": "Dziękuję... Hmm, ta jest trochę za obcisła.",
-      "en": "Thank you... Hmm, this one is a bit too tight.",
-      "da": "Tak... Hmm, denne er lidt for stram."
+      "en": "Thank you... Hmm, this one is a bit too tight."
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Proszę spróbować większy rozmiar. Ten będzie wygodniejszy.",
-      "en": "Please try a bigger size. This one will be more comfortable.",
-      "da": "Prøv en større størrelse. Denne bliver mere behagelig."
+      "en": "Please try a bigger size. This one will be more comfortable."
     },
     {
       "speaker": "Mads",
       "pl": "Tak, ta pasuje idealnie. Z czego jest zrobiona?",
-      "en": "Yes, this one fits perfectly. What is it made of?",
-      "da": "Ja, denne passer perfekt. Hvad er den lavet af?"
+      "en": "Yes, this one fits perfectly. What is it made of?"
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Z wełny i bawełny. Bardzo dobra jakość.",
-      "en": "Of wool and cotton. Very good quality.",
-      "da": "Af uld og bomuld. Meget god kvalitet."
+      "en": "Of wool and cotton. Very good quality."
     },
     {
       "speaker": "Mads",
       "pl": "Ile kosztuje?",
-      "en": "How much does it cost?",
-      "da": "Hvad koster den?"
+      "en": "How much does it cost?"
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Czterysta złotych, ale teraz mamy promocję: minus dwadzieścia procent.",
-      "en": "Four hundred złoty, but we have an offer now: twenty percent off.",
-      "da": "Fire hundrede zloty, men vi har et tilbud nu: tyve procent rabat."
+      "en": "Four hundred złoty, but we have an offer now: twenty percent off."
     },
     {
       "speaker": "Mads",
       "pl": "To dobra okazja. Biorę ją.",
-      "en": "That is a good bargain. I will take it.",
-      "da": "Det er et godt tilbud. Jeg tager den."
+      "en": "That is a good bargain. I will take it."
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Świetnie. Płaci pan kartą czy gotówką?",
-      "en": "Great. Are you paying by card or in cash?",
-      "da": "Fint. Betaler du med kort eller kontant?"
+      "en": "Great. Are you paying by card or in cash?"
     },
     {
       "speaker": "Mads",
       "pl": "Kartą, proszę. Czy dostanę paragon?",
-      "en": "By card, please. Will I get a receipt?",
-      "da": "Med kort, tak. Får jeg en kvittering?"
+      "en": "By card, please. Will I get a receipt?"
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Tak, paragon i gwarancja na dwa lata.",
-      "en": "Yes, a receipt and a two-year warranty.",
-      "da": "Ja, en kvittering og to års garanti."
+      "en": "Yes, a receipt and a two-year warranty."
     },
     {
       "speaker": "Mads",
       "pl": "A jeśli kurtka nie będzie pasować mojej żonie?",
-      "en": "And if the jacket does not fit my wife?",
-      "da": "Og hvis jakken ikke passer min kone?"
+      "en": "And if the jacket does not fit my wife?"
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Można ją wymienić w ciągu trzydziestu dni.",
-      "en": "You can exchange it within thirty days.",
-      "da": "Du kan bytte den inden for tredive dage."
+      "en": "You can exchange it within thirty days."
     },
     {
       "speaker": "Mads",
       "pl": "Doskonale. Bardzo dziękuję za pomoc!",
-      "en": "Perfect. Thank you very much for your help!",
-      "da": "Perfekt. Mange tak for hjælpen!"
+      "en": "Perfect. Thank you very much for your help!"
     },
     {
       "speaker": "Sprzedawczyni",
       "pl": "Nie ma za co. Do widzenia i miłego dnia!",
-      "en": "You are welcome. Goodbye and have a nice day!",
-      "da": "Det var så lidt. Farvel og hav en god dag!"
+      "en": "You are welcome. Goodbye and have a nice day!"
     }
   ]
 }

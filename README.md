@@ -1,8 +1,8 @@
 # Polski
 
-A Polish learning app for people who speak **English** or **Danish**. One
-check-in a day: today's conversation, the words that belong to it, and its
-sentences.
+A Polish learning app for English speakers. One check-in a day: today's
+conversation, the words that belong to it, and its sentences — plus practice
+programmes on any theme you like, built for you by the tutor.
 
 Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 **Android** app. (Tauri can also build it for macOS locally; CI no longer does.)
@@ -13,8 +13,8 @@ Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 
 | | |
 |---|---|
-| **2007 words** | Across ten topics, each with an English *and* Danish gloss and a part of speech |
-| **200 sentences** | Twenty per topic, translated into both languages |
+| **2007 words** | Across ten topics, each with an English gloss and a part of speech |
+| **200 sentences** | Twenty per topic, with their English translation |
 | **10 conversations** | 207 lines of natural dialogue, one per topic |
 
 The ten topics: basics & greetings · family & people · food & restaurant ·
@@ -38,6 +38,26 @@ Finish it and the streak advances; tomorrow brings the next conversation. The
 ten conversations rotate, so the vocabulary keeps cycling while the spaced
 repetition schedule decides what actually needs your attention.
 
+### Practising what you choose
+
+Every topic — the ten course topics and your own programmes — has a
+**Practise now** button (Library → Topics, or under the tutor's reply). That
+builds the same kind of session for that topic, with your due reviews mixed in,
+without moving the course along.
+
+A topic can also be made the **daily focus**: the daily check-in then serves it
+instead of the course until you have met all of its words, and hands back to
+the course after that. *Back to the course* on the Today screen ends it early.
+
+### Programmes
+
+A programme is a practice topic of your own: words, sentences and, optionally,
+a short dialogue, on any theme — colours, numbers, the words for a trip. They
+are stored exactly like the course topics (a `topics` row of kind
+`programme`), so the session builder, the scheduler, the library and the
+progress screen treat them the same. Programmes are made through the tutor;
+they can be deleted from the topic screen.
+
 ### Scheduling
 
 An SM-2 style scheduler (`src-tauri/src/srs.rs`) tracks every word and sentence
@@ -52,21 +72,39 @@ XP per answer (harder exercise types pay more, wrong answers pay nothing),
 levels on a widening curve, a daily XP goal ring, a streak that survives until
 the end of the following day, per-topic mastery, and fifteen achievements.
 
-## AI tutor (optional)
+## The tutor (optional)
 
-Add an [OpenRouter](https://openrouter.ai/keys) API key in Settings and you get:
+Add an [OpenRouter](https://openrouter.ai/keys) API key in Settings and pick a
+model, and the **Tutor** tab becomes an assistant for the whole app. It speaks
+English (it only switches to Polish conversation if you ask it to) and acts in
+the app through tools, implemented in `src-tauri/src/tutor.rs`:
 
-- a conversation partner that is briefed on today's topic and its vocabulary,
-- corrections of the Polish you write,
-- grammar explanations for any word or sentence, straight from the exercise
-  you just got wrong,
-- extra drills generated from the words you keep forgetting.
+| Tool | What it does |
+|---|---|
+| `create_programme` | Builds a programme on a theme: words, sentences, a dialogue |
+| `add_to_programme`, `edit_programme`, `delete_programme` | Changes your programmes (course topics are read-only) |
+| `set_daily_focus` | Points the daily check-in at a topic, or back at the course |
+| `update_practice_settings` | Daily XP goal, new words per session |
+| `list_topics`, `get_topic`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
+| `suggest_practice` | Puts a *Practise now* button under its reply |
+
+So *"Can you build me a programme for learning the colours?"* produces a
+programme you can start from a button under the reply. What the tutor did is
+stored with each message, so later turns know the ids of what it made.
+
+The tutor needs a model that supports tool calling; Settings marks those with
+🛠 (from OpenRouter's `supported_parameters`). With any model it also explains
+words and sentences straight from the exercise you just got wrong.
 
 Answers **stream in** as they are generated, so a long explanation is readable
 from the first line rather than after the last, and they are rendered as
 markdown — headings, bold, lists and code, not raw `**asterisks**`. The
 renderer builds React elements rather than HTML, so model output can never
 inject markup and there is no sanitiser to keep in step.
+
+Tool calls are streamed too: the OpenRouter client assembles tool-call
+fragments from the event stream, runs each tool against the database and loops
+until the model answers in text.
 
 **Every HTTP request is made from Rust**, in `src-tauri/src/ai.rs`, using
 `reqwest`. The webview never issues a cross-origin request, so CORS never comes
@@ -95,8 +133,9 @@ tab makes them to order:
   in two takes. Generation runs in Rust in the background and survives leaving
   the screen or restarting the app.
 - **Songs are kept.** kie.ai deletes generated files after 14 days, so both
-  takes and their cover art are downloaded into the app's data folder and play
-  from disk, offline, for good.
+  takes and their cover art are downloaded and stored in the database, and play
+  offline, for good. A copy on disk is what the native player and Sonos stream
+  from; it is rebuilt from the database whenever it goes missing.
 - **Lyrics that follow the music:** when a song is ready the app asks
   kie.ai for Suno's word timings and stores them with each take. The player
   highlights the line being sung, with its English meaning under each Polish
@@ -168,6 +207,17 @@ instantly, for free, offline. Changing voice does not serve stale audio.
 - Settings shows how many of the 200 sentences are stored and how much disk
   they take, with a button to clear them.
 
+## Your data
+
+Everything the app keeps is in one SQLite database: progress and review
+history, programmes, the tutor conversation, every setting (including the
+theme and the player's repeat mode), cached speech and the songs themselves.
+
+**Settings → Your data → Export** writes a consistent copy (`VACUUM INTO`) to a
+file you choose through the system's save dialog, so it opens in any SQLite
+tool. API keys are stripped from the copy (with `secure_delete`, so they are
+not left in free pages) unless you choose to include them.
+
 ## Notifications
 
 A daily reminder at a time you choose, scheduled through
@@ -194,8 +244,10 @@ cd src-tauri && cargo test          # unit + integration, including a full sessi
 ```
 
 The integration tests in `src-tauri/src/lib.rs` open a real SQLite database,
-seed it, build a day's session, grade it and assert the rotation advances — no
-Tauri runtime required.
+seed it, build a day's session, grade it and assert the rotation advances; they
+also drive the tutor's tools to build, practise, focus and delete a programme,
+and upgrade a database from before the English-only schema — no Tauri runtime
+required.
 
 ### Layout
 
@@ -214,21 +266,23 @@ src-tauri/
   src/session.rs           builds the daily plan
   src/srs.rs               the scheduler
   src/stats.rs             XP, levels, streaks, achievements
-  src/ai.rs                OpenRouter chat + speech
+  src/ai.rs                OpenRouter chat (with streamed tool calls) + speech
+  src/tutor.rs             the tutor: prompt, tools and the agent loop
+  src/programmes.rs        creating, changing and deleting programmes
   src/songs.rs             songwriter prompt, kie.ai/Suno generation and song downloads
   src/commands.rs          the command surface, including the audio cache
 ```
 
 ## Library
 
-A searchable catalogue of the whole curriculum, whether or not you have met it
-yet: all 2007 words and 200 sentences, filterable by topic and searchable in
-both languages, plus every dialogue. Each row has its own 🔊.
+A searchable catalogue of everything, whether or not you have met it yet: your
+programmes and the ten course topics, and all words and sentences, filterable
+by topic and searchable in Polish or English. Each row has its own 🔊.
 
 ### Editing the curriculum
 
 The files under `src-tauri/content/` are the source of truth. Word lists are
-`polish⇥english⇥danish⇥part-of-speech`; sentences drop the last column;
+`polish⇥english⇥part-of-speech`; sentences drop the last column;
 conversations are JSON with a `speakers` map giving each speaker's gender. After changing them, bump `CONTENT_VERSION` in
 `src-tauri/src/db.rs` so existing installs re-seed. Review history is keyed by
 row id and survives the re-seed.

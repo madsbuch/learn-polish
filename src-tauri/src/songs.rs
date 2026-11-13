@@ -647,7 +647,9 @@ async fn task_state(key: &str, task_id: &str) -> Result<TaskState> {
     Ok(parse_task(&data))
 }
 
-async fn download(url: &str, path: &Path) -> Result<()> {
+/// Downloads a file to `path` and returns its bytes, which are also kept in
+/// the database.
+async fn download(url: &str, path: &Path) -> Result<Vec<u8>> {
     let response = client().get(url).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(Error::msg(format!("Could not download the song ({}).", response.status())));
@@ -660,7 +662,7 @@ async fn download(url: &str, path: &Path) -> Result<()> {
     let partial = path.with_extension("part");
     std::fs::write(&partial, &bytes)?;
     std::fs::rename(&partial, path)?;
-    Ok(())
+    Ok(bytes.to_vec())
 }
 
 fn extension(url: &str, fallback: &str) -> String {
@@ -852,6 +854,69 @@ async fn sync_track_lyrics(app: &AppHandle, track_id: i64) -> Result<()> {
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
+
+/// Keeps the database and the song files on disk in step, in the background:
+/// a take downloaded before songs were stored in the database has its bytes
+/// copied in, and a file that has gone missing (an app-data clean-up, or a
+/// database restored from an export) is written back out from its bytes.
+pub fn sync_media(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(error) = sync_media_now(&app) {
+            eprintln!("song media sync failed: {error}");
+        }
+    });
+}
+
+fn sync_media_now(app: &AppHandle) -> Result<()> {
+    let dir = songs_dir(app)?;
+    let db = app.state::<Db>();
+    let rows: Vec<(i64, String, Option<String>, bool, bool)> = {
+        let conn = db.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, audio_path, image_path, audio_bytes IS NOT NULL, image_bytes IS NOT NULL
+             FROM song_tracks",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        rows
+    };
+
+    for (id, audio_path, image_path, has_audio, has_image) in rows {
+        for (column, path, stored) in [
+            ("audio", Some(audio_path), has_audio),
+            ("image", image_path, has_image),
+        ] {
+            let Some(path) = path else { continue };
+            let mut on_disk = PathBuf::from(&path);
+            if stored && !on_disk.exists() {
+                // The data folder may have moved (a restore on a new phone),
+                // so the file goes back under the current one.
+                if let Some(name) = on_disk.file_name() {
+                    on_disk = dir.join(name);
+                }
+                let bytes: Vec<u8> = db.lock().query_row(
+                    &format!("SELECT {column}_bytes FROM song_tracks WHERE id = ?1"),
+                    [id],
+                    |r| r.get(0),
+                )?;
+                std::fs::write(&on_disk, bytes)?;
+                db.lock().execute(
+                    &format!("UPDATE song_tracks SET {column}_path = ?2 WHERE id = ?1"),
+                    rusqlite::params![id, on_disk.to_string_lossy()],
+                )?;
+            } else if !stored && on_disk.exists() {
+                let bytes = std::fs::read(&on_disk)?;
+                db.lock().execute(
+                    &format!("UPDATE song_tracks SET {column}_bytes = ?2 WHERE id = ?1"),
+                    rusqlite::params![id, bytes],
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
 
 pub fn songs_dir(app: &AppHandle) -> Result<PathBuf> {
     let dir = app
@@ -1050,22 +1115,27 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
             "song-{song_id}-{ord}.{}",
             extension(&track.audio_url, "mp3")
         ));
-        download(&track.audio_url, &audio).await?;
-        let image = match &track.image_url {
+        let audio_bytes = download(&track.audio_url, &audio).await?;
+        let (image, image_bytes) = match &track.image_url {
             Some(url) => {
                 let path = dir.join(format!("song-{song_id}-{ord}.{}", extension(url, "jpg")));
                 // Cover art is a nicety; a failed download must not lose the song.
-                download(url, &path).await.ok().map(|_| path)
+                match download(url, &path).await {
+                    Ok(bytes) => (Some(path), Some(bytes)),
+                    Err(_) => (None, None),
+                }
             }
-            None => None,
+            None => (None, None),
         };
         let db = app.state::<Db>();
         db.lock().execute(
-            "INSERT INTO song_tracks (song_id, ord, remote_id, audio_path, image_path, duration)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO song_tracks
+                 (song_id, ord, remote_id, audio_path, image_path, duration, audio_bytes, image_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(song_id, remote_id) DO UPDATE SET
                  audio_path = excluded.audio_path, image_path = excluded.image_path,
-                 duration = excluded.duration",
+                 duration = excluded.duration, audio_bytes = excluded.audio_bytes,
+                 image_bytes = excluded.image_bytes",
             rusqlite::params![
                 song_id,
                 ord as i64,
@@ -1073,6 +1143,8 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
                 audio.to_string_lossy(),
                 image.map(|p| p.to_string_lossy().to_string()),
                 track.duration,
+                audio_bytes,
+                image_bytes,
             ],
         )?;
     }

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db;
 use crate::error::{Error, Result};
-use crate::models::{AiModel, ChatMessage};
+use crate::models::AiModel;
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
@@ -126,20 +126,79 @@ struct ChatRequest<'a> {
     max_tokens: u32,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     stream: bool,
+    /// OpenAI-style function definitions, for the tutor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<&'a serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+/// One message on the wire. `content` is null on an assistant turn that only
+/// calls tools; `tool_call_id` marks the answer to one of those calls.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Wire {
     pub role: String,
-    pub content: String,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type", default = "function_type")]
+    pub kind: String,
+    pub function: FunctionCall,
+}
+
+fn function_type() -> String {
+    "function".into()
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct FunctionCall {
+    pub name: String,
+    /// JSON, as a string — exactly what the model produced.
+    #[serde(default)]
+    pub arguments: String,
 }
 
 impl Wire {
+    fn text(role: &str, content: impl Into<String>) -> Self {
+        Wire {
+            role: role.into(),
+            content: Some(content.into()),
+            tool_calls: vec![],
+            tool_call_id: None,
+        }
+    }
     pub fn system(content: impl Into<String>) -> Self {
-        Wire { role: "system".into(), content: content.into() }
+        Wire::text("system", content)
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Wire { role: "user".into(), content: content.into() }
+        Wire::text("user", content)
+    }
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Wire::text("assistant", content)
+    }
+    /// An assistant turn that asked for tools to run.
+    pub fn tool_request(content: &str, tool_calls: Vec<ToolCall>) -> Self {
+        Wire {
+            role: "assistant".into(),
+            content: if content.trim().is_empty() { None } else { Some(content.to_string()) },
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+    /// The result of one tool call, handed back to the model.
+    pub fn tool_result(call_id: &str, content: impl Into<String>) -> Self {
+        Wire {
+            role: "tool".into(),
+            content: Some(content.into()),
+            tool_calls: vec![],
+            tool_call_id: Some(call_id.to_string()),
+        }
     }
 }
 
@@ -186,6 +245,7 @@ pub async fn complete_with(
             temperature,
             max_tokens,
             stream: false,
+            tools: None,
         })
         .send()
         .await?;
@@ -211,7 +271,7 @@ pub async fn complete_with(
         .choices
         .into_iter()
         .next()
-        .map(|c| c.message.content)
+        .and_then(|c| c.message.content)
         .filter(|text| !text.trim().is_empty())
         .ok_or_else(|| Error::msg("OpenRouter returned an empty answer."))
 }
@@ -238,12 +298,40 @@ struct StreamChoice {
 struct Delta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<ToolCallDelta>,
+}
+
+/// A fragment of a tool call. The id and name come in the first fragment for
+/// an index; the JSON arguments arrive in pieces after it.
+#[derive(Deserialize, Default)]
+struct ToolCallDelta {
+    #[serde(default)]
+    index: usize,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: Option<FunctionDelta>,
+}
+
+#[derive(Deserialize, Default)]
+struct FunctionDelta {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
 }
 
 /// What a server-sent-event line turned out to mean.
 #[derive(Debug, PartialEq)]
 pub enum SseItem {
     Delta(String),
+    ToolCall {
+        index: usize,
+        id: Option<String>,
+        name: Option<String>,
+        arguments: String,
+    },
     Done,
     Failed(String),
 }
@@ -292,6 +380,13 @@ impl SseParser {
                     Some(text) if !text.is_empty() => items.push(SseItem::Delta(text)),
                     _ => {}
                 }
+                for call in choice.delta.tool_calls {
+                    let (name, arguments) = match call.function {
+                        Some(f) => (f.name, f.arguments.unwrap_or_default()),
+                        None => (None, String::new()),
+                    };
+                    items.push(SseItem::ToolCall { index: call.index, id: call.id, name, arguments });
+                }
             }
         }
         items
@@ -304,8 +399,76 @@ pub async fn complete_streaming<F>(
     key: &str,
     model: &str,
     messages: &[Wire],
-    mut on_delta: F,
+    on_delta: F,
 ) -> Result<String>
+where
+    F: FnMut(&str),
+{
+    let turn = stream_turn(key, model, messages, None, on_delta).await?;
+    if turn.text.trim().is_empty() {
+        return Err(Error::msg("OpenRouter returned an empty answer."));
+    }
+    Ok(turn.text)
+}
+
+/// One streamed assistant turn: whatever text it wrote, and the tools it
+/// asked to run.
+#[derive(Debug, Default)]
+pub struct Turn {
+    pub text: String,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+/// Collects tool-call fragments, keyed by the index the model gives them.
+#[derive(Default)]
+pub struct ToolCallAssembler {
+    calls: Vec<ToolCall>,
+}
+
+impl ToolCallAssembler {
+    pub fn push(&mut self, index: usize, id: Option<String>, name: Option<String>, arguments: &str) {
+        while self.calls.len() <= index {
+            self.calls.push(ToolCall { kind: function_type(), ..Default::default() });
+        }
+        let call = &mut self.calls[index];
+        if let Some(id) = id.filter(|id| !id.is_empty()) {
+            call.id = id;
+        }
+        if let Some(name) = name.filter(|name| !name.is_empty()) {
+            call.function.name = name;
+        }
+        call.function.arguments.push_str(arguments);
+    }
+
+    pub fn finish(self) -> Vec<ToolCall> {
+        self.calls
+            .into_iter()
+            .enumerate()
+            .filter(|(_, call)| !call.function.name.is_empty())
+            .map(|(i, mut call)| {
+                // A few providers leave the id out; the model only needs it to
+                // pair each result with its call.
+                if call.id.is_empty() {
+                    call.id = format!("call_{i}");
+                }
+                if call.function.arguments.trim().is_empty() {
+                    call.function.arguments = "{}".into();
+                }
+                call
+            })
+            .collect()
+    }
+}
+
+/// Streams one turn, optionally offering tools. Text fragments go to
+/// `on_delta` as they arrive; tool calls are assembled and returned whole.
+pub async fn stream_turn<F>(
+    key: &str,
+    model: &str,
+    messages: &[Wire],
+    tools: Option<&serde_json::Value>,
+    mut on_delta: F,
+) -> Result<Turn>
 where
     F: FnMut(&str),
 {
@@ -321,8 +484,10 @@ where
             model,
             messages,
             temperature: 0.4,
-            max_tokens: 1200,
+            // Room for a whole programme's worth of tool arguments.
+            max_tokens: if tools.is_some() { 8000 } else { 1200 },
             stream: true,
+            tools,
         })
         .send()
         .await?;
@@ -339,16 +504,20 @@ where
 
     let mut stream = response.bytes_stream();
     let mut parser = SseParser::default();
-    let mut answer = String::new();
+    let mut text = String::new();
+    let mut calls = ToolCallAssembler::default();
 
-    while let Some(chunk) = stream.next().await {
+    'read: while let Some(chunk) = stream.next().await {
         for item in parser.push(&String::from_utf8_lossy(&chunk?)) {
             match item {
-                SseItem::Delta(text) => {
-                    answer.push_str(&text);
-                    on_delta(&text);
+                SseItem::Delta(delta) => {
+                    text.push_str(&delta);
+                    on_delta(&delta);
                 }
-                SseItem::Done => return Ok(answer),
+                SseItem::ToolCall { index, id, name, arguments } => {
+                    calls.push(index, id, name, &arguments)
+                }
+                SseItem::Done => break 'read,
                 SseItem::Failed(message) => {
                     return Err(Error::msg(format!("OpenRouter: {message}")))
                 }
@@ -356,10 +525,11 @@ where
         }
     }
 
-    if answer.trim().is_empty() {
+    let tool_calls = calls.finish();
+    if text.trim().is_empty() && tool_calls.is_empty() {
         return Err(Error::msg("OpenRouter returned an empty answer."));
     }
-    Ok(answer)
+    Ok(Turn { text, tool_calls })
 }
 
 #[derive(Deserialize)]
@@ -379,6 +549,8 @@ struct ModelEntry {
     /// Present on speech models; the set of voices the model accepts.
     #[serde(default)]
     supported_voices: Option<Vec<String>>,
+    #[serde(default)]
+    supported_parameters: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -405,6 +577,9 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
             context_length: m.context_length.unwrap_or(0),
             prompt_price: m.pricing.and_then(|p| p.prompt).unwrap_or_default(),
             voices: m.supported_voices.unwrap_or_default(),
+            tools: m
+                .supported_parameters
+                .is_some_and(|params| params.iter().any(|p| p == "tools")),
             id: m.id,
         })
         .collect();
@@ -638,6 +813,53 @@ mod tests {
     }
 
     #[test]
+    fn sse_assembles_tool_calls_from_fragments() {
+        let mut parser = SseParser::default();
+        let mut items = parser.push(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"create_programme\",\"arguments\":\"\"}}]}}]}\n",
+        );
+        items.extend(parser.push(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"title\\\":\"}}]}}]}\n",
+        ));
+        items.extend(parser.push(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Colours\\\"}\"}}]}}]}\ndata: [DONE]\n",
+        ));
+
+        let mut calls = ToolCallAssembler::default();
+        for item in items {
+            if let SseItem::ToolCall { index, id, name, arguments } = item {
+                calls.push(index, id, name, &arguments);
+            }
+        }
+        let calls = calls.finish();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].function.name, "create_programme");
+        assert_eq!(calls[0].function.arguments, "{\"title\":\"Colours\"}");
+    }
+
+    #[test]
+    fn tool_turns_serialise_the_way_openai_expects() {
+        let request = Wire::tool_request(
+            "",
+            vec![ToolCall {
+                id: "c1".into(),
+                kind: "function".into(),
+                function: FunctionCall { name: "list_topics".into(), arguments: "{}".into() },
+            }],
+        );
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json["content"].is_null(), "a tool-only turn has null content");
+        assert_eq!(json["tool_calls"][0]["type"], "function");
+        assert!(json.get("tool_call_id").is_none());
+
+        let result = serde_json::to_value(Wire::tool_result("c1", "[]")).unwrap();
+        assert_eq!(result["role"], "tool");
+        assert_eq!(result["tool_call_id"], "c1");
+        assert!(result.get("tool_calls").is_none());
+    }
+
+    #[test]
     fn pcm_parameters_come_from_the_content_type() {
         let header = "audio/pcm;rate=24000;channels=1";
         assert_eq!(content_type_param(header, "rate"), Some(24_000));
@@ -651,127 +873,20 @@ mod tests {
 // Prompts
 // ---------------------------------------------------------------------------
 
-fn language_name(code: &str) -> &'static str {
-    if code == "da" {
-        "Danish"
-    } else {
-        "English"
-    }
-}
-
-pub fn tutor_system_prompt(source: &str, topic_title: &str, vocabulary: &[String]) -> String {
-    format!(
-        "You are a warm, patient Polish tutor for an adult beginner whose language is {lang}.\n\
-         Today's topic is \"{topic}\".\n\
-         Rules:\n\
-         - Reply in Polish first, then give a short {lang} translation in brackets.\n\
-         - Keep sentences short and use the present tense unless the learner asks otherwise.\n\
-         - Prefer these words when they fit: {vocab}.\n\
-         - If the learner writes Polish with mistakes, gently show the corrected sentence \
-           before continuing the conversation.\n\
-         - Never write more than four sentences per turn. Always end with a question so the \
-           conversation keeps going.",
-        lang = language_name(source),
-        topic = topic_title,
-        vocab = vocabulary.join(", ")
-    )
-}
-
-pub fn explain_prompt(source: &str, polish: &str, meaning: &str) -> Vec<Wire> {
-    let lang = language_name(source);
+pub fn explain_prompt(polish: &str, meaning: &str) -> Vec<Wire> {
     vec![
-        Wire::system(format!(
-            "You explain Polish to a {lang}-speaking beginner. Answer in {lang}. \
-             Use short markdown sections and never exceed 200 words."
-        )),
+        Wire::system(
+            "You explain Polish to an English-speaking beginner. Answer in English. \
+             Use short markdown sections and never exceed 200 words.",
+        ),
         Wire::user(format!(
             "Explain the Polish item below.\n\n\
-             Polish: {polish}\n{lang}: {meaning}\n\n\
+             Polish: {polish}\nEnglish: {meaning}\n\n\
              Cover, briefly:\n\
              1. What it literally means, word by word if it is a phrase.\n\
              2. The grammar a learner needs here (case, aspect, gender) — only what applies.\n\
-             3. Pronunciation written for a {lang} speaker.\n\
+             3. Pronunciation written for an English speaker.\n\
              4. One extra example sentence with its translation."
         )),
     ]
-}
-
-pub fn feedback_prompt(source: &str, target_polish: &str, attempt: &str) -> Vec<Wire> {
-    let lang = language_name(source);
-    vec![
-        Wire::system(format!(
-            "You are a Polish teacher marking one short translation. \
-             Answer in {lang}, in under 120 words, and be encouraging but precise."
-        )),
-        Wire::user(format!(
-            "The learner was asked to produce this Polish sentence:\n{target_polish}\n\n\
-             They wrote:\n{attempt}\n\n\
-             Say whether it is acceptable, point out any mistake and why it is a mistake, \
-             then give the most natural version."
-        )),
-    ]
-}
-
-pub fn drill_prompt(source: &str, words: &[String]) -> Vec<Wire> {
-    let lang = language_name(source);
-    vec![
-        Wire::system(format!(
-            "You write practice material for a Polish beginner who speaks {lang}. \
-             Output nothing but the requested lines."
-        )),
-        Wire::user(format!(
-            "Write five short Polish sentences (max 8 words each) that use these words: {}.\n\
-             Put each sentence on its own line as: Polish sentence — {lang} translation.\n\
-             No numbering, no extra commentary.",
-            words.join(", ")
-        )),
-    ]
-}
-
-// ---------------------------------------------------------------------------
-// Chat history
-// ---------------------------------------------------------------------------
-
-/// How much of the conversation we replay to the model. Older turns are kept in
-/// the database for the learner but dropped from the request.
-const HISTORY_LIMIT: i64 = 20;
-
-pub fn load_history(conn: &Connection, topic_id: i64) -> Result<Vec<ChatMessage>> {
-    let mut stmt = conn.prepare(
-        "SELECT role, content FROM chat_messages WHERE topic_id = ?1 ORDER BY id",
-    )?;
-    let messages = stmt
-        .query_map([topic_id], |r| {
-            Ok(ChatMessage { role: r.get(0)?, content: r.get(1)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(messages)
-}
-
-pub fn recent_history(conn: &Connection, topic_id: i64) -> Result<Vec<Wire>> {
-    let mut stmt = conn.prepare(
-        "SELECT role, content FROM (
-             SELECT id, role, content FROM chat_messages
-             WHERE topic_id = ?1 ORDER BY id DESC LIMIT ?2
-         ) ORDER BY id",
-    )?;
-    let history = stmt
-        .query_map(rusqlite::params![topic_id, HISTORY_LIMIT], |r| {
-            Ok(Wire { role: r.get(0)?, content: r.get(1)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(history)
-}
-
-pub fn append_message(conn: &Connection, topic_id: i64, role: &str, content: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO chat_messages (topic_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![topic_id, role, content, db::now_secs()],
-    )?;
-    Ok(())
-}
-
-pub fn clear_history(conn: &Connection, topic_id: i64) -> Result<()> {
-    conn.execute("DELETE FROM chat_messages WHERE topic_id = ?1", [topic_id])?;
-    Ok(())
 }

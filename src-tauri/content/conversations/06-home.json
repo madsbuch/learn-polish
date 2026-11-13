@@ -2,9 +2,7 @@
   "slug": "home",
   "title_pl": "Nowe mieszkanie",
   "title_en": "The new flat",
-  "title_da": "Den nye lejlighed",
   "summary_en": "Mads shows Anna around his new flat and they talk about daily routines and chores.",
-  "summary_da": "Mads viser Anna rundt i sin nye lejlighed, og de taler om daglige rutiner og huslige pligter.",
   "speakers": {
     "Anna": "f",
     "Mads": "m"
@@ -13,128 +11,107 @@
     {
       "speaker": "Anna",
       "pl": "Wow, jakie jasne mieszkanie! Ile ma pokoi?",
-      "en": "Wow, what a bright flat! How many rooms does it have?",
-      "da": "Wow, hvor er lejligheden lys! Hvor mange værelser har den?"
+      "en": "Wow, what a bright flat! How many rooms does it have?"
     },
     {
       "speaker": "Mads",
       "pl": "Trzy: pokój dzienny, sypialnia i mały pokój dla dzieci.",
-      "en": "Three: a living room, a bedroom and a small room for the children.",
-      "da": "Tre: en stue, et soveværelse og et lille værelse til børnene."
+      "en": "Three: a living room, a bedroom and a small room for the children."
     },
     {
       "speaker": "Anna",
       "pl": "A kuchnia? Lubisz gotować?",
-      "en": "And the kitchen? Do you like cooking?",
-      "da": "Og køkkenet? Kan du lide at lave mad?"
+      "en": "And the kitchen? Do you like cooking?"
     },
     {
       "speaker": "Mads",
       "pl": "Bardzo. Kuchnia jest mała, ale ma nowy piekarnik.",
-      "en": "Very much. The kitchen is small, but it has a new oven.",
-      "da": "Meget. Køkkenet er lille, men det har en ny ovn."
+      "en": "Very much. The kitchen is small, but it has a new oven."
     },
     {
       "speaker": "Anna",
       "pl": "Meble są nowe czy stare?",
-      "en": "Is the furniture new or old?",
-      "da": "Er møblerne nye eller gamle?"
+      "en": "Is the furniture new or old?"
     },
     {
       "speaker": "Mads",
       "pl": "Mieszkanie było umeblowane. Kanapa i szafa były już tutaj.",
-      "en": "The flat was furnished. The sofa and the wardrobe were already here.",
-      "da": "Lejligheden var møbleret. Sofaen og skabet var her allerede."
+      "en": "The flat was furnished. The sofa and the wardrobe were already here."
     },
     {
       "speaker": "Anna",
       "pl": "Ładny dywan. A co jest za tymi drzwiami?",
-      "en": "Nice carpet. And what is behind that door?",
-      "da": "Flot tæppe. Og hvad er der bag den dør?"
+      "en": "Nice carpet. And what is behind that door?"
     },
     {
       "speaker": "Mads",
       "pl": "Łazienka. Jest tam prysznic, ale nie ma wanny.",
-      "en": "The bathroom. There is a shower there, but no bathtub.",
-      "da": "Badeværelset. Der er brusebad, men intet badekar."
+      "en": "The bathroom. There is a shower there, but no bathtub."
     },
     {
       "speaker": "Anna",
       "pl": "Nie szkodzi. A balkon? Widzę drzwi na taras.",
-      "en": "That does not matter. And a balcony? I see a door to the terrace.",
-      "da": "Det gør ikke noget. Og en altan? Jeg kan se en dør til terrassen."
+      "en": "That does not matter. And a balcony? I see a door to the terrace."
     },
     {
       "speaker": "Mads",
       "pl": "Tak! Latem jemy tam kolację. To moje ulubione miejsce.",
-      "en": "Yes! In summer we have supper there. It is my favourite place.",
-      "da": "Ja! Om sommeren spiser vi aftensmad der. Det er mit yndlingssted."
+      "en": "Yes! In summer we have supper there. It is my favourite place."
     },
     {
       "speaker": "Anna",
       "pl": "Rozumiem dlaczego. A o której wstajesz rano?",
-      "en": "I understand why. And what time do you get up in the morning?",
-      "da": "Jeg forstår hvorfor. Og hvornår står du op om morgenen?"
+      "en": "I understand why. And what time do you get up in the morning?"
     },
     {
       "speaker": "Mads",
       "pl": "Budzik dzwoni o szóstej, ale wstaję o wpół do siódmej.",
-      "en": "The alarm rings at six, but I get up at half past six.",
-      "da": "Vækkeuret ringer klokken seks, men jeg står op halv syv."
+      "en": "The alarm rings at six, but I get up at half past six."
     },
     {
       "speaker": "Anna",
       "pl": "Ha! Ja też. A kto sprząta w domu?",
-      "en": "Ha! Me too. And who cleans the house?",
-      "da": "Ha! Også mig. Og hvem gør rent i hjemmet?"
+      "en": "Ha! Me too. And who cleans the house?"
     },
     {
       "speaker": "Mads",
       "pl": "Wszyscy. Ja odkurzam, żona pierze, a dzieci zmywają.",
-      "en": "Everyone. I vacuum, my wife does the laundry and the children wash up.",
-      "da": "Alle. Jeg støvsuger, min kone vasker tøj, og børnene vasker op."
+      "en": "Everyone. I vacuum, my wife does the laundry and the children wash up."
     },
     {
       "speaker": "Anna",
       "pl": "Bardzo sprawiedliwie! U mnie zawsze jest bałagan.",
-      "en": "Very fair! At my place it is always a mess.",
-      "da": "Meget retfærdigt! Hos mig er der altid rod."
+      "en": "Very fair! At my place it is always a mess."
     },
     {
       "speaker": "Mads",
       "pl": "Tutaj też, ale dzisiaj posprzątałem, bo przyszłaś.",
-      "en": "Here too, but today I tidied up because you came.",
-      "da": "Også her, men i dag ryddede jeg op, fordi du kom."
+      "en": "Here too, but today I tidied up because you came."
     },
     {
       "speaker": "Anna",
       "pl": "Ha, ha! Szczery jesteś. A sąsiedzi? Są cisi?",
-      "en": "Ha, ha! You are honest. And the neighbours? Are they quiet?",
-      "da": "Ha, ha! Du er ærlig. Og naboerne? Er de stille?"
+      "en": "Ha, ha! You are honest. And the neighbours? Are they quiet?"
     },
     {
       "speaker": "Mads",
       "pl": "Na dole tak, ale nad nami mieszka pies, który szczeka w nocy.",
-      "en": "Downstairs yes, but above us lives a dog that barks at night.",
-      "da": "Nedenunder ja, men ovenover os bor en hund, der gør om natten."
+      "en": "Downstairs yes, but above us lives a dog that barks at night."
     },
     {
       "speaker": "Anna",
       "pl": "Biedny ty. Może warto kupić dobre zasłony i zatyczki do uszu.",
-      "en": "Poor you. Maybe it is worth buying good curtains and earplugs.",
-      "da": "Stakkels dig. Måske er det værd at købe gode gardiner og ørepropper."
+      "en": "Poor you. Maybe it is worth buying good curtains and earplugs."
     },
     {
       "speaker": "Mads",
       "pl": "Dobry pomysł. Napijesz się herbaty?",
-      "en": "Good idea. Would you like some tea?",
-      "da": "God idé. Vil du have en kop te?"
+      "en": "Good idea. Would you like some tea?"
     },
     {
       "speaker": "Anna",
       "pl": "Chętnie. Usiądźmy na balkonie.",
-      "en": "Gladly. Let us sit on the balcony.",
-      "da": "Meget gerne. Lad os sætte os på altanen."
+      "en": "Gladly. Let us sit on the balcony."
     }
   ]
 }

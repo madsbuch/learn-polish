@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
-import { Banner, Loading, SpeakButton } from "../components/ui";
+import { Banner, Loading, SpeakButton, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import type { DialogueLine, Sentence, TopicProgress, Word } from "../lib/types";
 
@@ -10,12 +10,21 @@ export type TopicSection = "conversation" | "words" | "sentences";
 export function TopicDetail({
   progress,
   initialSection,
+  isFocus,
   onBack,
+  onPractise,
+  onFocus,
+  onDeleted,
 }: {
   progress: TopicProgress;
   /** Which tab to land on — the Library deep-links straight to one. */
   initialSection?: TopicSection;
+  /** True when the daily check-in is focused on this topic. */
+  isFocus: boolean;
   onBack: () => void;
+  onPractise: () => void;
+  onFocus: (focused: boolean) => Promise<void>;
+  onDeleted: () => void;
 }) {
   const [tab, setTab] = useState<TopicSection>(initialSection ?? "conversation");
   const [lines, setLines] = useState<DialogueLine[] | null>(null);
@@ -24,8 +33,28 @@ export function TopicDetail({
   const [query, setQuery] = useState("");
   const [revealAll, setRevealAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"focus" | "delete" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const topicId = progress.topic.id;
+  const programme = progress.topic.kind === "programme";
+
+  // Programmes may have no dialogue; then there is no conversation tab.
+  useEffect(() => {
+    if (lines && lines.length === 0 && tab === "conversation") setTab("words");
+  }, [lines, tab]);
+
+  async function act(kind: "focus" | "delete", action: () => Promise<void>) {
+    setBusy(kind);
+    setError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   useEffect(() => {
     setError(null);
@@ -67,10 +96,30 @@ export function TopicDetail({
 
       {error ? <Banner kind="error">{error}</Banner> : null}
 
-      <div className="segmented" style={{ marginBottom: 16 }}>
-        <button data-active={tab === "conversation"} onClick={() => setTab("conversation")}>
-          Conversation
+      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+        <button className="btn primary grow" onClick={onPractise}>
+          ▶︎ Practise now
         </button>
+        <button
+          className={`btn small ${isFocus ? "success" : "ghost"}`}
+          disabled={busy === "focus"}
+          onClick={() => act("focus", () => onFocus(!isFocus))}
+        >
+          {busy === "focus" ? <Spinner /> : isFocus ? "✓ Daily focus" : "Make daily"}
+        </button>
+      </div>
+      {isFocus ? (
+        <p className="tiny faint" style={{ marginTop: 0 }}>
+          The daily check-in uses this until you have met all its words.
+        </p>
+      ) : null}
+
+      <div className="segmented" style={{ marginBottom: 16 }}>
+        {lines === null || lines.length > 0 ? (
+          <button data-active={tab === "conversation"} onClick={() => setTab("conversation")}>
+            Conversation
+          </button>
+        ) : null}
         <button data-active={tab === "words"} onClick={() => setTab("words")}>
           Words {progress.seenWords}/{progress.totalWords}
         </button>
@@ -142,6 +191,34 @@ export function TopicDetail({
         ) : (
           <Loading />
         )
+      ) : null}
+
+      {programme ? (
+        <div style={{ marginTop: 20 }}>
+          {confirmDelete ? (
+            <div className="row">
+              <button
+                className="btn danger grow"
+                disabled={busy === "delete"}
+                onClick={() =>
+                  act("delete", async () => {
+                    await api.programmeDelete(topicId);
+                    onDeleted();
+                  })
+                }
+              >
+                {busy === "delete" ? <Spinner /> : "Yes, delete it and its history"}
+              </button>
+              <button className="btn ghost" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button className="btn danger block" onClick={() => setConfirmDelete(true)}>
+              Delete programme
+            </button>
+          )}
+        </div>
       ) : null}
     </div>
   );

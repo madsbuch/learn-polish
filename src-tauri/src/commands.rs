@@ -8,6 +8,7 @@ use crate::ai;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
+use crate::programmes;
 use crate::session;
 use crate::songs;
 use crate::srs;
@@ -71,7 +72,6 @@ fn answers_match(expected: &str, given: &str) -> bool {
 
 fn read_settings(conn: &Connection) -> Result<Settings> {
     Ok(Settings {
-        source_language: db::source_language(conn),
         daily_goal: db::get_setting_i64(conn, "daily_goal", stats::DEFAULT_DAILY_GOAL),
         new_words_per_day: db::get_setting_i64(conn, "new_words_per_day", 12),
         reminder_hour: db::get_setting_i64(conn, "reminder_hour", 19),
@@ -91,6 +91,13 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
         has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
+        focus_topic_id: session::focus_topic_id(conn),
+        theme: db::get_setting(conn, "theme")?
+            .filter(|t| matches!(t.as_str(), "system" | "light" | "dark"))
+            .unwrap_or_default(),
+        player_repeat: db::get_setting(conn, "player_repeat")?
+            .filter(|t| matches!(t.as_str(), "off" | "all" | "one"))
+            .unwrap_or_default(),
     })
 }
 
@@ -117,7 +124,6 @@ pub async fn get_settings(db: State<'_, Db>) -> Result<Settings> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
-    pub source_language: Option<String>,
     pub daily_goal: Option<i64>,
     pub new_words_per_day: Option<i64>,
     pub reminder_hour: Option<i64>,
@@ -130,16 +136,24 @@ pub struct SettingsPatch {
     pub tts_prefetch: Option<bool>,
     pub songwriter_model: Option<String>,
     pub suno_model: Option<String>,
+    pub theme: Option<String>,
+    pub player_repeat: Option<String>,
 }
 
 #[tauri::command]
 pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<Settings> {
     let conn = db.lock();
-    if let Some(language) = patch.source_language {
-        if language != "en" && language != "da" {
-            return Err(Error::msg("Source language must be 'en' or 'da'."));
+    if let Some(theme) = patch.theme {
+        if !matches!(theme.as_str(), "system" | "light" | "dark") {
+            return Err(Error::msg(format!("Unknown theme '{theme}'.")));
         }
-        db::set_setting(&conn, "source_language", &language)?;
+        db::set_setting(&conn, "theme", &theme)?;
+    }
+    if let Some(repeat) = patch.player_repeat {
+        if !matches!(repeat.as_str(), "off" | "all" | "one") {
+            return Err(Error::msg(format!("Unknown repeat mode '{repeat}'.")));
+        }
+        db::set_setting(&conn, "player_repeat", &repeat)?;
     }
     if let Some(goal) = patch.daily_goal {
         db::set_setting(&conn, "daily_goal", &goal.clamp(10, 1000).to_string())?;
@@ -187,10 +201,15 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
 // The daily session
 // ---------------------------------------------------------------------------
 
+/// Today's check-in, or — with a topic id — a session for that topic or
+/// programme, practised on demand.
 #[tauri::command]
-pub async fn get_session(db: State<'_, Db>) -> Result<SessionPlan> {
+pub async fn get_session(db: State<'_, Db>, topic_id: Option<i64>) -> Result<SessionPlan> {
     let conn = db.lock();
-    session::build(&conn)
+    match topic_id {
+        Some(id) if id != session::topic_for_day(&conn)?.id => session::build_for(&conn, id),
+        _ => session::build(&conn),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,7 +283,7 @@ pub struct SessionResult {
 }
 
 #[tauri::command]
-pub async fn complete_session(db: State<'_, Db>) -> Result<SessionResult> {
+pub async fn complete_session(db: State<'_, Db>, topic_id: i64) -> Result<SessionResult> {
     let conn = db.lock();
     let today = db::today(&conn);
 
@@ -276,7 +295,7 @@ pub async fn complete_session(db: State<'_, Db>) -> Result<SessionResult> {
         codes
     };
 
-    let first_completion_today = stats::complete_day(&conn, today)?;
+    let first_completion_today = stats::complete_day(&conn, today, topic_id)?;
     // collect() writes newly earned achievements as a side effect.
     let stats = stats::collect(&conn)?;
     let newly_unlocked = stats
@@ -322,7 +341,7 @@ pub async fn browse_words(
     limit: i64,
 ) -> Result<Vec<Word>> {
     let conn = db.lock();
-    let meaning = if db::source_language(&conn) == "da" { "da" } else { "en" };
+    let meaning = "en";
     let pattern = format!("%{}%", query.trim());
     let sql = format!(
         "SELECT id, pl, {meaning}, pos FROM words
@@ -349,7 +368,7 @@ pub async fn browse_catalogue(
     limit: i64,
 ) -> Result<CataloguePage> {
     let conn = db.lock();
-    let meaning = if db::source_language(&conn) == "da" { "da" } else { "en" };
+    let meaning = "en";
     let needle = query.trim();
     let pattern = format!("%{needle}%");
     let limit = limit.clamp(1, 1000);
@@ -398,7 +417,7 @@ pub async fn browse_catalogue(
 #[tauri::command]
 pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Sentence>> {
     let conn = db.lock();
-    let meaning = if db::source_language(&conn) == "da" { "da" } else { "en" };
+    let meaning = "en";
     let mut stmt = conn.prepare(&format!(
         "SELECT id, pl, {meaning} FROM sentences WHERE topic_id = ?1 ORDER BY ord"
     ))?;
@@ -417,8 +436,8 @@ pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
         "DELETE FROM reviews;
          DELETE FROM day_log;
          DELETE FROM achievements;
-         DELETE FROM chat_messages;
-         DELETE FROM settings WHERE key = 'lesson_index';",
+         DELETE FROM tutor_messages;
+         DELETE FROM settings WHERE key IN ('lesson_index', 'focus_topic_id');",
     )?;
     Ok(())
 }
@@ -782,65 +801,11 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
     .map(|reply| reply.trim().to_string())
 }
 
-#[tauri::command]
-pub async fn ai_history(db: State<'_, Db>, topic_id: i64) -> Result<Vec<ChatMessage>> {
-    let conn = db.lock();
-    ai::load_history(&conn, topic_id)
-}
-
-#[tauri::command]
-pub async fn ai_clear_chat(db: State<'_, Db>, topic_id: i64) -> Result<()> {
-    let conn = db.lock();
-    ai::clear_history(&conn, topic_id)
-}
-
-#[tauri::command]
-pub async fn ai_chat(db: State<'_, Db>, topic_id: i64, message: String) -> Result<String> {
-    let message = message.trim().to_string();
-    if message.is_empty() {
-        return Err(Error::msg("Write something first."));
-    }
-
-    // Gather everything we need, then release the lock before awaiting.
-    let (key, model, mut wire) = {
-        let conn = db.lock();
-        let key = ai::api_key(&conn)?;
-        let model = ai::require_model(&conn)?;
-        let topic = session::load_topic(&conn, topic_id)?;
-        let source = db::source_language(&conn);
-
-        let mut stmt = conn.prepare(
-            "SELECT pl FROM words WHERE topic_id = ?1 ORDER BY ord LIMIT 60",
-        )?;
-        let vocabulary: Vec<String> = stmt
-            .query_map([topic_id], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        drop(stmt);
-
-        let mut wire = vec![ai::Wire::system(ai::tutor_system_prompt(
-            &source,
-            &topic.title,
-            &vocabulary,
-        ))];
-        wire.extend(ai::recent_history(&conn, topic_id)?);
-        wire.push(ai::Wire::user(message.clone()));
-        (key, model, wire)
-    };
-
-    let reply = ai::complete(&key, &model, &wire).await?;
-    wire.clear();
-
-    let conn = db.lock();
-    ai::append_message(&conn, topic_id, "user", &message)?;
-    ai::append_message(&conn, topic_id, "assistant", &reply)?;
-    Ok(reply)
-}
-
 /// Pushes a streamed answer to the frontend as it arrives.
 ///
 /// Every stream carries a caller-supplied id, so a screen that fires two
 /// requests (or is re-entered) never renders another one's tokens.
-fn stream_to_frontend(
+pub fn stream_to_frontend(
     app: &tauri::AppHandle,
     stream_id: &str,
     delta: Option<&str>,
@@ -881,7 +846,7 @@ async fn run_stream(
     result
 }
 
-/// Streaming counterpart of `ai_explain`. Text arrives as `ai://stream` events.
+/// Explains a word or sentence. Text arrives as `ai://stream` events.
 #[tauri::command]
 pub async fn ai_explain_stream(
     app: tauri::AppHandle,
@@ -894,136 +859,125 @@ pub async fn ai_explain_stream(
         let conn = db.lock();
         let key = ai::api_key(&conn)?;
         let model = ai::require_model(&conn)?;
-        let source = db::source_language(&conn);
-        let meaning = if source == "da" { "da" } else { "en" };
-
         let table = match item_kind.as_str() {
             "word" => "words",
             "sentence" => "sentences",
             other => return Err(Error::msg(format!("cannot explain a '{other}'"))),
         };
         let (polish, gloss): (String, String) = conn.query_row(
-            &format!("SELECT pl, {meaning} FROM {table} WHERE id = ?1"),
+            &format!("SELECT pl, en FROM {table} WHERE id = ?1"),
             [item_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        (key, model, ai::explain_prompt(&source, &polish, &gloss))
+        (key, model, ai::explain_prompt(&polish, &gloss))
     };
     run_stream(app, stream_id, key, model, messages).await
 }
 
-/// Streaming counterpart of `ai_chat`.
+// ---------------------------------------------------------------------------
+// Programmes and the daily focus
+// ---------------------------------------------------------------------------
+
 #[tauri::command]
-pub async fn ai_chat_stream(
+pub async fn programme_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
+    programmes::delete(&db.lock(), topic_id).map(|_| ())
+}
+
+/// Points the daily check-in at a topic or programme, or back at the course.
+#[tauri::command]
+pub async fn set_focus(db: State<'_, Db>, topic_id: Option<i64>) -> Result<Settings> {
+    let conn = db.lock();
+    programmes::set_focus(&conn, topic_id)?;
+    read_settings(&conn)
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
+/// A civil date from days since the epoch (Howard Hinnant's algorithm), for
+/// the export's file name.
+fn civil_date(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (year, month, day)
+}
+
+/// Writes a consistent copy of the whole database — progress, programmes,
+/// tutor conversation, settings, cached audio and songs — to a file the
+/// learner picks. API keys are left out unless asked for. Returns where it
+/// went, or `None` if the learner cancelled the dialog.
+#[tauri::command]
+pub async fn export_database(
     app: tauri::AppHandle,
     db: State<'_, Db>,
-    topic_id: i64,
-    message: String,
-    stream_id: String,
-) -> Result<String> {
-    let message = message.trim().to_string();
-    if message.is_empty() {
-        return Err(Error::msg("Write something first."));
+    include_keys: bool,
+) -> Result<Option<String>> {
+    use tauri::Manager;
+    use tauri_plugin_dialog::DialogExt;
+    use tauri_plugin_fs::FsExt;
+
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| Error::msg(format!("no cache directory: {e}")))?;
+    std::fs::create_dir_all(&dir)?;
+    let snapshot = dir.join("export.sqlite");
+    let _ = std::fs::remove_file(&snapshot);
+
+    let file_name = {
+        let conn = db.lock();
+        // VACUUM INTO writes a compact, self-contained copy that includes
+        // whatever is still in the write-ahead log.
+        conn.execute("VACUUM INTO ?1", [snapshot.to_string_lossy()])?;
+        let (y, m, d) = civil_date(db::today(&conn));
+        format!("polski-{y:04}-{m:02}-{d:02}.sqlite")
+    };
+
+    if !include_keys {
+        let copy = rusqlite::Connection::open(&snapshot)?;
+        // Overwrite freed pages too, so the keys are really gone from the file.
+        copy.pragma_update(None, "secure_delete", "ON")?;
+        copy.execute(
+            "DELETE FROM settings WHERE key IN ('openrouter_api_key', 'kie_api_key')",
+            [],
+        )?;
     }
 
-    let (key, model, wire) = {
-        let conn = db.lock();
-        let key = ai::api_key(&conn)?;
-        let model = ai::require_model(&conn)?;
-        let topic = session::load_topic(&conn, topic_id)?;
-        let source = db::source_language(&conn);
-
-        let mut stmt =
-            conn.prepare("SELECT pl FROM words WHERE topic_id = ?1 ORDER BY ord LIMIT 60")?;
-        let vocabulary: Vec<String> = stmt
-            .query_map([topic_id], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        drop(stmt);
-
-        let mut wire = vec![ai::Wire::system(ai::tutor_system_prompt(
-            &source,
-            &topic.title,
-            &vocabulary,
-        ))];
-        wire.extend(ai::recent_history(&conn, topic_id)?);
-        wire.push(ai::Wire::user(message.clone()));
-        (key, model, wire)
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Export your data")
+        .set_file_name(&file_name)
+        .add_filter("SQLite database", &["sqlite", "db"])
+        .save_file(move |path| {
+            let _ = sender.send(path);
+        });
+    let Some(target) = receiver.await.ok().flatten() else {
+        let _ = std::fs::remove_file(&snapshot);
+        return Ok(None);
     };
 
-    let reply = run_stream(app, stream_id, key, model, wire).await?;
-    let conn = db.lock();
-    ai::append_message(&conn, topic_id, "user", &message)?;
-    ai::append_message(&conn, topic_id, "assistant", &reply)?;
-    Ok(reply)
-}
-
-#[tauri::command]
-pub async fn ai_explain(db: State<'_, Db>, item_kind: String, item_id: i64) -> Result<String> {
-    let (key, model, messages) = {
-        let conn = db.lock();
-        let key = ai::api_key(&conn)?;
-        let model = ai::require_model(&conn)?;
-        let source = db::source_language(&conn);
-        let meaning = if source == "da" { "da" } else { "en" };
-
-        let table = match item_kind.as_str() {
-            "word" => "words",
-            "sentence" => "sentences",
-            other => return Err(Error::msg(format!("cannot explain a '{other}'"))),
-        };
-        let (polish, gloss): (String, String) = conn.query_row(
-            &format!("SELECT pl, {meaning} FROM {table} WHERE id = ?1"),
-            [item_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        (key, model, ai::explain_prompt(&source, &polish, &gloss))
-    };
-    ai::complete(&key, &model, &messages).await
-}
-
-#[tauri::command]
-pub async fn ai_feedback(
-    db: State<'_, Db>,
-    target: String,
-    attempt: String,
-) -> Result<String> {
-    let (key, model, messages) = {
-        let conn = db.lock();
-        (
-            ai::api_key(&conn)?,
-            ai::require_model(&conn)?,
-            ai::feedback_prompt(&db::source_language(&conn), &target, &attempt),
-        )
-    };
-    ai::complete(&key, &model, &messages).await
-}
-
-/// Extra sentences built from the words the learner is currently weakest on.
-#[tauri::command]
-pub async fn ai_drill(db: State<'_, Db>) -> Result<String> {
-    let (key, model, messages) = {
-        let conn = db.lock();
-        let key = ai::api_key(&conn)?;
-        let model = ai::require_model(&conn)?;
-
-        let mut stmt = conn.prepare(
-            "SELECT w.pl FROM reviews r JOIN words w ON w.id = r.item_id
-             WHERE r.kind = 'word'
-             ORDER BY r.lapses DESC, r.ease ASC LIMIT 8",
-        )?;
-        let words: Vec<String> = stmt
-            .query_map([], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        drop(stmt);
-
-        if words.is_empty() {
-            return Err(Error::msg(
-                "Practise a few words first — then I can build a drill from the ones you find hardest.",
-            ));
-        }
-        (key, model, ai::drill_prompt(&db::source_language(&conn), &words))
-    };
-    ai::complete(&key, &model, &messages).await
+    let shown = target.to_string();
+    let result = (|| -> std::io::Result<u64> {
+        let mut options = tauri_plugin_fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        let mut out = app.fs().open(target, options)?;
+        let mut source = std::fs::File::open(&snapshot)?;
+        let copied = std::io::copy(&mut source, &mut out)?;
+        out.sync_all().ok();
+        Ok(copied)
+    })();
+    let _ = std::fs::remove_file(&snapshot);
+    result.map_err(|e| Error::msg(format!("Could not write the export: {e}")))?;
+    Ok(Some(shown))
 }
 
 #[cfg(test)]
@@ -1047,6 +1001,13 @@ mod tests {
         assert_ne!(a, audio_key("google/tts", "Kore", "Dobranoc"));
         // The separator must stop adjacent fields from colliding.
         assert_ne!(audio_key("a", "b", "c"), audio_key("ab", "", "c"));
+    }
+
+    #[test]
+    fn export_names_carry_the_calendar_date() {
+        assert_eq!(civil_date(0), (1970, 1, 1));
+        assert_eq!(civil_date(20_405), (2025, 11, 13));
+        assert_eq!(civil_date(11_016), (2000, 2, 29));
     }
 
     #[test]

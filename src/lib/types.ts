@@ -1,11 +1,11 @@
 // Mirrors the serde structs in src-tauri/src/models.rs.
 
-export type SourceLanguage = "en" | "da";
-
 export interface Topic {
   id: number;
   ord: number;
   slug: string;
+  /** "course" for the ten built-in topics, "programme" for ones made with the tutor. */
+  kind: "course" | "programme";
   titlePl: string;
   title: string;
   summary: string;
@@ -99,6 +99,8 @@ export interface SessionPlan {
   newSentences: number;
   reviewSentences: number;
   alreadyCompleted: boolean;
+  /** True for the daily check-in, false for a topic practised on demand. */
+  daily: boolean;
 }
 
 export interface AnswerResult {
@@ -161,7 +163,6 @@ export interface Stats {
 }
 
 export interface Settings {
-  sourceLanguage: SourceLanguage;
   dailyGoal: number;
   newWordsPerDay: number;
   reminderHour: number;
@@ -180,10 +181,14 @@ export interface Settings {
   hasKieKey: boolean;
   sunoModel: string;
   sunoModels: string[];
+  /** The topic the daily check-in is focused on, or null for the course. */
+  focusTopicId: number | null;
+  /** Empty until first stored. */
+  theme: "" | "system" | "light" | "dark";
+  playerRepeat: "" | "off" | "all" | "one";
 }
 
 export interface SettingsPatch {
-  sourceLanguage?: SourceLanguage;
   dailyGoal?: number;
   newWordsPerDay?: number;
   reminderHour?: number;
@@ -196,6 +201,8 @@ export interface SettingsPatch {
   ttsPrefetch?: boolean;
   songwriterModel?: string;
   sunoModel?: string;
+  theme?: "system" | "light" | "dark";
+  playerRepeat?: "off" | "all" | "one";
 }
 
 export interface SessionResult {
@@ -204,9 +211,29 @@ export interface SessionResult {
   stats: Stats;
 }
 
+export interface TutorAction {
+  kind:
+    | "programmeCreated"
+    | "programmeUpdated"
+    | "programmeDeleted"
+    | "focusSet"
+    | "focusCleared"
+    | "settingsChanged"
+    | "practiceSuggested";
+  label: string;
+  topicId: number | null;
+}
+
 export interface ChatMessage {
-  role: string;
+  id: number;
+  role: "user" | "assistant";
   content: string;
+  actions: TutorAction[];
+}
+
+export interface TutorStatus {
+  id: string;
+  label: string;
 }
 
 export interface AiModel {
@@ -216,6 +243,8 @@ export interface AiModel {
   promptPrice: string;
   /** Non-empty for speech models: the voice names the model accepts. */
   voices: string[];
+  /** Can call tools — the tutor needs this to act in the app. */
+  tools: boolean;
 }
 
 export interface AudioClip {

@@ -1,200 +1,200 @@
-# polish	english	danish	pos
-jedzenie	food	mad	n-n
-posiłek	meal	måltid	n-m
-śniadanie	breakfast	morgenmad	n-n
-obiad	lunch, dinner	middagsmad	n-m
-kolacja	supper	aftensmad	n-f
-przekąska	snack	snack	n-f
-deser	dessert	dessert	n-m
-przystawka	starter	forret	n-f
-danie	dish	ret	n-n
-danie główne	main course	hovedret	n-n
-zupa	soup	suppe	n-f
-sałatka	salad	salat	n-f
-kanapka	sandwich	sandwich	n-f
-głód	hunger	sult	n-m
-apetyt	appetite	appetit	n-m
-chleb	bread	brød	n-m
-bułka	bread roll	rundstykke	n-f
-masło	butter	smør	n-n
-mąka	flour	mel	n-f
-ciasto	cake, dough	kage	n-n
-ciastko	biscuit, cookie	småkage	n-n
-naleśnik	pancake	pandekage	n-m
-pierogi	Polish dumplings	polske dumplings	n-pl
-makaron	pasta, noodles	pasta	n-m
-ryż	rice	ris	n-m
-kasza	groats	gryn	n-f
-płatki	cereal flakes	cornflakes	n-pl
-mięso	meat	kød	n-n
-kurczak	chicken	kylling	n-m
-wołowina	beef	oksekød	n-f
-wieprzowina	pork	svinekød	n-f
-szynka	ham	skinke	n-f
-kiełbasa	sausage	pølse	n-f
-boczek	bacon	bacon	n-m
-stek	steak	bøf	n-m
-ryba	fish	fisk	n-f
-łosoś	salmon	laks	n-m
-śledź	herring	sild	n-m
-krewetka	shrimp	reje	n-f
-jajko	egg	æg	n-n
-kotlet	cutlet	kotelet	n-m
-mleko	milk	mælk	n-n
-ser	cheese	ost	n-m
-twaróg	quark, cottage cheese	hytteost	n-m
-jogurt	yoghurt	yoghurt	n-m
-śmietana	cream	fløde	n-f
-lody	ice cream	is	n-pl
-kefir	kefir	kefir	n-m
-mleczny	dairy, milky	mælke-	adj
-warzywo	vegetable	grøntsag	n-n
-ziemniak	potato	kartoffel	n-m
-marchewka	carrot	gulerod	n-f
-cebula	onion	løg	n-f
-czosnek	garlic	hvidløg	n-m
-pomidor	tomato	tomat	n-m
-ogórek	cucumber	agurk	n-m
-kapusta	cabbage	kål	n-f
-sałata	lettuce	salat	n-f
-burak	beetroot	rødbede	n-m
-groch	peas	ærter	n-m
-fasola	beans	bønner	n-f
-pieczarka	button mushroom	champignon	n-f
-grzyb	mushroom	svamp	n-m
-papryka	pepper, paprika	peberfrugt	n-f
-brokuł	broccoli	broccoli	n-m
-szpinak	spinach	spinat	n-m
-dynia	pumpkin	græskar	n-f
-owoc	fruit	frugt	n-m
-jabłko	apple	æble	n-n
-gruszka	pear	pære	n-f
-banan	banana	banan	n-m
-pomarańcza	orange	appelsin	n-f
-cytryna	lemon	citron	n-f
-truskawka	strawberry	jordbær	n-f
-malina	raspberry	hindbær	n-f
-wiśnia	sour cherry	surkirsebær	n-f
-śliwka	plum	blomme	n-f
-winogrono	grape	drue	n-n
-arbuz	watermelon	vandmelon	n-m
-brzoskwinia	peach	fersken	n-f
-jagoda	berry, blueberry	bær	n-f
-napój	drink	drik	n-m
-woda	water	vand	n-f
-sok	juice	juice	n-m
-kawa	coffee	kaffe	n-f
-herbata	tea	te	n-f
-piwo	beer	øl	n-n
-wino	wine	vin	n-n
-wódka	vodka	vodka	n-f
-szampan	champagne	champagne	n-m
-lemoniada	lemonade	limonade	n-f
-kompot	fruit compote drink	saftevand	n-m
-mineralna	mineral (water)	mineral-	adj
-gazowany	sparkling	med brus	adj
-niegazowany	still, not sparkling	uden brus	adj
-kubek	mug	krus	n-m
-szklanka	glass, tumbler	glas	n-f
-restauracja	restaurant	restaurant	n-f
-kawiarnia	café	café	n-f
-bar	bar	bar	n-m
-stolik	small table	bord	n-m
-menu	menu	menukort	n-n
-karta dań	menu card	menukort	n-f
-kelner	waiter	tjener	n-m
-kelnerka	waitress	servitrice	n-f
-kucharz	cook, chef	kok	n-m
-rachunek	bill	regning	n-m
-napiwek	tip	drikkepenge	n-m
-zamówienie	order	bestilling	n-n
-rezerwacja	reservation	reservation	n-f
-talerz	plate	tallerken	n-m
-miska	bowl	skål	n-f
-widelec	fork	gaffel	n-m
-nóż	knife	kniv	n-m
-łyżka	spoon	ske	n-f
-serwetka	napkin	serviet	n-f
-kieliszek	wine glass	vinglas	n-m
-filiżanka	cup	kop	n-f
-obrus	tablecloth	dug	n-m
-danie dnia	dish of the day	dagens ret	n-n
-toaleta	toilet	toilet	n-f
-gotować	to cook, to boil	at koge	v
-piec	to bake, to roast	at bage	v
-smażyć	to fry	at stege	v
-kroić	to cut	at skære	v
-mieszać	to mix, to stir	at røre	v
-dodać	to add	at tilsætte	v
-podgrzać	to heat up	at varme op	v
-schłodzić	to chill	at køle	v
-jeść	to eat	at spise	v
-pić	to drink	at drikke	v
-próbować	to try, to taste	at smage	v
-zamówić	to order	at bestille	v
-polecać	to recommend	at anbefale	v
-serwować	to serve	at servere	v
-płacić	to pay	at betale	v
-kupować	to buy	at købe	v
-podawać	to serve, to pass	at række	v
-przygotować	to prepare	at forberede	v
-smak	taste, flavour	smag	n-m
-smaczny	tasty	velsmagende	adj
-pyszny	delicious	lækker	adj
-słodki	sweet	sød	adj
-słony	salty	salt	adj
-kwaśny	sour	sur	adj
-gorzki	bitter	bitter	adj
-ostry	spicy, sharp	stærk	adj
-świeży	fresh	frisk	adj
-zepsuty	spoiled, broken	fordærvet	adj
-gorący	hot	varm	adj
-zimny	cold	kold	adj
-ciepły	warm	lun	adj
-surowy	raw	rå	adj
-pieczony	baked, roasted	bagt	adj
-smażony	fried	stegt	adj
-gotowany	boiled	kogt	adj
-wegetariański	vegetarian	vegetarisk	adj
-zdrowy	healthy	sund	adj
-tłusty	fatty, greasy	fed	adj
-sól	salt	salt	n-f
-pieprz	pepper	peber	n-m
-cukier	sugar	sukker	n-m
-olej	oil	olie	n-m
-oliwa	olive oil	olivenolie	n-f
-ocet	vinegar	eddike	n-m
-musztarda	mustard	sennep	n-f
-keczup	ketchup	ketchup	n-m
-sos	sauce	sovs	n-m
-przyprawa	spice	krydderi	n-f
-zioła	herbs	krydderurter	n-pl
-miód	honey	honning	n-m
-dżem	jam	marmelade	n-m
-porcja	portion	portion	n-f
-kawałek	piece	stykke	n-m
-plasterek	slice	skive	n-m
-butelka	bottle	flaske	n-f
-puszka	can, tin	dåse	n-f
-paczka	packet	pakke	n-f
-kilogram	kilogram	kilo	n-m
-litr	litre	liter	n-m
-gram	gram	gram	n-m
-pół	half	halv	num
-połowa	half (noun)	halvdel	n-f
-mnóstwo	plenty	masser	n-n
-mało	little, few	lidt	adv
-dużo	a lot, much	meget	adv
-głodny	hungry	sulten	adj
-spragniony	thirsty	tørstig	adj
-najedzony	full, sated	mæt	adj
-dieta	diet	kost	n-f
-alergia	allergy	allergi	n-f
-na wynos	takeaway	ud af huset	phr
-na miejscu	eat in, on the spot	her i huset	phr
-kuchnia	kitchen, cuisine	køkken	n-f
-lodówka	fridge	køleskab	n-f
-piekarnik	oven	ovn	n-m
-patelnia	frying pan	pande	n-f
-garnek	pot	gryde	n-m
-targ	market	marked	n-m
+# polish	english	pos
+jedzenie	food	n-n
+posiłek	meal	n-m
+śniadanie	breakfast	n-n
+obiad	lunch, dinner	n-m
+kolacja	supper	n-f
+przekąska	snack	n-f
+deser	dessert	n-m
+przystawka	starter	n-f
+danie	dish	n-n
+danie główne	main course	n-n
+zupa	soup	n-f
+sałatka	salad	n-f
+kanapka	sandwich	n-f
+głód	hunger	n-m
+apetyt	appetite	n-m
+chleb	bread	n-m
+bułka	bread roll	n-f
+masło	butter	n-n
+mąka	flour	n-f
+ciasto	cake, dough	n-n
+ciastko	biscuit, cookie	n-n
+naleśnik	pancake	n-m
+pierogi	Polish dumplings	n-pl
+makaron	pasta, noodles	n-m
+ryż	rice	n-m
+kasza	groats	n-f
+płatki	cereal flakes	n-pl
+mięso	meat	n-n
+kurczak	chicken	n-m
+wołowina	beef	n-f
+wieprzowina	pork	n-f
+szynka	ham	n-f
+kiełbasa	sausage	n-f
+boczek	bacon	n-m
+stek	steak	n-m
+ryba	fish	n-f
+łosoś	salmon	n-m
+śledź	herring	n-m
+krewetka	shrimp	n-f
+jajko	egg	n-n
+kotlet	cutlet	n-m
+mleko	milk	n-n
+ser	cheese	n-m
+twaróg	quark, cottage cheese	n-m
+jogurt	yoghurt	n-m
+śmietana	cream	n-f
+lody	ice cream	n-pl
+kefir	kefir	n-m
+mleczny	dairy, milky	adj
+warzywo	vegetable	n-n
+ziemniak	potato	n-m
+marchewka	carrot	n-f
+cebula	onion	n-f
+czosnek	garlic	n-m
+pomidor	tomato	n-m
+ogórek	cucumber	n-m
+kapusta	cabbage	n-f
+sałata	lettuce	n-f
+burak	beetroot	n-m
+groch	peas	n-m
+fasola	beans	n-f
+pieczarka	button mushroom	n-f
+grzyb	mushroom	n-m
+papryka	pepper, paprika	n-f
+brokuł	broccoli	n-m
+szpinak	spinach	n-m
+dynia	pumpkin	n-f
+owoc	fruit	n-m
+jabłko	apple	n-n
+gruszka	pear	n-f
+banan	banana	n-m
+pomarańcza	orange	n-f
+cytryna	lemon	n-f
+truskawka	strawberry	n-f
+malina	raspberry	n-f
+wiśnia	sour cherry	n-f
+śliwka	plum	n-f
+winogrono	grape	n-n
+arbuz	watermelon	n-m
+brzoskwinia	peach	n-f
+jagoda	berry, blueberry	n-f
+napój	drink	n-m
+woda	water	n-f
+sok	juice	n-m
+kawa	coffee	n-f
+herbata	tea	n-f
+piwo	beer	n-n
+wino	wine	n-n
+wódka	vodka	n-f
+szampan	champagne	n-m
+lemoniada	lemonade	n-f
+kompot	fruit compote drink	n-m
+mineralna	mineral (water)	adj
+gazowany	sparkling	adj
+niegazowany	still, not sparkling	adj
+kubek	mug	n-m
+szklanka	glass, tumbler	n-f
+restauracja	restaurant	n-f
+kawiarnia	café	n-f
+bar	bar	n-m
+stolik	small table	n-m
+menu	menu	n-n
+karta dań	menu card	n-f
+kelner	waiter	n-m
+kelnerka	waitress	n-f
+kucharz	cook, chef	n-m
+rachunek	bill	n-m
+napiwek	tip	n-m
+zamówienie	order	n-n
+rezerwacja	reservation	n-f
+talerz	plate	n-m
+miska	bowl	n-f
+widelec	fork	n-m
+nóż	knife	n-m
+łyżka	spoon	n-f
+serwetka	napkin	n-f
+kieliszek	wine glass	n-m
+filiżanka	cup	n-f
+obrus	tablecloth	n-m
+danie dnia	dish of the day	n-n
+toaleta	toilet	n-f
+gotować	to cook, to boil	v
+piec	to bake, to roast	v
+smażyć	to fry	v
+kroić	to cut	v
+mieszać	to mix, to stir	v
+dodać	to add	v
+podgrzać	to heat up	v
+schłodzić	to chill	v
+jeść	to eat	v
+pić	to drink	v
+próbować	to try, to taste	v
+zamówić	to order	v
+polecać	to recommend	v
+serwować	to serve	v
+płacić	to pay	v
+kupować	to buy	v
+podawać	to serve, to pass	v
+przygotować	to prepare	v
+smak	taste, flavour	n-m
+smaczny	tasty	adj
+pyszny	delicious	adj
+słodki	sweet	adj
+słony	salty	adj
+kwaśny	sour	adj
+gorzki	bitter	adj
+ostry	spicy, sharp	adj
+świeży	fresh	adj
+zepsuty	spoiled, broken	adj
+gorący	hot	adj
+zimny	cold	adj
+ciepły	warm	adj
+surowy	raw	adj
+pieczony	baked, roasted	adj
+smażony	fried	adj
+gotowany	boiled	adj
+wegetariański	vegetarian	adj
+zdrowy	healthy	adj
+tłusty	fatty, greasy	adj
+sól	salt	n-f
+pieprz	pepper	n-m
+cukier	sugar	n-m
+olej	oil	n-m
+oliwa	olive oil	n-f
+ocet	vinegar	n-m
+musztarda	mustard	n-f
+keczup	ketchup	n-m
+sos	sauce	n-m
+przyprawa	spice	n-f
+zioła	herbs	n-pl
+miód	honey	n-m
+dżem	jam	n-m
+porcja	portion	n-f
+kawałek	piece	n-m
+plasterek	slice	n-m
+butelka	bottle	n-f
+puszka	can, tin	n-f
+paczka	packet	n-f
+kilogram	kilogram	n-m
+litr	litre	n-m
+gram	gram	n-m
+pół	half	num
+połowa	half (noun)	n-f
+mnóstwo	plenty	n-n
+mało	little, few	adv
+dużo	a lot, much	adv
+głodny	hungry	adj
+spragniony	thirsty	adj
+najedzony	full, sated	adj
+dieta	diet	n-f
+alergia	allergy	n-f
+na wynos	takeaway	phr
+na miejscu	eat in, on the spot	phr
+kuchnia	kitchen, cuisine	n-f
+lodówka	fridge	n-f
+piekarnik	oven	n-m
+patelnia	frying pan	n-f
+garnek	pot	n-m
+targ	market	n-m

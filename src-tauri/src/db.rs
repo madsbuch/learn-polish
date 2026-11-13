@@ -31,26 +31,35 @@ pub fn open(path: &std::path::Path) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Bumped whenever the shape of the database changes in a way that
+/// `CREATE TABLE IF NOT EXISTS` cannot express. Stored in `PRAGMA user_version`.
+const SCHEMA_VERSION: i64 = 3;
+
 const SCHEMA: &str = r#"
+-- A topic is anything the learner can practise: one of the ten built-in
+-- course topics (kind 'course'), or a programme the learner or the tutor made
+-- (kind 'programme'). Both go through exactly the same session machinery.
 CREATE TABLE IF NOT EXISTS topics (
     id         INTEGER PRIMARY KEY,
     slug       TEXT    NOT NULL UNIQUE,
     ord        INTEGER NOT NULL,
+    kind       TEXT    NOT NULL DEFAULT 'course',
     title_pl   TEXT    NOT NULL,
     title_en   TEXT    NOT NULL,
-    title_da   TEXT    NOT NULL,
     summary_en TEXT    NOT NULL,
-    summary_da TEXT    NOT NULL
+    created_at INTEGER NOT NULL DEFAULT 0
 );
 
+-- A headword is unique within a topic, not globally: a programme on colours
+-- may well repeat a word the course already teaches.
 CREATE TABLE IF NOT EXISTS words (
     id       INTEGER PRIMARY KEY,
     topic_id INTEGER NOT NULL REFERENCES topics(id),
     ord      INTEGER NOT NULL,
-    pl       TEXT    NOT NULL UNIQUE,
+    pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
-    da       TEXT    NOT NULL,
-    pos      TEXT    NOT NULL
+    pos      TEXT    NOT NULL,
+    UNIQUE (topic_id, pl)
 );
 CREATE INDEX IF NOT EXISTS words_topic ON words(topic_id, ord);
 
@@ -58,9 +67,9 @@ CREATE TABLE IF NOT EXISTS sentences (
     id       INTEGER PRIMARY KEY,
     topic_id INTEGER NOT NULL REFERENCES topics(id),
     ord      INTEGER NOT NULL,
-    pl       TEXT    NOT NULL UNIQUE,
+    pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
-    da       TEXT    NOT NULL
+    UNIQUE (topic_id, pl)
 );
 CREATE INDEX IF NOT EXISTS sentences_topic ON sentences(topic_id, ord);
 
@@ -71,8 +80,7 @@ CREATE TABLE IF NOT EXISTS conversation_lines (
     speaker  TEXT    NOT NULL,
     gender   TEXT    NOT NULL DEFAULT 'f',
     pl       TEXT    NOT NULL,
-    en       TEXT    NOT NULL,
-    da       TEXT    NOT NULL
+    en       TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS conversation_topic ON conversation_lines(topic_id, ord);
 
@@ -123,14 +131,16 @@ CREATE TABLE IF NOT EXISTS audio_cache (
     created_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS chat_messages (
+-- The conversation with the tutor. `actions` is a JSON list of what the tutor
+-- did in the app during that turn (programmes created, focus changed, …), so
+-- the UI can offer buttons and later turns know what already happened.
+CREATE TABLE IF NOT EXISTS tutor_messages (
     id         INTEGER PRIMARY KEY,
-    topic_id   INTEGER NOT NULL,
     role       TEXT    NOT NULL,
     content    TEXT    NOT NULL,
+    actions    TEXT,
     created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS chat_topic ON chat_messages(topic_id, id);
 
 -- Learning songs. `sections` is the structured lyrics (JSON) the app shows;
 -- `lyrics` is exactly what was sent to Suno.
@@ -150,7 +160,10 @@ CREATE TABLE IF NOT EXISTS songs (
     created_at   INTEGER NOT NULL
 );
 
--- Suno sings every song twice; each take is downloaded to the device.
+-- Suno sings every song twice. Each take is stored here, bytes and all, so
+-- the database alone is a complete backup; `audio_path` is a copy on disk
+-- that the native player and Sonos stream from, and is rebuilt from the
+-- blob whenever it goes missing.
 CREATE TABLE IF NOT EXISTS song_tracks (
     id             INTEGER PRIMARY KEY,
     song_id        INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
@@ -166,12 +179,114 @@ CREATE TABLE IF NOT EXISTS song_tracks (
 "#;
 
 fn migrate(conn: &Connection) -> Result<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 3 && table_exists(conn, "words")? {
+        upgrade_to_english_only(conn)?;
+    }
     conn.execute_batch(SCHEMA)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
-    add_column(conn, "conversation_lines", "gender", "TEXT NOT NULL DEFAULT 'f'")?;
     // Suno's word timings per take (JSON), for lyrics that follow the music.
     add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
+    add_column(conn, "song_tracks", "audio_bytes", "BLOB")?;
+    add_column(conn, "song_tracks", "image_bytes", "BLOB")?;
+    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    Ok(())
+}
+
+fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// Databases from before version 3 carried a Danish column on every item and
+/// made each Polish headword globally unique. Both go: the app teaches Polish
+/// from English only, and programmes may repeat a course word. The tables are
+/// rebuilt with their row ids intact, so review history survives.
+fn upgrade_to_english_only(conn: &Connection) -> Result<()> {
+    // Very old installs predate the speaker gender.
+    add_column(conn, "conversation_lines", "gender", "TEXT NOT NULL DEFAULT 'f'")?;
+
+    // Foreign keys cannot be toggled inside a transaction, and must be off
+    // while tables they point at are dropped and recreated.
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let result = conn.execute_batch(
+        r#"
+        BEGIN;
+        CREATE TABLE topics_v3 (
+            id         INTEGER PRIMARY KEY,
+            slug       TEXT    NOT NULL UNIQUE,
+            ord        INTEGER NOT NULL,
+            kind       TEXT    NOT NULL DEFAULT 'course',
+            title_pl   TEXT    NOT NULL,
+            title_en   TEXT    NOT NULL,
+            summary_en TEXT    NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO topics_v3 (id, slug, ord, kind, title_pl, title_en, summary_en)
+            SELECT id, slug, ord, 'course', title_pl, title_en, summary_en FROM topics;
+        DROP TABLE topics;
+        ALTER TABLE topics_v3 RENAME TO topics;
+
+        CREATE TABLE words_v3 (
+            id       INTEGER PRIMARY KEY,
+            topic_id INTEGER NOT NULL REFERENCES topics(id),
+            ord      INTEGER NOT NULL,
+            pl       TEXT    NOT NULL,
+            en       TEXT    NOT NULL,
+            pos      TEXT    NOT NULL,
+            UNIQUE (topic_id, pl)
+        );
+        INSERT INTO words_v3 (id, topic_id, ord, pl, en, pos)
+            SELECT id, topic_id, ord, pl, en, pos FROM words;
+        DROP TABLE words;
+        ALTER TABLE words_v3 RENAME TO words;
+
+        CREATE TABLE sentences_v3 (
+            id       INTEGER PRIMARY KEY,
+            topic_id INTEGER NOT NULL REFERENCES topics(id),
+            ord      INTEGER NOT NULL,
+            pl       TEXT    NOT NULL,
+            en       TEXT    NOT NULL,
+            UNIQUE (topic_id, pl)
+        );
+        INSERT INTO sentences_v3 (id, topic_id, ord, pl, en)
+            SELECT id, topic_id, ord, pl, en FROM sentences;
+        DROP TABLE sentences;
+        ALTER TABLE sentences_v3 RENAME TO sentences;
+
+        CREATE TABLE conversation_lines_v3 (
+            id       INTEGER PRIMARY KEY,
+            topic_id INTEGER NOT NULL REFERENCES topics(id),
+            ord      INTEGER NOT NULL,
+            speaker  TEXT    NOT NULL,
+            gender   TEXT    NOT NULL DEFAULT 'f',
+            pl       TEXT    NOT NULL,
+            en       TEXT    NOT NULL
+        );
+        INSERT INTO conversation_lines_v3 (id, topic_id, ord, speaker, gender, pl, en)
+            SELECT id, topic_id, ord, speaker, gender, pl, en FROM conversation_lines;
+        DROP TABLE conversation_lines;
+        ALTER TABLE conversation_lines_v3 RENAME TO conversation_lines;
+
+        -- The old per-topic chats were Polish role-play; the tutor is now an
+        -- assistant for the whole app and starts a fresh conversation.
+        DROP TABLE IF EXISTS chat_messages;
+        DELETE FROM settings WHERE key = 'source_language';
+        COMMIT;
+        "#,
+    );
+    if result.is_err() {
+        let _ = conn.execute_batch("ROLLBACK");
+    }
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    result?;
     Ok(())
 }
 
@@ -193,8 +308,8 @@ fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) ->
 
 /// Content version. Bump this when the TSV/JSON files change so existing
 /// installs re-seed while keeping their review history (keyed by row id, which
-/// is stable because rows are inserted in file order).
-const CONTENT_VERSION: i64 = 2;
+/// is stable because rows are upserted on their natural key).
+const CONTENT_VERSION: i64 = 3;
 
 fn seed(conn: &Connection) -> Result<()> {
     let seeded: Option<String> = conn
@@ -220,21 +335,12 @@ fn seed(conn: &Connection) -> Result<()> {
         let ord = index as i64 + 1;
 
         conn.execute(
-            "INSERT INTO topics (slug, ord, title_pl, title_en, title_da, summary_en, summary_da)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en)
+             VALUES (?1, ?2, 'course', ?3, ?4, ?5)
              ON CONFLICT(slug) DO UPDATE SET
-                 ord = excluded.ord, title_pl = excluded.title_pl,
-                 title_en = excluded.title_en, title_da = excluded.title_da,
-                 summary_en = excluded.summary_en, summary_da = excluded.summary_da",
-            rusqlite::params![
-                topic.slug,
-                ord,
-                convo.title_pl,
-                convo.title_en,
-                convo.title_da,
-                convo.summary_en,
-                convo.summary_da
-            ],
+                 ord = excluded.ord, kind = 'course', title_pl = excluded.title_pl,
+                 title_en = excluded.title_en, summary_en = excluded.summary_en",
+            rusqlite::params![topic.slug, ord, convo.title_pl, convo.title_en, convo.summary_en],
         )?;
 
         let topic_id: i64 = conn.query_row(
@@ -245,21 +351,19 @@ fn seed(conn: &Connection) -> Result<()> {
 
         for (i, w) in content::parse_words(topic.words).iter().enumerate() {
             conn.execute(
-                "INSERT INTO words (topic_id, ord, pl, en, da, pos) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                 ON CONFLICT(pl) DO UPDATE SET
-                     topic_id = excluded.topic_id, ord = excluded.ord,
-                     en = excluded.en, da = excluded.da, pos = excluded.pos",
-                rusqlite::params![topic_id, i as i64, w.pl, w.en, w.da, w.pos],
+                "INSERT INTO words (topic_id, ord, pl, en, pos) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(topic_id, pl) DO UPDATE SET
+                     ord = excluded.ord, en = excluded.en, pos = excluded.pos",
+                rusqlite::params![topic_id, i as i64, w.pl, w.en, w.pos],
             )?;
         }
 
         for (i, s) in content::parse_sentences(topic.sentences).iter().enumerate() {
             conn.execute(
-                "INSERT INTO sentences (topic_id, ord, pl, en, da) VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(pl) DO UPDATE SET
-                     topic_id = excluded.topic_id, ord = excluded.ord,
-                     en = excluded.en, da = excluded.da",
-                rusqlite::params![topic_id, i as i64, s.pl, s.en, s.da],
+                "INSERT INTO sentences (topic_id, ord, pl, en) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(topic_id, pl) DO UPDATE SET
+                     ord = excluded.ord, en = excluded.en",
+                rusqlite::params![topic_id, i as i64, s.pl, s.en],
             )?;
         }
 
@@ -273,11 +377,9 @@ fn seed(conn: &Connection) -> Result<()> {
                 ))
             })?;
             conn.execute(
-                "INSERT INTO conversation_lines (topic_id, ord, speaker, gender, pl, en, da)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![
-                    topic_id, i as i64, line.speaker, gender, line.pl, line.en, line.da
-                ],
+                "INSERT INTO conversation_lines (topic_id, ord, speaker, gender, pl, en)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![topic_id, i as i64, line.speaker, gender, line.pl, line.en],
             )?;
         }
     }
@@ -334,17 +436,13 @@ pub fn today(conn: &Connection) -> i64 {
     (now_secs() + offset_minutes * 60).div_euclid(86_400)
 }
 
-/// The learner's chosen source language: "en" or "da".
-pub fn source_language(conn: &Connection) -> String {
-    get_setting(conn, "source_language")
-        .ok()
-        .flatten()
-        .filter(|v| v == "en" || v == "da")
-        .unwrap_or_else(|| "en".to_string())
-}
-
+/// The id of the course topic at a position in the course (1-based).
 pub fn require_topic_id(conn: &Connection, ord: i64) -> Result<i64> {
-    conn.query_row("SELECT id FROM topics WHERE ord = ?1", [ord], |r| r.get(0))
+    conn.query_row(
+        "SELECT id FROM topics WHERE kind = 'course' AND ord = ?1",
+        [ord],
+        |r| r.get(0),
+    )
         .optional()?
         .ok_or_else(|| Error::msg(format!("no topic with position {ord}")))
 }

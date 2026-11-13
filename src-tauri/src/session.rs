@@ -2,7 +2,7 @@
 //! and its sentences — mixed with whatever else is due from earlier topics.
 
 use rand::seq::SliceRandom;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::db;
 use crate::error::Result;
@@ -31,43 +31,63 @@ struct SentenceRow {
     meaning: String,
 }
 
-pub fn topic_for_day(conn: &Connection) -> Result<Topic> {
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM topics", [], |r| r.get(0))?;
-    let count = count.max(1);
+/// Where the course rotation stands: the built-in topic the daily check-in
+/// serves when no programme is in focus.
+pub fn rotation_topic_id(conn: &Connection) -> Result<i64> {
+    let count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM topics WHERE kind = 'course'", [], |r| r.get(0))?;
     let lesson_index = db::get_setting_i64(conn, "lesson_index", 0);
-    let ord = lesson_index.rem_euclid(count) + 1;
-    load_topic(conn, db::require_topic_id(conn, ord)?)
+    let ord = lesson_index.rem_euclid(count.max(1)) + 1;
+    db::require_topic_id(conn, ord)
+}
+
+/// The programme the learner (or the tutor) chose to focus on, if it still
+/// exists. While set, the daily check-in is built from it instead of the
+/// course rotation.
+pub fn focus_topic_id(conn: &Connection) -> Option<i64> {
+    let id = db::get_setting_i64(conn, "focus_topic_id", 0);
+    if id <= 0 {
+        return None;
+    }
+    conn.query_row("SELECT id FROM topics WHERE id = ?1", [id], |r| r.get(0))
+        .optional()
+        .ok()
+        .flatten()
+}
+
+pub fn topic_for_day(conn: &Connection) -> Result<Topic> {
+    let id = match focus_topic_id(conn) {
+        Some(id) => id,
+        None => rotation_topic_id(conn)?,
+    };
+    load_topic(conn, id)
 }
 
 pub fn load_topic(conn: &Connection, topic_id: i64) -> Result<Topic> {
-    let lang = db::source_language(conn);
-    let (title, summary) = if lang == "da" {
-        ("title_da", "summary_da")
-    } else {
-        ("title_en", "summary_en")
-    };
-    let sql = format!(
-        "SELECT id, ord, slug, title_pl, {title}, {summary} FROM topics WHERE id = ?1"
-    );
-    Ok(conn.query_row(&sql, [topic_id], |r| {
-        Ok(Topic {
-            id: r.get(0)?,
-            ord: r.get(1)?,
-            slug: r.get(2)?,
-            title_pl: r.get(3)?,
-            title: r.get(4)?,
-            summary: r.get(5)?,
-        })
-    })?)
+    conn.query_row(
+        "SELECT id, ord, slug, kind, title_pl, title_en, summary_en FROM topics WHERE id = ?1",
+        [topic_id],
+        |r| {
+            Ok(Topic {
+                id: r.get(0)?,
+                ord: r.get(1)?,
+                slug: r.get(2)?,
+                kind: r.get(3)?,
+                title_pl: r.get(4)?,
+                title: r.get(5)?,
+                summary: r.get(6)?,
+            })
+        },
+    )
+    .optional()?
+    .ok_or_else(|| crate::error::Error::msg(format!("There is no topic with id {topic_id}.")))
 }
 
 pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLine>> {
-    let meaning = meaning_column(conn);
-    let sql = format!(
-        "SELECT ord, speaker, gender, pl, {meaning} FROM conversation_lines
-         WHERE topic_id = ?1 ORDER BY ord"
-    );
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare(
+        "SELECT ord, speaker, gender, pl, en FROM conversation_lines
+         WHERE topic_id = ?1 ORDER BY ord",
+    )?;
     let rows = stmt
         .query_map([topic_id], |r| {
             Ok(DialogueLine {
@@ -82,18 +102,20 @@ pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLi
     Ok(rows)
 }
 
-fn meaning_column(conn: &Connection) -> &'static str {
-    if db::source_language(conn) == "da" {
-        "da"
-    } else {
-        "en"
-    }
+/// Today's check-in: the focused programme, or the next course topic.
+pub fn build(conn: &Connection) -> Result<SessionPlan> {
+    let topic = topic_for_day(conn)?;
+    let mut plan = build_for(conn, topic.id)?;
+    plan.daily = true;
+    Ok(plan)
 }
 
-pub fn build(conn: &Connection) -> Result<SessionPlan> {
+/// A practice session for any topic or programme, on demand. Due reviews from
+/// everywhere are mixed in, exactly as in the daily check-in.
+pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
     let today = db::today(conn);
-    let topic = topic_for_day(conn)?;
-    let meaning = meaning_column(conn);
+    let topic = load_topic(conn, topic_id)?;
+    let meaning = "en";
     let new_word_budget = db::get_setting_i64(conn, "new_words_per_day", DEFAULT_NEW_WORDS).max(1);
 
     // Due reviews first — they come from any topic the learner has touched.
@@ -301,6 +323,7 @@ pub fn build(conn: &Connection) -> Result<SessionPlan> {
         review_sentences: review_sentences.len(),
         exercises,
         already_completed,
+        daily: false,
     })
 }
 

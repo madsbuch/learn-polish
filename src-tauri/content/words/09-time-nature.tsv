@@ -1,201 +1,201 @@
-# polish	english	danish	pos
-czas	time	tid	n-m
-godzina	hour, o'clock	time	n-f
-minuta	minute	minut	n-f
-sekunda	second	sekund	n-f
-kwadrans	quarter of an hour	kvarter	n-m
-pół godziny	half an hour	en halv time	phr
-tydzień	week	uge	n-m
-miesiąc	month	måned	n-m
-rok	year	år	n-m
-dekada	decade	årti	n-f
-stulecie	century	århundrede	n-n
-poniedziałek	Monday	mandag	n-m
-wtorek	Tuesday	tirsdag	n-m
-środa	Wednesday	onsdag	n-f
-czwartek	Thursday	torsdag	n-m
-piątek	Friday	fredag	n-m
-sobota	Saturday	lørdag	n-f
-niedziela	Sunday	søndag	n-f
-weekend	weekend	weekend	n-m
-styczeń	January	januar	n-m
-luty	February	februar	n-m
-marzec	March	marts	n-m
-kwiecień	April	april	n-m
-maj	May	maj	n-m
-czerwiec	June	juni	n-m
-lipiec	July	juli	n-m
-sierpień	August	august	n-m
-wrzesień	September	september	n-m
-październik	October	oktober	n-m
-listopad	November	november	n-m
-grudzień	December	december	n-m
-wiosna	spring	forår	n-f
-lato	summer	sommer	n-n
-jesień	autumn	efterår	n-f
-zima	winter	vinter	n-f
-dzisiaj	today	i dag	adv
-wczoraj	yesterday	i går	adv
-jutro	tomorrow	i morgen	adv
-pojutrze	the day after tomorrow	i overmorgen	adv
-przedwczoraj	the day before yesterday	i forgårs	adv
-przeszłość	the past	fortid	n-f
-teraźniejszość	the present	nutid	n-f
-przyszłość	the future	fremtid	n-f
-data	date	dato	n-f
-początek	beginning	begyndelse	n-m
-koniec	end	slutning	n-m
-chwila	moment	øjeblik	n-f
-wkrótce	soon	snart	adv
-później	later	senere	adv
-wcześniej	earlier	tidligere	adv
-nagle	suddenly	pludselig	adv
-natychmiast	immediately	straks	adv
-pogoda	weather	vejr	n-f
-klimat	climate	klima	n-m
-prognoza	forecast	prognose	n-f
-słońce	sun	sol	n-n
-słoneczny	sunny	solrig	adj
-chmura	cloud	sky	n-f
-pochmurny	cloudy	overskyet	adj
-deszcz	rain	regn	n-m
-deszczowy	rainy	regnfuld	adj
-padać	to fall, to rain	at falde	v
-mżawka	drizzle	støvregn	n-f
-ulewa	downpour	skybrud	n-f
-burza	storm, thunderstorm	uvejr	n-f
-grzmot	thunder	torden	n-m
-błyskawica	lightning	lyn	n-f
-tęcza	rainbow	regnbue	n-f
-śnieg	snow	sne	n-m
-śnieżny	snowy	sneklædt	adj
-płatek śniegu	snowflake	snefnug	n-m
-lód	ice	is	n-m
-szron	hoarfrost	rim	n-m
-mróz	freezing cold	frost	n-m
-grad	hail	hagl	n-m
-mgła	fog	tåge	n-f
-wiatr	wind	vind	n-m
-wietrzny	windy	blæsende	adj
-wichura	gale	storm	n-f
-huragan	hurricane	orkan	n-m
-upał	heatwave	hedebølge	n-m
-skwar	scorching heat	stegende hede	n-m
-susza	drought	tørke	n-f
-powódź	flood	oversvømmelse	n-f
-ciepło	warmth	varme	n-n
-zimno	cold	kulde	n-n
-wilgotność	humidity	fugtighed	n-f
-ciśnienie atmosferyczne	air pressure	lufttryk	n-n
-stopień	degree, step	grad	n-m
-zachmurzenie	cloud cover	skydække	n-n
-przejaśnienie	sunny spell	opklaring	n-n
-odwilż	thaw	tøvejr	n-f
-gołoledź	black ice	isslag	n-f
-zamieć	blizzard	snestorm	n-f
-niebo	sky, heaven	himmel	n-n
-powietrze	air	luft	n-n
-przymrozek	ground frost	nattefrost	n-m
-przyroda	nature	natur	n-f
-środowisko	environment	miljø	n-n
-ziemia	earth, ground	jord	n-f
-świat	world	verden	n-m
-kosmos	outer space	rummet	n-m
-księżyc	moon	måne	n-m
-gwiazda	star	stjerne	n-f
-planeta	planet	planet	n-f
-skała	rock	klippe	n-f
-kamień	stone	sten	n-m
-piasek	sand	sand	n-m
-glina	clay	ler	n-f
-błoto	mud	mudder	n-n
-strumień	stream	bæk	n-m
-wodospad	waterfall	vandfald	n-m
-źródło	spring, source	kilde	n-n
-bagno	swamp	sump	n-n
-pustynia	desert	ørken	n-f
-dżungla	jungle	jungle	n-f
-wulkan	volcano	vulkan	n-m
-trzęsienie ziemi	earthquake	jordskælv	n-n
-przylądek	cape	kap	n-m
-zatoka	bay	bugt	n-f
-fala	wave	bølge	n-f
-przypływ	high tide	tidevand	n-m
-horyzont	horizon	horisont	n-m
-krajobraz	landscape	landskab	n-m
-roślina	plant	plante	n-f
-sosna	pine tree	fyrretræ	n-f
-dąb	oak	eg	n-m
-brzoza	birch	birk	n-f
-gałąź	branch	gren	n-f
-korzeń	root	rod	n-m
-kora	bark	bark	n-f
-mech	moss	mos	n-m
-paproć	fern	bregne	n-f
-róża	rose	rose	n-f
-tulipan	tulip	tulipan	n-m
-słonecznik	sunflower	solsikke	n-m
-owad	insect	insekt	n-m
-pszczoła	bee	bi	n-f
-motyl	butterfly	sommerfugl	n-m
-mrówka	ant	myre	n-f
-komar	mosquito	myg	n-m
-pająk	spider	edderkop	n-m
-wiewiórka	squirrel	egern	n-f
-lis	fox	ræv	n-m
-jeleń	deer	hjort	n-m
-niedźwiedź	bear	bjørn	n-m
-wilk	wolf	ulv	n-m
-świecić	to shine	at skinne	v
-wiać	to blow	at blæse	v
-grzmieć	to thunder	at tordne	v
-marznąć	to freeze	at fryse	v
-topnieć	to melt	at smelte	v
-rosnąć	to grow	at vokse	v
-kwitnąć	to bloom	at blomstre	v
-więdnąć	to wilt	at visne	v
-zbierać	to collect, to pick	at samle	v
-chronić	to protect	at beskytte	v
-zanieczyszczać	to pollute	at forurene	v
-przewidywać	to forecast, to predict	at forudsige	v
-trwać	to last	at vare	v
-mijać	to pass by	at gå forbi	v
-spóźnić się	to be late	at komme for sent	v
-zaczynać	to begin	at begynde	v
-kończyć	to finish	at slutte	v
-piękna pogoda	beautiful weather	dejligt vejr	phr
-brzydka pogoda	nasty weather	grimt vejr	phr
-zmienny	changeable	omskiftelig	adj
-stabilny	stable	stabil	adj
-umiarkowany	moderate	moderat	adj
-tropikalny	tropical	tropisk	adj
-polarny	polar	polar	adj
-naturalny	natural	naturlig	adj
-dziki	wild	vild	adj
-ekologiczny	ecological	økologisk	adj
-zanieczyszczenie	pollution	forurening	n-n
-recykling	recycling	genbrug	n-m
-odnawialny	renewable	vedvarende	adj
-która godzina	what time is it	hvad er klokken	phr
-w południe	at noon	ved middagstid	adv
-o północy	at midnight	ved midnat	adv
-świt	dawn	daggry	n-m
-zmierzch	dusk	skumring	n-m
-wschód słońca	sunrise	solopgang	n-m
-zachód słońca	sunset	solnedgang	n-m
-punktualnie	on the dot	præcist	adv
-mniej więcej	more or less	omtrent	adv
-przez cały dzień	all day long	hele dagen	phr
-co dzień	every day	hver dag	adv
-co tydzień	every week	hver uge	adv
-raz	once	en gang	adv
-dwa razy	twice	to gange	adv
-kilka	a few	nogle få	num
-wiele	many	mange	num
-wszystkie	all	alle	pron
-żaden	none, no	ingen	pron
-kiedyś	someday, once	engang	adv
-ostatnio	recently	for nylig	adv
-niedawno	not long ago	for kort tid siden	adv
-dawno	long ago	for længe siden	adv
-wreszcie	finally	endelig	adv
+# polish	english	pos
+czas	time	n-m
+godzina	hour, o'clock	n-f
+minuta	minute	n-f
+sekunda	second	n-f
+kwadrans	quarter of an hour	n-m
+pół godziny	half an hour	phr
+tydzień	week	n-m
+miesiąc	month	n-m
+rok	year	n-m
+dekada	decade	n-f
+stulecie	century	n-n
+poniedziałek	Monday	n-m
+wtorek	Tuesday	n-m
+środa	Wednesday	n-f
+czwartek	Thursday	n-m
+piątek	Friday	n-m
+sobota	Saturday	n-f
+niedziela	Sunday	n-f
+weekend	weekend	n-m
+styczeń	January	n-m
+luty	February	n-m
+marzec	March	n-m
+kwiecień	April	n-m
+maj	May	n-m
+czerwiec	June	n-m
+lipiec	July	n-m
+sierpień	August	n-m
+wrzesień	September	n-m
+październik	October	n-m
+listopad	November	n-m
+grudzień	December	n-m
+wiosna	spring	n-f
+lato	summer	n-n
+jesień	autumn	n-f
+zima	winter	n-f
+dzisiaj	today	adv
+wczoraj	yesterday	adv
+jutro	tomorrow	adv
+pojutrze	the day after tomorrow	adv
+przedwczoraj	the day before yesterday	adv
+przeszłość	the past	n-f
+teraźniejszość	the present	n-f
+przyszłość	the future	n-f
+data	date	n-f
+początek	beginning	n-m
+koniec	end	n-m
+chwila	moment	n-f
+wkrótce	soon	adv
+później	later	adv
+wcześniej	earlier	adv
+nagle	suddenly	adv
+natychmiast	immediately	adv
+pogoda	weather	n-f
+klimat	climate	n-m
+prognoza	forecast	n-f
+słońce	sun	n-n
+słoneczny	sunny	adj
+chmura	cloud	n-f
+pochmurny	cloudy	adj
+deszcz	rain	n-m
+deszczowy	rainy	adj
+padać	to fall, to rain	v
+mżawka	drizzle	n-f
+ulewa	downpour	n-f
+burza	storm, thunderstorm	n-f
+grzmot	thunder	n-m
+błyskawica	lightning	n-f
+tęcza	rainbow	n-f
+śnieg	snow	n-m
+śnieżny	snowy	adj
+płatek śniegu	snowflake	n-m
+lód	ice	n-m
+szron	hoarfrost	n-m
+mróz	freezing cold	n-m
+grad	hail	n-m
+mgła	fog	n-f
+wiatr	wind	n-m
+wietrzny	windy	adj
+wichura	gale	n-f
+huragan	hurricane	n-m
+upał	heatwave	n-m
+skwar	scorching heat	n-m
+susza	drought	n-f
+powódź	flood	n-f
+ciepło	warmth	n-n
+zimno	cold	n-n
+wilgotność	humidity	n-f
+ciśnienie atmosferyczne	air pressure	n-n
+stopień	degree, step	n-m
+zachmurzenie	cloud cover	n-n
+przejaśnienie	sunny spell	n-n
+odwilż	thaw	n-f
+gołoledź	black ice	n-f
+zamieć	blizzard	n-f
+niebo	sky, heaven	n-n
+powietrze	air	n-n
+przymrozek	ground frost	n-m
+przyroda	nature	n-f
+środowisko	environment	n-n
+ziemia	earth, ground	n-f
+świat	world	n-m
+kosmos	outer space	n-m
+księżyc	moon	n-m
+gwiazda	star	n-f
+planeta	planet	n-f
+skała	rock	n-f
+kamień	stone	n-m
+piasek	sand	n-m
+glina	clay	n-f
+błoto	mud	n-n
+strumień	stream	n-m
+wodospad	waterfall	n-m
+źródło	spring, source	n-n
+bagno	swamp	n-n
+pustynia	desert	n-f
+dżungla	jungle	n-f
+wulkan	volcano	n-m
+trzęsienie ziemi	earthquake	n-n
+przylądek	cape	n-m
+zatoka	bay	n-f
+fala	wave	n-f
+przypływ	high tide	n-m
+horyzont	horizon	n-m
+krajobraz	landscape	n-m
+roślina	plant	n-f
+sosna	pine tree	n-f
+dąb	oak	n-m
+brzoza	birch	n-f
+gałąź	branch	n-f
+korzeń	root	n-m
+kora	bark	n-f
+mech	moss	n-m
+paproć	fern	n-f
+róża	rose	n-f
+tulipan	tulip	n-m
+słonecznik	sunflower	n-m
+owad	insect	n-m
+pszczoła	bee	n-f
+motyl	butterfly	n-m
+mrówka	ant	n-f
+komar	mosquito	n-m
+pająk	spider	n-m
+wiewiórka	squirrel	n-f
+lis	fox	n-m
+jeleń	deer	n-m
+niedźwiedź	bear	n-m
+wilk	wolf	n-m
+świecić	to shine	v
+wiać	to blow	v
+grzmieć	to thunder	v
+marznąć	to freeze	v
+topnieć	to melt	v
+rosnąć	to grow	v
+kwitnąć	to bloom	v
+więdnąć	to wilt	v
+zbierać	to collect, to pick	v
+chronić	to protect	v
+zanieczyszczać	to pollute	v
+przewidywać	to forecast, to predict	v
+trwać	to last	v
+mijać	to pass by	v
+spóźnić się	to be late	v
+zaczynać	to begin	v
+kończyć	to finish	v
+piękna pogoda	beautiful weather	phr
+brzydka pogoda	nasty weather	phr
+zmienny	changeable	adj
+stabilny	stable	adj
+umiarkowany	moderate	adj
+tropikalny	tropical	adj
+polarny	polar	adj
+naturalny	natural	adj
+dziki	wild	adj
+ekologiczny	ecological	adj
+zanieczyszczenie	pollution	n-n
+recykling	recycling	n-m
+odnawialny	renewable	adj
+która godzina	what time is it	phr
+w południe	at noon	adv
+o północy	at midnight	adv
+świt	dawn	n-m
+zmierzch	dusk	n-m
+wschód słońca	sunrise	n-m
+zachód słońca	sunset	n-m
+punktualnie	on the dot	adv
+mniej więcej	more or less	adv
+przez cały dzień	all day long	phr
+co dzień	every day	adv
+co tydzień	every week	adv
+raz	once	adv
+dwa razy	twice	adv
+kilka	a few	num
+wiele	many	num
+wszystkie	all	pron
+żaden	none, no	pron
+kiedyś	someday, once	adv
+ostatnio	recently	adv
+niedawno	not long ago	adv
+dawno	long ago	adv
+wreszcie	finally	adv

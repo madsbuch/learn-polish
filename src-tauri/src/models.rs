@@ -6,8 +6,11 @@ pub struct Topic {
     pub id: i64,
     pub ord: i64,
     pub slug: String,
+    /// "course" for the built-in topics, "programme" for ones the learner or
+    /// the tutor made.
+    pub kind: String,
     pub title_pl: String,
-    /// Already resolved to the learner's source language by the backend.
+    /// The English title.
     pub title: String,
     pub summary: String,
 }
@@ -96,6 +99,8 @@ pub struct SessionPlan {
     pub review_sentences: usize,
     /// True when today's session has already been finished.
     pub already_completed: bool,
+    /// True for the daily check-in, false for a topic practised on demand.
+    pub daily: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,7 +165,6 @@ pub struct Stats {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
-    pub source_language: String,
     pub daily_goal: i64,
     pub new_words_per_day: i64,
     pub reminder_hour: i64,
@@ -181,13 +185,45 @@ pub struct Settings {
     /// The Suno version songs are sung with.
     pub suno_model: String,
     pub suno_models: Vec<String>,
+    /// The programme the daily check-in is focused on, if any.
+    pub focus_topic_id: Option<i64>,
+    /// "system" | "light" | "dark", or empty if never stored (the webview's
+    /// own copy is then written back).
+    pub theme: String,
+    /// The music player's repeat mode: "off" | "all" | "one", or empty.
+    pub player_repeat: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
+    pub id: i64,
     pub role: String,
     pub content: String,
+    /// What the tutor did in the app during this turn.
+    pub actions: Vec<TutorAction>,
+}
+
+/// Something the tutor did in the app, shown under its reply (and, for a
+/// programme, with a button to start practising it).
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TutorAction {
+    /// programmeCreated | programmeUpdated | programmeDeleted | focusSet |
+    /// focusCleared | settingsChanged | practiceSuggested
+    pub kind: String,
+    /// One line for the learner, e.g. "Created “Colours” — 24 words".
+    pub label: String,
+    #[serde(default)]
+    pub topic_id: Option<i64>,
+}
+
+/// The tutor is working: a tool is running. Emitted as `tutor://status`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TutorStatus {
+    pub id: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -199,6 +235,9 @@ pub struct AiModel {
     pub prompt_price: String,
     /// Non-empty for speech models: the voice names the model accepts.
     pub voices: Vec<String>,
+    /// True when the model can call tools, which the tutor needs to act in
+    /// the app.
+    pub tools: bool,
 }
 
 /// One clip of generated speech, ready to become a `data:` URI.

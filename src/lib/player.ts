@@ -311,6 +311,20 @@ export function seek(seconds: number) {
   }
 }
 
+/** Adopts the repeat mode stored in the database at startup. */
+export function syncRepeatFromSettings(stored: "" | RepeatMode) {
+  if (stored === "") {
+    void api.updateSettings({ playerRepeat: state.repeat }).catch(() => {});
+  } else if (stored !== state.repeat) {
+    try {
+      localStorage.setItem(REPEAT_KEY, stored);
+    } catch {
+      /* applies for this run */
+    }
+    set({ repeat: stored });
+  }
+}
+
 export function cycleRepeat() {
   const order: RepeatMode[] = ["all", "one", "off"];
   const repeat = order[(order.indexOf(state.repeat) + 1) % order.length];
@@ -319,6 +333,7 @@ export function cycleRepeat() {
   } catch {
     /* applies for this run */
   }
+  void api.updateSettings({ playerRepeat: repeat }).catch(() => {});
   set({ repeat });
   if (state.cast) void api.castSetRepeat(repeat).catch(fail);
   else if (isAndroid) void native("set_repeat", { repeat });

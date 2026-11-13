@@ -2,9 +2,7 @@
   "slug": "food",
   "title_pl": "W restauracji",
   "title_en": "At the restaurant",
-  "title_da": "På restauranten",
   "summary_en": "Mads orders dinner in a Polish restaurant, asks for a recommendation and pays the bill.",
-  "summary_da": "Mads bestiller aftensmad på en polsk restaurant, beder om en anbefaling og betaler regningen.",
   "speakers": {
     "Kelner": "m",
     "Mads": "m"
@@ -13,134 +11,112 @@
     {
       "speaker": "Kelner",
       "pl": "Dobry wieczór. Stolik dla ilu osób?",
-      "en": "Good evening. A table for how many people?",
-      "da": "Godaften. Et bord til hvor mange personer?"
+      "en": "Good evening. A table for how many people?"
     },
     {
       "speaker": "Mads",
       "pl": "Dobry wieczór. Dla dwóch osób, proszę.",
-      "en": "Good evening. For two, please.",
-      "da": "Godaften. Til to personer, tak."
+      "en": "Good evening. For two, please."
     },
     {
       "speaker": "Kelner",
       "pl": "Proszę tędy. Oto karta dań.",
-      "en": "This way, please. Here is the menu.",
-      "da": "Denne vej. Her er menukortet."
+      "en": "This way, please. Here is the menu."
     },
     {
       "speaker": "Mads",
       "pl": "Dziękuję. Co pan poleca?",
-      "en": "Thank you. What do you recommend?",
-      "da": "Tak. Hvad anbefaler du?"
+      "en": "Thank you. What do you recommend?"
     },
     {
       "speaker": "Kelner",
       "pl": "Danie dnia to pierogi z kapustą i grzybami. Bardzo świeże.",
-      "en": "The dish of the day is dumplings with cabbage and mushrooms. Very fresh.",
-      "da": "Dagens ret er dumplings med kål og svampe. Meget friske."
+      "en": "The dish of the day is dumplings with cabbage and mushrooms. Very fresh."
     },
     {
       "speaker": "Mads",
       "pl": "Brzmi dobrze. Czy to danie wegetariańskie?",
-      "en": "Sounds good. Is that dish vegetarian?",
-      "da": "Det lyder godt. Er den ret vegetarisk?"
+      "en": "Sounds good. Is that dish vegetarian?"
     },
     {
       "speaker": "Kelner",
       "pl": "Tak, całkowicie. Bez mięsa i bez boczku.",
-      "en": "Yes, completely. Without meat and without bacon.",
-      "da": "Ja, helt. Uden kød og uden bacon."
+      "en": "Yes, completely. Without meat and without bacon."
     },
     {
       "speaker": "Mads",
       "pl": "Świetnie. Poproszę pierogi i zupę pomidorową.",
-      "en": "Great. I will have the dumplings and tomato soup.",
-      "da": "Fantastisk. Jeg tager dumplings og tomatsuppe."
+      "en": "Great. I will have the dumplings and tomato soup."
     },
     {
       "speaker": "Kelner",
       "pl": "A do picia?",
-      "en": "And to drink?",
-      "da": "Og at drikke?"
+      "en": "And to drink?"
     },
     {
       "speaker": "Mads",
       "pl": "Poproszę wodę niegazowaną i jedno piwo.",
-      "en": "Still water and one beer, please.",
-      "da": "Vand uden brus og en øl, tak."
+      "en": "Still water and one beer, please."
     },
     {
       "speaker": "Kelner",
       "pl": "Oczywiście. Coś na deser?",
-      "en": "Of course. Anything for dessert?",
-      "da": "Selvfølgelig. Noget til dessert?"
+      "en": "Of course. Anything for dessert?"
     },
     {
       "speaker": "Mads",
       "pl": "Może później. Najpierw chcę spróbować pierogów.",
-      "en": "Maybe later. First I want to try the dumplings.",
-      "da": "Måske senere. Først vil jeg smage dumplings."
+      "en": "Maybe later. First I want to try the dumplings."
     },
     {
       "speaker": "Kelner",
       "pl": "Rozumiem. Proszę czekać dziesięć minut.",
-      "en": "I understand. Please wait ten minutes.",
-      "da": "Det forstår jeg. Vent venligst ti minutter."
+      "en": "I understand. Please wait ten minutes."
     },
     {
       "speaker": "Kelner",
       "pl": "Proszę bardzo, gorące pierogi. Smacznego!",
-      "en": "Here you are, hot dumplings. Enjoy your meal!",
-      "da": "Værsgo, varme dumplings. Velbekomme!"
+      "en": "Here you are, hot dumplings. Enjoy your meal!"
     },
     {
       "speaker": "Mads",
       "pl": "Dziękuję. Mmm, są naprawdę pyszne!",
-      "en": "Thank you. Mmm, they are really delicious!",
-      "da": "Tak. Mmm, de er virkelig lækre!"
+      "en": "Thank you. Mmm, they are really delicious!"
     },
     {
       "speaker": "Kelner",
       "pl": "Cieszę się. Czy wszystko w porządku?",
-      "en": "I am glad. Is everything all right?",
-      "da": "Det glæder mig. Er alt i orden?"
+      "en": "I am glad. Is everything all right?"
     },
     {
       "speaker": "Mads",
       "pl": "Wszystko świetne. Teraz poproszę lody na deser.",
-      "en": "Everything is great. Now I will have ice cream for dessert.",
-      "da": "Alt er fantastisk. Nu vil jeg gerne have is til dessert."
+      "en": "Everything is great. Now I will have ice cream for dessert."
     },
     {
       "speaker": "Kelner",
       "pl": "Truskawkowe czy czekoladowe?",
-      "en": "Strawberry or chocolate?",
-      "da": "Jordbær eller chokolade?"
+      "en": "Strawberry or chocolate?"
     },
     {
       "speaker": "Mads",
       "pl": "Truskawkowe, proszę. I potem rachunek.",
-      "en": "Strawberry, please. And then the bill.",
-      "da": "Jordbær, tak. Og derefter regningen."
+      "en": "Strawberry, please. And then the bill."
     },
     {
       "speaker": "Kelner",
       "pl": "Razem osiemdziesiąt złotych. Czy płaci pan kartą?",
-      "en": "Eighty złoty in total. Are you paying by card?",
-      "da": "Firs zloty i alt. Betaler du med kort?"
+      "en": "Eighty złoty in total. Are you paying by card?"
     },
     {
       "speaker": "Mads",
       "pl": "Tak, kartą. I proszę zatrzymać resztę.",
-      "en": "Yes, by card. And please keep the change.",
-      "da": "Ja, med kort. Og behold gerne resten."
+      "en": "Yes, by card. And please keep the change."
     },
     {
       "speaker": "Kelner",
       "pl": "Bardzo dziękuję! Do widzenia i zapraszamy ponownie.",
-      "en": "Thank you very much! Goodbye and please come again.",
-      "da": "Mange tak! Farvel og kom gerne igen."
+      "en": "Thank you very much! Goodbye and please come again."
     }
   ]
 }

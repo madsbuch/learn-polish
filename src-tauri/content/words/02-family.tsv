@@ -1,201 +1,201 @@
-# polish	english	danish	pos
-rodzina	family	familie	n-f
-matka	mother	mor	n-f
-mama	mum	mor	n-f
-ojciec	father	far	n-m
-tata	dad	far	n-m
-rodzice	parents	forældre	n-pl
-syn	son	søn	n-m
-córka	daughter	datter	n-f
-brat	brother	bror	n-m
-siostra	sister	søster	n-f
-dziadek	grandfather	bedstefar	n-m
-babcia	grandmother	bedstemor	n-f
-wnuk	grandson	barnebarn	n-m
-wnuczka	granddaughter	barnebarn	n-f
-wujek	uncle	onkel	n-m
-ciocia	aunt	tante	n-f
-kuzyn	cousin (man)	fætter	n-m
-kuzynka	cousin (woman)	kusine	n-f
-mąż	husband	mand	n-m
-żona	wife	kone	n-f
-teść	father-in-law	svigerfar	n-m
-teściowa	mother-in-law	svigermor	n-f
-zięć	son-in-law	svigersøn	n-m
-synowa	daughter-in-law	svigerdatter	n-f
-bratanek	nephew (brother's son)	nevø	n-m
-siostrzeniec	nephew (sister's son)	nevø	n-m
-siostrzenica	niece	niece	n-f
-rodzeństwo	siblings	søskende	n-n
-bliźniak	twin	tvilling	n-m
-krewny	relative	slægtning	n-m
-przodek	ancestor	forfader	n-m
-potomek	descendant	efterkommer	n-m
-narzeczony	fiancé	forlovede	n-m
-narzeczona	fiancée	forlovede	n-f
-partner	partner	partner	n-m
-para	couple, pair	par	n-f
-wdowa	widow	enke	n-f
-sierota	orphan	forældreløs	n-f
-chrzestny	godfather	gudfar	n-m
-opiekun	guardian	værge	n-m
-niemowlę	baby	spædbarn	n-n
-noworodek	newborn	nyfødt	n-m
-chłopiec	boy	dreng	n-m
-dziewczyna	girl, girlfriend	pige	n-f
-dziewczynka	little girl	lille pige	n-f
-nastolatek	teenager	teenager	n-m
-dorosły	adult	voksen	n-m
-senior	senior	senior	n-m
-emeryt	pensioner	pensionist	n-m
-młodzież	youth	ungdom	n-f
-ludzie	people	mennesker	n-pl
-tłum	crowd	menneskemængde	n-m
-społeczeństwo	society	samfund	n-n
-pokolenie	generation	generation	n-n
-grupa	group	gruppe	n-f
-zespół	team, band	hold	n-m
-znajomy	acquaintance	bekendt	n-m
-obcy	stranger	fremmed	n-m
-mieszkaniec	inhabitant	indbygger	n-m
-obywatel	citizen	borger	n-m
-narodziny	birth	fødsel	n-pl
-urodziny	birthday	fødselsdag	n-pl
-ślub	wedding	bryllup	n-m
-wesele	wedding party	bryllupsfest	n-n
-rozwód	divorce	skilsmisse	n-m
-śmierć	death	død	n-f
-pogrzeb	funeral	begravelse	n-m
-imieniny	name day	navnedag	n-pl
-rocznica	anniversary	jubilæum	n-f
-chrzest	baptism	dåb	n-m
-święto	holiday, feast	højtid	n-n
-prezent	present, gift	gave	n-m
-kartka	card, sheet	kort	n-f
-zaproszenie	invitation	invitation	n-n
-uroczystość	ceremony	ceremoni	n-f
-tradycja	tradition	tradition	n-f
-zwyczaj	custom	skik	n-m
-spotkanie	meeting	møde	n-n
-przyjęcie	party, reception	fest	n-n
-niespodzianka	surprise	overraskelse	n-f
-wygląd	appearance	udseende	n-m
-wysoki	tall, high	høj	adj
-niski	short, low	lav	adj
-szczupły	slim	slank	adj
-gruby	fat, thick	tyk	adj
-chudy	skinny	tynd	adj
-silny	strong	stærk	adj
-słaby	weak	svag	adj
-piękny	beautiful	smuk	adj
-ładny	pretty	pæn	adj
-brzydki	ugly	grim	adj
-przystojny	handsome	flot	adj
-włosy	hair	hår	n-pl
-blondyn	blond man	lyshåret mand	n-m
-brunetka	brunette woman	brunette	n-f
-łysy	bald	skaldet	adj
-broda	beard, chin	skæg	n-f
-wąsy	moustache	overskæg	n-pl
-okulary	glasses	briller	n-pl
-oczy	eyes	øjne	n-pl
-twarz	face	ansigt	n-f
-uśmiech	smile	smil	n-m
-podobny	similar	lignende	adj
-identyczny	identical	identisk	adj
-ubranie	clothing	tøj	n-n
-elegancki	elegant	elegant	adj
-modny	fashionable	moderne	adj
-zadbany	well-groomed	velplejet	adj
-niebieski	blue	blå	adj
-zielony	green	grøn	adj
-charakter	character	karakter	n-m
-osobowość	personality	personlighed	n-f
-mądry	wise, clever	klog	adj
-głupi	stupid	dum	adj
-inteligentny	intelligent	intelligent	adj
-zdolny	talented	dygtig	adj
-pracowity	hardworking	flittig	adj
-leniwy	lazy	doven	adj
-cierpliwy	patient	tålmodig	adj
-nerwowy	nervous	nervøs	adj
-spokojny	calm	rolig	adj
-odważny	brave	modig	adj
-nieśmiały	shy	genert	adj
-towarzyski	sociable	selskabelig	adj
-szczery	sincere	oprigtig	adj
-uczciwy	honest	hæderlig	adj
-kłamca	liar	løgner	n-m
-hojny	generous	gavmild	adj
-skąpy	stingy	nærig	adj
-uparty	stubborn	stædig	adj
-wrażliwy	sensitive	følsom	adj
-zabawny	funny	sjov	adj
-poważny	serious	alvorlig	adj
-wymagający	demanding, strict	krævende	adj
-łagodny	gentle, mild	mild	adj
-dumny	proud	stolt	adj
-zazdrosny	jealous	jaloux	adj
-szczęśliwy	happy	lykkelig	adj
-nieszczęśliwy	unhappy	ulykkelig	adj
-zadowolony	content, pleased	tilfreds	adj
-zdenerwowany	upset, annoyed	irriteret	adj
-zmęczony	tired	træt	adj
-radość	joy	glæde	n-f
-smutek	sadness	sorg	n-m
-złość	anger	vrede	n-f
-strach	fear	frygt	n-m
-miłość	love	kærlighed	n-f
-nienawiść	hatred	had	n-f
-nadzieja	hope	håb	n-f
-zaufanie	trust	tillid	n-n
-tęsknota	longing	længsel	n-f
-duma	pride	stolthed	n-f
-wstyd	shame	skam	n-m
-uczucie	feeling	følelse	n-n
-nastrój	mood	humør	n-m
-kochać	to love	at elske	v
-lubić	to like	at kunne lide	v
-nienawidzić	to hate	at hade	v
-tęsknić	to miss	at savne	v
-ufać	to trust	at stole på	v
-przytulić	to hug	at kramme	v
-całować	to kiss	at kysse	v
-kłócić się	to argue	at skændes	v
-godzić się	to make up	at forsone sig	v
-pomagać	to help	at hjælpe	v
-opiekować się	to take care of	at passe	v
-wychowywać	to raise, to bring up	at opdrage	v
-urodzić się	to be born	at blive født	v
-umrzeć	to die	at dø	v
-ożenić się	to marry (a man does)	at gifte sig	v
-wyjść za mąż	to marry (a woman does)	at blive gift	v
-rozwieść się	to get divorced	at blive skilt	v
-zaprosić	to invite	at invitere	v
-odwiedzić	to visit	at besøge	v
-świętować	to celebrate	at fejre	v
-gratulować	to congratulate	at lykønske	v
-obiecać	to promise	at love	v
-kłamać	to lie, to tell lies	at lyve	v
-wybaczyć	to forgive	at tilgive	v
-żartować	to joke	at spøge	v
-rodzinny	family (adjective)	familie-	adj
-domowy	domestic, home-made	hjemlig	adj
-razem	together	sammen	adv
-osobno	separately	hver for sig	adv
-sam	alone, oneself	alene	adj
-wspólnie	jointly	i fællesskab	adv
-często	often	ofte	adv
-rzadko	rarely	sjældent	adv
-codziennie	daily	dagligt	adv
-starszy	older	ældre	adj
-młodszy	younger	yngre	adj
-najstarszy	oldest	ældst	adj
-najmłodszy	youngest	yngst	adj
-jedynak	only child	enebarn	n-m
-przybrany	adoptive, foster	adoptiv	adj
-biologiczny	biological	biologisk	adj
-bliski	close, near	nær	adj
-daleki	distant, far	fjern	adj
-ulubiony	favourite	yndlings-	adj
-znany	well-known	kendt	adj
+# polish	english	pos
+rodzina	family	n-f
+matka	mother	n-f
+mama	mum	n-f
+ojciec	father	n-m
+tata	dad	n-m
+rodzice	parents	n-pl
+syn	son	n-m
+córka	daughter	n-f
+brat	brother	n-m
+siostra	sister	n-f
+dziadek	grandfather	n-m
+babcia	grandmother	n-f
+wnuk	grandson	n-m
+wnuczka	granddaughter	n-f
+wujek	uncle	n-m
+ciocia	aunt	n-f
+kuzyn	cousin (man)	n-m
+kuzynka	cousin (woman)	n-f
+mąż	husband	n-m
+żona	wife	n-f
+teść	father-in-law	n-m
+teściowa	mother-in-law	n-f
+zięć	son-in-law	n-m
+synowa	daughter-in-law	n-f
+bratanek	nephew (brother's son)	n-m
+siostrzeniec	nephew (sister's son)	n-m
+siostrzenica	niece	n-f
+rodzeństwo	siblings	n-n
+bliźniak	twin	n-m
+krewny	relative	n-m
+przodek	ancestor	n-m
+potomek	descendant	n-m
+narzeczony	fiancé	n-m
+narzeczona	fiancée	n-f
+partner	partner	n-m
+para	couple, pair	n-f
+wdowa	widow	n-f
+sierota	orphan	n-f
+chrzestny	godfather	n-m
+opiekun	guardian	n-m
+niemowlę	baby	n-n
+noworodek	newborn	n-m
+chłopiec	boy	n-m
+dziewczyna	girl, girlfriend	n-f
+dziewczynka	little girl	n-f
+nastolatek	teenager	n-m
+dorosły	adult	n-m
+senior	senior	n-m
+emeryt	pensioner	n-m
+młodzież	youth	n-f
+ludzie	people	n-pl
+tłum	crowd	n-m
+społeczeństwo	society	n-n
+pokolenie	generation	n-n
+grupa	group	n-f
+zespół	team, band	n-m
+znajomy	acquaintance	n-m
+obcy	stranger	n-m
+mieszkaniec	inhabitant	n-m
+obywatel	citizen	n-m
+narodziny	birth	n-pl
+urodziny	birthday	n-pl
+ślub	wedding	n-m
+wesele	wedding party	n-n
+rozwód	divorce	n-m
+śmierć	death	n-f
+pogrzeb	funeral	n-m
+imieniny	name day	n-pl
+rocznica	anniversary	n-f
+chrzest	baptism	n-m
+święto	holiday, feast	n-n
+prezent	present, gift	n-m
+kartka	card, sheet	n-f
+zaproszenie	invitation	n-n
+uroczystość	ceremony	n-f
+tradycja	tradition	n-f
+zwyczaj	custom	n-m
+spotkanie	meeting	n-n
+przyjęcie	party, reception	n-n
+niespodzianka	surprise	n-f
+wygląd	appearance	n-m
+wysoki	tall, high	adj
+niski	short, low	adj
+szczupły	slim	adj
+gruby	fat, thick	adj
+chudy	skinny	adj
+silny	strong	adj
+słaby	weak	adj
+piękny	beautiful	adj
+ładny	pretty	adj
+brzydki	ugly	adj
+przystojny	handsome	adj
+włosy	hair	n-pl
+blondyn	blond man	n-m
+brunetka	brunette woman	n-f
+łysy	bald	adj
+broda	beard, chin	n-f
+wąsy	moustache	n-pl
+okulary	glasses	n-pl
+oczy	eyes	n-pl
+twarz	face	n-f
+uśmiech	smile	n-m
+podobny	similar	adj
+identyczny	identical	adj
+ubranie	clothing	n-n
+elegancki	elegant	adj
+modny	fashionable	adj
+zadbany	well-groomed	adj
+niebieski	blue	adj
+zielony	green	adj
+charakter	character	n-m
+osobowość	personality	n-f
+mądry	wise, clever	adj
+głupi	stupid	adj
+inteligentny	intelligent	adj
+zdolny	talented	adj
+pracowity	hardworking	adj
+leniwy	lazy	adj
+cierpliwy	patient	adj
+nerwowy	nervous	adj
+spokojny	calm	adj
+odważny	brave	adj
+nieśmiały	shy	adj
+towarzyski	sociable	adj
+szczery	sincere	adj
+uczciwy	honest	adj
+kłamca	liar	n-m
+hojny	generous	adj
+skąpy	stingy	adj
+uparty	stubborn	adj
+wrażliwy	sensitive	adj
+zabawny	funny	adj
+poważny	serious	adj
+wymagający	demanding, strict	adj
+łagodny	gentle, mild	adj
+dumny	proud	adj
+zazdrosny	jealous	adj
+szczęśliwy	happy	adj
+nieszczęśliwy	unhappy	adj
+zadowolony	content, pleased	adj
+zdenerwowany	upset, annoyed	adj
+zmęczony	tired	adj
+radość	joy	n-f
+smutek	sadness	n-m
+złość	anger	n-f
+strach	fear	n-m
+miłość	love	n-f
+nienawiść	hatred	n-f
+nadzieja	hope	n-f
+zaufanie	trust	n-n
+tęsknota	longing	n-f
+duma	pride	n-f
+wstyd	shame	n-m
+uczucie	feeling	n-n
+nastrój	mood	n-m
+kochać	to love	v
+lubić	to like	v
+nienawidzić	to hate	v
+tęsknić	to miss	v
+ufać	to trust	v
+przytulić	to hug	v
+całować	to kiss	v
+kłócić się	to argue	v
+godzić się	to make up	v
+pomagać	to help	v
+opiekować się	to take care of	v
+wychowywać	to raise, to bring up	v
+urodzić się	to be born	v
+umrzeć	to die	v
+ożenić się	to marry (a man does)	v
+wyjść za mąż	to marry (a woman does)	v
+rozwieść się	to get divorced	v
+zaprosić	to invite	v
+odwiedzić	to visit	v
+świętować	to celebrate	v
+gratulować	to congratulate	v
+obiecać	to promise	v
+kłamać	to lie, to tell lies	v
+wybaczyć	to forgive	v
+żartować	to joke	v
+rodzinny	family (adjective)	adj
+domowy	domestic, home-made	adj
+razem	together	adv
+osobno	separately	adv
+sam	alone, oneself	adj
+wspólnie	jointly	adv
+często	often	adv
+rzadko	rarely	adv
+codziennie	daily	adv
+starszy	older	adj
+młodszy	younger	adj
+najstarszy	oldest	adj
+najmłodszy	youngest	adj
+jedynak	only child	n-m
+przybrany	adoptive, foster	adj
+biologiczny	biological	adj
+bliski	close, near	adj
+daleki	distant, far	adj
+ulubiony	favourite	adj
+znany	well-known	adj

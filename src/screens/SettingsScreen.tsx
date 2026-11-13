@@ -44,6 +44,7 @@ export function SettingsScreen({
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
   const [progress, setProgress] = useState<CacheProgress | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [includeKeys, setIncludeKeys] = useState(false);
   const [theme, setTheme] = useThemePreference();
 
   const refreshCache = useCallback(() => {
@@ -131,28 +132,6 @@ export function SettingsScreen({
               {label}
             </button>
           ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <TitleWithInfo
-          title="I am learning Polish from"
-          infoTitle="Your language"
-          info={<p>Every word, sentence and conversation is translated into both English and Danish. Switching changes every translation in the app.</p>}
-        />
-        <div className="segmented">
-          <button
-            data-active={settings.sourceLanguage === "en"}
-            onClick={() => patch({ sourceLanguage: "en" }, "lang")}
-          >
-            🇬🇧 English
-          </button>
-          <button
-            data-active={settings.sourceLanguage === "da"}
-            onClick={() => patch({ sourceLanguage: "da" }, "lang")}
-          >
-            🇩🇰 Dansk
-          </button>
         </div>
       </div>
 
@@ -295,7 +274,7 @@ export function SettingsScreen({
           title="AI models"
           info={
             <>
-              <p><b>Tutor</b> answers in the AI tutor and explains words and sentences.</p>
+              <p><b>Tutor</b> answers in the Tutor tab and explains words and sentences. To build programmes and change things in the app it needs a model that can use tools — those are marked 🛠.</p>
               <p><b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.</p>
               <p>Models come from OpenRouter's live catalogue, so nothing goes stale.</p>
             </>
@@ -320,19 +299,32 @@ export function SettingsScreen({
         {chatModels ? (
           <>
             <label className="field">
-              <span>Tutor — {chatModels.length} models available</span>
+              <span>
+                Tutor — {chatModels.filter((model) => model.tools).length} of {chatModels.length}{" "}
+                models can use tools 🛠
+              </span>
               <select
                 value={settings.aiModel}
                 onChange={(event) => patch({ aiModel: event.target.value }, "model")}
               >
                 <option value="">— choose a model —</option>
-                {chatModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
+                {[...chatModels]
+                  .sort((a, b) => Number(b.tools) - Number(a.tools))
+                  .map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.tools ? "🛠 " : ""}
+                      {model.name}
+                    </option>
+                  ))}
               </select>
             </label>
+            {settings.aiModel &&
+            chatModels.some((model) => model.id === settings.aiModel && !model.tools) ? (
+              <Banner kind="error">
+                This model can't use tools, so the tutor won't be able to build programmes
+                with it. Pick one marked 🛠.
+              </Banner>
+            ) : null}
             <label className="field">
               <span>Songwriter — writes the song lyrics</span>
               <select
@@ -588,8 +580,41 @@ export function SettingsScreen({
 
       <div className="card">
         <TitleWithInfo
+          title="Your data"
+          info={
+            <>
+              <p>Everything the app keeps — progress, programmes, the tutor conversation, settings, downloaded audio and your songs — lives in one SQLite database on this device.</p>
+              <p>Export saves a copy of it wherever you choose. It opens in any SQLite tool. API keys are left out unless you include them.</p>
+            </>
+          }
+        />
+        <label className="field">
+          <span>Include API keys</span>
+          <button
+            className={`btn small ${includeKeys ? "success" : "ghost"}`}
+            onClick={() => setIncludeKeys((value) => !value)}
+          >
+            {includeKeys ? "Yes" : "No"}
+          </button>
+        </label>
+        <button
+          className="btn ghost block"
+          disabled={busy === "export"}
+          onClick={() =>
+            run("export", async () => {
+              const where = await api.exportDatabase(includeKeys);
+              if (where) setNotice(`Exported to ${decodeURIComponent(where)}`);
+            })
+          }
+        >
+          {busy === "export" ? <Spinner /> : "⬇ Export database (.sqlite)"}
+        </button>
+      </div>
+
+      <div className="card">
+        <TitleWithInfo
           title="Danger zone"
-          info={<p>Reset clears every review, streak and achievement. The words, sentences, conversations and your songs stay.</p>}
+          info={<p>Reset clears every review, streak, achievement, the daily focus and the tutor conversation. The words, sentences, conversations, your programmes and your songs stay.</p>}
         />
         {confirmReset ? (
           <div className="row">

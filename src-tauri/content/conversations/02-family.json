@@ -2,9 +2,7 @@
   "slug": "family",
   "title_pl": "Zdjęcia rodzinne",
   "title_en": "Family photos",
-  "title_da": "Familiebilleder",
   "summary_en": "Anna shows Mads photos of her family and he tells her about his own.",
-  "summary_da": "Anna viser Mads billeder af sin familie, og han fortæller om sin egen.",
   "speakers": {
     "Anna": "f",
     "Mads": "m"
@@ -13,122 +11,102 @@
     {
       "speaker": "Anna",
       "pl": "Chcesz zobaczyć zdjęcia mojej rodziny?",
-      "en": "Do you want to see photos of my family?",
-      "da": "Vil du se billeder af min familie?"
+      "en": "Do you want to see photos of my family?"
     },
     {
       "speaker": "Mads",
       "pl": "Bardzo chętnie! Kto to jest?",
-      "en": "Gladly! Who is that?",
-      "da": "Meget gerne! Hvem er det?"
+      "en": "Gladly! Who is that?"
     },
     {
       "speaker": "Anna",
       "pl": "To moi rodzice. Mama nazywa się Ewa, a tata Marek.",
-      "en": "Those are my parents. My mum is called Ewa and my dad Marek.",
-      "da": "Det er mine forældre. Min mor hedder Ewa, og min far Marek."
+      "en": "Those are my parents. My mum is called Ewa and my dad Marek."
     },
     {
       "speaker": "Mads",
       "pl": "Twoja mama jest bardzo ładna. Jesteś do niej podobna.",
-      "en": "Your mum is very pretty. You look like her.",
-      "da": "Din mor er meget pæn. Du ligner hende."
+      "en": "Your mum is very pretty. You look like her."
     },
     {
       "speaker": "Anna",
       "pl": "Wszyscy tak mówią. A tu jest mój brat Tomek.",
-      "en": "Everybody says so. And here is my brother Tomek.",
-      "da": "Det siger alle. Og her er min bror Tomek."
+      "en": "Everybody says so. And here is my brother Tomek."
     },
     {
       "speaker": "Mads",
       "pl": "Jest starszy czy młodszy od ciebie?",
-      "en": "Is he older or younger than you?",
-      "da": "Er han ældre eller yngre end dig?"
+      "en": "Is he older or younger than you?"
     },
     {
       "speaker": "Anna",
       "pl": "Młodszy. Ma dwadzieścia sześć lat i jest bardzo leniwy.",
-      "en": "Younger. He is twenty-six and he is very lazy.",
-      "da": "Yngre. Han er seksogtyve og meget doven."
+      "en": "Younger. He is twenty-six and he is very lazy."
     },
     {
       "speaker": "Mads",
       "pl": "Ha, ha! Mój brat też. A kto to, ta starsza pani?",
-      "en": "Ha, ha! My brother too. And who is that, the older lady?",
-      "da": "Ha, ha! Min bror også. Og hvem er det, den ældre dame?"
+      "en": "Ha, ha! My brother too. And who is that, the older lady?"
     },
     {
       "speaker": "Anna",
       "pl": "To moja babcia. Ma dziewięćdziesiąt lat i jeszcze pracuje w ogrodzie.",
-      "en": "That is my grandmother. She is ninety and she still works in the garden.",
-      "da": "Det er min bedstemor. Hun er halvfems og arbejder stadig i haven."
+      "en": "That is my grandmother. She is ninety and she still works in the garden."
     },
     {
       "speaker": "Mads",
       "pl": "Niesamowite! Jest bardzo silna.",
-      "en": "Incredible! She is very strong.",
-      "da": "Utroligt! Hun er meget stærk."
+      "en": "Incredible! She is very strong."
     },
     {
       "speaker": "Anna",
       "pl": "I bardzo uparta. A ty? Masz dużą rodzinę?",
-      "en": "And very stubborn. And you? Do you have a big family?",
-      "da": "Og meget stædig. Og du? Har du en stor familie?"
+      "en": "And very stubborn. And you? Do you have a big family?"
     },
     {
       "speaker": "Mads",
       "pl": "Mam żonę i dwoje dzieci: syna i córkę.",
-      "en": "I have a wife and two children: a son and a daughter.",
-      "da": "Jeg har en kone og to børn: en søn og en datter."
+      "en": "I have a wife and two children: a son and a daughter."
     },
     {
       "speaker": "Anna",
       "pl": "Jak mają na imię?",
-      "en": "What are their names?",
-      "da": "Hvad hedder de?"
+      "en": "What are their names?"
     },
     {
       "speaker": "Mads",
       "pl": "Syn to Lars, ma osiem lat, a córka Freja ma pięć.",
-      "en": "My son is Lars, he is eight, and my daughter Freja is five.",
-      "da": "Min søn hedder Lars, han er otte, og min datter Freja er fem."
+      "en": "My son is Lars, he is eight, and my daughter Freja is five."
     },
     {
       "speaker": "Anna",
       "pl": "Słodkie imiona! Czy oni też uczą się polskiego?",
-      "en": "Sweet names! Are they learning Polish too?",
-      "da": "Søde navne! Lærer de også polsk?"
+      "en": "Sweet names! Are they learning Polish too?"
     },
     {
       "speaker": "Mads",
       "pl": "Tak, i uczą się szybciej niż ja. Trochę im zazdroszczę.",
-      "en": "Yes, and they learn faster than me. I am a little jealous of them.",
-      "da": "Ja, og de lærer hurtigere end mig. Jeg er lidt misundelig på dem."
+      "en": "Yes, and they learn faster than me. I am a little jealous of them."
     },
     {
       "speaker": "Anna",
       "pl": "Dzieci zawsze uczą się szybciej. Tęsknisz za Danią?",
-      "en": "Children always learn faster. Do you miss Denmark?",
-      "da": "Børn lærer altid hurtigere. Savner du Danmark?"
+      "en": "Children always learn faster. Do you miss Denmark?"
     },
     {
       "speaker": "Mads",
       "pl": "Czasami. Najbardziej tęsknię za rodzicami.",
-      "en": "Sometimes. Most of all I miss my parents.",
-      "da": "Nogle gange. Mest af alt savner jeg mine forældre."
+      "en": "Sometimes. Most of all I miss my parents."
     },
     {
       "speaker": "Anna",
       "pl": "Rozumiem. Odwiedzą was na święta?",
-      "en": "I understand. Will they visit you for the holidays?",
-      "da": "Det forstår jeg. Besøger de jer til højtiderne?"
+      "en": "I understand. Will they visit you for the holidays?"
     },
     {
       "speaker": "Mads",
       "pl": "Mam nadzieję. Byłaby to piękna niespodzianka dla dzieci.",
-      "en": "I hope so. It would be a lovely surprise for the children.",
-      "da": "Det håber jeg. Det ville være en dejlig overraskelse for børnene."
+      "en": "I hope so. It would be a lovely surprise for the children."
     }
   ]
 }

@@ -39,9 +39,7 @@ pub struct Conversation {
     pub slug: String,
     pub title_pl: String,
     pub title_en: String,
-    pub title_da: String,
     pub summary_en: String,
-    pub summary_da: String,
     /// Speaker name to "f" or "m", so each line can be read in a matching voice.
     pub speakers: std::collections::HashMap<String, String>,
     pub lines: Vec<ConversationLine>,
@@ -52,20 +50,17 @@ pub struct ConversationLine {
     pub speaker: String,
     pub pl: String,
     pub en: String,
-    pub da: String,
 }
 
 pub struct WordRow<'a> {
     pub pl: &'a str,
     pub en: &'a str,
-    pub da: &'a str,
     pub pos: &'a str,
 }
 
 pub struct SentenceRow<'a> {
     pub pl: &'a str,
     pub en: &'a str,
-    pub da: &'a str,
 }
 
 /// Splits a TSV body into rows, skipping comments and blank lines. Rows with the
@@ -80,22 +75,20 @@ fn rows(body: &str, columns: usize) -> impl Iterator<Item = Vec<&str>> {
 }
 
 pub fn parse_words(body: &str) -> Vec<WordRow<'_>> {
-    rows(body, 4)
+    rows(body, 3)
         .map(|c| WordRow {
             pl: c[0],
             en: c[1],
-            da: c[2],
-            pos: c[3],
+            pos: c[2],
         })
         .collect()
 }
 
 pub fn parse_sentences(body: &str) -> Vec<SentenceRow<'_>> {
-    rows(body, 3)
+    rows(body, 2)
         .map(|c| SentenceRow {
             pl: c[0],
             en: c[1],
-            da: c[2],
         })
         .collect()
 }

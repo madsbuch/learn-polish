@@ -2,9 +2,7 @@
   "slug": "work",
   "title_pl": "Rozmowa o pracy",
   "title_en": "Talking about work",
-  "title_da": "En samtale om arbejde",
   "summary_en": "Mads and his colleague Piotr talk about their jobs, a deadline and studying Polish after work.",
-  "summary_da": "Mads og hans kollega Piotr taler om deres job, en deadline og om at læse polsk efter arbejde.",
   "speakers": {
     "Piotr": "m",
     "Mads": "m"
@@ -13,122 +11,102 @@
     {
       "speaker": "Piotr",
       "pl": "Cześć Mads! Jak idzie nowy projekt?",
-      "en": "Hi Mads! How is the new project going?",
-      "da": "Hej Mads! Hvordan går det nye projekt?"
+      "en": "Hi Mads! How is the new project going?"
     },
     {
       "speaker": "Mads",
       "pl": "Powoli. Mamy termin w piątek, a jeszcze dużo pracy.",
-      "en": "Slowly. We have a deadline on Friday and still a lot of work.",
-      "da": "Langsomt. Vi har en frist på fredag, og der er stadig meget arbejde."
+      "en": "Slowly. We have a deadline on Friday and still a lot of work."
     },
     {
       "speaker": "Piotr",
       "pl": "Rozumiem. Szef jest zadowolony z postępów?",
-      "en": "I understand. Is the boss happy with the progress?",
-      "da": "Det forstår jeg. Er chefen tilfreds med fremskridtene?"
+      "en": "I understand. Is the boss happy with the progress?"
     },
     {
       "speaker": "Mads",
       "pl": "Mniej więcej. Wczoraj przygotowałem raport i prezentację.",
-      "en": "More or less. Yesterday I prepared a report and a presentation.",
-      "da": "Mere eller mindre. I går forberedte jeg en rapport og en præsentation."
+      "en": "More or less. Yesterday I prepared a report and a presentation."
     },
     {
       "speaker": "Piotr",
       "pl": "Po polsku czy po angielsku?",
-      "en": "In Polish or in English?",
-      "da": "På polsk eller på engelsk?"
+      "en": "In Polish or in English?"
     },
     {
       "speaker": "Mads",
       "pl": "Po angielsku, niestety. Po polsku jeszcze nie potrafię.",
-      "en": "In English, unfortunately. I cannot do it in Polish yet.",
-      "da": "På engelsk, desværre. Jeg kan ikke gøre det på polsk endnu."
+      "en": "In English, unfortunately. I cannot do it in Polish yet."
     },
     {
       "speaker": "Piotr",
       "pl": "Ale robisz postępy! Mówisz coraz lepiej.",
-      "en": "But you are making progress! You speak better and better.",
-      "da": "Men du gør fremskridt! Du taler bedre og bedre."
+      "en": "But you are making progress! You speak better and better."
     },
     {
       "speaker": "Mads",
       "pl": "Dziękuję. Chodzę na kurs wieczorowy dwa razy w tygodniu.",
-      "en": "Thank you. I attend an evening course twice a week.",
-      "da": "Tak. Jeg går til aftenkursus to gange om ugen."
+      "en": "Thank you. I attend an evening course twice a week."
     },
     {
       "speaker": "Piotr",
       "pl": "To dużo, po całym dniu w biurze. Nie jesteś zmęczony?",
-      "en": "That is a lot, after a whole day in the office. Are you not tired?",
-      "da": "Det er meget, efter en hel dag på kontoret. Er du ikke træt?"
+      "en": "That is a lot, after a whole day in the office. Are you not tired?"
     },
     {
       "speaker": "Mads",
       "pl": "Jestem, ale mam motywację. Mój cel to mówić płynnie.",
-      "en": "I am, but I am motivated. My goal is to speak fluently.",
-      "da": "Det er jeg, men jeg er motiveret. Mit mål er at tale flydende."
+      "en": "I am, but I am motivated. My goal is to speak fluently."
     },
     {
       "speaker": "Piotr",
       "pl": "Świetnie. A co robiłeś w Danii? Też byłeś programistą?",
-      "en": "Great. And what did you do in Denmark? Were you a programmer there too?",
-      "da": "Fantastisk. Og hvad lavede du i Danmark? Var du også programmør der?"
+      "en": "Great. And what did you do in Denmark? Were you a programmer there too?"
     },
     {
       "speaker": "Mads",
       "pl": "Tak, ale w dużej firmie. Miałem stu współpracowników.",
-      "en": "Yes, but at a big company. I had a hundred co-workers.",
-      "da": "Ja, men i et stort firma. Jeg havde hundrede kolleger."
+      "en": "Yes, but at a big company. I had a hundred co-workers."
     },
     {
       "speaker": "Piotr",
       "pl": "Sto osób! A tutaj jest nas tylko dwanaście.",
-      "en": "A hundred people! And here there are only twelve of us.",
-      "da": "Hundrede mennesker! Og her er vi kun tolv."
+      "en": "A hundred people! And here there are only twelve of us."
     },
     {
       "speaker": "Mads",
       "pl": "Właśnie dlatego lubię tę pracę. Wszyscy się znamy.",
-      "en": "That is exactly why I like this job. We all know each other.",
-      "da": "Det er præcis derfor, jeg kan lide dette job. Vi kender alle hinanden."
+      "en": "That is exactly why I like this job. We all know each other."
     },
     {
       "speaker": "Piotr",
       "pl": "I mniej stresu, mam nadzieję.",
-      "en": "And less stress, I hope.",
-      "da": "Og mindre stress, håber jeg."
+      "en": "And less stress, I hope."
     },
     {
       "speaker": "Mads",
       "pl": "Czasem więcej! Ale praca jest ciekawa i mam wolność.",
-      "en": "Sometimes more! But the work is interesting and I have freedom.",
-      "da": "Nogle gange mere! Men arbejdet er interessant, og jeg har frihed."
+      "en": "Sometimes more! But the work is interesting and I have freedom."
     },
     {
       "speaker": "Piotr",
       "pl": "Musisz jeszcze podpisać umowę na nowy rok?",
-      "en": "Do you still have to sign the contract for the new year?",
-      "da": "Skal du stadig underskrive kontrakten for det nye år?"
+      "en": "Do you still have to sign the contract for the new year?"
     },
     {
       "speaker": "Mads",
       "pl": "Tak, w poniedziałek. Negocjujemy pensję.",
-      "en": "Yes, on Monday. We are negotiating the salary.",
-      "da": "Ja, på mandag. Vi forhandler lønnen."
+      "en": "Yes, on Monday. We are negotiating the salary."
     },
     {
       "speaker": "Piotr",
       "pl": "Powodzenia! Poproś o premię i dodatkowy urlop.",
-      "en": "Good luck! Ask for a bonus and extra holiday.",
-      "da": "Held og lykke! Bed om en bonus og ekstra ferie."
+      "en": "Good luck! Ask for a bonus and extra holiday."
     },
     {
       "speaker": "Mads",
       "pl": "Dobry pomysł. Ale najpierw muszę skończyć ten projekt!",
-      "en": "Good idea. But first I have to finish this project!",
-      "da": "God idé. Men først skal jeg gøre dette projekt færdigt!"
+      "en": "Good idea. But first I have to finish this project!"
     }
   ]
 }

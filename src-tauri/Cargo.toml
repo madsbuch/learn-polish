@@ -1,7 +1,7 @@
 [package]
 name = "learn-polish"
 version = "0.1.0"
-description = "Learn Polish from English or Danish — daily gamified practice"
+description = "Learn Polish from English — daily gamified practice"
 authors = ["Mads Buch"]
 edition = "2021"
 rust-version = "1.77.2"
@@ -20,6 +20,10 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-os = "2"
+# Exporting the database: a save dialog, and writing to whatever it returns
+# (a content:// URI on Android).
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 # Native playback with lock-screen and Bluetooth controls (Kotlin, Android only).
 tauri-plugin-songplayer = { path = "plugins/songplayer" }
 serde = { version = "1", features = ["derive"] }

@@ -1,8 +1,9 @@
+import { api } from "./api";
 import { useEffect, useState } from "react";
 
 /**
- * Light/dark appearance. The choice is a per-device display preference, so
- * it lives in localStorage rather than the backend settings: it must be known
+ * Light/dark appearance. The choice is stored in the database with every
+ * other setting, and mirrored in localStorage only because it must be known
  * before the first paint, long before the database has been opened.
  */
 export type ThemePreference = "system" | "light" | "dark";
@@ -54,7 +55,21 @@ export function initTheme() {
   });
 }
 
+/** Adopts the stored choice at startup (it may differ after a restore). */
+export function syncThemeFromSettings(stored: "" | ThemePreference) {
+  if (stored === "") {
+    void api.updateSettings({ theme: current }).catch(() => {});
+  } else if (stored !== current) {
+    applyPreference(stored);
+  }
+}
+
 export function setThemePreference(preference: ThemePreference) {
+  applyPreference(preference);
+  void api.updateSettings({ theme: preference }).catch(() => {});
+}
+
+function applyPreference(preference: ThemePreference) {
   current = preference;
   try {
     localStorage.setItem(STORAGE_KEY, preference);

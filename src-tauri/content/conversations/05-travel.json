@@ -2,9 +2,7 @@
   "slug": "travel",
   "title_pl": "Na dworcu kolejowym",
   "title_en": "At the railway station",
-  "title_da": "På banegården",
   "summary_en": "Mads buys a train ticket to Gdańsk, asks about the platform and gets directions from a stranger.",
-  "summary_da": "Mads køber en togbillet til Gdańsk, spørger om perronen og får vejledning af en fremmed.",
   "speakers": {
     "Mads": "m",
     "Przechodzień": "m",
@@ -14,134 +12,112 @@
     {
       "speaker": "Mads",
       "pl": "Przepraszam, gdzie jest kasa biletowa?",
-      "en": "Excuse me, where is the ticket office?",
-      "da": "Undskyld, hvor er billetkontoret?"
+      "en": "Excuse me, where is the ticket office?"
     },
     {
       "speaker": "Przechodzień",
       "pl": "Proszę iść prosto, a potem w prawo, obok wejścia.",
-      "en": "Go straight ahead and then to the right, next to the entrance.",
-      "da": "Gå ligeud og så til højre, ved siden af indgangen."
+      "en": "Go straight ahead and then to the right, next to the entrance."
     },
     {
       "speaker": "Mads",
       "pl": "Dziękuję bardzo!",
-      "en": "Thank you very much!",
-      "da": "Mange tak!"
+      "en": "Thank you very much!"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Słucham, dokąd pan jedzie?",
-      "en": "Yes please, where are you travelling to?",
-      "da": "Ja tak, hvor rejser du hen?"
+      "en": "Yes please, where are you travelling to?"
     },
     {
       "speaker": "Mads",
       "pl": "Do Gdańska. Poproszę bilet na jutro rano.",
-      "en": "To Gdańsk. A ticket for tomorrow morning, please.",
-      "da": "Til Gdańsk. En billet til i morgen tidlig, tak."
+      "en": "To Gdańsk. A ticket for tomorrow morning, please."
     },
     {
       "speaker": "Kasjerka",
       "pl": "W jedną stronę czy powrotny?",
-      "en": "One way or return?",
-      "da": "Enkelt eller retur?"
+      "en": "One way or return?"
     },
     {
       "speaker": "Mads",
       "pl": "Powrotny, wracam w niedzielę wieczorem.",
-      "en": "Return, I am coming back on Sunday evening.",
-      "da": "Retur, jeg kommer tilbage søndag aften."
+      "en": "Return, I am coming back on Sunday evening."
     },
     {
       "speaker": "Kasjerka",
       "pl": "Mamy pociąg o siódmej trzydzieści i o dziewiątej.",
-      "en": "We have a train at half past seven and at nine.",
-      "da": "Vi har et tog klokken halv otte og klokken ni."
+      "en": "We have a train at half past seven and at nine."
     },
     {
       "speaker": "Mads",
       "pl": "Który jest szybszy?",
-      "en": "Which one is faster?",
-      "da": "Hvilket er hurtigst?"
+      "en": "Which one is faster?"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Ten o siódmej. Jedzie bezpośrednio, bez przesiadki.",
-      "en": "The one at seven. It goes directly, without changing.",
-      "da": "Det klokken syv. Det kører direkte, uden skift."
+      "en": "The one at seven. It goes directly, without changing."
     },
     {
       "speaker": "Mads",
       "pl": "Świetnie, poproszę ten. Ile kosztuje?",
-      "en": "Great, I will take that one. How much is it?",
-      "da": "Fint, jeg tager det. Hvad koster det?"
+      "en": "Great, I will take that one. How much is it?"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Sto sześćdziesiąt złotych. Czy chce pan miejsce przy oknie?",
-      "en": "One hundred and sixty złoty. Would you like a window seat?",
-      "da": "Ethundrede og tres zloty. Vil du have en vinduesplads?"
+      "en": "One hundred and sixty złoty. Would you like a window seat?"
     },
     {
       "speaker": "Mads",
       "pl": "Tak, proszę. Lubię patrzeć na krajobraz.",
-      "en": "Yes, please. I like looking at the landscape.",
-      "da": "Ja tak. Jeg kan godt lide at se på landskabet."
+      "en": "Yes, please. I like looking at the landscape."
     },
     {
       "speaker": "Kasjerka",
       "pl": "Proszę bardzo. Wagon pięć, miejsce dwadzieścia trzy.",
-      "en": "Here you are. Carriage five, seat twenty-three.",
-      "da": "Værsgo. Vogn fem, plads treogtyve."
+      "en": "Here you are. Carriage five, seat twenty-three."
     },
     {
       "speaker": "Mads",
       "pl": "Z którego peronu odjeżdża pociąg?",
-      "en": "Which platform does the train leave from?",
-      "da": "Fra hvilken perron afgår toget?"
+      "en": "Which platform does the train leave from?"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Zwykle z peronu drugiego, ale proszę sprawdzić rozkład jazdy.",
-      "en": "Usually from platform two, but please check the timetable.",
-      "da": "Normalt fra perron to, men tjek venligst køreplanen."
+      "en": "Usually from platform two, but please check the timetable."
     },
     {
       "speaker": "Mads",
       "pl": "Rozumiem. A jak długo trwa podróż?",
-      "en": "I see. And how long does the journey take?",
-      "da": "Forstået. Og hvor lang tid tager rejsen?"
+      "en": "I see. And how long does the journey take?"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Około pięciu godzin, jeśli nie ma opóźnienia.",
-      "en": "About five hours, if there is no delay.",
-      "da": "Cirka fem timer, hvis der ikke er forsinkelser."
+      "en": "About five hours, if there is no delay."
     },
     {
       "speaker": "Mads",
       "pl": "Mam nadzieję, że nie. Czy w pociągu jest wagon restauracyjny?",
-      "en": "I hope not. Is there a dining car on the train?",
-      "da": "Det håber jeg ikke. Er der en spisevogn i toget?"
+      "en": "I hope not. Is there a dining car on the train?"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Tak, można tam kupić kawę i kanapki.",
-      "en": "Yes, you can buy coffee and sandwiches there.",
-      "da": "Ja, der kan du købe kaffe og sandwich."
+      "en": "Yes, you can buy coffee and sandwiches there."
     },
     {
       "speaker": "Mads",
       "pl": "Doskonale. Dziękuję za pomoc i do widzenia!",
-      "en": "Perfect. Thank you for your help and goodbye!",
-      "da": "Perfekt. Tak for hjælpen og farvel!"
+      "en": "Perfect. Thank you for your help and goodbye!"
     },
     {
       "speaker": "Kasjerka",
       "pl": "Szerokiej drogi! Miłej podróży do Gdańska.",
-      "en": "Have a good trip! Enjoy your journey to Gdańsk.",
-      "da": "God tur! God rejse til Gdańsk."
+      "en": "Have a good trip! Enjoy your journey to Gdańsk."
     }
   ]
 }
