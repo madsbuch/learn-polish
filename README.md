@@ -24,48 +24,42 @@ health & body · time, weather & nature · leisure, media & technology.
 All of it is compiled into the binary, so a fresh install works offline and
 there is nothing to download.
 
-## The daily check-in
+## Blocks
 
-Each day the app serves one conversation plus everything attached to it:
+Learning happens in **blocks**: small units with one job each.
 
-1. **Read the conversation** — tap any line to reveal its translation, or play it.
-2. **Meet new words** from that conversation's topic, then recognise them.
-3. **Review whatever is due** from earlier days, mixed in.
-4. **Build sentences** from shuffled words.
-5. **Memory cards** — turn the cards over two at a time and pair each Polish
-   word with its English meaning.
-6. **Fill the gaps** — a few of the topic's sentences, each missing a word,
-   filled from a word bank.
-7. **Fill gaps in the conversation** you just read.
+- **Drills** are mechanical practice on a handful of items, in one format:
+  *words* (new-word cards, multiple choice, typing once known, a memory round),
+  *memory* cards, *typing*, *sentences* (build them, then fill gaps), *gaps*,
+  or a *dialogue* (read it, then fill its lines).
+- **Study blocks** are short lessons — a conjugation, a grammar point, a bit of
+  culture — with objectives. Their check-in is an interview: an **examiner**
+  agent asks one question at a time (more, and harder ones, the more complex the
+  block), gives a line of feedback after each answer, and ends with a verdict:
+  pass, partial or fail, plus what to review (`src-tauri/src/examiner.rs`).
 
-Finish it and the streak advances; tomorrow brings the next conversation. The
-ten conversations rotate, so the vocabulary keeps cycling while the spaced
-repetition schedule decides what actually needs your attention.
+Every block has a **complexity** — low (1–2 min), medium (5–10 min) or deep
+(20+ min) — set by how hard its subject is, not by how much is in it. And every
+block has its own **check-in period**: the first pass brings it back after the
+period, each further pass doubles the gap (up to four months), a partial pass
+repeats the period, and a fail brings it back tomorrow. The period can be
+changed on the block's page.
 
-### Practising what you choose
+The **Exercises** tab shows what is due now, what to start next, and the study
+lessons. The ten course topics are cut into blocks automatically — the dialogue,
+words in eights, sentences in fives — and seven built-in lessons
+(`src-tauri/content/lessons/`) cover być, mieć, the three present-tense
+patterns, gender, the seven cases and ty vs. Pan/Pani. The **tutor** builds
+more: programmes on any theme (cut into drills the same way), single drills in
+a chosen format, and study blocks with their own lessons and objectives.
 
-Every topic — the ten course topics and your own programmes — has a
-**Practise now** button (on the Exercises tab, or under the tutor's reply). That
-builds the same kind of session for that topic, with your due reviews mixed in,
-without moving the course along.
-
-A topic can also be made the **daily focus**: the daily check-in then serves it
-instead of the course until you have met all of its words, and hands back to
-the course after that. *Back to the course* on the Today screen ends it early.
-
-### Programmes
-
-A programme is a practice topic of your own: words, sentences and, optionally,
-a short dialogue, on any theme — colours, numbers, the words for a trip. They
-are stored exactly like the course topics (a `topics` row of kind
-`programme`), so the session builder, the scheduler, the library and the
-progress screen treat them the same. Programmes are made through the tutor;
-they can be deleted from the topic screen.
+Practising any block counts toward the day's streak.
 
 ### Scheduling
 
-An SM-2 style scheduler (`src-tauri/src/srs.rs`) tracks every word and sentence
-independently. Exercise difficulty follows the review history: brand-new items
+Blocks have their own schedule (`src-tauri/src/blocks.rs`). Inside a drill, an
+SM-2 style scheduler (`src-tauri/src/srs.rs`) still tracks every word and
+sentence, so exercise difficulty follows each item's history: brand-new items
 are introduced on a card, then drilled with multiple choice; once an item has
 survived a few correct reps you have to type it from memory. Typing is forgiving
 about diacritics and case — `czesc` counts as `cześć`.
@@ -85,12 +79,12 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 
 | Tool | What it does |
 |---|---|
-| `create_programme` | Builds a programme on a theme: words, sentences, a dialogue |
+| `create_programme` | Builds a programme on a theme: words, sentences, a dialogue — cut into drills |
+| `create_study_block`, `create_drill_block` | Writes a lesson with objectives, or one drill in a chosen format |
+| `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
 | `add_to_programme`, `edit_programme`, `delete_programme` | Changes your programmes (course topics are read-only) |
-| `set_daily_focus` | Points the daily check-in at a topic, or back at the course |
-| `update_practice_settings` | Daily XP goal, new words per session |
+| `update_practice_settings` | Daily XP goal |
 | `list_topics`, `get_topic`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
-| `suggest_practice` | Puts a *Practise now* button under its reply |
 | `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |
 
 You can keep **several conversations**: the Tutor tab lists them, newest
@@ -313,7 +307,9 @@ src/                       React UI
 src-tauri/
   content/                 the curriculum: TSV word lists, TSV sentences, JSON dialogues
   src/db.rs                schema, migration and seeding
-  src/session.rs           builds the daily plan
+  src/blocks.rs            blocks: storage, scheduling, cutting topics into drills
+  src/session.rs           a drill block's exercises, by format
+  src/examiner.rs          the agent that interviews the learner on a study block
   src/srs.rs               the scheduler
   src/stats.rs             XP, levels, streaks, achievements
   src/ai.rs                OpenRouter chat (with streamed tool calls) + speech

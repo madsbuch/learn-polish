@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::ai;
+use crate::blocks;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
@@ -73,7 +74,6 @@ fn answers_match(expected: &str, given: &str) -> bool {
 fn read_settings(conn: &Connection) -> Result<Settings> {
     Ok(Settings {
         daily_goal: db::get_setting_i64(conn, "daily_goal", stats::DEFAULT_DAILY_GOAL),
-        new_words_per_day: db::get_setting_i64(conn, "new_words_per_day", 12),
         reminder_hour: db::get_setting_i64(conn, "reminder_hour", 19),
         reminder_minute: db::get_setting_i64(conn, "reminder_minute", 0),
         reminders_enabled: db::get_setting_i64(conn, "reminders_enabled", 1) == 1,
@@ -92,7 +92,6 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
         song_length: songs::song_length(conn),
-        focus_topic_id: session::focus_topic_id(conn),
         theme: db::get_setting(conn, "theme")?
             .filter(|t| matches!(t.as_str(), "system" | "light" | "dark"))
             .unwrap_or_default(),
@@ -126,7 +125,6 @@ pub async fn get_settings(db: State<'_, Db>) -> Result<Settings> {
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
     pub daily_goal: Option<i64>,
-    pub new_words_per_day: Option<i64>,
     pub reminder_hour: Option<i64>,
     pub reminder_minute: Option<i64>,
     pub reminders_enabled: Option<bool>,
@@ -159,9 +157,6 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(goal) = patch.daily_goal {
         db::set_setting(&conn, "daily_goal", &goal.clamp(10, 1000).to_string())?;
-    }
-    if let Some(count) = patch.new_words_per_day {
-        db::set_setting(&conn, "new_words_per_day", &count.clamp(3, 40).to_string())?;
     }
     if let Some(hour) = patch.reminder_hour {
         db::set_setting(&conn, "reminder_hour", &hour.clamp(0, 23).to_string())?;
@@ -208,17 +203,6 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
 // ---------------------------------------------------------------------------
 // The daily session
 // ---------------------------------------------------------------------------
-
-/// Today's check-in, or — with a topic id — a session for that topic or
-/// programme, practised on demand.
-#[tauri::command]
-pub async fn get_session(db: State<'_, Db>, topic_id: Option<i64>) -> Result<SessionPlan> {
-    let conn = db.lock();
-    match topic_id {
-        Some(id) if id != session::topic_for_day(&conn)?.id => session::build_for(&conn, id),
-        _ => session::build(&conn),
-    }
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -290,30 +274,97 @@ pub struct SessionResult {
     pub stats: Stats,
 }
 
-#[tauri::command]
-pub async fn complete_session(db: State<'_, Db>, topic_id: i64) -> Result<SessionResult> {
-    let conn = db.lock();
-    let today = db::today(&conn);
-
-    let before: std::collections::HashSet<String> = {
-        let mut stmt = conn.prepare("SELECT code FROM achievements")?;
-        let codes = stmt
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        codes
-    };
-
-    let first_completion_today = stats::complete_day(&conn, today, topic_id)?;
+/// Achievements unlocked by whatever just happened, with fresh stats.
+fn finish_up(conn: &Connection, before: &std::collections::HashSet<String>, first: bool) -> Result<SessionResult> {
     // collect() writes newly earned achievements as a side effect.
-    let stats = stats::collect(&conn)?;
+    let stats = stats::collect(conn)?;
     let newly_unlocked = stats
         .achievements
         .iter()
         .filter(|a| a.unlocked && !before.contains(&a.code))
         .cloned()
         .collect();
+    Ok(SessionResult { first_completion_today: first, newly_unlocked, stats })
+}
 
-    Ok(SessionResult { first_completion_today, newly_unlocked, stats })
+fn unlocked_codes(conn: &Connection) -> Result<std::collections::HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT code FROM achievements")?;
+    let codes = stmt.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<_>>()?;
+    Ok(codes)
+}
+
+// ---------------------------------------------------------------------------
+// Blocks
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn blocks_overview(db: State<'_, Db>) -> Result<blocks::Overview> {
+    blocks::overview(&db.lock())
+}
+
+#[tauri::command]
+pub async fn blocks_for_topic(db: State<'_, Db>, topic_id: i64) -> Result<Vec<blocks::Block>> {
+    blocks::for_topic(&db.lock(), topic_id)
+}
+
+#[tauri::command]
+pub async fn block_detail(db: State<'_, Db>, block_id: i64) -> Result<blocks::BlockDetail> {
+    blocks::detail(&db.lock(), block_id)
+}
+
+/// The exercises of a drill block.
+#[tauri::command]
+pub async fn block_session(db: State<'_, Db>, block_id: i64) -> Result<SessionPlan> {
+    session::build_block(&db.lock(), block_id)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockFinished {
+    pub block: blocks::Block,
+    /// "pass" | "partial" | "fail"
+    pub result: String,
+    #[serde(flatten)]
+    pub session: SessionResult,
+}
+
+/// A drill is done: its score becomes a result that schedules the next
+/// check-in, and the day counts toward the streak.
+#[tauri::command]
+pub async fn block_finish(db: State<'_, Db>, block_id: i64, correct: i64, total: i64) -> Result<BlockFinished> {
+    let conn = db.lock();
+    let before = unlocked_codes(&conn)?;
+    let result = blocks::result_from_score(correct, total);
+    let block = blocks::record(&conn, block_id, result)?;
+    let first = stats::mark_practised(&conn, db::today(&conn))?;
+    Ok(BlockFinished { block, result: result.into(), session: finish_up(&conn, &before, first)? })
+}
+
+/// The learner changes how often a block checks in.
+#[tauri::command]
+pub async fn block_set_period(db: State<'_, Db>, block_id: i64, period_days: i64) -> Result<blocks::Block> {
+    blocks::update(
+        &db.lock(),
+        block_id,
+        blocks::BlockChanges { period_days: Some(period_days), ..Default::default() },
+    )
+}
+
+#[tauri::command]
+pub async fn block_due_now(db: State<'_, Db>, block_id: i64) -> Result<blocks::Block> {
+    blocks::due_now(&db.lock(), block_id)
+}
+
+#[tauri::command]
+pub async fn block_delete(db: State<'_, Db>, block_id: i64) -> Result<()> {
+    blocks::delete(&db.lock(), block_id).map(|_| ())
+}
+
+/// Stats after a study check-in, for the summary screen.
+#[tauri::command]
+pub async fn checkin_summary(db: State<'_, Db>, first_completion_today: bool) -> Result<SessionResult> {
+    let conn = db.lock();
+    finish_up(&conn, &Default::default(), first_completion_today)
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +497,8 @@ pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
          DELETE FROM achievements;
          DELETE FROM tutor_messages;
          DELETE FROM tutor_conversations;
+         DELETE FROM checkins;
+         UPDATE blocks SET due_day = NULL, last_day = NULL, last_result = NULL, reps = 0, interval_days = 0;
          DELETE FROM settings WHERE key IN ('lesson_index', 'focus_topic_id');",
     )?;
     Ok(())
@@ -890,14 +943,6 @@ pub async fn ai_explain_stream(
 #[tauri::command]
 pub async fn programme_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
     programmes::delete(&db.lock(), topic_id).map(|_| ())
-}
-
-/// Points the daily check-in at a topic or programme, or back at the course.
-#[tauri::command]
-pub async fn set_focus(db: State<'_, Db>, topic_id: Option<i64>) -> Result<Settings> {
-    let conn = db.lock();
-    programmes::set_focus(&conn, topic_id)?;
-    read_settings(&conn)
 }
 
 // ---------------------------------------------------------------------------

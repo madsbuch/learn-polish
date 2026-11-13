@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
-import { PlayerIcon } from "../components/icons";
+import { BlockRow } from "../components/BlockRow";
 import { SpeakButton } from "../components/ui";
 import {
   Banner,
-  Button,
   ConfirmButton,
   List,
   ListEmpty,
@@ -13,36 +12,32 @@ import {
   Screen,
   Section,
   Segmented,
-  SettingRow,
   Spinner,
   Stack,
-  Switch,
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { DialogueLine, Sentence, TopicProgress, Word } from "../lib/types";
+import type { Block, DialogueLine, Sentence, TopicProgress, Word } from "../lib/types";
 
 export type TopicSection = "conversation" | "words" | "sentences";
 
 export function TopicDetail({
   progress,
   initialSection,
-  isFocus,
+  today,
   onBack,
-  onPractise,
-  onFocus,
+  onOpenBlock,
   onDeleted,
 }: {
   progress: TopicProgress;
   /** Which tab to land on. */
   initialSection?: TopicSection;
-  /** True when the daily check-in is focused on this topic. */
-  isFocus: boolean;
+  today: number;
   onBack: () => void;
-  onPractise: () => void;
-  onFocus: (focused: boolean) => Promise<void>;
+  onOpenBlock: (block: Block) => void;
   onDeleted: () => void;
 }) {
+  const [blocks, setBlocks] = useState<Block[] | null>(null);
   const [tab, setTab] = useState<TopicSection>(initialSection ?? "conversation");
   const [lines, setLines] = useState<DialogueLine[] | null>(null);
   const [words, setWords] = useState<Word[] | null>(null);
@@ -50,7 +45,6 @@ export function TopicDetail({
   const [query, setQuery] = useState("");
   const [revealAll, setRevealAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"focus" | "delete" | null>(null);
 
   const topicId = progress.topic.id;
   const programme = progress.topic.kind === "programme";
@@ -60,17 +54,18 @@ export function TopicDetail({
     if (lines && lines.length === 0 && tab === "conversation") setTab("words");
   }, [lines, tab]);
 
-  async function act(kind: "focus" | "delete", action: () => Promise<void>) {
-    setBusy(kind);
+  async function act(action: () => Promise<void>) {
     setError(null);
     try {
       await action();
     } catch (cause) {
       setError(errorMessage(cause));
-    } finally {
-      setBusy(null);
     }
   }
+
+  useEffect(() => {
+    api.blocksForTopic(topicId).then(setBlocks).catch((cause) => setError(errorMessage(cause)));
+  }, [topicId]);
 
   useEffect(() => {
     setError(null);
@@ -102,26 +97,19 @@ export function TopicDetail({
     <Screen title={progress.topic.titlePl} subtitle={progress.topic.title} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
 
-      <Stack gap={3}>
-        <Button variant="primary" size="lg" block icon={<PlayerIcon.play size={18} />} onClick={onPractise}>
-          Practise now
-        </Button>
-        <List>
-          <SettingRow
-            label="Use for my daily check-in"
-            description="Until you have met all its words"
-            control={
-              <Switch
-                label="Use for my daily check-in"
-                checked={isFocus}
-                disabled={busy === "focus"}
-                onChange={(checked) => act("focus", () => onFocus(checked))}
-              />
-            }
-          />
-        </List>
-      </Stack>
+      <Section title={blocks ? `${blocks.length} blocks` : "Blocks"}>
+        {blocks ? (
+          <List>
+            {blocks.map((block) => (
+              <BlockRow key={block.id} block={block} today={today} onOpen={onOpenBlock} />
+            ))}
+          </List>
+        ) : (
+          <Spinner />
+        )}
+      </Section>
 
+      <Section title="Browse">
       <Stack gap={4}>
         <Segmented
           value={tab}
@@ -201,6 +189,8 @@ export function TopicDetail({
         ) : null}
       </Stack>
 
+      </Section>
+
       {programme ? (
         <Section title="Manage">
           <ConfirmButton
@@ -209,7 +199,7 @@ export function TopicDetail({
             question="Delete this programme, its words and your progress on them?"
             block
             onConfirm={() =>
-              act("delete", async () => {
+              act(async () => {
                 await api.programmeDelete(topicId);
                 onDeleted();
               })

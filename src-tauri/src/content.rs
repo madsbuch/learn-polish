@@ -34,6 +34,17 @@ pub const TOPICS: &[TopicFiles] = &[
     topic!("leisure", "10-leisure"),
 ];
 
+/// The built-in study lessons, in the order they are offered.
+pub const LESSONS: &[&str] = &[
+    include_str!("../content/lessons/01-byc.md"),
+    include_str!("../content/lessons/02-miec.md"),
+    include_str!("../content/lessons/07-ty-pan.md"),
+    include_str!("../content/lessons/03-czasowniki-ac.md"),
+    include_str!("../content/lessons/05-rodzaj.md"),
+    include_str!("../content/lessons/04-czasowniki-e-isz.md"),
+    include_str!("../content/lessons/06-przypadki.md"),
+];
+
 #[derive(Debug, Deserialize)]
 pub struct Conversation {
     pub slug: String,

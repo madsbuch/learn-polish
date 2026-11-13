@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 
+import { BlockRow } from "../components/BlockRow";
 import { Logo, SearchIcon } from "../components/icons";
 import { TopicList } from "../components/TopicList";
 import {
@@ -17,7 +18,8 @@ import {
   Stack,
   Text,
 } from "../design";
-import type { SessionPlan, Stats, TopicProgress } from "../lib/types";
+import { minutes } from "../lib/blocks";
+import type { Block, BlockOverview, Stats, TopicProgress } from "../lib/types";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -26,48 +28,39 @@ function greeting(): string {
   return "Dobry wieczór";
 }
 
+/** Rough minutes for a list of blocks, for the summary line. */
+function estimate(blocks: Block[]): number {
+  return blocks.reduce((sum, b) => sum + (b.complexity === "low" ? 2 : b.complexity === "medium" ? 7 : 20), 0);
+}
+
 /**
- * Everything to practise in one place: today's check-in on top, then your
- * programmes and the course. Progress and the word search open from here.
+ * Everything to practise: what is due for a check-in, what to start next,
+ * the study lessons, and the topics and programmes they come from.
  */
 export function Exercises({
-  plan,
+  overview,
   stats,
   topics,
-  focusTopicId,
-  onStart,
+  onOpenBlock,
   onOpenTopic,
   onOpenTutor,
   onOpenProgress,
   onOpenSearch,
-  onBackToCourse,
 }: {
-  plan: SessionPlan;
+  overview: BlockOverview;
   stats: Stats;
   topics: TopicProgress[];
-  focusTopicId: number | null;
-  onStart: () => void;
+  onOpenBlock: (block: Block) => void;
   onOpenTopic: (progress: TopicProgress) => void;
   onOpenTutor: () => void;
   onOpenProgress: () => void;
   onOpenSearch: () => void;
-  /** Ends the daily focus on a programme. */
-  onBackToCourse: () => void;
 }) {
   const course = topics.filter((entry) => entry.topic.kind === "course");
   const programmes = topics.filter((entry) => entry.topic.kind === "programme");
-  const programme = plan.topic.kind === "programme";
   const goalPct = Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
-  const items = plan.newWords + plan.reviewWords + plan.newSentences + plan.reviewSentences;
-  const minutes = Math.max(3, Math.round(items * 0.4));
-  const contents = [
-    plan.dialogue.length > 0 ? "a conversation" : null,
-    plan.newWords > 0 ? `${plan.newWords} new words` : null,
-    plan.reviewWords > 0 ? `${plan.reviewWords} to review` : null,
-    plan.newSentences + plan.reviewSentences > 0
-      ? `${plan.newSentences + plan.reviewSentences} sentences`
-      : null,
-  ].filter(Boolean);
+  const upNext = overview.due[0] ?? overview.next[0] ?? null;
+  const lessonsToStart = overview.lessons.filter((lesson) => lesson.dueDay === null);
 
   return (
     <Screen
@@ -101,49 +94,77 @@ export function Exercises({
               </div>
             </div>
             <div className="grow">
-              <Text variant="eyebrow">
-                {programme ? "Your programme" : `Topic ${plan.topic.ord} of ${course.length}`}
-              </Text>
+              <Text variant="eyebrow">Today</Text>
               <Text variant="title" as="h2">
-                {plan.topic.titlePl}
+                {overview.due.length > 0
+                  ? `${overview.due.length} check-in${overview.due.length === 1 ? "" : "s"} due`
+                  : "All caught up"}
               </Text>
               <Text variant="small" tone="dim" as="div">
-                {plan.topic.title}
+                {overview.due.length > 0
+                  ? `About ${estimate(overview.due)} min`
+                  : overview.doneToday > 0
+                    ? `${overview.doneToday} block${overview.doneToday === 1 ? "" : "s"} done today`
+                    : "Start something new below"}
               </Text>
             </div>
           </Inline>
-          {plan.topic.summary ? (
-            <Text variant="small" tone="dim" as="p" clamp={2}>
-              {plan.topic.summary}
-            </Text>
-          ) : null}
-          <Stack gap={2}>
-            <Button variant="inverse" size="lg" block onClick={onStart}>
-              {stats.completedToday ? "Practise again" : "Start today's check-in"}
-            </Button>
-            <Text variant="caption" tone="dim" align="center" as="div">
-              {stats.completedToday
-                ? "✓ Done for today — your streak is safe"
-                : `About ${minutes} min · ${contents.join(" · ")}`}
-            </Text>
-          </Stack>
-          {programme ? (
-            <Button variant="plain" size="sm" onClick={onBackToCourse}>
-              Back to the course
-            </Button>
+          {upNext ? (
+            <Stack gap={2}>
+              <Button variant="inverse" size="lg" block onClick={() => onOpenBlock(upNext)}>
+                {overview.due.length > 0 ? "Start the first check-in" : "Start something new"}
+              </Button>
+              <Text variant="caption" tone="dim" align="center" as="div">
+                {upNext.title}
+                {upNext.topicTitle ? ` · ${upNext.topicTitle}` : ""} · {minutes(upNext.complexity)}
+              </Text>
+            </Stack>
           ) : null}
         </Stack>
       </Hero>
+
+      {overview.due.length > 0 ? (
+        <Section title="Due now">
+          <List>
+            {overview.due.map((block) => (
+              <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
+            ))}
+          </List>
+        </Section>
+      ) : null}
+
+      {overview.next.length > 0 ? (
+        <Section title="Start next">
+          <List>
+            {overview.next.map((block) => (
+              <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
+            ))}
+          </List>
+        </Section>
+      ) : null}
+
+      <Section title="Study">
+        <List>
+          {(lessonsToStart.length > 0 ? lessonsToStart : overview.lessons).slice(0, 4).map((block) => (
+            <BlockRow key={block.id} block={block} today={overview.today} onOpen={onOpenBlock} />
+          ))}
+          <ListItem
+            leading={<Avatar>✨</Avatar>}
+            title="Ask the tutor for a lesson"
+            subtitle="Any conjugation, grammar point or bit of culture"
+            onClick={onOpenTutor}
+          />
+        </List>
+      </Section>
 
       <List>
         <ListItem
           leading={<Avatar>📈</Avatar>}
           title="Your progress"
-          subtitle={`${stats.wordsSeen} words · ${stats.dueToday} due`}
+          subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
           trailing={
             <Inline gap={1}>
               <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
-              <Badge tone="gold">Lv {stats.level}</Badge>
             </Inline>
           }
           chevron
@@ -163,17 +184,16 @@ export function Exercises({
                 </Button>
               }
             >
-              Ask the tutor for a programme on anything — “colours”, “numbers”, “at the
-              airport”.
+              Ask the tutor for practice on anything — “colours”, “numbers”, “at the airport”.
             </EmptyState>
           </List>
         ) : (
-          <TopicList entries={programmes} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
+          <TopicList entries={programmes} onOpen={onOpenTopic} />
         )}
       </Section>
 
       <Section title="Course">
-        <TopicList entries={course} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
+        <TopicList entries={course} onOpen={onOpenTopic} />
       </Section>
     </Screen>
   );

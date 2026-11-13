@@ -282,3 +282,22 @@ export function CheckIcon() {
     </Glyph>
   );
 }
+
+/** A drill block: quick, mechanical practice. */
+export function DrillIcon() {
+  return (
+    <Glyph>
+      <path d="M13 3L5 13.5h6L10 21l8-10.5h-6z" />
+    </Glyph>
+  );
+}
+
+/** A study block: a lesson to read, then a check-in. */
+export function StudyIcon() {
+  return (
+    <Glyph>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z" />
+      <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H14a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z" />
+    </Glyph>
+  );
+}

@@ -6,12 +6,13 @@
 //! tool runs here, in Rust, against the same SQLite database the rest of the
 //! app uses, so what the tutor makes is immediately practisable.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{Emitter, State};
 
 use crate::ai::{self, Wire};
+use crate::blocks;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::{ChatMessage, Conversation, TutorAction, TutorStatus};
@@ -42,35 +43,50 @@ How to talk:
   something about the app.
 - Be brief and friendly. Markdown is rendered (bold, lists, short headings).
 
-What the app does:
-- A daily check-in: read a short dialogue, meet new words, review due words (spaced repetition), \
-  build sentences, fill gaps in the dialogue. By default it walks through ten built-in course \
-  topics in order.
-- A session mixes these formats on its own: reading the dialogue (when there is one), new-word \
-  cards, multiple choice both ways, typing the Polish, building a sentence from shuffled words, \
-  memory cards (turn cards over to pair each Polish word with its meaning), fill-the-gaps \
-  (sentences with a word missing, from a word bank), and gaps in the dialogue. The learner \
-  cannot pick formats per programme yet; if they ask for one (e.g. only memory cards), say so \
-  plainly, and point out that every session of a programme includes it. A programme made \
-  without a dialogue simply skips the dialogue parts.
-- Programmes: practice topics made through you, on any theme (colours, numbers, verbs of motion, \
-  words for a trip…). A programme is practised exactly like a course topic — the learner can \
-  start it from the button under your reply or from the Exercises tab, and it can be made the daily \
-  focus so the check-in uses it until all its words have been met.
+What the app does — learning happens in blocks:
+- A block is small and has one job. Two kinds:
+  - drill: mechanical practice on a few words or sentences. Formats: words (new-word cards, \
+    multiple choice, typing as they get known, then a memory round), memory (memory cards \
+    only), typing (type every word from memory), sentences (build them from shuffled words, \
+    then fill gaps), gaps (fill-the-gaps only), dialogue (read a dialogue, fill its lines).
+  - study: a short lesson in markdown — a conjugation, a grammar point, culture — with \
+    objectives. Its check-in is an interview by an examiner agent that asks questions and \
+    decides pass, partial or fail.
+- Complexity comes from how hard the subject is, not from how much is in it:
+  - low (1–2 min): one small idea. 6–8 words; one verb's present tense; one politeness rule.
+  - medium (5–10 min): a pattern with variations. A conjugation group; gender and adjective \
+    agreement; numbers 1–100; a dialogue at the bakery.
+  - high (20+ min): a system with interacting parts. Using the cases; verb aspect \
+    (perfective/imperfective); the past tense with gender; verbs of motion.
+  Never make a block high by stuffing it with items — split it instead.
+- Every block has a check-in period (days). Passing pushes the next check-in further out; \
+  partial repeats the period; failing brings it back tomorrow. Defaults: drills 2/4/7 days, \
+  study blocks 5/7/10 days for low/medium/high.
+- The course has ten topics, already cut into drills (dialogue, words in eights, sentences in \
+  fives) plus a few built-in lessons (być, mieć, verb patterns, gender, the cases, ty/Pan). \
+  Programmes are topics you make; create_programme cuts them into drills the same way.
 
 Using tools:
-- When the learner asks for a programme, course, lesson, list or practice set on a theme, \
-  build it with create_programme right away — do not ask for permission first, and never say \
-  you cannot do it. Unless they ask for a different size, include 15–30 words, 8–12 short \
-  sentences that use those words, and a natural dialogue of 8–12 lines in which those words occur.
+- When the learner asks for practice on a theme (colours, numbers, a trip…), build a \
+  programme with create_programme right away — don't ask first, never say you can't. Unless \
+  they ask otherwise: 15–30 words, 8–12 short sentences using them, and a natural dialogue of \
+  8–12 lines. For one specific kind of practice (e.g. \"just memory cards\"), use \
+  create_drill_block with that format.
+- When they want to understand something (a conjugation, a case, a grammar point, a cultural \
+  habit), write a study block with create_study_block: a clear, correct lesson with a small \
+  table or examples, 2–5 concrete objectives (what they should be able to *do*), and an \
+  honest complexity. Break big subjects into several blocks of rising complexity rather than \
+  one huge one.
 - Words: the Polish dictionary form (nouns in the nominative singular, verbs in the infinitive, \
   adjectives in the masculine form), lowercase unless a proper noun; a short English gloss \
   (alternatives separated by commas); a part-of-speech code. Sentences: short (max ~8 words), \
   natural, beginner-friendly Polish. Everything must be correct Polish with correct diacritics.
-- Only set the programme as the daily focus if the learner asks for that (e.g. \"make it my \
-  daily practice\"). Otherwise the reply already offers buttons to practise it or focus on it.
+- The reply under each block you make already offers to open it; use suggest_block to point \
+  at an existing one, and schedule_block to make one due now or change its period.
+- Use list_blocks and get_block to see what exists and how check-ins went (including what the \
+  examiner said to review) before suggesting what to do.
 - Call get_progress before commenting on how the learner is doing; never invent numbers.
-- delete_programme and delete_songs are permanent: only call them after the learner has \
+- delete_programme, delete_block and delete_songs are permanent: only call them after the learner has \
   clearly confirmed (name what will be deleted and ask first).
 - Songs: the Music tab has learning songs — English lines answered by Polish ones, and a \
   Polish chorus sentence that gets stuck in your head. When the learner asks for a song, call \
@@ -78,24 +94,36 @@ Using tools:
   said or it fits). The app's songwriter writes the lyrics and Suno sings two takes in 2–4 \
   minutes; it costs the learner kie.ai credits, so make one song per request unless they ask \
   for more. Use list_songs to see what exists, e.g. before suggesting what to delete.
-- The built-in course topics cannot be edited; make a programme instead.
+- The built-in course topics, their drills and the built-in lessons cannot be edited; make \
+  new blocks or programmes instead.
 - After using a tool, say in one or two sentences what you did. Don't paste the whole word list \
   back unless asked.";
 
 fn system_prompt(conn: &Connection) -> Result<String> {
-    let today = session::topic_for_day(conn)?;
-    let focus = session::focus_topic_id(conn);
     let stats = stats::collect(conn)?;
+    let overview = blocks::overview(conn)?;
+    let line = |b: &blocks::Block| {
+        format!(
+            "  - id {}: {} ({} {}, {}){}",
+            b.id,
+            b.title,
+            b.complexity,
+            b.kind,
+            b.topic_title.clone().unwrap_or_else(|| "lesson".into()),
+            b.last_result.as_ref().map(|r| format!(", last check-in: {r}")).unwrap_or_default()
+        )
+    };
+    let due: Vec<String> = overview.due.iter().take(15).map(line).collect();
 
     let mut stmt = conn.prepare(
         "SELECT id, title_en, title_pl,
-                (SELECT COUNT(*) FROM words w WHERE w.topic_id = t.id)
+                (SELECT COUNT(*) FROM blocks b WHERE b.topic_id = t.id)
          FROM topics t WHERE kind = 'programme' ORDER BY created_at DESC LIMIT 40",
     )?;
     let programmes: Vec<String> = stmt
         .query_map([], |r| {
             Ok(format!(
-                "  - id {}: {} ({}), {} words",
+                "  - id {}: {} ({}), {} blocks",
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
@@ -103,33 +131,46 @@ fn system_prompt(conn: &Connection) -> Result<String> {
             ))
         })?
         .collect::<rusqlite::Result<_>>()?;
+    drop(stmt);
 
+    let mut stmt = conn.prepare(
+        "SELECT id, title, complexity, reps FROM blocks WHERE kind = 'study' ORDER BY topic_id IS NOT NULL, ord",
+    )?;
+    let lessons: Vec<String> = stmt
+        .query_map([], |r| {
+            Ok(format!(
+                "  - id {}: {} ({}{})",
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                if r.get::<_, i64>(3)? > 0 { ", studied" } else { "" }
+            ))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+
+    let none = || "  (none)".to_string();
     Ok(format!(
         "{RULES}\n\nThe learner right now:\n\
-         - Today's check-in: {today_title} (topic id {today_id}){focus_note}{done}\n\
-         - Level {level}, {xp} XP, streak {streak} days, {seen} of {total} words met, {due} items due.\n\
-         - Songs: {song_count} in the Music tab{song_note}.\n\
-         - Their programmes:\n{programmes}",
-        today_title = today.title,
-        today_id = today.id,
-        focus_note = if focus.is_some() { ", chosen as the daily focus" } else { ", from the course" },
-        done = if stats.completed_today { "; already done today" } else { "" },
+         - Level {level}, {xp} XP, streak {streak} days{done}, {seen} of {total} words met.\n\
+         - Due now ({due_count}):\n{due}\n\
+         - Study blocks:\n{lessons}\n\
+         - Their programmes:\n{programmes}\n\
+         - Songs: {song_count} in the Music tab{song_note}.",
         level = stats.level,
         xp = stats.total_xp,
         streak = stats.current_streak,
+        done = if stats.completed_today { " (practised today)" } else { "" },
         seen = stats.words_seen,
         total = stats.words_total,
-        due = stats.due_today,
+        due_count = overview.due.len(),
+        due = if due.is_empty() { none() } else { due.join("\n") },
+        lessons = if lessons.is_empty() { none() } else { lessons.join("\n") },
+        programmes = if programmes.is_empty() { none() } else { programmes.join("\n") },
         song_count = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| r.get::<_, i64>(0))?,
         song_note = if songs::kie_key(conn).is_ok() {
             ""
         } else {
             "; making songs needs a kie.ai key in Settings, which is missing"
-        },
-        programmes = if programmes.is_empty() {
-            "  (none yet)".to_string()
-        } else {
-            programmes.join("\n")
         },
     ))
 }
@@ -210,8 +251,7 @@ pub fn tool_definitions() -> Value {
                     "summary": { "type": "string", "description": "One English sentence on what the programme covers" },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
-                    "dialogue": dialogue_schema(),
-                    "set_as_daily_focus": { "type": "boolean", "description": "Only true if the learner asked for it to become their daily practice" }
+                    "dialogue": dialogue_schema()
                 },
                 "required": ["title", "title_pl", "summary", "words", "sentences"]
             }),
@@ -284,23 +324,116 @@ pub fn tool_definitions() -> Value {
             none,
         ),
         function(
-            "set_daily_focus",
-            "Make the daily check-in use a topic or programme until all its words have been met, or pass null to go back to the course rotation.",
+            "create_study_block",
+            "Write a study block: a short lesson (conjugation, grammar, culture) with objectives. \
+             The examiner interviews the learner on the objectives at each check-in.",
             json!({
                 "type": "object",
-                "properties": { "topic_id": { "type": ["integer", "null"] } },
-                "required": ["topic_id"]
+                "properties": {
+                    "title": { "type": "string", "description": "Short, e.g. \"Iść — to go (on foot)\"" },
+                    "summary": { "type": "string", "description": "One sentence: what the block covers" },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "By how hard the subject is: low ≈ 1–2 min, medium ≈ 5–10 min, high ≈ 20+ min" },
+                    "lesson": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only." },
+                    "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–5 things the learner should be able to do afterwards" },
+                    "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
+                    "programme_id": { "type": "integer", "description": "File it under a programme; leave out to keep it with the lessons" }
+                },
+                "required": ["title", "summary", "complexity", "lesson", "objectives"]
+            }),
+        ),
+        function(
+            "create_drill_block",
+            "Make one drill block in a chosen format over words and/or sentences you give. \
+             The items are added to a programme (a new one named after the block if none is given).",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "format": { "type": "string", "enum": ["words", "memory", "typing", "sentences", "gaps"], "description": "words: cards + multiple choice + memory round; memory: memory cards only; typing: type each word; sentences: build them + gaps; gaps: fill-the-gaps only" },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
+                    "words": word_schema(),
+                    "sentences": sentence_schema(),
+                    "period_days": { "type": "integer" },
+                    "programme_id": { "type": "integer" }
+                },
+                "required": ["title", "format", "complexity"]
+            }),
+        ),
+        function(
+            "list_blocks",
+            "List blocks: those due now, a topic's or programme's blocks, or the study blocks.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "which": { "type": "string", "enum": ["due", "topic", "study"] },
+                    "topic_id": { "type": "integer", "description": "With which = topic" }
+                },
+                "required": ["which"]
+            }),
+        ),
+        function(
+            "get_block",
+            "One block in full: lesson and objectives or its words and sentences, its schedule, and the last check-in's verdict.",
+            json!({
+                "type": "object",
+                "properties": { "block_id": { "type": "integer" } },
+                "required": ["block_id"]
+            }),
+        ),
+        function(
+            "update_block",
+            "Change a block you made (title, summary, complexity, lesson, objectives), or any block's check-in period.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "block_id": { "type": "integer" },
+                    "title": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
+                    "lesson": { "type": "string" },
+                    "objectives": { "type": "array", "items": { "type": "string" } },
+                    "period_days": { "type": "integer" }
+                },
+                "required": ["block_id"]
+            }),
+        ),
+        function(
+            "delete_block",
+            "Permanently delete a block you made. Only after the learner confirmed.",
+            json!({
+                "type": "object",
+                "properties": { "block_id": { "type": "integer" } },
+                "required": ["block_id"]
+            }),
+        ),
+        function(
+            "schedule_block",
+            "Make a block due now, so it shows at the top of the learner's list.",
+            json!({
+                "type": "object",
+                "properties": { "block_id": { "type": "integer" } },
+                "required": ["block_id"]
+            }),
+        ),
+        function(
+            "suggest_block",
+            "Show the learner a button that opens a block right now.",
+            json!({
+                "type": "object",
+                "properties": { "block_id": { "type": "integer" } },
+                "required": ["block_id"]
             }),
         ),
         function(
             "update_practice_settings",
-            "Change the daily XP goal (10–1000) or how many new words a session introduces (3–40).",
+            "Change the daily XP goal (10–1000).",
             json!({
                 "type": "object",
                 "properties": {
-                    "daily_goal": { "type": "integer" },
-                    "new_words_per_day": { "type": "integer" }
-                }
+                    "daily_goal": { "type": "integer" }
+                },
+                "required": ["daily_goal"]
             }),
         ),
         function(
@@ -338,15 +471,6 @@ pub fn tool_definitions() -> Value {
                 "required": ["song_ids"]
             }),
         ),
-        function(
-            "suggest_practice",
-            "Show the learner a button that starts a practice session for a topic or programme right now.",
-            json!({
-                "type": "object",
-                "properties": { "topic_id": { "type": "integer" } },
-                "required": ["topic_id"]
-            }),
-        ),
     ])
 }
 
@@ -364,13 +488,25 @@ impl Outcome {
     fn acted(result: Value, kind: &str, label: String, topic_id: Option<i64>) -> Self {
         Outcome {
             result,
-            action: Some(TutorAction { kind: kind.into(), label, topic_id, song_id: None }),
+            action: Some(TutorAction { kind: kind.into(), label, topic_id, song_id: None, block_id: None }),
+        }
+    }
+    fn block(result: Value, kind: &str, label: String, block_id: i64) -> Self {
+        Outcome {
+            result,
+            action: Some(TutorAction {
+                kind: kind.into(),
+                label,
+                topic_id: None,
+                song_id: None,
+                block_id: Some(block_id),
+            }),
         }
     }
     fn song(result: Value, kind: &str, label: String, song_id: Option<i64>) -> Self {
         Outcome {
             result,
-            action: Some(TutorAction { kind: kind.into(), label, topic_id: None, song_id }),
+            action: Some(TutorAction { kind: kind.into(), label, topic_id: None, song_id, block_id: None }),
         }
     }
 }
@@ -384,7 +520,11 @@ fn status_label(name: &str) -> &'static str {
         "list_topics" | "get_topic" => "Looking at your topics…",
         "search_vocabulary" => "Searching the vocabulary…",
         "get_progress" => "Checking your progress…",
-        "set_daily_focus" => "Changing your daily check-in…",
+        "create_study_block" => "Writing the lesson…",
+        "create_drill_block" => "Making the drill…",
+        "list_blocks" | "get_block" => "Looking at your blocks…",
+        "update_block" | "schedule_block" => "Updating the block…",
+        "delete_block" => "Deleting the block…",
         "update_practice_settings" => "Updating your settings…",
         "make_song" => "Writing the song…",
         "list_songs" => "Looking at your songs…",
@@ -402,8 +542,6 @@ struct TopicArg {
 struct CreateArgs {
     #[serde(flatten)]
     programme: NewProgramme,
-    #[serde(default)]
-    set_as_daily_focus: bool,
 }
 
 #[derive(Deserialize)]
@@ -433,18 +571,82 @@ struct EditArgs {
 }
 
 #[derive(Deserialize)]
-struct FocusArgs {
+struct SettingsArgs {
+    #[serde(default)]
+    daily_goal: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct BlockArg {
+    block_id: i64,
+}
+
+#[derive(Deserialize)]
+struct StudyArgs {
+    #[serde(flatten)]
+    study: blocks::NewStudy,
+    #[serde(default)]
+    programme_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct DrillArgs {
+    title: String,
+    #[serde(default)]
+    summary: String,
+    format: String,
+    complexity: String,
+    #[serde(default)]
+    words: Vec<NewWord>,
+    #[serde(default)]
+    sentences: Vec<NewSentence>,
+    #[serde(default)]
+    period_days: Option<i64>,
+    #[serde(default)]
+    programme_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct ListBlocksArgs {
+    which: String,
     #[serde(default)]
     topic_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
-struct SettingsArgs {
-    #[serde(default)]
-    daily_goal: Option<i64>,
-    #[serde(default)]
-    new_words_per_day: Option<i64>,
+struct UpdateBlockArgs {
+    block_id: i64,
+    #[serde(flatten)]
+    changes: blocks::BlockChanges,
 }
+
+fn complexity_label(complexity: &str) -> &'static str {
+    match complexity {
+        "low" => "a low (1–2 min)",
+        "medium" => "a medium (5–10 min)",
+        _ => "a deep (20+ min)",
+    }
+}
+
+fn block_json(block: &blocks::Block) -> Value {
+    json!({
+        "block_id": block.id,
+        "kind": block.kind,
+        "format": block.format,
+        "title": block.title,
+        "summary": block.summary,
+        "complexity": block.complexity,
+        "topic": block.topic_title,
+        "topic_id": block.topic_id,
+        "items": block.items,
+        "period_days": block.period_days,
+        "times_done": block.reps,
+        "last_result": block.last_result,
+        "due_in_days": block.due_day.map(|due| due - block.last_day.unwrap_or(due)),
+        "made_by": block.origin,
+    })
+}
+
 
 #[derive(Deserialize)]
 struct SongArgs {
@@ -497,12 +699,10 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
             if created.dialogue_lines > 0 {
                 label.push_str(", a dialogue");
             }
-            if args.set_as_daily_focus {
-                programmes::set_focus(conn, Some(created.topic_id))?;
-                label.push_str(" · now your daily focus");
-            }
+            let blocks_made = blocks::for_topic(conn, created.topic_id)?.len();
+            label.push_str(&format!(" · {blocks_made} drill blocks"));
             Ok(Outcome::acted(
-                json!({ "created": created, "daily_focus": args.set_as_daily_focus }),
+                json!({ "created": created, "drill_blocks": blocks_made }),
                 "programmeCreated",
                 label,
                 Some(created.topic_id),
@@ -560,22 +760,132 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
             Ok(Outcome::data(search(conn, &args.query)?))
         }
         "get_progress" => Ok(Outcome::data(progress(conn)?)),
-        "set_daily_focus" => {
-            let args: FocusArgs = parse(arguments)?;
-            match programmes::set_focus(conn, args.topic_id)? {
-                Some(title) => Ok(Outcome::acted(
-                    json!({ "daily_focus": title }),
-                    "focusSet",
-                    format!("Daily check-in now focuses on “{title}”"),
-                    args.topic_id,
-                )),
-                None => Ok(Outcome::acted(
-                    json!({ "daily_focus": null }),
-                    "focusCleared",
-                    "Daily check-in is back on the course".into(),
-                    None,
-                )),
+        "create_study_block" => {
+            let mut args: StudyArgs = parse(arguments)?;
+            if args.programme_id.is_some() {
+                args.study.topic_id = args.programme_id;
             }
+            let block = blocks::create_study(conn, args.study, "tutor")?;
+            Ok(Outcome::block(
+                json!({ "created": block_json(&block) }),
+                "blockCreated",
+                format!("Wrote “{}” — {} study block", block.title, complexity_label(&block.complexity)),
+                block.id,
+            ))
+        }
+        "create_drill_block" => {
+            let args: DrillArgs = parse(arguments)?;
+            if args.words.is_empty() && args.sentences.is_empty() {
+                return Err(Error::msg("A drill needs words or sentences."));
+            }
+            // The items go straight into this one block: the programme does not
+            // also cut them into its own word and sentence drills.
+            let topic_id = match args.programme_id {
+                Some(id) => id,
+                None => programmes::create_empty(conn, &args.title, &args.summary)?,
+            };
+            programmes::add_items(conn, topic_id, &args.words, &args.sentences)?;
+            let pick = |table: &str, texts: Vec<String>| -> Result<Vec<i64>> {
+                let mut ids = Vec::new();
+                for text in texts {
+                    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if let Some(id) = conn
+                        .query_row(
+                            &format!("SELECT id FROM {table} WHERE topic_id = ?1 AND pl = ?2"),
+                            rusqlite::params![topic_id, text],
+                            |r| r.get::<_, i64>(0),
+                        )
+                        .optional()?
+                    {
+                        ids.push(id);
+                    }
+                }
+                Ok(ids)
+            };
+            let word_ids = pick("words", args.words.iter().map(|w| w.pl.clone()).collect())?;
+            let sentence_ids = pick("sentences", args.sentences.iter().map(|s| s.pl.clone()).collect())?;
+            let block = blocks::create_drill(
+                conn,
+                topic_id,
+                &args.title,
+                &args.summary,
+                &args.format,
+                &args.complexity,
+                &word_ids,
+                &sentence_ids,
+                args.period_days,
+                "tutor",
+                None,
+            )?;
+            Ok(Outcome::block(
+                json!({ "created": block_json(&block), "programme_id": topic_id }),
+                "blockCreated",
+                format!("Made “{}” — {} drill, {} items", block.title, complexity_label(&block.complexity), block.items),
+                block.id,
+            ))
+        }
+        "list_blocks" => {
+            let args: ListBlocksArgs = parse(arguments)?;
+            let list = match args.which.as_str() {
+                "due" => blocks::overview(conn)?.due,
+                "topic" => blocks::for_topic(
+                    conn,
+                    args.topic_id.ok_or_else(|| Error::msg("Give a topic_id."))?,
+                )?,
+                _ => {
+                    let mut stmt = conn.prepare("SELECT id FROM blocks WHERE kind = 'study' ORDER BY ord")?;
+                    let ids: Vec<i64> = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+                    ids.into_iter().map(|id| blocks::load(conn, id)).collect::<Result<_>>()?
+                }
+            };
+            Ok(Outcome::data(Value::Array(list.iter().map(block_json).collect())))
+        }
+        "get_block" => {
+            let args: BlockArg = parse(arguments)?;
+            let detail = blocks::detail(conn, args.block_id)?;
+            Ok(Outcome::data(json!({
+                "block": block_json(&detail.block),
+                "lesson": detail.lesson,
+                "objectives": detail.objectives,
+                "words": detail.words.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
+                "sentences": detail.sentences.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
+                "last_checkin_feedback": detail.last_feedback,
+            })))
+        }
+        "update_block" => {
+            let args: UpdateBlockArgs = parse(arguments)?;
+            let block = blocks::update(conn, args.block_id, args.changes)?;
+            Ok(Outcome::block(
+                json!({ "updated": block_json(&block) }),
+                "blockUpdated",
+                format!("Updated “{}”", block.title),
+                block.id,
+            ))
+        }
+        "delete_block" => {
+            let args: BlockArg = parse(arguments)?;
+            let title = blocks::delete(conn, args.block_id)?;
+            Ok(Outcome::acted(json!({ "deleted": title }), "blockDeleted", format!("Deleted “{title}”"), None))
+        }
+        "schedule_block" => {
+            let args: BlockArg = parse(arguments)?;
+            let block = blocks::due_now(conn, args.block_id)?;
+            Ok(Outcome::block(
+                json!({ "due_now": block.title }),
+                "blockScheduled",
+                format!("“{}” is due now", block.title),
+                block.id,
+            ))
+        }
+        "suggest_block" => {
+            let args: BlockArg = parse(arguments)?;
+            let block = blocks::load(conn, args.block_id)?;
+            Ok(Outcome::block(
+                json!({ "shown_button_for": block.title }),
+                "blockSuggested",
+                format!("{} · {}", block.title, complexity_label(&block.complexity)),
+                block.id,
+            ))
         }
         "update_practice_settings" => {
             let args: SettingsArgs = parse(arguments)?;
@@ -584,11 +894,6 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                 let goal = goal.clamp(10, 1000);
                 db::set_setting(conn, "daily_goal", &goal.to_string())?;
                 changed.push(format!("daily goal {goal} XP"));
-            }
-            if let Some(count) = args.new_words_per_day {
-                let count = count.clamp(3, 40);
-                db::set_setting(conn, "new_words_per_day", &count.to_string())?;
-                changed.push(format!("{count} new words per session"));
             }
             if changed.is_empty() {
                 return Err(Error::msg("Nothing to change."));
@@ -636,23 +941,11 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                 None,
             ))
         }
-        "suggest_practice" => {
-            let args: TopicArg = parse(arguments)?;
-            let topic = session::load_topic(conn, args.topic_id)?;
-            Ok(Outcome::acted(
-                json!({ "shown_button_for": topic.title }),
-                "practiceSuggested",
-                format!("Practise “{}”", topic.title),
-                Some(topic.id),
-            ))
-        }
         other => Err(Error::msg(format!("There is no tool called '{other}'."))),
     }
 }
 
 fn list_topics(conn: &Connection) -> Result<Value> {
-    let focus = session::focus_topic_id(conn);
-    let today = session::topic_for_day(conn)?.id;
     let topics = stats::topic_progress(conn)?
         .into_iter()
         .map(|p| {
@@ -665,8 +958,7 @@ fn list_topics(conn: &Connection) -> Result<Value> {
                 "words_met": p.seen_words,
                 "words_mastered": p.mastered_words,
                 "sentences": p.total_sentences,
-                "is_today": p.topic.id == today,
-                "is_daily_focus": Some(p.topic.id) == focus,
+                "blocks": blocks::for_topic(conn, p.topic.id).map(|b| b.len()).unwrap_or(0),
             })
         })
         .collect();
@@ -797,6 +1089,8 @@ fn progress(conn: &Connection) -> Result<Value> {
         "new_words_per_session": db::get_setting_i64(conn, "new_words_per_day", 12),
         "recent_days": recent,
         "hardest_words": hardest,
+        "blocks_due_now": s.due_today,
+        "recent_checkins": recent_checkins(conn)?,
         "achievements_unlocked": s.achievements.iter().filter(|a| a.unlocked).map(|a| a.title.clone()).collect::<Vec<_>>(),
     }))
 }
@@ -833,6 +1127,26 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
     }
     .await;
     result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
+/// The last study check-ins, with the examiner's notes, so the tutor can
+/// follow up on what the learner found hard.
+fn recent_checkins(conn: &Connection) -> Result<Value> {
+    let mut stmt = conn.prepare(
+        "SELECT b.id, b.title, c.result, c.feedback FROM checkins c JOIN blocks b ON b.id = c.block_id
+         WHERE c.finished_at IS NOT NULL ORDER BY c.finished_at DESC LIMIT 8",
+    )?;
+    let rows: Vec<Value> = stmt
+        .query_map([], |r| {
+            Ok(json!({
+                "block_id": r.get::<_, i64>(0)?,
+                "block": r.get::<_, String>(1)?,
+                "result": r.get::<_, Option<String>>(2)?,
+                "examiner_said": r.get::<_, Option<String>>(3)?,
+            }))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(Value::Array(rows))
 }
 
 // ---------------------------------------------------------------------------

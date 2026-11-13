@@ -42,13 +42,11 @@ function Measure({
 export function Progress({
   stats,
   topics,
-  focusTopicId,
   onOpenTopic,
   onBack,
 }: {
   stats: Stats;
   topics: TopicProgress[];
-  focusTopicId: number | null;
   onOpenTopic: (progress: TopicProgress) => void;
   onBack: () => void;
 }) {
@@ -78,7 +76,7 @@ export function Progress({
       </Section>
 
       <Section title="Topics">
-        <TopicList entries={topics} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
+        <TopicList entries={topics} onOpen={onOpenTopic} />
       </Section>
 
       <Section title="Achievements">

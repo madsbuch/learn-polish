@@ -1,5 +1,5 @@
-//! Builds the daily check-in: one conversation, the words that belong to it,
-//! and its sentences — mixed with whatever else is due from earlier topics.
+//! Builds the exercises of a drill block: a handful of words, sentences or a
+//! dialogue, practised in the block's format.
 
 use rand::seq::SliceRandom;
 use rusqlite::{Connection, OptionalExtension};
@@ -8,10 +8,6 @@ use crate::db;
 use crate::error::Result;
 use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Topic};
 
-const DEFAULT_NEW_WORDS: i64 = 12;
-const DEFAULT_NEW_SENTENCES: i64 = 3;
-const REVIEW_WORD_CAP: i64 = 20;
-const REVIEW_SENTENCE_CAP: i64 = 6;
 const DIALOGUE_GAPS: usize = 3;
 /// Cards in the memory game: this many Polish/English pairs.
 const MEMORY_PAIRS: usize = 6;
@@ -33,38 +29,6 @@ struct SentenceRow {
     id: i64,
     pl: String,
     meaning: String,
-}
-
-/// Where the course rotation stands: the built-in topic the daily check-in
-/// serves when no programme is in focus.
-pub fn rotation_topic_id(conn: &Connection) -> Result<i64> {
-    let count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM topics WHERE kind = 'course'", [], |r| r.get(0))?;
-    let lesson_index = db::get_setting_i64(conn, "lesson_index", 0);
-    let ord = lesson_index.rem_euclid(count.max(1)) + 1;
-    db::require_topic_id(conn, ord)
-}
-
-/// The programme the learner (or the tutor) chose to focus on, if it still
-/// exists. While set, the daily check-in is built from it instead of the
-/// course rotation.
-pub fn focus_topic_id(conn: &Connection) -> Option<i64> {
-    let id = db::get_setting_i64(conn, "focus_topic_id", 0);
-    if id <= 0 {
-        return None;
-    }
-    conn.query_row("SELECT id FROM topics WHERE id = ?1", [id], |r| r.get(0))
-        .optional()
-        .ok()
-        .flatten()
-}
-
-pub fn topic_for_day(conn: &Connection) -> Result<Topic> {
-    let id = match focus_topic_id(conn) {
-        Some(id) => id,
-        None => rotation_topic_id(conn)?,
-    };
-    load_topic(conn, id)
 }
 
 pub fn load_topic(conn: &Connection, topic_id: i64) -> Result<Topic> {
@@ -106,244 +70,206 @@ pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLi
     Ok(rows)
 }
 
-/// Today's check-in: the focused programme, or the next course topic.
-pub fn build(conn: &Connection) -> Result<SessionPlan> {
-    let topic = topic_for_day(conn)?;
-    let mut plan = build_for(conn, topic.id)?;
-    plan.daily = true;
-    Ok(plan)
+fn word_intro(w: &WordRow) -> Exercise {
+    Exercise {
+        key: format!("w{}-intro", w.id),
+        kind: "intro".into(),
+        item_kind: "word".into(),
+        item_id: w.id,
+        is_new: true,
+        prompt: w.pl.clone(),
+        hint: pretty_pos(&w.pos),
+        answer: w.meaning.clone(),
+        options: vec![],
+        tokens: vec![],
+        gaps: vec![],
+        pairs: vec![],
+        pl: w.pl.clone(),
+        meaning: w.meaning.clone(),
+    }
 }
 
-/// A practice session for any topic or programme, on demand. Due reviews from
-/// everywhere are mixed in, exactly as in the daily check-in.
-pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
-    let today = db::today(conn);
+fn typing(w: &WordRow) -> Exercise {
+    Exercise {
+        key: format!("w{}-type", w.id),
+        kind: "type".into(),
+        item_kind: "word".into(),
+        item_id: w.id,
+        is_new: false,
+        prompt: w.meaning.clone(),
+        hint: pretty_pos(&w.pos),
+        answer: w.pl.clone(),
+        options: vec![],
+        tokens: vec![],
+        gaps: vec![],
+        pairs: vec![],
+        pl: w.pl.clone(),
+        meaning: w.meaning.clone(),
+    }
+}
+
+fn sentence_intro(s: &SentenceRow) -> Exercise {
+    Exercise {
+        key: format!("s{}-intro", s.id),
+        kind: "sentenceIntro".into(),
+        item_kind: "sentence".into(),
+        item_id: s.id,
+        is_new: true,
+        prompt: s.pl.clone(),
+        hint: String::new(),
+        answer: s.meaning.clone(),
+        options: vec![],
+        tokens: vec![],
+        gaps: vec![],
+        pairs: vec![],
+        pl: s.pl.clone(),
+        meaning: s.meaning.clone(),
+    }
+}
+
+/// The practice step for a word the learner has met: harder the better they
+/// know it — recognise it, then pick it, then type it from memory.
+fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
+    if w.reps >= TYPING_THRESHOLD {
+        typing(w)
+    } else if w.reps >= 1 {
+        produce(w, pool, rng)
+    } else {
+        recognise(w, pool, rng)
+    }
+}
+
+fn block_words(conn: &Connection, block_id: i64) -> Result<Vec<(WordRow, bool)>> {
+    let mut stmt = conn.prepare(
+        "SELECT w.id, w.pl, w.en, w.pos, COALESCE(r.reps, 0), r.item_id IS NULL
+         FROM block_items i JOIN words w ON w.id = i.item_id
+         LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
+         WHERE i.block_id = ?1 AND i.kind = 'word' ORDER BY i.ord",
+    )?;
+    let rows = stmt
+        .query_map([block_id], |r| {
+            Ok((
+                WordRow { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, pos: r.get(3)?, reps: r.get(4)? },
+                r.get::<_, bool>(5)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+fn block_sentences(conn: &Connection, block_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.pl, s.en, r.item_id IS NULL
+         FROM block_items i JOIN sentences s ON s.id = i.item_id
+         LEFT JOIN reviews r ON r.kind = 'sentence' AND r.item_id = s.id
+         WHERE i.block_id = ?1 AND i.kind = 'sentence' ORDER BY i.ord",
+    )?;
+    let rows = stmt
+        .query_map([block_id], |r| {
+            Ok((SentenceRow { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? }, r.get::<_, bool>(3)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// The exercises of one drill block. Small on purpose: a low block is a
+/// minute or two of taps, never the whole topic at once.
+pub fn build_block(conn: &Connection, block_id: i64) -> Result<SessionPlan> {
+    let block = crate::blocks::load(conn, block_id)?;
+    if block.kind != "drill" {
+        return Err(crate::error::Error::msg("Study blocks are checked by the examiner, not drilled."));
+    }
+    let topic_id = block
+        .topic_id
+        .ok_or_else(|| crate::error::Error::msg("This drill has no words to practise."))?;
     let topic = load_topic(conn, topic_id)?;
-    let meaning = "en";
-    let new_word_budget = db::get_setting_i64(conn, "new_words_per_day", DEFAULT_NEW_WORDS).max(1);
-
-    // Due reviews first — they come from any topic the learner has touched.
-    let mut stmt = conn.prepare(&format!(
-        "SELECT w.id, w.pl, w.{meaning}, w.pos, r.reps
-         FROM reviews r JOIN words w ON w.id = r.item_id
-         WHERE r.kind = 'word' AND r.due_day <= ?1
-         ORDER BY r.due_day, r.interval LIMIT ?2"
-    ))?;
-    let review_words = stmt
-        .query_map(rusqlite::params![today, REVIEW_WORD_CAP], |r| {
-            Ok(WordRow {
-                id: r.get(0)?,
-                pl: r.get(1)?,
-                meaning: r.get(2)?,
-                pos: r.get(3)?,
-                reps: r.get(4)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
-    let mut stmt = conn.prepare(&format!(
-        "SELECT w.id, w.pl, w.{meaning}, w.pos
-         FROM words w
-         WHERE w.topic_id = ?1
-           AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.kind = 'word' AND r.item_id = w.id)
-         ORDER BY w.ord LIMIT ?2"
-    ))?;
-    let new_words = stmt
-        .query_map(rusqlite::params![topic.id, new_word_budget], |r| {
-            Ok(WordRow {
-                id: r.get(0)?,
-                pl: r.get(1)?,
-                meaning: r.get(2)?,
-                pos: r.get(3)?,
-                reps: 0,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
-    let mut stmt = conn.prepare(&format!(
-        "SELECT s.id, s.pl, s.{meaning}
-         FROM reviews r JOIN sentences s ON s.id = r.item_id
-         WHERE r.kind = 'sentence' AND r.due_day <= ?1
-         ORDER BY r.due_day LIMIT ?2"
-    ))?;
-    let review_sentences = stmt
-        .query_map(rusqlite::params![today, REVIEW_SENTENCE_CAP], |r| {
-            Ok(SentenceRow { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
-    let mut stmt = conn.prepare(&format!(
-        "SELECT s.id, s.pl, s.{meaning}
-         FROM sentences s
-         WHERE s.topic_id = ?1
-           AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.kind = 'sentence' AND r.item_id = s.id)
-         ORDER BY s.ord LIMIT ?2"
-    ))?;
-    let new_sentences = stmt
-        .query_map(rusqlite::params![topic.id, DEFAULT_NEW_SENTENCES], |r| {
-            Ok(SentenceRow { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
-    // Distractors are drawn from the same topic so the choices stay plausible.
-    let pool = distractor_pool(conn, topic.id, meaning)?;
+    let today = db::today(conn);
+    let pool = distractor_pool(conn, topic_id, "en")?;
     let rng = &mut rand::rng();
 
-    let mut word_blocks: Vec<Vec<Exercise>> = Vec::new();
-
-    for w in &new_words {
-        let mut block = vec![Exercise {
-            key: format!("w{}-intro", w.id),
-            kind: "intro".into(),
-            item_kind: "word".into(),
-            item_id: w.id,
-            is_new: true,
-            prompt: w.pl.clone(),
-            hint: pretty_pos(&w.pos),
-            answer: w.meaning.clone(),
-            options: vec![],
-            tokens: vec![],
-            gaps: vec![],
-            pairs: vec![],
-            pl: w.pl.clone(),
-            meaning: w.meaning.clone(),
-        }];
-        block.push(recognise(w, &pool, rng));
-        word_blocks.push(block);
-    }
-
-    for w in &review_words {
-        let exercise = if w.reps >= TYPING_THRESHOLD {
-            Exercise {
-                key: format!("w{}-type", w.id),
-                kind: "type".into(),
-                item_kind: "word".into(),
-                item_id: w.id,
-                is_new: false,
-                prompt: w.meaning.clone(),
-                hint: pretty_pos(&w.pos),
-                answer: w.pl.clone(),
-                options: vec![],
-                tokens: vec![],
-                gaps: vec![],
-                pairs: vec![],
-                pl: w.pl.clone(),
-                meaning: w.meaning.clone(),
-            }
-        } else if w.reps >= 1 {
-            produce(w, &pool, rng)
-        } else {
-            recognise(w, &pool, rng)
-        };
-        word_blocks.push(vec![exercise]);
-    }
-
-    word_blocks.shuffle(rng);
-
-    let mut sentence_blocks: Vec<Vec<Exercise>> = Vec::new();
-    for s in &new_sentences {
-        sentence_blocks.push(vec![
-            Exercise {
-                key: format!("s{}-intro", s.id),
-                kind: "sentenceIntro".into(),
-                item_kind: "sentence".into(),
-                item_id: s.id,
-                is_new: true,
-                prompt: s.pl.clone(),
-                hint: String::new(),
-                answer: s.meaning.clone(),
-                options: vec![],
-                tokens: vec![],
-                gaps: vec![],
-                pairs: vec![],
-                pl: s.pl.clone(),
-                meaning: s.meaning.clone(),
-            },
-            word_order(s),
-        ]);
-    }
-    for s in &review_sentences {
-        sentence_blocks.push(vec![word_order(s)]);
-    }
-    sentence_blocks.shuffle(rng);
-
+    let words = block_words(conn, block_id)?;
+    let sentences = block_sentences(conn, block_id)?;
     let mut exercises: Vec<Exercise> = Vec::new();
-    let dialogue = dialogue_lines(conn, topic.id)?;
+    let mut dialogue = Vec::new();
 
-    // Read the conversation first: it frames every word and sentence that follows.
-    if !dialogue.is_empty() {
-        exercises.push(Exercise {
-            key: format!("d{}-read", topic.id),
-            kind: "dialogueRead".into(),
-            item_kind: "dialogue".into(),
-            item_id: topic.id,
-            is_new: true,
-            prompt: topic.title.clone(),
-            hint: topic.summary.clone(),
-            answer: String::new(),
-            options: vec![],
-            tokens: vec![],
-            gaps: vec![],
-            pairs: vec![],
-            pl: topic.title_pl.clone(),
-            meaning: topic.summary.clone(),
-        });
-    }
-
-    // Interleave words and sentences so the drill does not feel like two lists.
-    let mut words_iter = word_blocks.into_iter();
-    let mut sentences_iter = sentence_blocks.into_iter();
-    loop {
-        let mut progressed = false;
-        for _ in 0..4 {
-            if let Some(block) = words_iter.next() {
-                exercises.extend(block);
-                progressed = true;
+    match block.format.as_str() {
+        "words" | "typing" => {
+            // New words are introduced first, in order; known ones are
+            // practised in a shuffled order.
+            let mut known = Vec::new();
+            for (w, is_new) in &words {
+                if *is_new {
+                    exercises.push(word_intro(w));
+                    exercises.push(if block.format == "typing" { typing(w) } else { recognise(w, &pool, rng) });
+                } else {
+                    known.push(if block.format == "typing" { typing(w) } else { practise_word(w, &pool, rng) });
+                }
+            }
+            known.shuffle(rng);
+            exercises.extend(known);
+            if block.format == "words" {
+                let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
+                exercises.extend(memory_game(&all, format!("b{block_id}-memory"), block_id, rng));
             }
         }
-        if let Some(block) = sentences_iter.next() {
-            exercises.extend(block);
-            progressed = true;
+        "memory" => {
+            let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
+            for (n, chunk) in all.chunks(MEMORY_PAIRS).enumerate() {
+                exercises.extend(memory_game(chunk, format!("b{block_id}-memory-{n}"), block_id, rng));
+            }
         }
-        if !progressed {
-            break;
+        "sentences" | "gaps" => {
+            if block.format == "sentences" {
+                for (s, is_new) in &sentences {
+                    if *is_new {
+                        exercises.push(sentence_intro(s));
+                    }
+                    exercises.push(word_order(s));
+                }
+            }
+            let rows: Vec<&SentenceRow> = sentences.iter().map(|(s, _)| s).collect();
+            for chunk in rows.chunks(GAP_SENTENCES) {
+                exercises.extend(gap_fill(conn, topic_id, chunk, true, rng)?);
+            }
         }
+        "dialogue" => {
+            dialogue = dialogue_lines(conn, topic_id)?;
+            if !dialogue.is_empty() {
+                exercises.push(Exercise {
+                    key: format!("d{topic_id}-read"),
+                    kind: "dialogueRead".into(),
+                    item_kind: "dialogue".into(),
+                    item_id: topic_id,
+                    is_new: true,
+                    prompt: topic.title.clone(),
+                    hint: topic.summary.clone(),
+                    answer: String::new(),
+                    options: vec![],
+                    tokens: vec![],
+                    gaps: vec![],
+                    pairs: vec![],
+                    pl: topic.title_pl.clone(),
+                    meaning: topic.summary.clone(),
+                });
+            }
+            exercises.extend(dialogue_gaps(&dialogue, topic_id, rng));
+        }
+        other => return Err(crate::error::Error::msg(format!("Unknown drill format '{other}'."))),
     }
 
-    // Two formats that work on several items at once: memory cards over the
-    // words just met, then a handful of the topic's sentences with gaps.
-    let session_words: Vec<&WordRow> = new_words.iter().chain(review_words.iter()).collect();
-    exercises.extend(memory_game(&session_words, topic.id, rng));
-    let session_sentences: Vec<&SentenceRow> =
-        new_sentences.iter().chain(review_sentences.iter()).collect();
-    exercises.extend(gap_fill(conn, topic.id, &session_sentences, rng)?);
-
-    exercises.extend(dialogue_gaps(&dialogue, topic.id, rng));
-
-    let already_completed = conn
-        .query_row(
-            "SELECT completed FROM day_log WHERE day = ?1",
-            [today],
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap_or(0)
-        == 1;
-
+    let new_words = words.iter().filter(|(_, n)| *n).count();
+    let new_sentences = sentences.iter().filter(|(_, n)| *n).count();
     Ok(SessionPlan {
         day: today,
         topic,
         dialogue,
-        new_words: new_words.len(),
-        review_words: review_words.len(),
-        new_sentences: new_sentences.len(),
-        review_sentences: review_sentences.len(),
+        new_words,
+        review_words: words.len() - new_words,
+        new_sentences,
+        review_sentences: sentences.len() - new_sentences,
         exercises,
-        already_completed,
-        daily: false,
+        already_completed: false,
+        block_id,
     })
 }
 
@@ -487,7 +413,7 @@ fn short_gloss(meaning: &str) -> String {
 }
 
 /// Face-down cards: find each Polish word's English partner.
-fn memory_game(words: &[&WordRow], topic_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
     let mut pool: Vec<&&WordRow> = words.iter().collect();
     pool.shuffle(rng);
     let mut pairs: Vec<Pair> = Vec::new();
@@ -506,10 +432,10 @@ fn memory_game(words: &[&WordRow], topic_id: i64, rng: &mut impl rand::Rng) -> O
         return None;
     }
     Some(Exercise {
-        key: format!("t{topic_id}-memory"),
+        key,
         kind: "memory".into(),
         item_kind: "set".into(),
-        item_id: topic_id,
+        item_id,
         is_new: false,
         prompt: String::new(),
         hint: String::new(),
@@ -570,6 +496,8 @@ fn gap_fill(
     conn: &Connection,
     topic_id: i64,
     session: &[&SentenceRow],
+    // Only the given sentences, rather than topping up from the topic.
+    only_session: bool,
     rng: &mut impl rand::Rng,
 ) -> Result<Option<Exercise>> {
     let mut stmt = conn.prepare("SELECT pl, en FROM sentences WHERE topic_id = ?1 ORDER BY ord")?;
@@ -590,7 +518,7 @@ fn gap_fill(
     topic_sentences.shuffle(rng);
     let mut ordered: Vec<(String, String)> =
         session.iter().map(|s| (s.pl.clone(), s.meaning.clone())).collect();
-    for sentence in topic_sentences.iter() {
+    for sentence in topic_sentences.iter().filter(|_| !only_session) {
         if !ordered.iter().any(|(pl, _)| pl == &sentence.0) {
             ordered.push(sentence.clone());
         }
@@ -608,7 +536,7 @@ fn gap_fill(
             }
         }
     }
-    if gaps.len() < 3 {
+    if gaps.len() < 2 {
         return Ok(None);
     }
 

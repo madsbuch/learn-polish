@@ -153,8 +153,37 @@ pub fn create(conn: &Connection, input: NewProgramme) -> Result<ProgrammeSummary
     )?;
     let topic_id = tx.last_insert_rowid();
     let skipped = insert_items(&tx, topic_id, &input.words, &input.sentences, &input.dialogue)?;
+    crate::blocks::split_topic(&tx, topic_id, &format!("programme/{topic_id}"), "tutor")?;
     tx.commit()?;
     summary(conn, topic_id, skipped)
+}
+
+/// A programme with nothing in it yet, for drills the tutor fills itself.
+pub fn create_empty(conn: &Connection, title: &str, summary: &str) -> Result<i64> {
+    let title = clean(title);
+    if title.is_empty() {
+        return Err(Error::msg("A programme needs a title."));
+    }
+    let ord: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(ord), 0) + 1 FROM topics WHERE kind = 'programme'",
+        [],
+        |r| r.get(0),
+    )?;
+    let now = db::now_secs();
+    conn.execute(
+        "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en, created_at)
+         VALUES (?1, ?2, 'programme', ?3, ?3, ?4, ?5)",
+        rusqlite::params![format!("programme-{now}-{ord}"), ord, title, clean(summary), now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Puts words and sentences into a programme without cutting them into
+/// drills — for a drill block that will hold them itself.
+pub fn add_items(conn: &Connection, topic_id: i64, words: &[NewWord], sentences: &[NewSentence]) -> Result<()> {
+    require_programme(conn, topic_id)?;
+    insert_items(conn, topic_id, words, sentences, &[])?;
+    Ok(())
 }
 
 /// Adds words, sentences or dialogue lines to an existing programme.
@@ -168,6 +197,7 @@ pub fn extend(
     require_programme(conn, topic_id)?;
     let tx = conn.unchecked_transaction()?;
     let skipped = insert_items(&tx, topic_id, words, sentences, dialogue)?;
+    crate::blocks::split_topic(&tx, topic_id, &format!("programme/{topic_id}"), "tutor")?;
     tx.commit()?;
     summary(conn, topic_id, skipped)
 }
@@ -197,9 +227,14 @@ pub fn remove_items(
                     rusqlite::params![kind, id],
                 )?;
                 tx.execute(&format!("DELETE FROM {table} WHERE id = ?1"), [id])?;
+                tx.execute(
+                    "DELETE FROM block_items WHERE kind = ?1 AND item_id = ?2",
+                    rusqlite::params![kind, id],
+                )?;
             }
         }
     }
+    crate::blocks::split_topic(&tx, topic_id, &format!("programme/{topic_id}"), "tutor")?;
     tx.commit()?;
     summary(conn, topic_id, 0)
 }
@@ -236,30 +271,10 @@ pub fn delete(conn: &Connection, topic_id: i64) -> Result<String> {
     tx.execute("DELETE FROM words WHERE topic_id = ?1", [topic_id])?;
     tx.execute("DELETE FROM sentences WHERE topic_id = ?1", [topic_id])?;
     tx.execute("DELETE FROM conversation_lines WHERE topic_id = ?1", [topic_id])?;
+    tx.execute("DELETE FROM blocks WHERE topic_id = ?1", [topic_id])?;
     tx.execute("DELETE FROM topics WHERE id = ?1", [topic_id])?;
-    if db::get_setting_i64(&tx, "focus_topic_id", 0) == topic_id {
-        tx.execute("DELETE FROM settings WHERE key = 'focus_topic_id'", [])?;
-    }
     tx.commit()?;
     Ok(title)
-}
-
-/// Points the daily check-in at a topic, or back at the course with `None`.
-pub fn set_focus(conn: &Connection, topic_id: Option<i64>) -> Result<Option<String>> {
-    match topic_id {
-        None => {
-            conn.execute("DELETE FROM settings WHERE key = 'focus_topic_id'", [])?;
-            Ok(None)
-        }
-        Some(id) => {
-            let title: String = conn
-                .query_row("SELECT title_en FROM topics WHERE id = ?1", [id], |r| r.get(0))
-                .optional()?
-                .ok_or_else(|| Error::msg(format!("There is no topic with id {id}.")))?;
-            db::set_setting(conn, "focus_topic_id", &id.to_string())?;
-            Ok(Some(title))
-        }
-    }
 }
 
 fn insert_items(

@@ -311,6 +311,10 @@ button.list-item__main:active {
   background: var(--brand);
   color: var(--on-brand);
 }
+.avatar svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
 .avatar[data-muted="true"] {
   background: var(--tint-strong);
   color: var(--text-dim);

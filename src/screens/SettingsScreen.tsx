@@ -156,21 +156,6 @@ export function SettingsScreen({
             }
           />
           <SettingRow
-            label="New words per session"
-            value={settings.newWordsPerDay}
-            stacked
-            control={
-              <input
-                type="range"
-                min={3}
-                max={40}
-                value={settings.newWordsPerDay}
-                aria-label="New words per session"
-                onChange={(event) => patch({ newWordsPerDay: Number(event.target.value) }, "new-words")}
-              />
-            }
-          />
-          <SettingRow
             label="Daily reminder"
             description={settings.remindersEnabled ? "A nudge if you have not practised yet" : "Off"}
             control={

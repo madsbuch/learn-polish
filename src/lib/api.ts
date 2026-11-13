@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   AiModel,
+  Block,
+  BlockDetail,
+  BlockFinished,
+  BlockOverview,
+  CheckinTurn,
   AnswerResult,
   AudioCacheStats,
   AudioClip,
@@ -40,8 +45,7 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("update_settings", { patch }),
 
-  /** Today's check-in, or a session for one topic or programme. */
-  getSession: (topicId?: number) => invoke<SessionPlan>("get_session", { topicId }),
+
   submitAnswer: (answer: {
     kind: string;
     itemKind: string;
@@ -50,7 +54,23 @@ export const api = {
     expected: string;
     given: string;
   }) => invoke<AnswerResult>("submit_answer", { answer }),
-  completeSession: (topicId: number) => invoke<SessionResult>("complete_session", { topicId }),
+  blocksOverview: () => invoke<BlockOverview>("blocks_overview"),
+  blocksForTopic: (topicId: number) => invoke<Block[]>("blocks_for_topic", { topicId }),
+  blockDetail: (blockId: number) => invoke<BlockDetail>("block_detail", { blockId }),
+  blockSession: (blockId: number) => invoke<SessionPlan>("block_session", { blockId }),
+  /** A drill is done: its score schedules the next check-in. */
+  blockFinish: (blockId: number, correct: number, total: number) =>
+    invoke<BlockFinished>("block_finish", { blockId, correct, total }),
+  blockSetPeriod: (blockId: number, periodDays: number) =>
+    invoke<Block>("block_set_period", { blockId, periodDays }),
+  blockDueNow: (blockId: number) => invoke<Block>("block_due_now", { blockId }),
+  blockDelete: (blockId: number) => invoke<void>("block_delete", { blockId }),
+  checkinStart: (blockId: number, streamId: string) =>
+    invoke<CheckinTurn>("checkin_start", { blockId, streamId }),
+  checkinSend: (checkinId: number, message: string, streamId: string) =>
+    invoke<CheckinTurn>("checkin_send", { checkinId, message, streamId }),
+  checkinSummary: (firstCompletionToday: boolean) =>
+    invoke<SessionResult>("checkin_summary", { firstCompletionToday }),
 
   getStats: () => invoke<Stats>("get_stats"),
   getTopicProgress: () => invoke<TopicProgress[]>("get_topic_progress"),
@@ -79,7 +99,6 @@ export const api = {
     invoke<void>("tutor_rename", { conversationId, title }),
   tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
   programmeDelete: (topicId: number) => invoke<void>("programme_delete", { topicId }),
-  setFocus: (topicId: number | null) => invoke<Settings>("set_focus", { topicId }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */
   exportDatabase: (includeKeys: boolean) =>
     invoke<string | null>("export_database", { includeKeys }),

@@ -6,8 +6,9 @@ import { Fragment, type ReactNode } from "react";
  * It builds React elements rather than HTML, so model output can never inject
  * markup — no `dangerouslySetInnerHTML`, no sanitiser to keep in step. It
  * covers what the prompts actually produce: headings, emphasis, inline and
- * fenced code, bullet and numbered lists (one level of nesting), block quotes
- * and horizontal rules. Anything else falls through as plain text.
+ * fenced code, bullet and numbered lists (one level of nesting), block quotes,
+ * horizontal rules and tables (lessons are full of conjugation tables).
+ * Anything else falls through as plain text.
  */
 export function Markdown({ text }: { text: string }) {
   return <div className="md selectable">{renderBlocks(text)}</div>;
@@ -19,7 +20,8 @@ type Block =
   | { kind: "code"; text: string; language: string }
   | { kind: "quote"; text: string }
   | { kind: "rule" }
-  | { kind: "list"; ordered: boolean; items: ListItem[] };
+  | { kind: "list"; ordered: boolean; items: ListItem[] }
+  | { kind: "table"; head: string[]; rows: string[][] };
 
 interface ListItem {
   text: string;
@@ -57,6 +59,29 @@ function renderBlocks(source: string): ReactNode[] {
         return <hr key={index} className="md-rule" />;
       case "list":
         return renderList(block, index);
+      case "table":
+        return (
+          <div key={index} className="md-table-wrap">
+            <table className="md-table">
+              <thead>
+                <tr>
+                  {block.head.map((cell, i) => (
+                    <th key={i}>{renderInline(cell)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {block.rows.map((row, r) => (
+                  <tr key={r}>
+                    {block.head.map((_, c) => (
+                      <td key={c}>{renderInline(row[c] ?? "")}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
     }
   });
 }
@@ -87,6 +112,18 @@ const NUMBERED = /^(\s*)\d+[.)]\s+(.*)$/;
 const QUOTE = /^>\s?(.*)$/;
 const RULE = /^(-{3,}|\*{3,}|_{3,})$/;
 const FENCE = /^```\s*(\S*)\s*$/;
+/** A table row: starts and ends with a pipe. */
+const TABLE_ROW = /^\|.*\|$/;
+/** The line under a table's header: | --- | :---: | */
+const TABLE_RULE = /^\|(\s*:?-{3,}:?\s*\|)+$/;
+
+function cells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\||\|$/g, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
 /** Two spaces of indent is enough to count as nested in model output. */
 const NEST_WIDTH = 2;
 
@@ -127,6 +164,20 @@ function parseBlocks(source: string): Block[] {
     if (RULE.test(line.trim())) {
       flush();
       blocks.push({ kind: "rule" });
+      continue;
+    }
+
+    if (TABLE_ROW.test(line.trim()) && i + 1 < lines.length && TABLE_RULE.test(lines[i + 1].trim().replace(/\s/g, ""))) {
+      flush();
+      const head = cells(line);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && TABLE_ROW.test(lines[i].trim())) {
+        rows.push(cells(lines[i]));
+        i++;
+      }
+      i--;
+      blocks.push({ kind: "table", head, rows });
       continue;
     }
 

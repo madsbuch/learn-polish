@@ -131,6 +131,58 @@ CREATE TABLE IF NOT EXISTS audio_cache (
     created_at INTEGER NOT NULL
 );
 
+-- Blocks: the unit of learning (see blocks.rs). A drill practises the
+-- words and sentences listed in block_items; a study block carries a lesson
+-- and is checked by an examiner. Each has its own check-in schedule.
+CREATE TABLE IF NOT EXISTS blocks (
+    id            INTEGER PRIMARY KEY,
+    slug          TEXT    UNIQUE,                -- built-in blocks; NULL for made ones
+    kind          TEXT    NOT NULL,              -- drill | study
+    format        TEXT    NOT NULL DEFAULT '',   -- drills: words | memory | typing | sentences | gaps | dialogue
+    topic_id      INTEGER REFERENCES topics(id) ON DELETE CASCADE,
+    ord           INTEGER NOT NULL DEFAULT 0,
+    title         TEXT    NOT NULL,
+    summary       TEXT    NOT NULL DEFAULT '',
+    complexity    TEXT    NOT NULL,              -- low | medium | high
+    lesson        TEXT    NOT NULL DEFAULT '',
+    objectives    TEXT    NOT NULL DEFAULT '[]',
+    period_days   INTEGER NOT NULL,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    due_day       INTEGER,                       -- NULL until first done
+    last_day      INTEGER,
+    last_result   TEXT,                          -- pass | partial | fail
+    reps          INTEGER NOT NULL DEFAULT 0,
+    origin        TEXT    NOT NULL DEFAULT 'course', -- course | builtin | tutor
+    created_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS blocks_topic ON blocks(topic_id, ord);
+CREATE INDEX IF NOT EXISTS blocks_due ON blocks(due_day);
+
+CREATE TABLE IF NOT EXISTS block_items (
+    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    kind     TEXT    NOT NULL,                   -- word | sentence
+    item_id  INTEGER NOT NULL,
+    ord      INTEGER NOT NULL,
+    PRIMARY KEY (block_id, kind, item_id)
+);
+
+-- A study block's check-in: an interview with the examiner, and its verdict.
+CREATE TABLE IF NOT EXISTS checkins (
+    id          INTEGER PRIMARY KEY,
+    block_id    INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    started_at  INTEGER NOT NULL,
+    finished_at INTEGER,
+    result      TEXT,
+    feedback    TEXT
+);
+CREATE TABLE IF NOT EXISTS checkin_messages (
+    id         INTEGER PRIMARY KEY,
+    checkin_id INTEGER NOT NULL REFERENCES checkins(id) ON DELETE CASCADE,
+    role       TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
 -- Conversations with the tutor: each has its own history, so a question
 -- about grammar does not drag along the context of last week's programme.
 CREATE TABLE IF NOT EXISTS tutor_conversations (
@@ -370,7 +422,7 @@ fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) ->
 /// Content version. Bump this when the TSV/JSON files change so existing
 /// installs re-seed while keeping their review history (keyed by row id, which
 /// is stable because rows are upserted on their natural key).
-const CONTENT_VERSION: i64 = 3;
+const CONTENT_VERSION: i64 = 4;
 
 fn seed(conn: &Connection) -> Result<()> {
     let seeded: Option<String> = conn
@@ -445,6 +497,25 @@ fn seed(conn: &Connection) -> Result<()> {
         }
     }
 
+    // Cut every topic into small blocks, add the built-in lessons, and carry
+    // over what the learner already practised.
+    let topics: Vec<(i64, String, String)> = {
+        let mut stmt = conn.prepare("SELECT id, slug, kind FROM topics")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        rows
+    };
+    for (id, slug, kind) in topics {
+        if kind == "course" {
+            crate::blocks::split_topic(conn, id, &format!("course/{slug}"), "course")?;
+        } else {
+            crate::blocks::split_topic(conn, id, &format!("programme/{id}"), "tutor")?;
+        }
+    }
+    crate::blocks::seed_lessons(conn)?;
+    crate::blocks::adopt_history(conn)?;
+
     set_setting(conn, "content_version", &CONTENT_VERSION.to_string())?;
     Ok(())
 }
@@ -498,6 +569,7 @@ pub fn today(conn: &Connection) -> i64 {
 }
 
 /// The id of the course topic at a position in the course (1-based).
+#[cfg(test)]
 pub fn require_topic_id(conn: &Connection, ord: i64) -> Result<i64> {
     conn.query_row(
         "SELECT id FROM topics WHERE kind = 'course' AND ord = ?1",

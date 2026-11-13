@@ -123,8 +123,8 @@ pub struct SessionPlan {
     pub review_sentences: usize,
     /// True when today's session has already been finished.
     pub already_completed: bool,
-    /// True for the daily check-in, false for a topic practised on demand.
-    pub daily: bool,
+    /// The drill block this session practises.
+    pub block_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -190,7 +190,6 @@ pub struct Stats {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub daily_goal: i64,
-    pub new_words_per_day: i64,
     pub reminder_hour: i64,
     pub reminder_minute: i64,
     pub reminders_enabled: bool,
@@ -211,8 +210,6 @@ pub struct Settings {
     pub suno_models: Vec<String>,
     /// "short" | "medium" | "long" — what the songwriter writes for.
     pub song_length: String,
-    /// The programme the daily check-in is focused on, if any.
-    pub focus_topic_id: Option<i64>,
     /// "system" | "light" | "dark", or empty if never stored (the webview's
     /// own copy is then written back).
     pub theme: String,
@@ -259,6 +256,9 @@ pub struct TutorAction {
     /// Set when the action is about a song (one the tutor started making).
     #[serde(default)]
     pub song_id: Option<i64>,
+    /// Set when the action is about a block.
+    #[serde(default)]
+    pub block_id: Option<i64>,
 }
 
 /// The tutor is working: a tool is running. Emitted as `tutor://status`.

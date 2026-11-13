@@ -22,7 +22,10 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { speakQuietly } from "../lib/speech";
 import { useAiStream } from "../lib/useAiStream";
-import type { AnswerResult, Exercise, SessionPlan, SessionResult } from "../lib/types";
+import type { AnswerResult, BlockFinished, Exercise, SessionPlan } from "../lib/types";
+
+/** Cards that only show something; they are not scored. */
+const READING_KINDS = new Set(["dialogueRead", "intro", "sentenceIntro"]);
 
 type Phase = "answering" | "checked";
 
@@ -32,7 +35,7 @@ export function Session({
   onQuit,
 }: {
   plan: SessionPlan;
-  onFinished: (result: SessionResult, sessionXp: number) => void;
+  onFinished: (result: BlockFinished, sessionXp: number) => void;
   onQuit: () => void;
 }) {
   const [index, setIndex] = useState(0);
@@ -141,7 +144,7 @@ export function Session({
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);
-      if (answer.correct) setCorrectCount((n) => n + 1);
+      if (answer.correct && !READING_KINDS.has(exercise.kind)) setCorrectCount((n) => n + 1);
       setPhase("checked");
       if (answer.correct && exercise.pl && exercise.itemKind !== "dialogue") speakQuietly(exercise.pl);
       return true;
@@ -160,7 +163,8 @@ export function Session({
     }
     setBusy(true);
     try {
-      onFinished(await api.completeSession(plan.topic.id), sessionXp);
+      const scored = plan.exercises.filter((e) => !READING_KINDS.has(e.kind)).length;
+      onFinished(await api.blockFinish(plan.blockId, correctCount, scored), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
@@ -214,8 +218,7 @@ export function Session({
     </div>
   );
 
-  const reading =
-    exercise.kind === "dialogueRead" || exercise.kind === "intro" || exercise.kind === "sentenceIntro";
+  const reading = READING_KINDS.has(exercise.kind);
 
   return (
     <div className="session">

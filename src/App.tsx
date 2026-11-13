@@ -9,6 +9,8 @@ import { resumeCast, syncRepeatFromSettings } from "./lib/player";
 import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
+  BlockOverview,
+  BlockResult,
   SessionPlan,
   SessionResult,
   Settings,
@@ -21,6 +23,8 @@ import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
+import { BlockPage } from "./screens/BlockPage";
+import { CheckIn } from "./screens/CheckIn";
 import { Music } from "./screens/Music";
 import { Player } from "./screens/Player";
 import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
@@ -38,8 +42,15 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
 /** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
 type Overlay =
   | { kind: "none" }
-  | { kind: "session"; plan: SessionPlan }
-  | { kind: "summary"; result: SessionResult; xp: number }
+  | { kind: "block"; blockId: number; back: Overlay }
+  | { kind: "session"; plan: SessionPlan; back: Overlay }
+  | { kind: "checkin"; blockId: number; title: string; back: Overlay }
+  | {
+      kind: "summary";
+      result: SessionResult;
+      xp: number;
+      outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
+    }
   | { kind: "progress" }
   | { kind: "search" }
   | { kind: "player" }
@@ -53,7 +64,7 @@ type Overlay =
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [plan, setPlan] = useState<SessionPlan | null>(null);
+  const [overview, setOverview] = useState<BlockOverview | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [topics, setTopics] = useState<TopicProgress[]>([]);
   const [tab, setTab] = useState<Tab>("exercises");
@@ -64,12 +75,12 @@ export default function App() {
   const clearMusicSong = useCallback(() => setMusicSong(null), []);
 
   const refresh = useCallback(async () => {
-    const [nextPlan, nextStats, nextTopics] = await Promise.all([
-      api.getSession(),
+    const [nextOverview, nextStats, nextTopics] = await Promise.all([
+      api.blocksOverview(),
       api.getStats(),
       api.getTopicProgress(),
     ]);
-    setPlan(nextPlan);
+    setOverview(nextOverview);
     setStats(nextStats);
     setTopics(nextTopics);
   }, []);
@@ -103,7 +114,6 @@ export default function App() {
     };
   }, [refresh]);
 
-  // Settings can change what today's check-in is (the daily focus).
   const applySettings = useCallback(
     (next: Settings) => {
       setSettings(next);
@@ -151,24 +161,32 @@ export default function App() {
     [settings?.ttsPrefetch, settings?.hasApiKey],
   );
 
-  /** Today's check-in, or — with a topic id — a session for that topic. */
-  const startSession = useCallback(
-    async (topicId?: number) => {
+  /** Starts a drill block's exercises. */
+  const startDrill = useCallback(
+    async (blockId: number, back: Overlay) => {
       stopAudio();
       try {
-        const session =
-          topicId === undefined || topicId === plan?.topic.id
-            ? plan
-            : await api.getSession(topicId);
-        if (!session) return;
-        setOverlay({ kind: "session", plan: session });
+        const session = await api.blockSession(blockId);
+        setOverlay({ kind: "session", plan: session, back });
         prefetchAudio(session);
       } catch (cause) {
         setError(errorMessage(cause));
       }
     },
-    [plan, prefetchAudio],
+    [prefetchAudio],
   );
+
+  /** Opens a topic or programme by id (the tutor's buttons). */
+  const openTopicById = useCallback(async (topicId: number) => {
+    try {
+      const fresh = await api.getTopicProgress();
+      setTopics(fresh);
+      const progress = fresh.find((entry) => entry.topic.id === topicId);
+      if (progress) setOverlay({ kind: "topic", progress, back: { kind: "none" } });
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }, []);
 
   /** Something changed behind the screens' backs (the tutor acted). */
   const reloadAll = useCallback(async () => {
@@ -191,7 +209,7 @@ export default function App() {
     );
   }
 
-  if (!settings || !plan || !stats) {
+  if (!settings || !overview || !stats) {
     return <Loading label="Przygotowuję…" />;
   }
 
@@ -202,12 +220,17 @@ export default function App() {
           plan={overlay.plan}
           onQuit={() => {
             stopAudio();
-            setOverlay({ kind: "none" });
+            setOverlay(overlay.back);
             void refresh();
           }}
           onFinished={(result, sessionXp) => {
             setStats(result.stats);
-            setOverlay({ kind: "summary", result, xp: sessionXp });
+            setOverlay({
+              kind: "summary",
+              result,
+              xp: sessionXp,
+              outcome: { title: result.block.title, result: result.result, nextDueDay: result.block.dueDay },
+            });
           }}
         />
       </div>
@@ -220,6 +243,7 @@ export default function App() {
         <SessionSummary
           result={overlay.result}
           sessionXp={overlay.xp}
+          outcome={overlay.outcome}
           onDone={() => {
             setOverlay({ kind: "none" });
             setTab("exercises");
@@ -236,15 +260,62 @@ export default function App() {
         <TopicDetail
           progress={overlay.progress}
           initialSection={overlay.section}
-          isFocus={settings.focusTopicId === overlay.progress.topic.id}
+          today={overview.today}
           onBack={() => setOverlay(overlay.back)}
-          onPractise={() => void startSession(overlay.progress.topic.id)}
-          onFocus={async (focused) => {
-            applySettings(await api.setFocus(focused ? overlay.progress.topic.id : null));
-          }}
+          onOpenBlock={(block) => setOverlay({ kind: "block", blockId: block.id, back: overlay })}
           onDeleted={() => {
             setOverlay(overlay.back);
             void reloadAll();
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (overlay.kind === "block") {
+    return (
+      <div className="app">
+        <BlockPage
+          blockId={overlay.blockId}
+          today={overview.today}
+          onBack={() => {
+            setOverlay(overlay.back);
+            void refresh();
+          }}
+          onStartDrill={(blockId) => void startDrill(blockId, overlay)}
+          onCheckIn={async (blockId) => {
+            const detail = await api.blockDetail(blockId).catch(() => null);
+            setOverlay({ kind: "checkin", blockId, title: detail?.title ?? "Check-in", back: overlay });
+          }}
+          onDeleted={() => {
+            setOverlay(overlay.back);
+            void refresh();
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (overlay.kind === "checkin") {
+    return (
+      <div className="app">
+        <CheckIn
+          blockId={overlay.blockId}
+          title={overlay.title}
+          onClose={() => {
+            setOverlay(overlay.back);
+            void refresh();
+          }}
+          onFinished={async (first) => {
+            try {
+              const result = await api.checkinSummary(first);
+              setStats(result.stats);
+            } catch {
+              /* the summary is a nicety */
+            }
+            setOverlay({ kind: "none" });
+            setTab("exercises");
+            void refresh();
           }}
         />
       </div>
@@ -257,7 +328,6 @@ export default function App() {
         <Progress
           stats={stats}
           topics={topics}
-          focusTopicId={settings.focusTopicId}
           onBack={() => setOverlay({ kind: "none" })}
           onOpenTopic={(progress) =>
             setOverlay({ kind: "topic", progress, back: { kind: "progress" } })
@@ -294,16 +364,14 @@ export default function App() {
     <div className="app">
       {tab === "exercises" ? (
         <Exercises
-          plan={plan}
+          overview={overview}
           stats={stats}
           topics={topics}
-          focusTopicId={settings.focusTopicId}
-          onStart={() => void startSession()}
+          onOpenBlock={(block) => setOverlay({ kind: "block", blockId: block.id, back: { kind: "none" } })}
           onOpenTopic={(progress) => setOverlay({ kind: "topic", progress, back: { kind: "none" } })}
           onOpenTutor={() => setTab("tutor")}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
           onOpenSearch={() => setOverlay({ kind: "search" })}
-          onBackToCourse={async () => applySettings(await api.setFocus(null))}
         />
       ) : null}
 
@@ -321,9 +389,9 @@ export default function App() {
         <Tutor
           hasApiKey={settings.hasApiKey}
           hasModel={settings.aiModel.length > 0}
-          focusTopicId={settings.focusTopicId}
           onOpenSettings={() => setTab("settings")}
-          onPractise={(topicId) => void startSession(topicId)}
+          onOpenTopic={(topicId) => void openTopicById(topicId)}
+          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: { kind: "none" } })}
           onOpenSong={(songId) => {
             setTab("music");
             setMusicSong(songId);

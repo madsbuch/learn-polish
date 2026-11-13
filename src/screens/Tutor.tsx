@@ -43,9 +43,10 @@ function when(seconds: number): string {
 }
 
 type Shared = {
-  focusTopicId: number | null;
-  /** Starts a practice session for a topic or programme. */
-  onPractise: (topicId: number) => void;
+  /** Opens a topic or programme page. */
+  onOpenTopic: (topicId: number) => void;
+  /** Opens a block's page. */
+  onOpenBlock: (blockId: number) => void;
   /** Shows a song in the Music tab. */
   onOpenSong: (songId: number) => void;
   /** The tutor changed something in the app; reload what the screens show. */
@@ -173,8 +174,8 @@ function Chat({
   onBack,
   onRenamed,
   onDeleted,
-  focusTopicId,
-  onPractise,
+  onOpenTopic,
+  onOpenBlock,
   onOpenSong,
   onChanged,
 }: Shared & {
@@ -194,7 +195,6 @@ function Chat({
   const [live, setLive] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [focusing, setFocusing] = useState<number | null>(null);
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState(title);
   const activeStream = useRef<string | null>(null);
@@ -262,27 +262,10 @@ function Chat({
     }
   }
 
-  async function focus(topicId: number) {
-    setFocusing(topicId);
-    try {
-      await api.setFocus(topicId);
-      onChanged();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setFocusing(null);
-    }
-  }
-
   function ActionRow({ action }: { action: TutorAction }) {
-    const topicId = action.topicId;
-    const songId = action.songId;
-    const practisable =
-      topicId !== null &&
-      (action.kind === "programmeCreated" ||
-        action.kind === "programmeUpdated" ||
-        action.kind === "practiceSuggested" ||
-        action.kind === "focusSet");
+    const { topicId, songId, blockId } = action;
+    const opensProgramme =
+      topicId !== null && (action.kind === "programmeCreated" || action.kind === "programmeUpdated");
     return (
       <div className="tutor-action">
         <Inline gap={2} align="top">
@@ -300,21 +283,28 @@ function Chat({
             </Button>
           </Inline>
         ) : null}
-        {practisable ? (
+        {blockId !== null && action.kind !== "blockDeleted" ? (
           <Inline gap={2} wrap>
             <Button
               variant="primary"
               size="sm"
               icon={<PlayerIcon.play size={14} />}
-              onClick={() => onPractise(topicId)}
+              onClick={() => onOpenBlock(blockId)}
             >
-              Practise now
+              Open
             </Button>
-            {action.kind === "programmeCreated" && focusTopicId !== topicId ? (
-              <Button size="sm" loading={focusing === topicId} onClick={() => focus(topicId)}>
-                Use for daily check-in
-              </Button>
-            ) : null}
+          </Inline>
+        ) : null}
+        {opensProgramme ? (
+          <Inline gap={2} wrap>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<PlayerIcon.play size={14} />}
+              onClick={() => onOpenTopic(topicId)}
+            >
+              Open programme
+            </Button>
           </Inline>
         ) : null}
       </div>

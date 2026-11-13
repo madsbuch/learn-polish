@@ -13,15 +13,25 @@ import {
   StatGrid,
   Text,
 } from "../design";
-import type { SessionResult } from "../lib/types";
+import { dayToDate } from "../lib/blocks";
+import type { BlockResult, SessionResult } from "../lib/types";
+
+const OUTCOME = {
+  pass: "Passed",
+  partial: "Partly there — it comes back at its usual pace",
+  fail: "Not yet — it comes back tomorrow",
+} as const;
 
 export function SessionSummary({
   result,
   sessionXp,
+  outcome,
   onDone,
 }: {
   result: SessionResult;
   sessionXp: number;
+  /** The block's verdict and when it checks in next. */
+  outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
   onDone: () => void;
 }) {
   const { stats, newlyUnlocked } = result;
@@ -35,9 +45,11 @@ export function SessionSummary({
         </Text>
         <h1>{goalMet ? "Goal reached!" : "Nice work"}</h1>
         <Text tone="dim" align="center" as="p">
-          {result.firstCompletionToday
-            ? "Today's check-in is done. Tomorrow brings the next topic."
-            : "Extra practice always counts."}
+          {outcome
+            ? `${outcome.title}: ${OUTCOME[outcome.result]}.`
+            : result.firstCompletionToday
+              ? "Today's streak is safe."
+              : "Extra practice always counts."}
         </Text>
       </Stack>
 
@@ -47,6 +59,11 @@ export function SessionSummary({
           <Text weight="medium" tone="dim">
             XP this session
           </Text>
+          {outcome?.nextDueDay ? (
+            <Text variant="small" tone="dim">
+              Next check-in {dayToDate(outcome.nextDueDay)}
+            </Text>
+          ) : null}
           <Inline gap={2} justify="center">
             <Badge>🔥 {stats.currentStreak} day streak</Badge>
             <Badge>Level {stats.level}</Badge>

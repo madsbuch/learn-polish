@@ -117,8 +117,67 @@ export interface SessionPlan {
   newSentences: number;
   reviewSentences: number;
   alreadyCompleted: boolean;
-  /** True for the daily check-in, false for a topic practised on demand. */
-  daily: boolean;
+  /** The drill block this session practises. */
+  blockId: number;
+}
+
+// ------------------------------------------------------------------ blocks
+
+export type Complexity = "low" | "medium" | "high";
+export type BlockResult = "pass" | "partial" | "fail";
+
+/** A unit of learning: a small drill, or a study lesson checked by an examiner. */
+export interface Block {
+  id: number;
+  kind: "drill" | "study";
+  /** Drills: words | memory | typing | sentences | gaps | dialogue. */
+  format: string;
+  title: string;
+  summary: string;
+  complexity: Complexity;
+  topicId: number | null;
+  topicTitle: string | null;
+  origin: "course" | "builtin" | "tutor";
+  periodDays: number;
+  intervalDays: number;
+  /** Day number; null until done once. */
+  dueDay: number | null;
+  lastDay: number | null;
+  lastResult: BlockResult | null;
+  reps: number;
+  items: number;
+}
+
+export interface BlockDetail extends Block {
+  lesson: string;
+  objectives: string[];
+  words: [string, string][];
+  sentences: [string, string][];
+  lastFeedback: string | null;
+}
+
+export interface BlockOverview {
+  today: number;
+  due: Block[];
+  next: Block[];
+  lessons: Block[];
+  doneToday: number;
+}
+
+export interface Assessment {
+  result: BlockResult;
+  summary: string;
+  strengths: string[];
+  toReview: string[];
+  nextDueDay: number;
+  xp: number;
+}
+
+export interface CheckinTurn {
+  checkinId: number;
+  reply: string;
+  assessment: Assessment | null;
+  firstCompletionToday: boolean;
 }
 
 export interface AnswerResult {
@@ -182,7 +241,6 @@ export interface Stats {
 
 export interface Settings {
   dailyGoal: number;
-  newWordsPerDay: number;
   reminderHour: number;
   reminderMinute: number;
   remindersEnabled: boolean;
@@ -201,8 +259,6 @@ export interface Settings {
   sunoModels: string[];
   /** What the songwriter writes for: about 2, 3 or 4–5 minutes. */
   songLength: SongLength;
-  /** The topic the daily check-in is focused on, or null for the course. */
-  focusTopicId: number | null;
   /** Empty until first stored. */
   theme: "" | "system" | "light" | "dark";
   playerRepeat: "" | "off" | "all" | "one";
@@ -210,7 +266,6 @@ export interface Settings {
 
 export interface SettingsPatch {
   dailyGoal?: number;
-  newWordsPerDay?: number;
   reminderHour?: number;
   reminderMinute?: number;
   remindersEnabled?: boolean;
@@ -224,6 +279,11 @@ export interface SettingsPatch {
   songLength?: SongLength;
   theme?: "system" | "light" | "dark";
   playerRepeat?: "off" | "all" | "one";
+}
+
+export interface BlockFinished extends SessionResult {
+  block: Block;
+  result: BlockResult;
 }
 
 export interface SessionResult {
@@ -242,10 +302,16 @@ export interface TutorAction {
     | "settingsChanged"
     | "practiceSuggested"
     | "songStarted"
-    | "songsDeleted";
+    | "songsDeleted"
+    | "blockCreated"
+    | "blockUpdated"
+    | "blockDeleted"
+    | "blockScheduled"
+    | "blockSuggested";
   label: string;
   topicId: number | null;
   songId: number | null;
+  blockId: number | null;
 }
 
 export interface Conversation {

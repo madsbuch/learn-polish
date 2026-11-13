@@ -46,6 +46,20 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
     base + if is_new { 2 } else { 0 }
 }
 
+/// XP for a study check-in: deeper blocks are worth more; failing earns none.
+pub fn xp_for_checkin(complexity: &str, result: &str) -> i64 {
+    let base = match complexity {
+        "low" => 10,
+        "medium" => 25,
+        _ => 50,
+    };
+    match result {
+        "pass" => base,
+        "partial" => base / 2,
+        _ => 0,
+    }
+}
+
 pub fn total_xp(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("SELECT COALESCE(SUM(xp), 0) FROM day_log", [], |r| r.get(0))?)
 }
@@ -62,47 +76,20 @@ pub fn record_answer(conn: &Connection, day: i64, xp: i64, correct: bool) -> Res
     Ok(())
 }
 
-/// Marks the day finished with the topic that was practised. Finishing the
-/// course topic due today advances the rotation, so tomorrow brings the next
-/// conversation; finishing a focused programme whose words have all been met
-/// hands the daily check-in back to the course. Calling it twice on one day is
-/// a no-op.
-pub fn complete_day(conn: &Connection, day: i64, topic_id: i64) -> Result<bool> {
+/// Marks today as practised (any block counts toward the streak). Returns
+/// true the first time it is called on a day.
+pub fn mark_practised(conn: &Connection, day: i64) -> Result<bool> {
     let already: i64 = conn
-        .query_row("SELECT completed FROM day_log WHERE day = ?1", [day], |r| {
-            r.get(0)
-        })
+        .query_row("SELECT completed FROM day_log WHERE day = ?1", [day], |r| r.get(0))
         .unwrap_or(0);
     if already == 1 {
         return Ok(false);
     }
-
     conn.execute(
-        "INSERT INTO day_log (day, completed, topic_id) VALUES (?1, 1, ?2)
-         ON CONFLICT(day) DO UPDATE SET completed = 1, topic_id = excluded.topic_id",
-        rusqlite::params![day, topic_id],
+        "INSERT INTO day_log (day, completed) VALUES (?1, 1)
+         ON CONFLICT(day) DO UPDATE SET completed = 1",
+        [day],
     )?;
-
-    match session::focus_topic_id(conn) {
-        Some(focus) if focus == topic_id => {
-            let unseen: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM words w WHERE w.topic_id = ?1
-                 AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.kind = 'word' AND r.item_id = w.id)",
-                [topic_id],
-                |r| r.get(0),
-            )?;
-            if unseen == 0 {
-                conn.execute("DELETE FROM settings WHERE key = 'focus_topic_id'", [])?;
-            }
-        }
-        Some(_) => {}
-        None => {
-            if session::rotation_topic_id(conn)? == topic_id {
-                let next = db::get_setting_i64(conn, "lesson_index", 0) + 1;
-                db::set_setting(conn, "lesson_index", &next.to_string())?;
-            }
-        }
-    }
     Ok(true)
 }
 
@@ -168,15 +155,11 @@ fn counts(conn: &Connection, today: i64) -> Result<Counts> {
         )?,
         sentences_total: one("SELECT COUNT(*) FROM sentences", &[])?,
         sentences_seen: one("SELECT COUNT(*) FROM reviews WHERE kind = 'sentence'", &[])?,
-        dialogues_total: one("SELECT COUNT(DISTINCT topic_id) FROM conversation_lines", &[])?,
-        dialogues_seen: one(
-            "SELECT COUNT(DISTINCT d.topic_id) FROM day_log d
-             WHERE d.completed = 1
-               AND EXISTS (SELECT 1 FROM conversation_lines c WHERE c.topic_id = d.topic_id)",
-            &[],
-        )?,
+        dialogues_total: one("SELECT COUNT(*) FROM blocks WHERE format = 'dialogue'", &[])?,
+        dialogues_seen: one("SELECT COUNT(*) FROM blocks WHERE format = 'dialogue' AND reps > 0", &[])?,
+        // What is due is now counted in blocks, not single words.
         due_today: one(
-            "SELECT COUNT(*) FROM reviews WHERE due_day <= ?1",
+            "SELECT COUNT(*) FROM blocks WHERE due_day IS NOT NULL AND due_day <= ?1",
             &[&today],
         )?,
     })
@@ -301,7 +284,7 @@ struct Definition {
 }
 
 const DEFINITIONS: &[Definition] = &[
-    Definition { code: "first_day", title: "Dzień dobry", description: "Finish your first daily check-in", icon: "🌅", target: 1 },
+    Definition { code: "first_day", title: "Dzień dobry", description: "Finish your first block", icon: "🌅", target: 1 },
     Definition { code: "streak_3", title: "Three in a row", description: "Practise three days in a row", icon: "🔥", target: 3 },
     Definition { code: "streak_7", title: "Full week", description: "Practise seven days in a row", icon: "📅", target: 7 },
     Definition { code: "streak_30", title: "Miesiąc", description: "Practise thirty days in a row", icon: "🏅", target: 30 },
@@ -312,7 +295,7 @@ const DEFINITIONS: &[Definition] = &[
     Definition { code: "words_2000", title: "Whole vocabulary", description: "Meet every word in the app", icon: "🏆", target: 2000 },
     Definition { code: "mastered_100", title: "Solid hundred", description: "Master a hundred words", icon: "💎", target: 100 },
     Definition { code: "sentences_100", title: "Sentence builder", description: "Practise a hundred sentences", icon: "🧱", target: 100 },
-    Definition { code: "all_dialogues", title: "Ten conversations", description: "Work through every conversation", icon: "💬", target: 10 },
+    Definition { code: "all_dialogues", title: "Ten conversations", description: "Work through ten conversations", icon: "💬", target: 10 },
     Definition { code: "level_5", title: "Level five", description: "Reach level five", icon: "⭐", target: 5 },
     Definition { code: "level_10", title: "Level ten", description: "Reach level ten", icon: "🌟", target: 10 },
     Definition { code: "xp_5000", title: "Five thousand", description: "Earn 5000 XP", icon: "⚡", target: 5000 },
@@ -320,7 +303,7 @@ const DEFINITIONS: &[Definition] = &[
 
 fn progress_value(def: &Definition, c: &Counts, xp: i64, level: i64, longest_streak: i64) -> i64 {
     match def.code {
-        "first_day" => i64::from(c.dialogues_seen > 0),
+        "first_day" => i64::from(longest_streak > 0),
         code if code.starts_with("streak_") => longest_streak,
         code if code.starts_with("words_") => c.words_seen,
         "mastered_100" => c.words_mastered,

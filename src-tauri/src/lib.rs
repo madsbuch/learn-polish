@@ -1,9 +1,11 @@
 mod ai;
+mod blocks;
 mod cast;
 mod commands;
 mod content;
 mod db;
 mod error;
+mod examiner;
 mod models;
 mod playlists;
 mod programmes;
@@ -46,10 +48,18 @@ pub fn run() {
             commands::init_app,
             commands::get_settings,
             commands::update_settings,
-            commands::get_session,
             commands::submit_answer,
-            commands::complete_session,
-            commands::get_stats,
+            commands::blocks_overview,
+            commands::blocks_for_topic,
+            commands::block_detail,
+            commands::block_session,
+            commands::block_finish,
+            commands::block_set_period,
+            commands::block_due_now,
+            commands::block_delete,
+            commands::checkin_summary,
+            examiner::checkin_start,
+            examiner::checkin_send,            commands::get_stats,
             commands::get_topic_progress,
             commands::get_dialogue,
             commands::browse_words,
@@ -67,7 +77,6 @@ pub fn run() {
             tutor::tutor_rename,
             tutor::tutor_delete,
             commands::programme_delete,
-            commands::set_focus,
             commands::export_database,
             commands::list_voices,
             commands::preview_voice,
@@ -154,107 +163,114 @@ mod integration {
     }
 
     #[test]
-    fn the_daily_session_is_built_around_one_conversation() {
-        let conn = scratch_db("session");
-        let plan = session::build(&conn).expect("plan");
+    fn the_course_is_cut_into_small_blocks() {
+        let conn = scratch_db("blocks");
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        let list = blocks::for_topic(&conn, basics).unwrap();
+        let count = |format: &str| list.iter().filter(|b| b.format == format).count();
+        assert_eq!(count("dialogue"), 1);
+        assert!(count("words") >= 20, "words come in eights");
+        assert_eq!(count("sentences"), 4, "twenty sentences in fives");
+        assert!(list.iter().all(|b| b.due_day.is_none()), "nothing is scheduled before it is done");
 
-        assert_eq!(plan.topic.ord, 1, "day one starts at the first conversation");
-        assert!(!plan.dialogue.is_empty());
-        assert_eq!(
-            plan.exercises.first().map(|e| e.kind.as_str()),
-            Some("dialogueRead"),
-            "the conversation is read before anything else"
-        );
-        assert!(plan.new_words > 0);
-        assert_eq!(plan.review_words, 0, "nothing is due on a fresh install");
-        assert!(
-            plan.exercises.iter().any(|e| e.kind == "dialogueGap"),
-            "the conversation is also drilled"
-        );
+        // A word drill is small: eight new words, met then recognised, and a memory round.
+        let words = list.iter().find(|b| b.format == "words").unwrap();
+        assert_eq!(words.complexity, "low");
+        let plan = session::build_block(&conn, words.id).unwrap();
+        assert_eq!(plan.new_words, 8);
+        assert!(plan.exercises.len() <= 17, "{} exercises", plan.exercises.len());
+        assert_eq!(plan.exercises[0].kind, "intro");
+        assert!(plan.exercises.iter().any(|e| e.kind == "memory"));
 
-        // The formats that work on several items at once.
-        let memory = plan.exercises.iter().find(|e| e.kind == "memory").expect("memory cards");
-        assert!(memory.pairs.len() >= 4);
+        // The dialogue drill reads first, then drills its lines.
+        let dialogue = list.iter().find(|b| b.format == "dialogue").unwrap();
+        let plan = session::build_block(&conn, dialogue.id).unwrap();
+        assert_eq!(plan.exercises[0].kind, "dialogueRead");
+        assert!(plan.exercises.iter().any(|e| e.kind == "dialogueGap"));
+
+        // Sentences: build each, then fill gaps from a bank that holds every answer.
+        let sentences = list.iter().find(|b| b.format == "sentences").unwrap();
+        assert_eq!(sentences.complexity, "medium");
+        let plan = session::build_block(&conn, sentences.id).unwrap();
+        assert!(plan.exercises.iter().any(|e| e.kind == "wordOrder"));
         let gaps = plan.exercises.iter().find(|e| e.kind == "gapFill").expect("fill the gaps");
-        assert!(gaps.gaps.len() >= 3);
         for gap in &gaps.gaps {
             assert!(gaps.options.contains(&gap.answer), "the bank holds every answer");
-            let sentence = format!("{}{}{}", gap.before, gap.answer, gap.after);
-            assert!(!gap.answer.is_empty() && sentence.split_whitespace().count() >= 3, "{sentence}");
         }
-        assert!(gaps.options.len() > gaps.gaps.len(), "the bank has decoys");
-
-        // Every multiple-choice exercise offers its own answer.
         for exercise in &plan.exercises {
-            // A gap bank holds several answers; it is checked below.
             if !exercise.options.is_empty() && exercise.kind != "gapFill" {
-                assert!(
-                    exercise.options.contains(&exercise.answer),
-                    "{} lost its answer",
-                    exercise.key
-                );
-                assert!(exercise.options.len() >= 2);
+                assert!(exercise.options.contains(&exercise.answer), "{} lost its answer", exercise.key);
             }
         }
+
+        // The built-in lessons are there, as study blocks without a topic.
+        let overview = blocks::overview(&conn).unwrap();
+        assert!(overview.lessons.len() >= 7);
+        assert!(overview.lessons.iter().all(|b| b.kind == "study"));
+        assert!(overview.due.is_empty(), "nothing is due on a fresh install");
+        assert_eq!(overview.next[0].topic_id, Some(basics), "the course starts at the beginning");
     }
 
     #[test]
-    fn answering_schedules_reviews_and_advances_the_rotation() {
-        let conn = scratch_db("progress");
+    fn finishing_a_block_schedules_its_next_check_in() {
+        let conn = scratch_db("schedule");
         let today = db::today(&conn);
-        let plan = session::build(&conn).expect("plan");
-
-        let mut graded = 0;
-        for exercise in &plan.exercises {
-            if exercise.item_kind != "word" {
-                continue;
-            }
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        let words = blocks::for_topic(&conn, basics)
+            .unwrap()
+            .into_iter()
+            .find(|b| b.format == "words")
+            .unwrap();
+        let plan = session::build_block(&conn, words.id).unwrap();
+        for exercise in plan.exercises.iter().filter(|e| e.item_kind == "word") {
             let state = srs::load(&conn, "word", exercise.item_id)
                 .unwrap()
                 .unwrap_or_else(|| srs::ReviewState::fresh(today));
-            srs::save(
-                &conn,
-                "word",
-                exercise.item_id,
-                &srs::grade(state, srs::GOOD, today),
-            )
-            .unwrap();
+            srs::save(&conn, "word", exercise.item_id, &srs::grade(state, srs::GOOD, today)).unwrap();
             stats::record_answer(&conn, today, 6, true).unwrap();
-            graded += 1;
         }
-        assert!(graded > 0);
 
-        assert!(stats::complete_day(&conn, today, plan.topic.id).unwrap(), "first completion");
-        assert!(!stats::complete_day(&conn, today, plan.topic.id).unwrap(), "not counted twice");
+        let done = blocks::record(&conn, words.id, blocks::result_from_score(9, 10)).unwrap();
+        assert_eq!(done.due_day, Some(today + words.period_days), "first pass: back after its period");
+        assert!(stats::mark_practised(&conn, today).unwrap(), "first block today");
+        assert!(!stats::mark_practised(&conn, today).unwrap(), "not counted twice");
 
         let summary = stats::collect(&conn).unwrap();
         assert_eq!(summary.current_streak, 1);
-        assert!(summary.completed_today);
-        assert!(summary.total_xp > 0);
         assert!(summary.words_seen > 0);
-        assert!(
-            summary.achievements.iter().any(|a| a.code == "first_day" && a.unlocked),
-            "finishing a day unlocks the first achievement"
-        );
+        assert!(summary.achievements.iter().any(|a| a.code == "first_day" && a.unlocked));
 
-        // Tomorrow moves to the next conversation, and today's words are not
-        // offered as new again.
-        let tomorrow = session::build(&conn).expect("next plan");
-        assert_eq!(tomorrow.topic.ord, 2);
-        let seen: std::collections::HashSet<i64> = plan
-            .exercises
-            .iter()
-            .filter(|e| e.item_kind == "word")
-            .map(|e| e.item_id)
-            .collect();
-        assert!(
-            tomorrow
-                .exercises
-                .iter()
-                .filter(|e| e.item_kind == "word" && e.is_new)
-                .all(|e| !seen.contains(&e.item_id)),
-            "already-learned words must not come back as new"
-        );
+        // The next block to start is a new one, not the one just done.
+        let overview = blocks::overview(&conn).unwrap();
+        assert!(overview.next.iter().all(|b| b.id != words.id));
+        assert_eq!(overview.done_today, 1);
+
+        // Failing brings it back tomorrow; passing again spreads it out.
+        let failed = blocks::record(&conn, words.id, "fail").unwrap();
+        assert_eq!(failed.due_day, Some(today + 1));
+        let passed = blocks::record(&conn, words.id, "pass").unwrap();
+        assert!(passed.interval_days >= words.period_days);
+    }
+
+    #[test]
+    fn the_examiner_s_verdict_schedules_the_study_block() {
+        let conn = scratch_db("examiner");
+        let lesson = blocks::overview(&conn).unwrap().lessons[0].clone();
+        conn.execute("INSERT INTO checkins (block_id, started_at) VALUES (?1, 0)", [lesson.id]).unwrap();
+        let checkin = conn.last_insert_rowid();
+        let (assessment, first) = examiner::record(
+            &conn,
+            checkin,
+            serde_json::from_str(r#"{"result":"partial","summary":"Mostly right.","to_review":["oni są"]}"#).unwrap(),
+        )
+        .unwrap();
+        assert!(first);
+        assert!(assessment.xp > 0, "a partial pass still earns something");
+        let block = blocks::load(&conn, lesson.id).unwrap();
+        assert_eq!(block.last_result.as_deref(), Some("partial"));
+        assert_eq!(block.due_day, Some(db::today(&conn) + block.period_days));
+        let detail = blocks::detail(&conn, lesson.id).unwrap();
+        assert!(detail.last_feedback.unwrap().contains("oni są"), "what to review is kept for next time");
     }
 
     #[test]
@@ -380,7 +396,6 @@ mod integration {
     #[test]
     fn the_tutor_builds_a_programme_that_can_be_practised() {
         let conn = scratch_db("programme");
-        let course_topic = session::build(&conn).unwrap().topic.id;
 
         // "Can you build me a programme for learning the colours?"
         let result = tutor::run_tool_for_test(
@@ -411,50 +426,101 @@ mod integration {
         assert!(result.get("error").is_none(), "{result}");
         let created = &result["created"];
         assert_eq!(created["words"], 4);
-        assert_eq!(created["sentences"], 2);
-        assert_eq!(created["dialogue_lines"], 2);
         assert_eq!(created["skipped_duplicates"], 1);
         assert_eq!(result["_action"]["kind"], "programmeCreated");
         let topic_id = created["topic_id"].as_i64().unwrap();
 
-        // A course word can appear in a programme too.
-        let shared: i64 = conn
-            .query_row("SELECT COUNT(*) FROM words WHERE pl = 'kolor'", [], |r| r.get(0))
-            .unwrap();
-        assert!(shared >= 1);
-
-        // Practising it on demand works like any topic, and leaves the course alone.
-        let plan = session::build_for(&conn, topic_id).unwrap();
+        // It is cut into drills, and they are offered first.
+        let list = blocks::for_topic(&conn, topic_id).unwrap();
+        let formats: Vec<&str> = list.iter().map(|b| b.format.as_str()).collect();
+        assert_eq!(formats, vec!["dialogue", "words", "sentences"]);
+        assert_eq!(blocks::overview(&conn).unwrap().next[0].topic_id, Some(topic_id));
+        let plan = session::build_block(&conn, list[1].id).unwrap();
         assert_eq!(plan.topic.kind, "programme");
         assert_eq!(plan.new_words, 4);
-        assert_eq!(plan.exercises[0].kind, "dialogueRead");
-        assert_eq!(session::build(&conn).unwrap().topic.id, course_topic);
 
-        // The daily focus moves the check-in to the programme…
-        let focus = tutor::run_tool_for_test(&conn, "set_daily_focus", serde_json::json!({ "topic_id": topic_id }));
-        assert_eq!(focus["_action"]["kind"], "focusSet");
-        assert_eq!(session::build(&conn).unwrap().topic.id, topic_id);
+        // Adding words re-cuts the drills without losing the existing ones.
+        tutor::run_tool_for_test(
+            &conn,
+            "add_to_programme",
+            serde_json::json!({ "topic_id": topic_id, "words": [{ "pl": "żółty", "en": "yellow", "pos": "adj" }] }),
+        );
+        let words_block = blocks::load(&conn, list[1].id).unwrap();
+        assert_eq!(words_block.items, 5);
 
-        // …until every word in it has been met; then the course takes over again.
-        let today = db::today(&conn);
-        for exercise in &plan.exercises {
-            if exercise.item_kind == "word" {
-                srs::save(&conn, "word", exercise.item_id, &srs::grade(srs::ReviewState::fresh(today), srs::GOOD, today)).unwrap();
-            }
-        }
-        assert!(stats::complete_day(&conn, today, topic_id).unwrap());
-        assert_eq!(session::focus_topic_id(&conn), None);
-        assert_eq!(session::build(&conn).unwrap().topic.id, course_topic, "rotation did not move");
-
-        // Course topics are read-only; programmes can be deleted with their history.
-        let refused = tutor::run_tool_for_test(&conn, "add_to_programme", serde_json::json!({ "topic_id": course_topic, "words": [] }));
+        // Course topics are read-only; programmes can be deleted with their blocks.
+        let course = db::require_topic_id(&conn, 1).unwrap();
+        let refused = tutor::run_tool_for_test(&conn, "add_to_programme", serde_json::json!({ "topic_id": course, "words": [] }));
         assert!(refused["error"].as_str().unwrap().contains("built-in"));
         let deleted = tutor::run_tool_for_test(&conn, "delete_programme", serde_json::json!({ "topic_id": topic_id }));
         assert_eq!(deleted["deleted"], "Colours");
-        let left: i64 = conn
-            .query_row("SELECT COUNT(*) FROM words WHERE topic_id = ?1", [topic_id], |r| r.get(0))
-            .unwrap();
-        assert_eq!(left, 0);
+        assert!(blocks::for_topic(&conn, topic_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_tutor_writes_study_blocks_and_single_format_drills() {
+        let conn = scratch_db("tutor-blocks");
+        let study = tutor::run_tool_for_test(
+            &conn,
+            "create_study_block",
+            serde_json::json!({
+                "title": "Iść — to go on foot",
+                "summary": "The present tense of iść.",
+                "complexity": "low",
+                "lesson": "**Iść**: idę, idziesz, idzie, idziemy, idziecie, idą.",
+                "objectives": ["Conjugate iść in the present tense", "Say where you are going"]
+            }),
+        );
+        assert_eq!(study["_action"]["kind"], "blockCreated", "{study}");
+        let study_id = study["_action"]["blockId"].as_i64().unwrap();
+        let block = blocks::load(&conn, study_id).unwrap();
+        assert_eq!((block.kind.as_str(), block.complexity.as_str(), block.period_days), ("study", "low", 5));
+        assert!(blocks::overview(&conn).unwrap().lessons.iter().any(|b| b.id == study_id));
+
+        // A study block without objectives is refused: the examiner needs them.
+        let refused = tutor::run_tool_for_test(
+            &conn,
+            "create_study_block",
+            serde_json::json!({ "title": "x", "summary": "x", "complexity": "low", "lesson": "x", "objectives": [] }),
+        );
+        assert!(refused["error"].is_string());
+
+        // "I meant memory cards": one drill, memory format, and nothing else made.
+        let drill = tutor::run_tool_for_test(
+            &conn,
+            "create_drill_block",
+            serde_json::json!({
+                "title": "Colours — memory",
+                "format": "memory",
+                "complexity": "low",
+                "words": [
+                    { "pl": "czerwony", "en": "red", "pos": "adj" },
+                    { "pl": "biały", "en": "white", "pos": "adj" },
+                    { "pl": "czarny", "en": "black", "pos": "adj" },
+                    { "pl": "zielony", "en": "green", "pos": "adj" }
+                ]
+            }),
+        );
+        let drill_id = drill["_action"]["blockId"].as_i64().unwrap();
+        let block = blocks::load(&conn, drill_id).unwrap();
+        assert_eq!((block.format.as_str(), block.items), ("memory", 4));
+        assert_eq!(blocks::for_topic(&conn, block.topic_id.unwrap()).unwrap().len(), 1);
+        let plan = session::build_block(&conn, drill_id).unwrap();
+        assert!(plan.exercises.iter().all(|e| e.kind == "memory"));
+
+        // Built-in blocks keep their content; only the period may change.
+        let builtin = blocks::overview(&conn).unwrap().lessons[0].id;
+        let edit = tutor::run_tool_for_test(&conn, "update_block", serde_json::json!({ "block_id": builtin, "title": "Mine now" }));
+        assert!(edit["error"].is_string());
+        let period = tutor::run_tool_for_test(&conn, "update_block", serde_json::json!({ "block_id": builtin, "period_days": 3 }));
+        assert!(period.get("error").is_none(), "{period}");
+        assert!(tutor::run_tool_for_test(&conn, "delete_block", serde_json::json!({ "block_id": builtin }))["error"].is_string());
+
+        // Scheduling makes it due now.
+        tutor::run_tool_for_test(&conn, "schedule_block", serde_json::json!({ "block_id": study_id }));
+        assert!(blocks::overview(&conn).unwrap().due.iter().any(|b| b.id == study_id));
+        let gone = tutor::run_tool_for_test(&conn, "delete_block", serde_json::json!({ "block_id": study_id }));
+        assert_eq!(gone["_action"]["kind"], "blockDeleted");
     }
 
     #[test]
