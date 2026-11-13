@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Songs are copied to <cache>/share/ under a friendly name before sharing. -->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

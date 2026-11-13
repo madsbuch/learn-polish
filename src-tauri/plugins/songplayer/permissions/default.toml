@@ -15,6 +15,7 @@ permissions = [
   "allow-remote-start",
   "allow-remote-stop",
   "allow-multicast",
+  "allow-share-file",
   "allow-register-listener",
   "allow-remove-listener",
 ]

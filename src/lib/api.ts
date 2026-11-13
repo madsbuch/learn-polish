@@ -12,6 +12,7 @@ import type {
   ChatMessage,
   Dialogue,
   DraftRequest,
+  Playlist,
   Song,
   SongDraft,
   TimedLine,
@@ -100,6 +101,23 @@ export const api = {
   songTrackPlayed: (trackId: number) => invoke<void>("song_track_played", { trackId }),
   songTrackLyrics: (trackId: number) =>
     invoke<TimedLine[] | null>("song_track_lyrics", { trackId }),
+
+  playlistsList: () => invoke<Playlist[]>("playlists_list"),
+  playlistCreate: (name: string, trackIds: number[] = []) =>
+    invoke<Playlist>("playlist_create", { name, trackIds }),
+  playlistRename: (playlistId: number, name: string) =>
+    invoke<Playlist>("playlist_rename", { playlistId, name }),
+  playlistDelete: (playlistId: number) => invoke<void>("playlist_delete", { playlistId }),
+  playlistAdd: (playlistId: number, trackIds: number[]) =>
+    invoke<Playlist>("playlist_add", { playlistId, trackIds }),
+  playlistRemove: (playlistId: number, entryId: number) =>
+    invoke<Playlist>("playlist_remove", { playlistId, entryId }),
+  playlistMove: (playlistId: number, entryId: number, delta: number) =>
+    invoke<Playlist>("playlist_move", { playlistId, entryId, delta }),
+  /** Resolves to where the file went, or null if the dialog was cancelled. */
+  songTrackSave: (trackId: number) => invoke<string | null>("song_track_save", { trackId }),
+  songTrackShareFile: (trackId: number) =>
+    invoke<string>("song_track_share_file", { trackId }),
 
   castDiscover: (address?: string) => invoke<CastDevice[]>("cast_discover", { address }),
   castStart: (device: CastDevice, trackIds: number[], index: number, repeat: string) =>

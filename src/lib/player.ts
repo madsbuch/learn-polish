@@ -301,6 +301,29 @@ export function previous() {
   else webLoad((state.index - 1 + state.queue.length) % state.queue.length, true);
 }
 
+/** Jumps to another song in the current queue. */
+export function skipTo(index: number) {
+  if (index < 0 || index >= state.queue.length) return;
+  if (state.cast) playQueue(state.queue, index);
+  else if (isAndroid) {
+    set({ index, position: 0 });
+    void native("skip_to", { index });
+  } else webLoad(index, true);
+}
+
+/** Phones can hand a song to another app; desktops save it instead. */
+export const canShare = isAndroid;
+
+/** Opens the phone's share sheet with a take's MP3. */
+export async function shareTrack(item: QueueItem) {
+  const path = await api.songTrackShareFile(item.track.id);
+  await invoke("plugin:songplayer|share_file", {
+    path,
+    mime: "audio/mpeg",
+    title: item.song.title,
+  });
+}
+
 export function seek(seconds: number) {
   set({ position: seconds });
   if (state.cast) void castCommand("seek", seconds);

@@ -1,7 +1,9 @@
 package com.polski.songplayer
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.ComponentName
+import android.content.Intent
 import android.content.Context
 import android.net.Uri
 import android.net.wifi.WifiManager
@@ -9,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -62,6 +65,13 @@ class RemoteArgs {
     var port: Int = 0
     lateinit var token: String
     var deviceName: String = "Sonos"
+}
+
+@InvokeArg
+class ShareArgs {
+    lateinit var path: String
+    var mime: String = "audio/mpeg"
+    var title: String = ""
 }
 
 @InvokeArg
@@ -268,6 +278,39 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /** Android drops multicast replies unless asked; needed to find speakers. */
+    /** Opens the system share sheet for a file in the app's cache. */
+    @Command
+    fun shareFile(invoke: Invoke) {
+        val args = invoke.parseArgs(ShareArgs::class.java)
+        try {
+            val file = File(args.path)
+            val uri = FileProvider.getUriForFile(
+                activity,
+                activity.packageName + ".songplayer.share",
+                file,
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = args.mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TITLE, args.title.ifEmpty { file.name })
+                clipData = ClipData.newRawUri(file.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, args.title.ifEmpty { null })
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.runOnUiThread {
+                try {
+                    activity.startActivity(chooser)
+                    invoke.resolve()
+                } catch (e: Exception) {
+                    invoke.reject(e.message ?: "Could not open the share sheet.")
+                }
+            }
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "Could not share the file.")
+        }
+    }
+
     @Command
     fun multicast(invoke: Invoke) {
         val args = invoke.parseArgs(MulticastArgs::class.java)

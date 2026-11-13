@@ -17,5 +17,16 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <!-- Hands a song's MP3 to another app through the share sheet. A
+             subclass, so it never collides with another library's provider. -->
+        <provider
+            android:name="com.polski.songplayer.ShareFileProvider"
+            android:authorities="${applicationId}.songplayer.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/songplayer_share_paths" />
+        </provider>
     </application>
 </manifest>

@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "remote_start",
     "remote_stop",
     "multicast",
+    "share_file",
     "register_listener",
     "remove_listener",
 ];

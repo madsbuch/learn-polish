@@ -5,6 +5,7 @@ mod content;
 mod db;
 mod error;
 mod models;
+mod playlists;
 mod programmes;
 mod session;
 mod songs;
@@ -85,6 +86,15 @@ pub fn run() {
             songs::song_track_delete,
             songs::song_track_played,
             songs::song_track_lyrics,
+            playlists::playlists_list,
+            playlists::playlist_create,
+            playlists::playlist_rename,
+            playlists::playlist_delete,
+            playlists::playlist_add,
+            playlists::playlist_remove,
+            playlists::playlist_move,
+            playlists::song_track_save,
+            playlists::song_track_share_file,
             cast::cast_discover,
             cast::cast_start,
             cast::cast_command,
@@ -422,6 +432,34 @@ mod integration {
             .query_row("SELECT COUNT(*) FROM words WHERE topic_id = ?1", [topic_id], |r| r.get(0))
             .unwrap();
         assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn playlists_hold_takes_in_order_and_lose_deleted_ones() {
+        let conn = scratch_db("playlists");
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+             VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0);
+             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path) VALUES
+                 (10, 1, 0, 'a', '/tmp/a.mp3'), (11, 1, 1, 'b', '/tmp/b.mp3');",
+        )
+        .unwrap();
+
+        let list = playlists::create(&conn, "  Morning   run ", &[10, 11, 10]).unwrap();
+        assert_eq!(list.name, "Morning run");
+        let order = |p: &playlists::Playlist| p.entries.iter().map(|e| e.track_id).collect::<Vec<_>>();
+        assert_eq!(order(&list), vec![10, 11, 10], "the same take may appear twice");
+
+        let moved = playlists::move_entry(&conn, list.id, list.entries[2].id, -2).unwrap();
+        assert_eq!(order(&moved), vec![10, 10, 11]);
+        // Moving past either end stays in bounds.
+        let moved = playlists::move_entry(&conn, list.id, moved.entries[0].id, -5).unwrap();
+        assert_eq!(order(&moved), vec![10, 10, 11]);
+
+        // Deleting a take takes it out of every playlist.
+        conn.execute("DELETE FROM song_tracks WHERE id = 10", []).unwrap();
+        assert_eq!(order(&playlists::list(&conn).unwrap()[0]), vec![11]);
+        assert!(playlists::create(&conn, "   ", &[]).is_err());
     }
 
     #[test]

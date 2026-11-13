@@ -18,6 +18,7 @@ Everything the app's song player uses.
 - `allow-remote-start`
 - `allow-remote-stop`
 - `allow-multicast`
+- `allow-share-file`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -364,6 +365,32 @@ Enables the set_repeat command without any pre-configured scope.
 <td>
 
 Denies the set_repeat command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`songplayer:allow-share-file`
+
+</td>
+<td>
+
+Enables the share_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`songplayer:deny-share-file`
+
+</td>
+<td>
+
+Denies the share_file command without any pre-configured scope.
 
 </td>
 </tr>

@@ -141,9 +141,19 @@ tab makes them to order:
   highlights the line being sung, with its English meaning under each Polish
   line; tap a line to jump there. Songs whose timings cannot be fetched (kie.ai
   keeps them for 14 days) show the full lyrics instead.
-- **Built for repetition:** play all, shuffle, repeat all / one, play counts,
-  and a mini player above the tab bar so the music keeps going while you
-  practise.
+- **Library and player are separate.** The Music tab is the library: songs
+  and playlists, and a page per song with its takes and lyrics. Playing is
+  the player's job: a bar above the tabs on every screen, which opens the
+  full-screen player with the controls, lyrics that follow the music, and
+  what is up next.
+- **Playlists** hold takes (the two takes of a song can sound quite
+  different): add from a song's page or from the player, reorder, rename.
+  Deleting a take takes it out of every playlist.
+- **Save or share the MP3.** Every take can be saved wherever you choose
+  (the system save dialog) or, on Android, handed to any app through the
+  share sheet (a `FileProvider` in the songplayer plugin).
+- **Built for repetition:** play, shuffle, repeat all / one, play counts, and
+  the player bar keeps the music going while you practise.
 - **The phone's own player:** on Android, songs play through a native Media3
   service (`src-tauri/plugins/songplayer`), not the web view. That gives the
   lock screen and notification controls, headphone and Bluetooth buttons, a
@@ -259,7 +269,10 @@ src/                       React UI
   screens/Session.tsx      the practice flow (eight exercise shapes)
   screens/Exercises.tsx    the home tab: today's check-in, programmes, the course
   screens/Search.tsx       search every word and sentence
-  screens/Songs.tsx        song library, player and the songwriter
+  screens/Music.tsx        the music library: songs, playlists, a song's page
+  screens/Player.tsx       the full-screen player
+  screens/SongComposer.tsx the songwriter
+  src/playlists.rs         playlists, and saving or sharing a take's MP3
   lib/player.ts            the app-wide music player and queue
 src-tauri/
   content/                 the curriculum: TSV word lists, TSV sentences, JSON dialogues

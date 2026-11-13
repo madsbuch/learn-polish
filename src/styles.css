@@ -1178,6 +1178,71 @@ label.field > span {
   color: #fff;
 }
 
+/* A playable row: the row itself plays; buttons at the end do the rest. */
+.track-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.track-row:last-child {
+  border-bottom: none;
+}
+.track-row .list-row {
+  border-bottom: none;
+  min-width: 0;
+  padding-right: 6px;
+}
+.track-row[data-current="true"],
+.list-row[data-current="true"] {
+  background: var(--brand-tint);
+}
+.cover-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+.cover-badge {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(20, 10, 60, 0.45);
+  color: #fff;
+}
+.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.take-block .track-row {
+  border-bottom: none;
+}
+.take-block + .take-block {
+  border-top: 1px solid var(--line-soft);
+}
+.take-actions {
+  gap: 6px;
+  padding: 0 16px 13px 72px;
+}
+.take-actions .chip {
+  cursor: pointer;
+  padding: 6px 11px;
+}
+.player-screen .take-actions {
+  padding: 0;
+}
+.icon-btn.small {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+}
+
 .song {
   border-bottom: 1px solid var(--line-soft);
 }

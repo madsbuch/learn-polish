@@ -21,7 +21,8 @@ import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
-import { Songs } from "./screens/Songs";
+import { Music } from "./screens/Music";
+import { Player } from "./screens/Player";
 import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
 import { Tutor } from "./screens/Tutor";
 
@@ -41,6 +42,7 @@ type Overlay =
   | { kind: "summary"; result: SessionResult; xp: number }
   | { kind: "progress" }
   | { kind: "search" }
+  | { kind: "player" }
   | {
       kind: "topic";
       progress: TopicProgress;
@@ -57,6 +59,9 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("exercises");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
   const [error, setError] = useState<string | null>(null);
+  /** A song the player asked the music tab to show. */
+  const [musicSong, setMusicSong] = useState<number | null>(null);
+  const clearMusicSong = useCallback(() => setMusicSong(null), []);
 
   const refresh = useCallback(async () => {
     const [nextPlan, nextStats, nextTopics] = await Promise.all([
@@ -262,6 +267,21 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "player") {
+    return (
+      <div className="app">
+        <Player
+          onClose={() => setOverlay({ kind: "none" })}
+          onOpenSong={(songId) => {
+            setOverlay({ kind: "none" });
+            setTab("music");
+            setMusicSong(songId);
+          }}
+        />
+      </div>
+    );
+  }
+
   if (overlay.kind === "search") {
     return (
       <div className="app">
@@ -288,9 +308,11 @@ export default function App() {
       ) : null}
 
       {tab === "music" ? (
-        <Songs
+        <Music
           settings={settings}
           topics={topics}
+          openSongId={musicSong}
+          onSongOpened={clearMusicSong}
           onOpenSettings={() => setTab("settings")}
         />
       ) : null}
@@ -320,7 +342,7 @@ export default function App() {
         </button>
       ) : null}
 
-      {tab !== "music" ? <MiniPlayer onOpen={() => setTab("music")} /> : null}
+      <MiniPlayer onOpen={() => setOverlay({ kind: "player" })} />
 
       <nav className="nav">
         {TABS.map((entry) => {

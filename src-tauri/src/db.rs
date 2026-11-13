@@ -176,6 +176,23 @@ CREATE TABLE IF NOT EXISTS song_tracks (
     last_played_at INTEGER,
     UNIQUE (song_id, remote_id)
 );
+
+-- Playlists hold takes, not songs: the two takes of a song can sound quite
+-- different, and the learner picks the one they like. Removing a take
+-- removes it from every playlist.
+CREATE TABLE IF NOT EXISTS playlists (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS playlist_tracks (
+    id          INTEGER PRIMARY KEY,
+    playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+    track_id    INTEGER NOT NULL REFERENCES song_tracks(id) ON DELETE CASCADE,
+    ord         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS playlist_tracks_order ON playlist_tracks(playlist_id, ord);
 "#;
 
 fn migrate(conn: &Connection) -> Result<()> {

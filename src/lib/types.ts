@@ -326,6 +326,18 @@ export interface Song extends SongDraft {
   tracks: SongTrack[];
 }
 
+export interface PlaylistEntry {
+  /** The entry itself; the same take may be in a playlist twice. */
+  id: number;
+  trackId: number;
+}
+
+export interface Playlist {
+  id: number;
+  name: string;
+  entries: PlaylistEntry[];
+}
+
 export interface DraftRequest {
   brief?: string;
   topicId?: number | null;

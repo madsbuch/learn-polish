@@ -451,6 +451,18 @@
           "markdownDescription": "Denies the set_repeat command without any pre-configured scope."
         },
         {
+          "description": "Enables the share_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-share-file",
+          "markdownDescription": "Enables the share_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the share_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-share-file",
+          "markdownDescription": "Denies the share_file command without any pre-configured scope."
+        },
+        {
           "description": "Enables the skip_to command without any pre-configured scope.",
           "type": "string",
           "const": "allow-skip-to",
@@ -487,10 +499,10 @@
           "markdownDescription": "Denies the toggle command without any pre-configured scope."
         },
         {
-          "description": "Everything the app's song player uses.\n#### This default permission set includes:\n\n- `allow-set-queue`\n- `allow-play`\n- `allow-pause`\n- `allow-toggle`\n- `allow-next`\n- `allow-previous`\n- `allow-seek-to`\n- `allow-skip-to`\n- `allow-set-repeat`\n- `allow-stop`\n- `allow-get-state`\n- `allow-remote-start`\n- `allow-remote-stop`\n- `allow-multicast`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Everything the app's song player uses.\n#### This default permission set includes:\n\n- `allow-set-queue`\n- `allow-play`\n- `allow-pause`\n- `allow-toggle`\n- `allow-next`\n- `allow-previous`\n- `allow-seek-to`\n- `allow-skip-to`\n- `allow-set-repeat`\n- `allow-stop`\n- `allow-get-state`\n- `allow-remote-start`\n- `allow-remote-stop`\n- `allow-multicast`\n- `allow-share-file`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything the app's song player uses.\n#### This default permission set includes:\n\n- `allow-set-queue`\n- `allow-play`\n- `allow-pause`\n- `allow-toggle`\n- `allow-next`\n- `allow-previous`\n- `allow-seek-to`\n- `allow-skip-to`\n- `allow-set-repeat`\n- `allow-stop`\n- `allow-get-state`\n- `allow-remote-start`\n- `allow-remote-stop`\n- `allow-multicast`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Everything the app's song player uses.\n#### This default permission set includes:\n\n- `allow-set-queue`\n- `allow-play`\n- `allow-pause`\n- `allow-toggle`\n- `allow-next`\n- `allow-previous`\n- `allow-seek-to`\n- `allow-skip-to`\n- `allow-set-repeat`\n- `allow-stop`\n- `allow-get-state`\n- `allow-remote-start`\n- `allow-remote-stop`\n- `allow-multicast`\n- `allow-share-file`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }
