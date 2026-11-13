@@ -22,6 +22,9 @@ pub struct Word {
     pub pl: String,
     pub meaning: String,
     pub pos: String,
+    /// The drill it belongs to, and that drill's title.
+    pub block_id: i64,
+    pub block: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -30,6 +33,8 @@ pub struct Sentence {
     pub id: i64,
     pub pl: String,
     pub meaning: String,
+    pub block_id: i64,
+    pub block: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,13 +56,6 @@ pub struct CataloguePage {
     pub sentences: Vec<Sentence>,
     pub total_words: i64,
     pub total_sentences: i64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Dialogue {
-    pub topic: Topic,
-    pub lines: Vec<DialogueLine>,
 }
 
 /// One thing to do in a session. The backend decides the exercise type from the

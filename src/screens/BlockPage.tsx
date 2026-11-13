@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { CloseIcon, DrillIcon, NavIcon, PlayerIcon, PlusIcon, StudyIcon } from "../components/icons";
+import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
 import { SongToListen } from "../components/SongToListen";
 import { SpeakButton } from "../components/ui";
@@ -59,6 +60,7 @@ export function BlockPage({
 }) {
   const [block, setBlock] = useState<BlockDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [revealAll, setRevealAll] = useState(false);
   /** The course picker: add the block to one, or move it there. */
   const [picking, setPicking] = useState<{ mode: "add" | "move"; courses: TopicProgress[] } | null>(null);
 
@@ -170,6 +172,19 @@ export function BlockPage({
             </Card>
           </Section>
         </>
+      ) : null}
+
+      {block.lines.length > 0 ? (
+        <Section title="Conversation">
+          <Stack gap={3}>
+            <DialogueToolbar
+              lines={block.lines}
+              revealAll={revealAll}
+              onToggleReveal={() => setRevealAll((value) => !value)}
+            />
+            <DialogueView lines={block.lines} revealAll={revealAll} />
+          </Stack>
+        </Section>
       ) : null}
 
       {!study && block.words.length > 0 ? (

@@ -16,12 +16,17 @@ export interface Word {
   pl: string;
   meaning: string;
   pos: string;
+  /** The drill it belongs to. */
+  blockId: number;
+  block: string;
 }
 
 export interface Sentence {
   id: number;
   pl: string;
   meaning: string;
+  blockId: number;
+  block: string;
 }
 
 export interface DialogueLine {
@@ -57,11 +62,6 @@ export interface Voice {
 export interface SpeechLine {
   text: string;
   gender: string;
-}
-
-export interface Dialogue {
-  topic: Topic;
-  lines: DialogueLine[];
 }
 
 export type ExerciseKind =
@@ -162,6 +162,8 @@ export interface BlockDetail extends Block {
   lastFeedback: string | null;
   /** The courses that list it: [id, English title, Polish title]. */
   courses: [number, string, string][];
+  /** A conversation drill's dialogue. */
+  lines: DialogueLine[];
 }
 
 export interface BlockOverview {
@@ -408,6 +410,8 @@ export interface SongDraft {
   /** "f", "m" or "" for no preference. */
   vocalGender: string;
   sections: SongSection[];
+  /** The course whose words it uses; its listening block is filed there. */
+  topicId?: number | null;
 }
 
 export interface SongTrack {

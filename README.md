@@ -71,8 +71,10 @@ schedule, shown in each); it can be moved between courses, and taking it out
 of its last course deletes it, with its words and their history. On a block's
 page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it. The starter lessons (`src-tauri/content/lessons/`: być, mieć,
 the three present-tense patterns, gender, the seven cases, ty vs. Pan/Pani)
-are in *Grammar essentials*; listening blocks for songs go in *Listening*, and
-a lesson the tutor writes without a better home goes in *Lessons*. The
+are in *Grammar essentials*, and a lesson the tutor writes without a better
+home goes in *Lessons*. A song remembers the course whose words it uses, and
+its listening block is filed there (only a song with no course goes in
+*Listening*); like any block it can be moved or shared afterwards. The
 **tutor** builds more: courses on any theme, single drills in a chosen format,
 and study blocks with their own lessons and objectives.
 
@@ -419,8 +421,10 @@ and every sheet, adds a history entry that back pops). The player bar above
 the tabs can be swiped away to the right, which stops the music.
 
 Exercises is the home screen: today on top, what is due, what to start next,
-then your courses, each opening to its blocks, its dialogue, words and
-sentences, and *Rename* / *Delete course*. Two screens open from it rather than taking a tab:
+then your courses. A course page has tabs: **Blocks** (in the course's
+order), **Words** and **Sentences** — every item with the drill it belongs to,
+one tap away — and *Rename* / *Delete course*. A conversation drill's
+dialogue is on that drill's page. Two screens open from it rather than taking a tab:
 
 - **Progress** — tap the streak or level chip, or *Your progress*: stats,
   the 18-week activity map, per-topic progress and achievements.

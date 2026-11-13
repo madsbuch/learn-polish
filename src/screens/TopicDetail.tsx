@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { BlockRow } from "../components/BlockRow";
 import { SpeakButton } from "../components/ui";
 import {
@@ -20,10 +19,14 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { Block, DialogueLine, Sentence, TopicProgress, Word } from "../lib/types";
+import type { Block, Sentence, TopicProgress, Word } from "../lib/types";
 
-export type TopicSection = "conversation" | "words" | "sentences";
+export type TopicSection = "blocks" | "words" | "sentences";
 
+/**
+ * A course: the blocks it lists, in its order. Words and sentences belong to
+ * those blocks; the other tabs list them all, each leading to its block.
+ */
 export function TopicDetail({
   progress,
   initialSection,
@@ -38,18 +41,16 @@ export function TopicDetail({
   initialSection?: TopicSection;
   today: number;
   onBack: () => void;
-  onOpenBlock: (block: Block) => void;
+  onOpenBlock: (blockId: number) => void;
   onDeleted: () => void;
   /** The course was renamed; reload the lists that show it. */
   onChanged: () => void;
 }) {
   const [blocks, setBlocks] = useState<Block[] | null>(null);
-  const [tab, setTab] = useState<TopicSection>(initialSection ?? "conversation");
-  const [lines, setLines] = useState<DialogueLine[] | null>(null);
+  const [tab, setTab] = useState<TopicSection>(initialSection ?? "blocks");
   const [words, setWords] = useState<Word[] | null>(null);
   const [sentences, setSentences] = useState<Sentence[] | null>(null);
   const [query, setQuery] = useState("");
-  const [revealAll, setRevealAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [names, setNames] = useState({
     title: progress.topic.title,
@@ -59,16 +60,6 @@ export function TopicDetail({
   const [renaming, setRenaming] = useState<typeof names | null>(null);
 
   const topicId = progress.topic.id;
-
-  // A course may have no dialogue, words or sentences (a course of lessons):
-  // the browser shows what there is, and nothing when there is nothing.
-  const hasLines = lines === null || lines.length > 0;
-  const hasWords = words === null || words.length > 0;
-  const hasSentences = sentences === null || sentences.length > 0;
-  useEffect(() => {
-    if (tab === "conversation" && !hasLines) setTab(hasWords ? "words" : "sentences");
-    if (tab === "words" && !hasWords) setTab(hasSentences ? "sentences" : "conversation");
-  }, [tab, hasLines, hasWords, hasSentences]);
 
   async function act(action: () => Promise<void>) {
     setError(null);
@@ -80,18 +71,10 @@ export function TopicDetail({
   }
 
   useEffect(() => {
-    api.blocksForTopic(topicId).then(setBlocks).catch((cause) => setError(errorMessage(cause)));
-  }, [topicId]);
-
-  useEffect(() => {
     setError(null);
-    Promise.all([
-      api.getDialogue(topicId),
-      api.browseWords(topicId, "", 400),
-      api.browseSentences(topicId),
-    ])
-      .then(([dialogue, wordList, sentenceList]) => {
-        setLines(dialogue.lines);
+    Promise.all([api.blocksForTopic(topicId), api.browseWords(topicId, "", 500), api.browseSentences(topicId)])
+      .then(([blockList, wordList, sentenceList]) => {
+        setBlocks(blockList);
         setWords(wordList);
         setSentences(sentenceList);
       })
@@ -103,11 +86,19 @@ export function TopicDetail({
     const needle = query.trim().toLowerCase();
     if (!needle) return words;
     return words.filter(
-      (word) =>
-        word.pl.toLowerCase().includes(needle) ||
-        word.meaning.toLowerCase().includes(needle),
+      (word) => word.pl.toLowerCase().includes(needle) || word.meaning.toLowerCase().includes(needle),
     );
   }, [words, query]);
+
+  // A course of lessons has no words or sentences: then there are no tabs.
+  const tabs = [
+    { value: "blocks" as const, label: blocks ? `Blocks ${blocks.length}` : "Blocks" },
+    ...(words && words.length > 0 ? [{ value: "words" as const, label: `Words ${words.length}` }] : []),
+    ...(sentences && sentences.length > 0
+      ? [{ value: "sentences" as const, label: `Sentences ${sentences.length}` }]
+      : []),
+  ];
+  const shown = tabs.some((t) => t.value === tab) ? tab : "blocks";
 
   return (
     <Screen title={names.titlePl} subtitle={names.title} onBack={onBack} nav={false}>
@@ -118,94 +109,60 @@ export function TopicDetail({
         </Text>
       ) : null}
 
-      <Section title={blocks ? `${blocks.length} blocks` : "Blocks"}>
-        {blocks ? (
+      {tabs.length > 1 ? <Segmented value={shown} onChange={setTab} options={tabs} /> : null}
+
+      {shown === "blocks" ? (
+        blocks ? (
           <List>
             {blocks.map((block) => (
-              <BlockRow key={block.id} block={block} today={today} onOpen={onOpenBlock} />
+              <BlockRow key={block.id} block={block} today={today} onOpen={(b) => onOpenBlock(b.id)} />
             ))}
+            {blocks.length === 0 ? <ListEmpty>No blocks yet. Ask the tutor to add some.</ListEmpty> : null}
           </List>
         ) : (
           <Spinner />
-        )}
-      </Section>
+        )
+      ) : null}
 
-      {hasLines || hasWords || hasSentences ? (
-      <Section title="Browse">
-      <Stack gap={4}>
-        <Segmented
-          value={tab}
-          onChange={setTab}
-          options={[
-            ...(hasLines ? [{ value: "conversation" as const, label: "Conversation" }] : []),
-            ...(hasWords
-              ? [{ value: "words" as const, label: `Words ${progress.seenWords}/${progress.totalWords}` }]
-              : []),
-            ...(hasSentences ? [{ value: "sentences" as const, label: "Sentences" }] : []),
-          ]}
-        />
-
-        {tab === "conversation" ? (
-          lines ? (
-            <Stack gap={4}>
-              <DialogueToolbar
-                lines={lines}
-                revealAll={revealAll}
-                onToggleReveal={() => setRevealAll((value) => !value)}
+      {shown === "words" && words ? (
+        <Stack gap={3}>
+          <input
+            type="search"
+            value={query}
+            placeholder="Search these words"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <List>
+            {filtered.map((word) => (
+              <ListItem
+                key={word.id}
+                selectable
+                title={word.pl}
+                subtitle={`${word.meaning} · ${word.block}`}
+                label={`${word.pl}: open ${word.block}`}
+                onClick={() => onOpenBlock(word.blockId)}
+                trailing={<SpeakButton text={word.pl} />}
               />
-              <DialogueView lines={lines} revealAll={revealAll} />
-            </Stack>
-          ) : (
-            <Spinner />
-          )
-        ) : null}
+            ))}
+            {filtered.length === 0 ? <ListEmpty>No match.</ListEmpty> : null}
+          </List>
+        </Stack>
+      ) : null}
 
-        {tab === "words" ? (
-          words ? (
-            <Stack gap={3}>
-              <input
-                type="search"
-                value={query}
-                placeholder="Search these words"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <List>
-                {filtered.map((word) => (
-                  <ListItem
-                    key={word.id}
-                    selectable
-                    title={word.pl}
-                    subtitle={`${word.meaning} · ${word.pos}`}
-                    trailing={<SpeakButton text={word.pl} />}
-                  />
-                ))}
-                {filtered.length === 0 ? <ListEmpty>No match.</ListEmpty> : null}
-              </List>
-            </Stack>
-          ) : (
-            <Spinner />
-          )
-        ) : null}
-
-        {tab === "sentences" ? (
-          sentences ? (
-            <List>
-              {sentences.map((sentence) => (
-                <ListItem
-                  key={sentence.id}
-                  selectable
-                  title={sentence.pl}
-                  subtitle={sentence.meaning}
-                  trailing={<SpeakButton text={sentence.pl} />}
-                />
-              ))}
-            </List>
-          ) : (
-            <Spinner />
-          )
-        ) : null}
-      </Stack>
-      </Section>
+      {shown === "sentences" && sentences ? (
+        <List>
+          {sentences.map((sentence) => (
+            <ListItem
+              key={sentence.id}
+              selectable
+              title={sentence.pl}
+              subtitle={`${sentence.meaning} · ${sentence.block}`}
+              label={`${sentence.pl}: open ${sentence.block}`}
+              onClick={() => onOpenBlock(sentence.blockId)}
+              trailing={<SpeakButton text={sentence.pl} />}
+            />
+          ))}
+        </List>
       ) : null}
 
       <Section title="Manage">
@@ -216,7 +173,7 @@ export function TopicDetail({
           <ConfirmButton
             label="Delete course"
             confirmLabel="Delete"
-            question="Delete this course, all its blocks, its words and your progress on them?"
+            question="Delete this course? Blocks only in this course go with it, with their words and your progress on them."
             block
             onConfirm={() =>
               act(async () => {

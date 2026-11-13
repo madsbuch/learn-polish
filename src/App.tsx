@@ -267,7 +267,7 @@ export default function App() {
           initialSection={overlay.section}
           today={overview.today}
           onBack={() => setOverlay(overlay.back)}
-          onOpenBlock={(block) => setOverlay({ kind: "block", blockId: block.id, back: overlay })}
+          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: overlay })}
           onDeleted={() => {
             setOverlay(overlay.back);
             void reloadAll();

@@ -73,6 +73,8 @@ pub struct SongDraft {
     /// "f", "m" or "" for no preference.
     pub vocal_gender: String,
     pub sections: Vec<SongSection>,
+    /// The course whose words it uses: its listening block is filed there.
+    pub topic_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1036,8 +1038,9 @@ pub fn list_songs(conn: &Connection) -> Result<Vec<Song>> {
 pub fn insert_song(conn: &Connection, draft: &SongDraft, suno_model: &str) -> Result<i64> {
     conn.execute(
         "INSERT INTO songs (title, chorus_pl, chorus_en, style, vocal_gender, sections, lyrics,
-                            suno_model, status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'generating', ?9)",
+                            suno_model, status, created_at, topic_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'generating', ?9,
+                 (SELECT id FROM topics WHERE id = ?10))",
         rusqlite::params![
             draft.title,
             draft.chorus_pl,
@@ -1048,6 +1051,7 @@ pub fn insert_song(conn: &Connection, draft: &SongDraft, suno_model: &str) -> Re
             render_lyrics(draft),
             suno_model,
             db::now_secs(),
+            draft.topic_id,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -1069,6 +1073,8 @@ fn draft_of(song: &Song) -> SongDraft {
         style: song.style.clone(),
         vocal_gender: song.vocal_gender.clone(),
         sections: song.sections.clone(),
+        // Only for generation, which does not file anything.
+        topic_id: None,
     }
 }
 
@@ -1282,6 +1288,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
     }
+    draft.topic_id = request.topic_id.or(request.previous.as_ref().and_then(|p| p.topic_id));
     // The learner's explicit choices beat the model's.
     if request.previous.is_none() {
         if !request.chorus_pl.trim().is_empty() {
@@ -1417,6 +1424,7 @@ mod tests {
             chorus_en: "A coffee with milk, please".into(),
             style: "acoustic pop".into(),
             vocal_gender: "".into(),
+            topic_id: None,
             sections: vec![
                 SongSection {
                     kind: "verse".into(),

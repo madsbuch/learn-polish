@@ -19,7 +19,6 @@ import type {
   CastState,
   ChatMessage,
   Conversation,
-  Dialogue,
   DraftRequest,
   Playlist,
   Song,
@@ -83,7 +82,6 @@ export const api = {
 
   getStats: () => invoke<Stats>("get_stats"),
   getTopicProgress: () => invoke<TopicProgress[]>("get_topic_progress"),
-  getDialogue: (topicId: number) => invoke<Dialogue>("get_dialogue", { topicId }),
   browseWords: (topicId: number | null, query: string, limit = 300) =>
     invoke<Word[]>("browse_words", { topicId, query, limit }),
   browseCatalogue: (topicId: number | null, query: string, limit = 200) =>

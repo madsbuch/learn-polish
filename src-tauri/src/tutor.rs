@@ -74,8 +74,10 @@ What the app does — learning happens in blocks:
   course deletes it with its words. Use move_block, add_block_to_course, \
   remove_block_from_course and order_course_blocks to rearrange. The app started with a set of courses (greetings, \
   food, numbers… and Grammar essentials); they are ordinary courses — you can add to, edit or \
-  delete any course or block. Lessons with no better home go in \"Lessons\", listening blocks in \
-  \"Listening\".
+  delete any course or block. Lessons with no better home go in \"Lessons\". A song's listening \
+  block goes in the course the song was written from (or the course_id you give); only a \
+  song with no course goes in \"Listening\". Listening blocks are ordinary blocks: they \
+  can be moved, shared and reordered like any other.
 
 Using tools:
 - When the learner asks for practice on a theme (colours, numbers, a trip…), build a \
@@ -402,7 +404,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "properties": {
                     "song_id": { "type": "integer" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "low: the gist and the chorus; medium: lines and missing words; high: also the grammar of what is sung" },
-                    "focus": { "type": "string", "description": "Optional: what to listen out for, e.g. \"the verbs in the first verse\"" }
+                    "focus": { "type": "string", "description": "Optional: what to listen out for, e.g. \"the verbs in the first verse\"" },
+                    "course_id": { "type": "integer", "description": "The course to file it in; leave out for the course the song was written from" }
                 },
                 "required": ["song_id"]
             }),
@@ -546,7 +549,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "about": { "type": "string", "description": "What the song is about, in English" },
-                    "course_id": { "type": "integer", "description": "Take vocabulary from this course" },
+                    "course_id": { "type": "integer", "description": "Take vocabulary from this course; the song's listening block is filed there too" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
                     "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
                     "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
@@ -841,6 +844,8 @@ fn yes() -> bool {
 #[derive(Deserialize)]
 struct ListeningArgs {
     song_id: i64,
+    #[serde(default, alias = "topic_id")]
+    course_id: Option<i64>,
     #[serde(default)]
     complexity: Option<String>,
     #[serde(default)]
@@ -1017,6 +1022,7 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                 args.song_id,
                 args.complexity.as_deref(),
                 args.focus.as_deref(),
+                args.course_id,
                 "tutor",
             )?;
             Ok(Outcome::block(
@@ -1457,7 +1463,7 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
         let listen = args.listening_block;
         let song_id = songs::start_song(app, db, draft)?;
         let block = if listen {
-            Some(blocks::create_listening(&db.lock(), song_id, None, None, "tutor")?)
+            Some(blocks::create_listening(&db.lock(), song_id, None, None, args.topic_id, "tutor")?)
         } else {
             None
         };

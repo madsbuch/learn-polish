@@ -109,6 +109,8 @@ pub struct BlockDetail {
     pub last_feedback: Option<String>,
     /// The courses that list it: (id, English title, Polish title).
     pub courses: Vec<(i64, String, String)>,
+    /// A conversation drill's dialogue.
+    pub lines: Vec<crate::models::DialogueLine>,
 }
 
 /// What the home screen shows: what is due, and what to start next.
@@ -212,6 +214,7 @@ pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
     Ok(BlockDetail {
         words: pairs("words")?,
         sentences: pairs("sentences")?,
+        lines: crate::session::block_lines(conn, id)?,
         courses,
         lesson,
         objectives: serde_json::from_str(&objectives).unwrap_or_default(),
@@ -407,11 +410,14 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
 
 /// A listening block: listen to a song, then the examiner asks about it.
 /// One per song — asking again returns the existing block.
+/// It is filed in `course` if given, else in the course the song was written
+/// from, else in "Listening". Like any block, it can be moved or shared later.
 pub fn create_listening(
     conn: &Connection,
     song_id: i64,
     complexity: Option<&str>,
     focus: Option<&str>,
+    course: Option<i64>,
     origin: &str,
 ) -> Result<Block> {
     if let Some(id) = conn
@@ -432,7 +438,20 @@ pub fn create_listening(
         Some(focus) => format!("Listen to the song a couple of times. Pay attention to: {focus}"),
         None => "Listen to the song a couple of times, then check in. Try it without the lyrics first.".into(),
     };
-    let topic_id = crate::courses::listening_course(conn)?;
+    let song_course: Option<i64> = conn
+        .query_row(
+            "SELECT t.id FROM songs s JOIN topics t ON t.id = s.topic_id WHERE s.id = ?1",
+            [song_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let topic_id = match course.or(song_course) {
+        Some(id) => {
+            crate::courses::require_course(conn, id)?;
+            id
+        }
+        None => crate::courses::listening_course(conn)?,
+    };
     conn.execute(
         "INSERT INTO blocks (kind, format, ord, title, summary, complexity, lesson,
              objectives, period_days, origin, created_at, song_id)
@@ -669,7 +688,7 @@ pub mod commands {
     /// The listening block for a song, made on first ask.
     #[tauri::command]
     pub async fn block_for_song(db: State<'_, Db>, song_id: i64) -> Result<super::Block> {
-        super::create_listening(&db.lock(), song_id, None, None, "tutor")
+        super::create_listening(&db.lock(), song_id, None, None, None, "you")
     }
 
     #[tauri::command]

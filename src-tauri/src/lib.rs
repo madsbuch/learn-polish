@@ -68,7 +68,6 @@ pub fn run() {
             examiner::checkin_start,
             examiner::checkin_send,            commands::get_stats,
             commands::get_topic_progress,
-            commands::get_dialogue,
             commands::browse_words,
             commands::browse_sentences,
             commands::browse_catalogue,
@@ -513,6 +512,7 @@ mod integration {
             chorus_en: "A coffee, please".into(),
             style: String::new(),
             vocal_gender: "f".into(),
+            topic_id: None,
             sections: vec![songs::SongSection {
                 kind: "chorus".into(),
                 lines: vec![songs::SongLine { en: "A coffee, please".into(), pl: "Poproszę kawę".into() }],
@@ -886,9 +886,33 @@ mod integration {
         assert_eq!((block.kind.as_str(), block.format.as_str(), block.song_id), ("study", "song", Some(1)));
         assert!(blocks::detail(&conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
         // One per song: asking again returns the same block.
-        assert_eq!(blocks::create_listening(&conn, 1, None, None, "tutor").unwrap().id, id);
-        // It is filed in the Listening course, and goes when the song goes.
+        assert_eq!(blocks::create_listening(&conn, 1, None, None, None, "tutor").unwrap().id, id);
+        // A song without a course files it in "Listening"; it goes when the song goes.
         assert_eq!(block.topic_title.as_deref(), Some("Listening"));
+
+        // A song written from a course's words files it in that course.
+        let food = db::require_topic_id(&conn, 3).unwrap();
+        conn.execute_batch(&format!(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, topic_id)
+             VALUES (2, 'Obiad', 'Smacznego', 'Enjoy', 'pop', '[]', '', 'V6', 'ready', 0, {food});"
+        ))
+        .unwrap();
+        let made = tutor::run_tool_for_test(&conn, "create_listening_block", serde_json::json!({ "song_id": 2 }));
+        let filed = blocks::load(&conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap();
+        assert_eq!(filed.course_ids, vec![food]);
+        // Or in the course asked for.
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+             VALUES (3, 'Dom', 'Dom', 'Home', 'pop', '[]', '', 'V6', 'ready', 0);",
+        )
+        .unwrap();
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        let made = tutor::run_tool_for_test(
+            &conn,
+            "create_listening_block",
+            serde_json::json!({ "song_id": 3, "course_id": basics }),
+        );
+        assert_eq!(blocks::load(&conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap().course_ids, vec![basics]);
         songs::delete_song(&conn, 1).unwrap();
         assert!(blocks::load(&conn, id).is_err());
     }

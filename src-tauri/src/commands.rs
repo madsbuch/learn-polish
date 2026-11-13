@@ -15,7 +15,6 @@ use crate::costs;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
-use crate::session;
 use crate::songs;
 use crate::stats;
 
@@ -169,15 +168,6 @@ pub async fn get_topic_progress(db: State<'_, Db>) -> Result<Vec<TopicProgress>>
 }
 
 #[tauri::command]
-pub async fn get_dialogue(db: State<'_, Db>, topic_id: i64) -> Result<Dialogue> {
-    let conn = db.lock();
-    Ok(Dialogue {
-        topic: session::load_topic(&conn, topic_id)?,
-        lines: session::dialogue_lines(&conn, topic_id)?,
-    })
-}
-
-#[tauri::command]
 pub async fn browse_words(
     db: State<'_, Db>,
     topic_id: Option<i64>,
@@ -188,7 +178,7 @@ pub async fn browse_words(
     let meaning = "en";
     let pattern = format!("%{}%", query.trim());
     let sql = format!(
-        "SELECT id, pl, {meaning}, pos
+        "SELECT id, pl, {meaning}, pos, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id)
          FROM (SELECT * FROM course_words WHERE ?1 IS NULL OR topic_id = ?1 GROUP BY id)
          WHERE ?2 = '%%' OR pl LIKE ?2 OR {meaning} LIKE ?2
          ORDER BY topic_id, ord LIMIT ?3"
@@ -196,7 +186,14 @@ pub async fn browse_words(
     let mut stmt = conn.prepare(&sql)?;
     let words = stmt
         .query_map(rusqlite::params![topic_id, pattern, limit.clamp(1, 500)], |r| {
-            Ok(Word { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, pos: r.get(3)? })
+            Ok(Word {
+                id: r.get(0)?,
+                pl: r.get(1)?,
+                meaning: r.get(2)?,
+                pos: r.get(3)?,
+                block_id: r.get(4)?,
+                block: r.get(5)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(words)
@@ -226,23 +223,30 @@ pub async fn browse_catalogue(
     let filter = format!("(?2 = '' OR pl LIKE ?3 OR {meaning} LIKE ?3)");
 
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning}, pos FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
+        "SELECT id, pl, {meaning}, pos, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
         source("course_words")
     ))?;
     let words = stmt
         .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
-            Ok(Word { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, pos: r.get(3)? })
+            Ok(Word {
+                id: r.get(0)?,
+                pl: r.get(1)?,
+                meaning: r.get(2)?,
+                pos: r.get(3)?,
+                block_id: r.get(4)?,
+                block: r.get(5)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
 
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning} FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
+        "SELECT id, pl, {meaning}, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
         source("course_sentences")
     ))?;
     let sentences = stmt
         .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
-            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? })
+            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, block_id: r.get(3)?, block: r.get(4)? })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
@@ -268,11 +272,11 @@ pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Se
     let conn = db.lock();
     let meaning = "en";
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning} FROM course_sentences WHERE topic_id = ?1 ORDER BY ord"
+        "SELECT id, pl, {meaning}, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM course_sentences WHERE topic_id = ?1 ORDER BY ord"
     ))?;
     let sentences = stmt
         .query_map([topic_id], |r| {
-            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? })
+            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, block_id: r.get(3)?, block: r.get(4)? })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(sentences)
