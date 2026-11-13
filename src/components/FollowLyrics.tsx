@@ -62,7 +62,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
       <div className="follow-lyrics static" ref={box}>
         {item.song.sections.map((section, i) => (
           <div key={i} className="follow-section">
-            <div className="eyebrow">{sectionLabel(section.kind)}</div>
+            <div className="t-eyebrow">{sectionLabel(section.kind)}</div>
             {section.lines.map((line, j) => (
               <div key={j} className="follow-line" data-lang="pair">
                 {section.kind !== "chorus" && line.en ? <span className="en">{line.en}</span> : null}
@@ -80,7 +80,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
     <div className="follow-lyrics" ref={box}>
       {lines.map((line, i) => (
         <div key={i}>
-          {line.section ? <div className="eyebrow follow-eyebrow">{line.section}</div> : null}
+          {line.section ? <div className="t-eyebrow follow-eyebrow">{line.section}</div> : null}
           <button
             ref={i === current ? currentRef : undefined}
             className="follow-line"

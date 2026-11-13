@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { Spinner } from "./ui";
+import { Banner, Button, List, ListItem, Sheet, Spinner } from "../design";
+import { PlayerIcon } from "./icons";
 import { api, errorMessage } from "../lib/api";
 import { canShare, shareTrack, type QueueItem } from "../lib/player";
 import type { Playlist } from "../lib/types";
@@ -39,49 +40,45 @@ export function AddToPlaylist({
   }
 
   return (
-    <div className="sheet-backdrop fade-in" onClick={onClose}>
-      <div className="sheet card" onClick={(event) => event.stopPropagation()}>
-        <h3>Add to playlist</h3>
-        {error ? <p className="small" style={{ color: "var(--crimson-ink)" }}>{error}</p> : null}
-        {playlists === null ? (
-          <Spinner />
-        ) : (
-          <div className="stack" style={{ marginBottom: 12 }}>
-            {playlists.map((playlist) => (
-              <button
-                key={playlist.id}
-                className="btn ghost"
-                style={{ justifyContent: "space-between" }}
-                disabled={busy}
-                onClick={() => act(() => api.playlistAdd(playlist.id, [trackId]))}
-              >
-                <span>{playlist.name}</span>
-                <span className="small faint">{playlist.entries.length}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="composer">
-          <input
-            value={name}
-            placeholder="New playlist…"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && name.trim()) {
-                void act(() => api.playlistCreate(name, [trackId]));
-              }
-            }}
-          />
-          <button
-            className="btn primary"
-            disabled={busy || !name.trim()}
-            onClick={() => act(() => api.playlistCreate(name, [trackId]))}
-          >
-            Create
-          </button>
-        </div>
+    <Sheet title="Add to playlist" onClose={onClose}>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {playlists === null ? (
+        <Spinner />
+      ) : playlists.length > 0 ? (
+        <List>
+          {playlists.map((playlist) => (
+            <ListItem
+              key={playlist.id}
+              leading={<PlayerIcon.addToPlaylist />}
+              title={playlist.name}
+              subtitle={`${playlist.entries.length} song${playlist.entries.length === 1 ? "" : "s"}`}
+              chevron={false}
+              onClick={() => !busy && act(() => api.playlistAdd(playlist.id, [trackId]))}
+            />
+          ))}
+        </List>
+      ) : null}
+      <div className="composer">
+        <input
+          value={name}
+          placeholder="New playlist name"
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && name.trim()) {
+              void act(() => api.playlistCreate(name, [trackId]));
+            }
+          }}
+        />
+        <Button
+          variant="primary"
+          loading={busy}
+          disabled={!name.trim()}
+          onClick={() => act(() => api.playlistCreate(name, [trackId]))}
+        >
+          Create
+        </Button>
       </div>
-    </div>
+    </Sheet>
   );
 }
 

@@ -1,8 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { TitleWithInfo } from "../components/Info";
-import { Bar, Banner, Spinner } from "../components/ui";
+import { PlayerIcon } from "../components/icons";
+import {
+  Banner,
+  Button,
+  Card,
+  ConfirmButton,
+  Field,
+  IconButton,
+  Inline,
+  List,
+  Progress,
+  Screen,
+  Section,
+  Segmented,
+  SettingRow,
+  Stack,
+  Switch,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useThemePreference, type ThemePreference } from "../lib/theme";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
@@ -43,7 +60,6 @@ export function SettingsScreen({
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
   const [progress, setProgress] = useState<CacheProgress | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [includeKeys, setIncludeKeys] = useState(false);
   const [theme, setTheme] = useThemePreference();
 
@@ -111,495 +127,517 @@ export function SettingsScreen({
     }
   }
 
+  const voiceName = (gender: "f" | "m") =>
+    gender === "f" ? settings.ttsVoiceFemale : settings.ttsVoiceMale;
+  const sunoLabel = (model: string) =>
+    model === "V6_MINI" ? "V6 Mini" : model === "V6_WILD" ? "V6 Wild" : model;
+
   return (
-    <div className="scroll">
-      <h1>Settings</h1>
+    <Screen title="Settings">
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {notice ? <Banner tone="ok">{notice}</Banner> : null}
 
-      {error ? <Banner kind="error">{error}</Banner> : null}
-      {notice ? <Banner kind="info">{notice}</Banner> : null}
-
-      <div className="card">
-        <h3>Appearance</h3>
-        <div className="segmented">
-          {(
-            [
-              ["system", "System"],
-              ["light", "Light"],
-              ["dark", "Dark"],
-            ] as [ThemePreference, string][]
-          ).map(([value, label]) => (
-            <button key={value} data-active={theme === value} onClick={() => setTheme(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Daily practice</h3>
-        <label className="field">
-          <span>Daily XP goal — {settings.dailyGoal} XP</span>
-          <input
-            type="range"
-            min={20}
-            max={300}
-            step={10}
-            value={settings.dailyGoal}
-            onChange={(event) => patch({ dailyGoal: Number(event.target.value) }, "goal")}
-          />
-        </label>
-        <label className="field" style={{ marginBottom: 0 }}>
-          <span>New words per day — {settings.newWordsPerDay}</span>
-          <input
-            type="range"
-            min={3}
-            max={40}
-            value={settings.newWordsPerDay}
-            onChange={(event) =>
-              patch({ newWordsPerDay: Number(event.target.value) }, "new-words")
+      <Section title="Practice">
+        <List>
+          <SettingRow
+            label="Daily goal"
+            value={`${settings.dailyGoal} XP`}
+            stacked
+            control={
+              <input
+                type="range"
+                min={20}
+                max={300}
+                step={10}
+                value={settings.dailyGoal}
+                aria-label="Daily goal"
+                onChange={(event) => patch({ dailyGoal: Number(event.target.value) }, "goal")}
+              />
             }
           />
-        </label>
-      </div>
-
-      <div className="card">
-        <div className="row between" style={{ marginBottom: 12 }}>
-          <h3 style={{ margin: 0 }}>Daily reminder</h3>
-          <button
-            className={`btn small ${settings.remindersEnabled ? "success" : "ghost"}`}
-            onClick={() => patch({ remindersEnabled: !settings.remindersEnabled }, "remind")}
-          >
-            {settings.remindersEnabled ? "On" : "Off"}
-          </button>
-        </div>
-        <label className="field">
-          <span>Remind me at</span>
-          <input
-            type="time"
-            value={`${String(settings.reminderHour).padStart(2, "0")}:${String(
-              settings.reminderMinute,
-            ).padStart(2, "0")}`}
-            onChange={(event) => {
-              const [hour, minute] = event.target.value.split(":").map(Number);
-              if (Number.isFinite(hour) && Number.isFinite(minute)) {
-                patch({ reminderHour: hour, reminderMinute: minute }, "remind-time");
-              }
-            }}
+          <SettingRow
+            label="New words per session"
+            value={settings.newWordsPerDay}
+            stacked
+            control={
+              <input
+                type="range"
+                min={3}
+                max={40}
+                value={settings.newWordsPerDay}
+                aria-label="New words per session"
+                onChange={(event) => patch({ newWordsPerDay: Number(event.target.value) }, "new-words")}
+              />
+            }
           />
-        </label>
-        <button
-          className="btn ghost block"
-          disabled={busy === "test-note"}
+          <SettingRow
+            label="Daily reminder"
+            description={settings.remindersEnabled ? "A nudge if you have not practised yet" : "Off"}
+            control={
+              <Switch
+                label="Daily reminder"
+                checked={settings.remindersEnabled}
+                onChange={(enabled) => patch({ remindersEnabled: enabled }, "remind")}
+              />
+            }
+          />
+          {settings.remindersEnabled ? (
+            <SettingRow
+              label="Remind me at"
+              control={
+                <div className="no-shrink">
+                  <input
+                    type="time"
+                    aria-label="Reminder time"
+                    value={`${String(settings.reminderHour).padStart(2, "0")}:${String(settings.reminderMinute).padStart(2, "0")}`}
+                    onChange={(event) => {
+                      const [hour, minute] = event.target.value.split(":").map(Number);
+                      if (Number.isFinite(hour) && Number.isFinite(minute)) {
+                        patch({ reminderHour: hour, reminderMinute: minute }, "remind-time");
+                      }
+                    }}
+                  />
+                </div>
+              }
+            />
+          ) : null}
+        </List>
+        {settings.remindersEnabled ? (
+          <Button
+            variant="plain"
+            size="sm"
+            loading={busy === "test-note"}
+            onClick={() =>
+              run("test-note", async () => {
+                const sent = await sendTestNotification();
+                setNotice(sent ? "Sent — check your notifications." : "This device did not allow the notification.");
+              })
+            }
+          >
+            Send a test notification
+          </Button>
+        ) : null}
+      </Section>
+
+      <Section title="Appearance">
+        <Segmented
+          value={theme}
+          onChange={(value) => setTheme(value as ThemePreference)}
+          options={[
+            { value: "system", label: "System" },
+            { value: "light", label: "Light" },
+            { value: "dark", label: "Dark" },
+          ]}
+        />
+      </Section>
+
+      <Section
+        title="OpenRouter"
+        info={
+          <>
+            <p>Powers the tutor, the songwriter and the Polish voice.</p>
+            <p>
+              Get a key at openrouter.ai/keys. It is stored in the app's private database on this
+              device, and requests are made from the app's core — the key never reaches the web
+              layer.
+            </p>
+          </>
+        }
+      >
+        {settings.hasApiKey ? (
+          <List>
+            <SettingRow
+              label="API key"
+              description="Saved on this device"
+              control={
+                <Inline gap={1}>
+                  <Button
+                    variant="plain"
+                    size="sm"
+                    loading={busy === "test-key"}
+                    onClick={() =>
+                      run("test-key", async () => {
+                        const reply = await api.aiTestKey();
+                        setNotice(`The model replied “${reply}” — everything works.`);
+                      })
+                    }
+                  >
+                    Test
+                  </Button>
+                  <Button
+                    variant="plain"
+                    size="sm"
+                    onClick={() => run("clear-key", async () => onSettings(await api.aiClearKey()))}
+                  >
+                    Remove
+                  </Button>
+                </Inline>
+              }
+            />
+          </List>
+        ) : (
+          <Card>
+            <Stack gap={3}>
+              <Field label="API key">
+                <input
+                  value={keyDraft}
+                  type="password"
+                  placeholder="sk-or-v1-…"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) => setKeyDraft(event.target.value)}
+                />
+              </Field>
+              <Button
+                variant="primary"
+                block
+                loading={busy === "save-key"}
+                disabled={keyDraft.trim().length === 0}
+                onClick={() =>
+                  run("save-key", async () => {
+                    onSettings(await api.aiSetKey(keyDraft));
+                    setKeyDraft("");
+                  })
+                }
+              >
+                Save key
+              </Button>
+            </Stack>
+          </Card>
+        )}
+      </Section>
+
+      <Section
+        title="AI models"
+        info={
+          <>
+            <p>
+              <b>Tutor</b> answers in the Tutor tab and explains words and sentences. To build
+              programmes and songs it needs a model that can use tools — those are marked 🛠.
+            </p>
+            <p>
+              <b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.
+            </p>
+          </>
+        }
+      >
+        <List>
+          <SettingRow
+            label="Tutor"
+            description={settings.aiModel || "None chosen yet"}
+            stacked={chatModels !== null}
+            control={
+              chatModels ? (
+                <select
+                  value={settings.aiModel}
+                  aria-label="Tutor model"
+                  onChange={(event) => patch({ aiModel: event.target.value }, "model")}
+                >
+                  <option value="">— choose a model —</option>
+                  {[...chatModels]
+                    .sort((a, b) => Number(b.tools) - Number(a.tools))
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.tools ? "🛠 " : ""}
+                        {model.name}
+                      </option>
+                    ))}
+                </select>
+              ) : undefined
+            }
+          />
+          <SettingRow
+            label="Songwriter"
+            description={settings.songwriterModel || "Same as the tutor"}
+            stacked={chatModels !== null}
+            control={
+              chatModels ? (
+                <select
+                  value={settings.songwriterModel}
+                  aria-label="Songwriter model"
+                  onChange={(event) => patch({ songwriterModel: event.target.value }, "songwriter-model")}
+                >
+                  <option value="">Same as the tutor</option>
+                  {chatModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+              ) : undefined
+            }
+          />
+        </List>
+        {settings.aiModel && chatModels?.some((model) => model.id === settings.aiModel && !model.tools) ? (
+          <Banner tone="error">
+            This model can't use tools, so the tutor won't be able to build programmes or songs
+            with it. Pick one marked 🛠.
+          </Banner>
+        ) : null}
+        {chatModels === null ? (
+          <Button
+            block
+            loading={busy === "models"}
+            onClick={() => run("models", async () => setChatModels(await api.aiListModels()))}
+          >
+            Choose models
+          </Button>
+        ) : null}
+      </Section>
+
+      <Section
+        title="Songs"
+        info={
+          <>
+            <p>Suno sings the learning songs, through your kie.ai account.</p>
+            <p>Requests go from the app's core straight to kie.ai. Finished songs are kept on this device.</p>
+          </>
+        }
+      >
+        {settings.hasKieKey ? (
+          <List>
+            <SettingRow
+              label="kie.ai key"
+              description="Saved on this device"
+              control={
+                <Inline gap={1}>
+                  <Button
+                    variant="plain"
+                    size="sm"
+                    loading={busy === "kie-credits"}
+                    onClick={() =>
+                      run("kie-credits", async () => {
+                        const credits = await api.kieCredits();
+                        setNotice(`kie.ai works — ${credits} credits left.`);
+                      })
+                    }
+                  >
+                    Credits
+                  </Button>
+                  <Button
+                    variant="plain"
+                    size="sm"
+                    onClick={() => run("kie-clear", async () => onSettings(await api.kieClearKey()))}
+                  >
+                    Remove
+                  </Button>
+                </Inline>
+              }
+            />
+            <SettingRow
+              label="Suno model"
+              stacked
+              control={
+                <Segmented
+                  value={settings.sunoModel}
+                  onChange={(model) => patch({ sunoModel: model }, "suno-model")}
+                  options={settings.sunoModels.map((model) => ({ value: model, label: sunoLabel(model) }))}
+                />
+              }
+            />
+          </List>
+        ) : (
+          <Card>
+            <Stack gap={3}>
+              <Field label="kie.ai API key">
+                <input
+                  value={kieDraft}
+                  type="password"
+                  placeholder="Paste your kie.ai key"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) => setKieDraft(event.target.value)}
+                />
+              </Field>
+              <Button
+                variant="primary"
+                block
+                loading={busy === "kie-save"}
+                disabled={kieDraft.trim().length === 0}
+                onClick={() =>
+                  run("kie-save", async () => {
+                    onSettings(await api.kieSetKey(kieDraft));
+                    setKieDraft("");
+                  })
+                }
+              >
+                Save key
+              </Button>
+            </Stack>
+          </Card>
+        )}
+      </Section>
+
+      <Section
+        title="Polish voices"
+        info={
+          <p>
+            Android has no built-in Polish speech, so the speaker buttons use Gemini on
+            OpenRouter. Dialogue lines use the voice matching the speaker. Each line is made once,
+            then kept on the device.
+          </p>
+        }
+      >
+        <List>
+          {(["f", "m"] as const).map((gender) => {
+            const current = voiceName(gender);
+            const options = (voices ?? []).filter((voice) => voice.gender === gender);
+            return (
+              <SettingRow
+                key={gender}
+                label={gender === "f" ? "Female voice" : "Male voice"}
+                stacked
+                control={
+                  <Inline gap={2}>
+                    <select
+                      value={current}
+                      aria-label={gender === "f" ? "Female voice" : "Male voice"}
+                      disabled={options.length === 0}
+                      onChange={(event) =>
+                        patch(
+                          gender === "f" ? { ttsVoiceFemale: event.target.value } : { ttsVoiceMale: event.target.value },
+                          `voice-${gender}`,
+                        )
+                      }
+                    >
+                      {options.length === 0 ? <option value={current}>{current}</option> : null}
+                      {options.map((voice) => (
+                        <option key={voice.name} value={voice.name}>
+                          {voice.name} — {voice.description}
+                        </option>
+                      ))}
+                    </select>
+                    <IconButton
+                      variant="tinted"
+                      icon={<PlayerIcon.play size={16} />}
+                      label={`Hear ${current}`}
+                      loading={busy === `preview-${gender}`}
+                      onClick={() =>
+                        run(`preview-${gender}`, async () => {
+                          await playClip(await api.previewVoice(current, VOICE_TEST_LINE));
+                        })
+                      }
+                    />
+                  </Inline>
+                }
+              />
+            );
+          })}
+          <SettingRow
+            label="Speaking speed"
+            value={`${settings.ttsSpeed.toFixed(2)}×`}
+            stacked
+            control={
+              <input
+                type="range"
+                min={0.5}
+                max={1.5}
+                step={0.05}
+                value={settings.ttsSpeed}
+                aria-label="Speaking speed"
+                onChange={(event) => patch({ ttsSpeed: Number(event.target.value) }, "tts-speed")}
+              />
+            }
+          />
+        </List>
+      </Section>
+
+      <Section
+        title="Downloaded audio"
+        info={<p>Stored lines replay instantly and for free, even offline.</p>}
+      >
+        <List>
+          {cache ? (
+            <SettingRow
+              label={`${cache.sentencesCached} of ${cache.sentencesTotal} sentences`}
+              value={megabytes(cache.bytes)}
+              stacked
+              control={
+                progress && !progress.finished ? (
+                  <Stack gap={1}>
+                    <Progress value={progress.done} max={Math.max(1, progress.total)} />
+                    <Text variant="caption" tone="faint">
+                      Making {progress.done} of {progress.total}…
+                      {progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
+                    </Text>
+                  </Stack>
+                ) : (
+                  <Progress value={cache.sentencesCached} max={cache.sentencesTotal} tone="mint" />
+                )
+              }
+            />
+          ) : null}
+          <SettingRow
+            label="Fetch a session's audio up front"
+            description="So no line waits on the network"
+            control={
+              <Switch
+                label="Fetch a session's audio up front"
+                checked={settings.ttsPrefetch}
+                onChange={(prefetch) => patch({ ttsPrefetch: prefetch }, "prefetch")}
+              />
+            }
+          />
+        </List>
+        <Button
+          block
+          icon={<PlayerIcon.download />}
+          loading={busy === "cache-all"}
           onClick={() =>
-            run("test-note", async () => {
-              const sent = await sendTestNotification();
+            run("cache-all", async () => {
+              const lines = [];
+              for (const topic of await api.getTopicProgress()) {
+                lines.push(...(await api.topicAudioLines(topic.topic.id)));
+              }
+              const result = await api.cacheAudio(lines);
               setNotice(
-                sent
-                  ? "Sent — check your notification shade."
-                  : "This device did not allow the notification.",
+                result.error
+                  ? `Stored ${result.done}. Stopped after an error: ${result.error}`
+                  : `Stored ${result.done} new clips.`,
               );
             })
           }
         >
-          {busy === "test-note" ? <Spinner /> : "Send a test notification"}
-        </button>
-      </div>
-
-      <div className="card">
-        <TitleWithInfo
-          title="OpenRouter"
-          info={
-            <>
-              <p>Powers the AI tutor, the songwriter and the Polish voice.</p>
-              <p>Get a key at openrouter.ai/keys. It is stored in the app's private database on this device, and requests are made from the app's core — the key never reaches the web layer.</p>
-            </>
+          Download every sentence and dialogue
+        </Button>
+        <ConfirmButton
+          label="Delete downloaded audio"
+          confirmLabel="Delete"
+          question="Delete every stored clip? They are made again when played."
+          block
+          onConfirm={() =>
+            run("cache-clear", async () => {
+              await api.clearAudioCache();
+              refreshCache();
+              setNotice("Downloaded audio deleted.");
+            })
           }
         />
+      </Section>
 
-        {settings.hasApiKey ? (
-          <div className="row" style={{ marginBottom: 4 }}>
-            <span className="chip mint">✓ Key saved</span>
-            <span className="grow" />
-            <button
-              className="btn ghost small"
-              disabled={busy === "test-key"}
-              onClick={() =>
-                run("test-key", async () => {
-                  const reply = await api.aiTestKey();
-                  setNotice(`Model replied: "${reply}" — everything works.`);
-                })
-              }
-            >
-              {busy === "test-key" ? <Spinner /> : "Test"}
-            </button>
-            <button
-              className="btn danger small"
-              onClick={() => run("clear-key", async () => onSettings(await api.aiClearKey()))}
-            >
-              Remove
-            </button>
-          </div>
-        ) : (
-          <>
-            <label className="field">
-              <span>API key</span>
-              <input
-                value={keyDraft}
-                type="password"
-                placeholder="sk-or-v1-…"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                onChange={(event) => setKeyDraft(event.target.value)}
-              />
-            </label>
-            <button
-              className="btn primary block"
-              disabled={keyDraft.trim().length === 0 || busy === "save-key"}
-              onClick={() =>
-                run("save-key", async () => {
-                  onSettings(await api.aiSetKey(keyDraft));
-                  setKeyDraft("");
-                })
-              }
-            >
-              {busy === "save-key" ? <Spinner /> : "Save key"}
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="card">
-        <TitleWithInfo
-          title="AI models"
-          info={
-            <>
-              <p><b>Tutor</b> answers in the Tutor tab and explains words and sentences. To build programmes and change things in the app it needs a model that can use tools — those are marked 🛠.</p>
-              <p><b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.</p>
-              <p>Models come from OpenRouter's live catalogue, so nothing goes stale.</p>
-            </>
-          }
-        />
-        {settings.aiModel ? (
-          <p className="tiny faint" style={{ marginBottom: 10 }}>
-            Using <b className="muted">{settings.aiModel}</b>
+      <Section
+        title="Your data"
+        info={
+          <p>
+            Everything the app keeps — progress, programmes, the tutor conversation, settings,
+            downloaded audio and your songs — lives in one SQLite database on this device. Export
+            saves a copy wherever you choose; it opens in any SQLite tool.
           </p>
-        ) : (
-          <Banner kind="info">
-            Load the models and pick one.
-          </Banner>
-        )}
-
-        {settings.songwriterModel ? (
-          <p className="tiny faint" style={{ marginBottom: 10 }}>
-            Songwriter: <b className="muted">{settings.songwriterModel}</b>
-          </p>
-        ) : null}
-
-        {chatModels ? (
-          <>
-            <label className="field">
-              <span>
-                Tutor — {chatModels.filter((model) => model.tools).length} of {chatModels.length}{" "}
-                models can use tools 🛠
-              </span>
-              <select
-                value={settings.aiModel}
-                onChange={(event) => patch({ aiModel: event.target.value }, "model")}
-              >
-                <option value="">— choose a model —</option>
-                {[...chatModels]
-                  .sort((a, b) => Number(b.tools) - Number(a.tools))
-                  .map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.tools ? "🛠 " : ""}
-                      {model.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {settings.aiModel &&
-            chatModels.some((model) => model.id === settings.aiModel && !model.tools) ? (
-              <Banner kind="error">
-                This model can't use tools, so the tutor won't be able to build programmes
-                with it. Pick one marked 🛠.
-              </Banner>
-            ) : null}
-            <label className="field">
-              <span>Songwriter — writes the song lyrics</span>
-              <select
-                value={settings.songwriterModel}
-                onChange={(event) =>
-                  patch({ songwriterModel: event.target.value }, "songwriter-model")
-                }
-              >
-                <option value="">Same as the tutor</option>
-                {chatModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        ) : null}
-
-        <button
-          className="btn ghost block"
-          disabled={busy === "models"}
-          onClick={() => run("models", async () => setChatModels(await api.aiListModels()))}
-        >
-          {busy === "models" ? <Spinner /> : "Load models from OpenRouter"}
-        </button>
-      </div>
-
-      <div className="card">
-        <TitleWithInfo
-          title="Songs — Suno via kie.ai"
-          infoTitle="Suno"
-          info={
-            <>
-              <p>Suno sings the learning songs, through your kie.ai account.</p>
-              <p>Requests go from the app's core straight to kie.ai. Finished songs are downloaded and kept on this device.</p>
-            </>
-          }
-        />
-
-        {settings.hasKieKey ? (
-          <div className="row" style={{ marginBottom: 12 }}>
-            <span className="chip mint">✓ Key saved</span>
-            <span className="grow" />
-            <button
-              className="btn ghost small"
-              disabled={busy === "kie-credits"}
-              onClick={() =>
-                run("kie-credits", async () => {
-                  const credits = await api.kieCredits();
-                  setNotice(`kie.ai works — ${credits} credits left.`);
-                })
-              }
-            >
-              {busy === "kie-credits" ? <Spinner /> : "Check credits"}
-            </button>
-            <button
-              className="btn danger small"
-              onClick={() => run("kie-clear", async () => onSettings(await api.kieClearKey()))}
-            >
-              Remove
-            </button>
-          </div>
-        ) : (
-          <>
-            <label className="field">
-              <span>kie.ai API key</span>
-              <input
-                value={kieDraft}
-                type="password"
-                placeholder="Paste your kie.ai key"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                onChange={(event) => setKieDraft(event.target.value)}
-              />
-            </label>
-            <button
-              className="btn primary block"
-              style={{ marginBottom: 12 }}
-              disabled={kieDraft.trim().length === 0 || busy === "kie-save"}
-              onClick={() =>
-                run("kie-save", async () => {
-                  onSettings(await api.kieSetKey(kieDraft));
-                  setKieDraft("");
-                })
-              }
-            >
-              {busy === "kie-save" ? <Spinner /> : "Save key"}
-            </button>
-          </>
-        )}
-
-        <label className="field" style={{ marginBottom: 0 }}>
-          <span>Suno model</span>
-          <div className="segmented">
-            {settings.sunoModels.map((model) => (
-              <button
-                key={model}
-                data-active={settings.sunoModel === model}
-                onClick={() => patch({ sunoModel: model }, "suno-model")}
-              >
-                {model === "V6" ? "V6" : model === "V6_MINI" ? "V6 Mini" : model === "V6_WILD" ? "V6 Wild" : model}
-              </button>
-            ))}
-          </div>
-        </label>
-      </div>
-
-      <div className="card">
-        <TitleWithInfo
-          title="Polish voices"
-          info={
-            <>
-              <p>Android has no built-in Polish speech, so the 🔊 buttons speak through Gemini on OpenRouter.</p>
-              <p>Dialogue lines use the voice matching the speaker. Each line is generated once, then stored on the device.</p>
-            </>
-          }
-        />
-
-        {(["f", "m"] as const).map((gender) => {
-          const label = gender === "f" ? "Female voice" : "Male voice";
-          const current = gender === "f" ? settings.ttsVoiceFemale : settings.ttsVoiceMale;
-          const options = (voices ?? []).filter((voice) => voice.gender === gender);
-          return (
-            <label className="field" key={gender}>
-              <span>{label}</span>
-              <div className="row">
-                <select
-                  className="grow"
-                  value={current}
-                  disabled={options.length === 0}
-                  onChange={(event) =>
-                    patch(
-                      gender === "f"
-                        ? { ttsVoiceFemale: event.target.value }
-                        : { ttsVoiceMale: event.target.value },
-                      `voice-${gender}`,
-                    )
-                  }
-                >
-                  {options.length === 0 ? <option value={current}>{current}</option> : null}
-                  {options.map((voice) => (
-                    <option key={voice.name} value={voice.name}>
-                      {voice.name} — {voice.description}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="btn ghost small"
-                  disabled={busy === `preview-${gender}`}
-                  onClick={() =>
-                    run(`preview-${gender}`, async () => {
-                      const clip = await api.previewVoice(current, VOICE_TEST_LINE);
-                      await playClip(clip);
-                    })
-                  }
-                >
-                  {busy === `preview-${gender}` ? <Spinner /> : "▶︎"}
-                </button>
-              </div>
-            </label>
-          );
-        })}
-
-        <label className="field" style={{ marginBottom: 0 }}>
-          <span>Speaking speed — {settings.ttsSpeed.toFixed(2)}×</span>
-          <input
-            type="range"
-            min={0.5}
-            max={1.5}
-            step={0.05}
-            value={settings.ttsSpeed}
-            onChange={(event) => patch({ ttsSpeed: Number(event.target.value) }, "tts-speed")}
+        }
+      >
+        <List>
+          <SettingRow
+            label="Include API keys"
+            description="Off keeps your keys out of the copy"
+            control={<Switch label="Include API keys" checked={includeKeys} onChange={setIncludeKeys} />}
           />
-        </label>
-      </div>
-
-      <div className="card">
-          <TitleWithInfo
-            title="Downloaded audio"
-            info={<p>Stored lines replay instantly and for free, even offline. Downloading everything ahead of time means practice never waits on the network.</p>}
-          />
-          {cache ? (
-            <>
-              <div className="row between small muted" style={{ marginBottom: 6 }}>
-                <span>
-                  {cache.sentencesCached} of {cache.sentencesTotal} sentences
-                </span>
-                <span>{megabytes(cache.bytes)}</span>
-              </div>
-              <Bar value={cache.sentencesCached} max={cache.sentencesTotal} tone="mint" />
-              <p className="tiny faint" style={{ marginTop: 8 }}>{cache.clips} clips</p>
-            </>
-          ) : null}
-
-          {progress && !progress.finished ? (
-            <>
-              <Bar value={progress.done} max={Math.max(1, progress.total)} />
-              <p className="tiny faint" style={{ marginTop: 8 }}>
-                Generating {progress.done} of {progress.total}…
-                {progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
-              </p>
-            </>
-          ) : null}
-
-          <label className="field" style={{ marginTop: 12 }}>
-            <span>Prefetch session audio</span>
-            <button
-              className={`btn small ${settings.ttsPrefetch ? "success" : "ghost"}`}
-              onClick={() => patch({ ttsPrefetch: !settings.ttsPrefetch }, "prefetch")}
-            >
-              {settings.ttsPrefetch ? "On" : "Off"}
-            </button>
-          </label>
-
-          <button
-            className="btn ghost block"
-            disabled={busy === "cache-all"}
-            onClick={() =>
-              run("cache-all", async () => {
-                const lines = [];
-                for (const topic of await api.getTopicProgress()) {
-                  lines.push(...(await api.topicAudioLines(topic.topic.id)));
-                }
-                const result = await api.cacheAudio(lines);
-                setNotice(
-                  result.error
-                    ? `Stored ${result.done}. Stopped after an error: ${result.error}`
-                    : `Stored ${result.done} new clips.`,
-                );
-              })
-            }
-          >
-            {busy === "cache-all" ? <Spinner /> : "⬇ Download every sentence and dialogue"}
-          </button>
-
-          <button
-            className="btn danger block"
-            style={{ marginTop: 8 }}
-            disabled={busy === "cache-clear"}
-            onClick={() =>
-              run("cache-clear", async () => {
-                await api.clearAudioCache();
-                refreshCache();
-                setNotice("Audio cache emptied.");
-              })
-            }
-          >
-            {busy === "cache-clear" ? <Spinner /> : "Delete downloaded audio"}
-          </button>
-      </div>
-
-      <div className="card">
-        <TitleWithInfo
-          title="Your data"
-          info={
-            <>
-              <p>Everything the app keeps — progress, programmes, the tutor conversation, settings, downloaded audio and your songs — lives in one SQLite database on this device.</p>
-              <p>Export saves a copy of it wherever you choose. It opens in any SQLite tool. API keys are left out unless you include them.</p>
-            </>
-          }
-        />
-        <label className="field">
-          <span>Include API keys</span>
-          <button
-            className={`btn small ${includeKeys ? "success" : "ghost"}`}
-            onClick={() => setIncludeKeys((value) => !value)}
-          >
-            {includeKeys ? "Yes" : "No"}
-          </button>
-        </label>
-        <button
-          className="btn ghost block"
-          disabled={busy === "export"}
+        </List>
+        <Button
+          block
+          icon={<PlayerIcon.download />}
+          loading={busy === "export"}
           onClick={() =>
             run("export", async () => {
               const where = await api.exportDatabase(includeKeys);
@@ -607,41 +645,28 @@ export function SettingsScreen({
             })
           }
         >
-          {busy === "export" ? <Spinner /> : "⬇ Export database (.sqlite)"}
-        </button>
-      </div>
+          Export database
+        </Button>
+      </Section>
 
-      <div className="card">
-        <TitleWithInfo
-          title="Danger zone"
-          info={<p>Reset clears every review, streak, achievement, the daily focus and the tutor conversation. The words, sentences, conversations, your programmes and your songs stay.</p>}
+      <Section title="Reset">
+        <ConfirmButton
+          label="Reset progress"
+          confirmLabel="Erase progress"
+          question="Erase every review, streak and achievement, the daily focus and the tutor conversation? Words, programmes and songs stay."
+          block
+          onConfirm={() =>
+            run("reset", async () => {
+              await api.resetProgress();
+              onReset();
+            })
+          }
         />
-        {confirmReset ? (
-          <div className="row">
-            <button
-              className="btn danger grow"
-              onClick={() =>
-                run("reset", async () => {
-                  await api.resetProgress();
-                  setConfirmReset(false);
-                  onReset();
-                })
-              }
-            >
-              {busy === "reset" ? <Spinner /> : "Yes, erase my progress"}
-            </button>
-            <button className="btn ghost" onClick={() => setConfirmReset(false)}>
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button className="btn danger block" onClick={() => setConfirmReset(true)}>
-            Reset progress
-          </button>
-        )}
-      </div>
+      </Section>
 
-      <p className="center tiny faint">Polski · learn Polish from English</p>
-    </div>
+      <Text variant="caption" tone="faint" align="center">
+        Polski · learn Polish from English
+      </Text>
+    </Screen>
   );
 }

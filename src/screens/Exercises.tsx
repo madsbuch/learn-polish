@@ -1,6 +1,22 @@
-import { Logo } from "../components/icons";
+import type { CSSProperties } from "react";
+
+import { Logo, SearchIcon } from "../components/icons";
 import { TopicList } from "../components/TopicList";
-import { Bar } from "../components/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  EmptyState,
+  Hero,
+  IconButton,
+  Inline,
+  List,
+  ListItem,
+  Screen,
+  Section,
+  Stack,
+  Text,
+} from "../design";
 import type { SessionPlan, Stats, TopicProgress } from "../lib/types";
 
 function greeting(): string {
@@ -40,137 +56,125 @@ export function Exercises({
 }) {
   const course = topics.filter((entry) => entry.topic.kind === "course");
   const programmes = topics.filter((entry) => entry.topic.kind === "programme");
-  const courseSize = course.length;
   const programme = plan.topic.kind === "programme";
   const goalPct = Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
-  const goalMet = stats.dayXp >= stats.dailyGoal;
-  const items =
-    plan.newWords + plan.reviewWords + plan.newSentences + plan.reviewSentences;
+  const items = plan.newWords + plan.reviewWords + plan.newSentences + plan.reviewSentences;
+  const minutes = Math.max(3, Math.round(items * 0.4));
+  const contents = [
+    plan.dialogue.length > 0 ? "a conversation" : null,
+    plan.newWords > 0 ? `${plan.newWords} new words` : null,
+    plan.reviewWords > 0 ? `${plan.reviewWords} to review` : null,
+    plan.newSentences + plan.reviewSentences > 0
+      ? `${plan.newSentences + plan.reviewSentences} sentences`
+      : null,
+  ].filter(Boolean);
 
   return (
-    <div className="scroll">
-      <div className="row between" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ gap: 11 }}>
+    <Screen
+      header={
+        <header className="screen-header">
           <Logo size={40} />
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 1 }}>
-              {greeting()}
-            </div>
-            <h1 style={{ marginBottom: 0, fontSize: 23 }}>Exercises</h1>
+          <div className="screen-header__titles">
+            <Text variant="eyebrow">{greeting()}</Text>
+            <h1>Exercises</h1>
           </div>
-        </div>
-        <div className="row" style={{ gap: 6 }}>
-          <button className="chip crimson" onClick={onOpenProgress} aria-label="Your progress">
-            🔥 {stats.currentStreak}
-          </button>
-          <button className="chip gold" onClick={onOpenProgress} aria-label="Your progress">
-            Lv {stats.level}
-          </button>
-          <button className="icon-btn" onClick={onOpenSearch} aria-label="Search words and sentences">
-            🔍
-          </button>
-        </div>
-      </div>
+          <IconButton icon={<SearchIcon />} label="Search words and sentences" onClick={onOpenSearch} />
+        </header>
+      }
+    >
+      <Hero>
+        <Stack gap={4}>
+          <Inline gap={4}>
+            <div
+              className="goal-ring"
+              style={{ "--value": goalPct } as CSSProperties}
+              role="img"
+              aria-label={`${stats.dayXp} of ${stats.dailyGoal} XP today`}
+            >
+              <div>
+                <Text variant="title" weight="bold">
+                  {stats.dayXp}
+                </Text>
+                <Text variant="caption" tone="dim">
+                  / {stats.dailyGoal} XP
+                </Text>
+              </div>
+            </div>
+            <div className="grow">
+              <Text variant="eyebrow">
+                {programme ? "Your programme" : `Topic ${plan.topic.ord} of ${course.length}`}
+              </Text>
+              <Text variant="title" as="h2">
+                {plan.topic.titlePl}
+              </Text>
+              <Text variant="small" tone="dim" as="div">
+                {plan.topic.title}
+              </Text>
+            </div>
+          </Inline>
+          {plan.topic.summary ? (
+            <Text variant="small" tone="dim" as="p" clamp={2}>
+              {plan.topic.summary}
+            </Text>
+          ) : null}
+          <Stack gap={2}>
+            <Button variant="inverse" size="lg" block onClick={onStart}>
+              {stats.completedToday ? "Practise again" : "Start today's check-in"}
+            </Button>
+            <Text variant="caption" tone="dim" align="center" as="div">
+              {stats.completedToday
+                ? "✓ Done for today — your streak is safe"
+                : `About ${minutes} min · ${contents.join(" · ")}`}
+            </Text>
+          </Stack>
+          {programme ? (
+            <Button variant="plain" size="sm" onClick={onBackToCourse}>
+              Back to the course
+            </Button>
+          ) : null}
+        </Stack>
+      </Hero>
 
-      <div className="hero">
-        <div className="row">
-          <div
-            className="ring"
-            style={{ ["--value" as string]: String(goalPct) }}
-            role="img"
-            aria-label={`${goalPct}% of today's goal`}
-          >
-            <div>
-              <div style={{ fontSize: 20, fontWeight: 780 }}>{stats.dayXp}</div>
-              <div style={{ fontSize: 10, opacity: 0.75 }}>/ {stats.dailyGoal} XP</div>
-            </div>
-          </div>
-          <div className="grow">
-            <div className="eyebrow">
-              {programme ? "Your programme" : `Course · topic ${plan.topic.ord} of ${courseSize}`}
-            </div>
-            <div style={{ fontSize: 19, fontWeight: 750, lineHeight: 1.25 }}>
-              {plan.topic.titlePl}
-            </div>
-            <div style={{ fontSize: 13.5, opacity: 0.8, marginTop: 2 }}>
-              {plan.topic.title}
-            </div>
-          </div>
-        </div>
+      <List>
+        <ListItem
+          leading={<Avatar>📈</Avatar>}
+          title="Your progress"
+          subtitle={`${stats.wordsSeen} words · ${stats.dueToday} due`}
+          trailing={
+            <Inline gap={1}>
+              <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
+              <Badge tone="gold">Lv {stats.level}</Badge>
+            </Inline>
+          }
+          chevron
+          onClick={onOpenProgress}
+        />
+      </List>
 
-        {plan.topic.summary ? (
-          <p style={{ margin: "16px 0 14px", fontSize: 13.5 }}>{plan.topic.summary}</p>
+      <Section title="Your programmes">
+        {programmes.length === 0 ? (
+          <List>
+            <EmptyState
+              icon="✨"
+              title="Make your own"
+              action={
+                <Button variant="primary" size="sm" onClick={onOpenTutor}>
+                  Ask the tutor
+                </Button>
+              }
+            >
+              Ask the tutor for a programme on anything — “colours”, “numbers”, “at the
+              airport”.
+            </EmptyState>
+          </List>
         ) : (
-          <div style={{ height: 16 }} />
+          <TopicList entries={programmes} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
         )}
+      </Section>
 
-        <div className="row wrap" style={{ gap: 6, marginBottom: 16 }}>
-          {plan.dialogue.length > 0 ? <span className="chip">💬 1 conversation</span> : null}
-          <span className="chip">🆕 {plan.newWords} new words</span>
-          <span className="chip">🔁 {plan.reviewWords} to review</span>
-          <span className="chip">📝 {plan.newSentences + plan.reviewSentences} sentences</span>
-        </div>
-
-        <button className="btn on-hero block" onClick={onStart}>
-          {stats.completedToday ? "Practise again" : "Start today's check-in"}
-          {items > 0 ? ` · ~${Math.max(3, Math.round(items * 0.4))} min` : ""}
-        </button>
-
-        {stats.completedToday ? (
-          <div className="center tiny" style={{ marginTop: 10, opacity: 0.85 }}>
-            ✓ Done for today — your streak is safe
-          </div>
-        ) : null}
-
-        {programme ? (
-          <button
-            className="btn ghost small block"
-            style={{ marginTop: 10, color: "inherit" }}
-            onClick={onBackToCourse}
-          >
-            Back to the course
-          </button>
-        ) : null}
-      </div>
-
-      {!goalMet && stats.dayXp > 0 ? (
-        <div className="card">
-          <div className="row between" style={{ marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Daily goal</h3>
-            <span className="small faint">
-              {stats.dailyGoal - stats.dayXp} XP to go
-            </span>
-          </div>
-          <Bar value={stats.dayXp} max={stats.dailyGoal} tone="gold" />
-        </div>
-      ) : null}
-
-      <button className="card row" style={{ width: "100%", textAlign: "left" }} onClick={onOpenProgress}>
-        <span style={{ fontSize: 24 }}>📈</span>
-        <span className="grow">
-          <span style={{ display: "block", fontWeight: 700 }}>Your progress</span>
-          <span className="small faint">
-            {stats.wordsSeen} words met · {stats.wordsMastered} mastered · {stats.dueToday} due
-          </span>
-        </span>
-        <span className="faint">›</span>
-      </button>
-
-      <h3 style={{ margin: "18px 0 8px" }}>Your programmes</h3>
-      {programmes.length === 0 ? (
-        <button className="card row" style={{ width: "100%", textAlign: "left" }} onClick={onOpenTutor}>
-          <span style={{ fontSize: 22 }}>✨</span>
-          <span className="grow small">
-            None yet. Ask the tutor, e.g. <i>“Build me a programme for learning the colours”</i>.
-          </span>
-          <span className="faint">›</span>
-        </button>
-      ) : (
-        <TopicList entries={programmes} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
-      )}
-
-      <h3 style={{ margin: "18px 0 8px" }}>Course</h3>
-      <TopicList entries={course} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
-    </div>
+      <Section title="Course">
+        <TopicList entries={course} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
+      </Section>
+    </Screen>
   );
 }

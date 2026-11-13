@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Card, Stack, Text } from "../design";
 import type { Exercise } from "../lib/types";
 
 /**
@@ -46,7 +47,7 @@ export function GapFill({
 
   return (
     <>
-      <div className="gap-list">
+      <Stack gap={2}>
         {exercise.gaps.map((gap, i) => {
           const word = slots[i] === null ? null : exercise.options[slots[i]!];
           const state = !checked
@@ -59,7 +60,7 @@ export function GapFill({
               ? "right"
               : "wrong";
           return (
-            <div key={i} className="gap-sentence card">
+            <Card key={i}>
               <div className="gap-line selectable">
                 {gap.before}
                 <button className="gap-slot" data-state={state} onClick={() => clear(i)}>
@@ -68,18 +69,23 @@ export function GapFill({
                 {gap.after}
               </div>
               {checked && word !== gap.answer ? (
-                <div className="small gap-correction">→ {gap.answer}</div>
+                <Text variant="small" tone="ok" weight="bold" as="div">
+                  → {gap.answer}
+                </Text>
               ) : null}
-              <div className="tiny faint">{gap.meaning}</div>
-            </div>
+              <Text variant="small" tone="faint" as="div">
+                {gap.meaning}
+              </Text>
+            </Card>
           );
         })}
-      </div>
+      </Stack>
       <div className="tokens">
         {exercise.options.map((option, bankIndex) => (
           <button
             key={`${option}-${bankIndex}`}
-            className={`token${slots.includes(bankIndex) ? " used" : ""}`}
+            className="token"
+            data-used={slots.includes(bankIndex)}
             disabled={checked || slots.includes(bankIndex)}
             onClick={() => place(bankIndex)}
           >
@@ -185,14 +191,14 @@ export function Memory({
               onClick={() => flip(index)}
               aria-label={state === "down" ? "Hidden card" : card.text}
             >
-              {state === "down" ? <span className="memory-back">?</span> : card.text}
+              {state === "down" ? "?" : card.text}
             </button>
           );
         })}
       </div>
-      <div className="center small faint" style={{ marginTop: 10 }}>
+      <Text variant="small" tone="faint" align="center" as="div">
         {found.size} of {exercise.pairs.length} pairs · {turns} turn{turns === 1 ? "" : "s"}
-      </div>
+      </Text>
     </>
   );
 }

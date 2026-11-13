@@ -1,9 +1,9 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-
+import { IconButton, Text } from "../design";
 import { currentItem, next, toggle, usePlayer } from "../lib/player";
+import { Cover } from "./Cover";
 import { PlayerIcon } from "./icons";
 
-/** Keeps the song in reach on every tab, just above the tab bar. */
+/** The player bar: the song in reach on every tab, just above the tab bar. */
 export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
   const player = usePlayer();
   const item = currentItem(player);
@@ -14,27 +14,23 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="mini-player fade-in">
       <span className="mini-progress" style={{ width: `${pct}%` }} />
-      <button className="row grow mini-open" onClick={onOpen}>
-        {item.track.imagePath ? (
-          <img className="cover" src={convertFileSrc(item.track.imagePath)} alt="" />
-        ) : (
-          <span className="cover placeholder">♪</span>
-        )}
-        <span className="grow" style={{ minWidth: 0 }}>
-          <span className="mini-title">{item.song.title}</span>
-          {player.cast ? (
-            <span className="mini-cast">🔊 On {player.cast.device.name}</span>
-          ) : (
-            <span className="mini-sub">„{item.song.chorusPl}”</span>
-          )}
+      <button className="mini-open" onClick={onOpen} aria-label="Open the player">
+        <Cover path={item.track.imagePath} size={44} />
+        <span className="grow">
+          <Text weight="bold" ellipsis>
+            {item.song.title}
+          </Text>
+          <Text variant="small" tone={player.cast ? "brand" : "dim"} ellipsis>
+            {player.cast ? `On ${player.cast.device.name}` : `„${item.song.chorusPl}”`}
+          </Text>
         </span>
       </button>
-      <button className="icon-btn" onClick={toggle} aria-label={player.playing ? "Pause" : "Play"}>
-        {player.playing ? <PlayerIcon.pause size={18} /> : <PlayerIcon.play size={18} />}
-      </button>
-      <button className="icon-btn" onClick={next} aria-label="Next song">
-        <PlayerIcon.next />
-      </button>
+      <IconButton
+        icon={player.playing ? <PlayerIcon.pause size={20} /> : <PlayerIcon.play size={20} />}
+        label={player.playing ? "Pause" : "Play"}
+        onClick={toggle}
+      />
+      <IconButton icon={<PlayerIcon.next />} label="Next song" onClick={next} />
     </div>
   );
 }

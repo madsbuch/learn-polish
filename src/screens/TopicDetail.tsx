@@ -1,8 +1,24 @@
-import { BackIcon } from "../components/icons";
 import { useEffect, useMemo, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
-import { Banner, Loading, SpeakButton, Spinner } from "../components/ui";
+import { PlayerIcon } from "../components/icons";
+import { SpeakButton } from "../components/ui";
+import {
+  Banner,
+  Button,
+  ConfirmButton,
+  List,
+  ListEmpty,
+  ListItem,
+  Screen,
+  Section,
+  Segmented,
+  SettingRow,
+  Spinner,
+  Stack,
+  Switch,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import type { DialogueLine, Sentence, TopicProgress, Word } from "../lib/types";
 
@@ -35,7 +51,6 @@ export function TopicDetail({
   const [revealAll, setRevealAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"focus" | "delete" | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const topicId = progress.topic.id;
   const programme = progress.topic.kind === "programme";
@@ -84,143 +99,124 @@ export function TopicDetail({
   }, [words, query]);
 
   return (
-    <div className="scroll no-nav">
-      <div className="row" style={{ marginBottom: 14 }}>
-        <button className="icon-btn" onClick={onBack} aria-label="Back">
-          <BackIcon />
-        </button>
-        <div className="grow">
-          <h1 style={{ marginBottom: 0, fontSize: 21 }}>{progress.topic.titlePl}</h1>
-          <div className="small faint">{progress.topic.title}</div>
-        </div>
-      </div>
+    <Screen title={progress.topic.titlePl} subtitle={progress.topic.title} onBack={onBack} nav={false}>
+      {error ? <Banner tone="error">{error}</Banner> : null}
 
-      {error ? <Banner kind="error">{error}</Banner> : null}
+      <Stack gap={3}>
+        <Button variant="primary" size="lg" block icon={<PlayerIcon.play size={18} />} onClick={onPractise}>
+          Practise now
+        </Button>
+        <List>
+          <SettingRow
+            label="Use for my daily check-in"
+            description="Until you have met all its words"
+            control={
+              <Switch
+                label="Use for my daily check-in"
+                checked={isFocus}
+                disabled={busy === "focus"}
+                onChange={(checked) => act("focus", () => onFocus(checked))}
+              />
+            }
+          />
+        </List>
+      </Stack>
 
-      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-        <button className="btn primary grow" onClick={onPractise}>
-          ▶︎ Practise now
-        </button>
-        <button
-          className={`btn small ${isFocus ? "success" : "ghost"}`}
-          disabled={busy === "focus"}
-          onClick={() => act("focus", () => onFocus(!isFocus))}
-        >
-          {busy === "focus" ? <Spinner /> : isFocus ? "✓ Daily focus" : "Make daily"}
-        </button>
-      </div>
-      {isFocus ? (
-        <p className="tiny faint" style={{ marginTop: 0 }}>
-          The daily check-in uses this until you have met all its words.
-        </p>
-      ) : null}
+      <Stack gap={4}>
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          options={[
+            ...(lines === null || lines.length > 0
+              ? [{ value: "conversation" as const, label: "Conversation" }]
+              : []),
+            { value: "words" as const, label: `Words ${progress.seenWords}/${progress.totalWords}` },
+            { value: "sentences" as const, label: "Sentences" },
+          ]}
+        />
 
-      <div className="segmented" style={{ marginBottom: 16 }}>
-        {lines === null || lines.length > 0 ? (
-          <button data-active={tab === "conversation"} onClick={() => setTab("conversation")}>
-            Conversation
-          </button>
-        ) : null}
-        <button data-active={tab === "words"} onClick={() => setTab("words")}>
-          Words {progress.seenWords}/{progress.totalWords}
-        </button>
-        <button data-active={tab === "sentences"} onClick={() => setTab("sentences")}>
-          Sentences
-        </button>
-      </div>
-
-      {tab === "conversation" ? (
-        lines ? (
-          <>
-            <p className="small">{progress.topic.summary}</p>
-            <DialogueToolbar
-              lines={lines}
-              revealAll={revealAll}
-              onToggleReveal={() => setRevealAll((value) => !value)}
-            />
-            <DialogueView lines={lines} revealAll={revealAll} />
-          </>
-        ) : (
-          <Loading />
-        )
-      ) : null}
-
-      {tab === "words" ? (
-        words ? (
-          <>
-            <input
-              value={query}
-              placeholder="Search these words…"
-              onChange={(event) => setQuery(event.target.value)}
-              style={{ marginBottom: 12 }}
-            />
-            <div className="card flush">
-              {filtered.map((word) => (
-                <div key={word.id} className="list-row">
-                  <span className="grow selectable">
-                    <span className="pl">{word.pl}</span>
-                    <span className="tr">
-                      {word.meaning} · {word.pos}
-                    </span>
-                  </span>
-                  <SpeakButton text={word.pl} />
-                </div>
-              ))}
-              {filtered.length === 0 ? (
-                <div className="list-row faint small">No match.</div>
+        {tab === "conversation" ? (
+          lines ? (
+            <Stack gap={4}>
+              {progress.topic.summary ? (
+                <Text variant="small" tone="dim" as="p">
+                  {progress.topic.summary}
+                </Text>
               ) : null}
-            </div>
-          </>
-        ) : (
-          <Loading />
-        )
-      ) : null}
+              <DialogueToolbar
+                lines={lines}
+                revealAll={revealAll}
+                onToggleReveal={() => setRevealAll((value) => !value)}
+              />
+              <DialogueView lines={lines} revealAll={revealAll} />
+            </Stack>
+          ) : (
+            <Spinner />
+          )
+        ) : null}
 
-      {tab === "sentences" ? (
-        sentences ? (
-          <div className="card flush">
-            {sentences.map((sentence) => (
-              <div key={sentence.id} className="list-row">
-                <span className="grow selectable">
-                  <span className="pl">{sentence.pl}</span>
-                  <span className="tr">{sentence.meaning}</span>
-                </span>
-                <SpeakButton text={sentence.pl} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Loading />
-        )
-      ) : null}
+        {tab === "words" ? (
+          words ? (
+            <Stack gap={3}>
+              <input
+                type="search"
+                value={query}
+                placeholder="Search these words"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <List>
+                {filtered.map((word) => (
+                  <ListItem
+                    key={word.id}
+                    selectable
+                    title={word.pl}
+                    subtitle={`${word.meaning} · ${word.pos}`}
+                    trailing={<SpeakButton text={word.pl} />}
+                  />
+                ))}
+                {filtered.length === 0 ? <ListEmpty>No match.</ListEmpty> : null}
+              </List>
+            </Stack>
+          ) : (
+            <Spinner />
+          )
+        ) : null}
+
+        {tab === "sentences" ? (
+          sentences ? (
+            <List>
+              {sentences.map((sentence) => (
+                <ListItem
+                  key={sentence.id}
+                  selectable
+                  title={sentence.pl}
+                  subtitle={sentence.meaning}
+                  trailing={<SpeakButton text={sentence.pl} />}
+                />
+              ))}
+            </List>
+          ) : (
+            <Spinner />
+          )
+        ) : null}
+      </Stack>
 
       {programme ? (
-        <div style={{ marginTop: 20 }}>
-          {confirmDelete ? (
-            <div className="row">
-              <button
-                className="btn danger grow"
-                disabled={busy === "delete"}
-                onClick={() =>
-                  act("delete", async () => {
-                    await api.programmeDelete(topicId);
-                    onDeleted();
-                  })
-                }
-              >
-                {busy === "delete" ? <Spinner /> : "Yes, delete it and its history"}
-              </button>
-              <button className="btn ghost" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button className="btn danger block" onClick={() => setConfirmDelete(true)}>
-              Delete programme
-            </button>
-          )}
-        </div>
+        <Section title="Manage">
+          <ConfirmButton
+            label="Delete programme"
+            confirmLabel="Delete"
+            question="Delete this programme, its words and your progress on them?"
+            block
+            onConfirm={() =>
+              act("delete", async () => {
+                await api.programmeDelete(topicId);
+                onDeleted();
+              })
+            }
+          />
+        </Section>
       ) : null}
-    </div>
+    </Screen>
   );
 }

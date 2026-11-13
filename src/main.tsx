@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
+import "./design";
 import App from "./App";
 import { initTheme } from "./lib/theme";
 import "./styles.css";

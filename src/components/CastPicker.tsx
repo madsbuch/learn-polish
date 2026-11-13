@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
+import { Banner, Button, Inline, List, ListEmpty, ListItem, Sheet, Spinner, Stack, Text } from "../design";
+import { errorMessage } from "../lib/api";
 import { castTo, discoverSpeakers, type QueueItem } from "../lib/player";
 import type { CastDevice } from "../lib/types";
-import { Info } from "./Info";
-import { Banner, Spinner } from "./ui";
-import { errorMessage } from "../lib/api";
+import { SpeakerIcon } from "./icons";
 
 /**
  * Lists the Sonos rooms on this Wi-Fi and moves the music to one. Searching
@@ -42,85 +42,60 @@ export function CastPicker({
   }, []);
 
   return (
-    <div className="sheet-backdrop fade-in" onClick={onClose}>
-      <div className="sheet" onClick={(event) => event.stopPropagation()}>
-        <div className="row between" style={{ marginBottom: 6 }}>
-          <h2 className="with-info" style={{ margin: 0 }}>
-            Play on a speaker
-            <Info title="Sonos">
-              <p>
-                Sonos rooms and groups on this Wi-Fi. The songs stream from this phone, so
-                keep it on the same network while they play.
-              </p>
-              <p>
-                Not listed? Type a speaker's IP address — it is in the Sonos app under
-                Settings → System → About My System.
-              </p>
-            </Info>
-          </h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
-
-        {error ? <Banner kind="error">{error}</Banner> : null}
-
-        <div className="card flush" style={{ marginBottom: 12 }}>
-          {devices === null || (searching && devices.length === 0) ? (
-            <div className="row" style={{ padding: 16 }}>
-              <Spinner /> <span className="small muted">Looking for speakers…</span>
-            </div>
-          ) : devices.length === 0 ? (
-            <p className="small" style={{ padding: 16, margin: 0 }}>
-              No speakers found. Try an IP address below.
-            </p>
-          ) : (
-            devices.map((device) => (
-              <button
-                key={device.id}
-                className="list-row"
-                disabled={connecting !== null}
-                onClick={async () => {
-                  setConnecting(device.id);
-                  setError(null);
-                  try {
-                    await castTo(device, fallbackQueue);
-                    onClose();
-                  } catch (cause) {
-                    setError(errorMessage(cause));
-                  } finally {
-                    setConnecting(null);
-                  }
-                }}
-              >
-                <span className="speaker-glyph">🔊</span>
-                <span className="grow">
-                  <span className="pl">{device.name}</span>
-                  <span className="tr">{device.baseUrl.replace("http://", "")}</span>
-                </span>
-                {connecting === device.id ? <Spinner /> : <span className="faint">›</span>}
-              </button>
-            ))
-          )}
-        </div>
-
-        <div className="row" style={{ gap: 8 }}>
+    <Sheet title="Play on a speaker" onClose={onClose}>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      <List>
+        {devices === null || (searching && devices.length === 0) ? (
+          <ListEmpty>
+            <Inline gap={2}>
+              <Spinner /> Looking for Sonos speakers on this Wi-Fi…
+            </Inline>
+          </ListEmpty>
+        ) : devices.length === 0 ? (
+          <ListEmpty>No speakers found. Type a speaker's IP address below.</ListEmpty>
+        ) : (
+          devices.map((device) => (
+            <ListItem
+              key={device.id}
+              leading={<SpeakerIcon />}
+              title={device.name}
+              subtitle={device.baseUrl.replace("http://", "")}
+              trailing={connecting === device.id ? <Spinner /> : undefined}
+              chevron={connecting !== device.id}
+              onClick={async () => {
+                if (connecting) return;
+                setConnecting(device.id);
+                setError(null);
+                try {
+                  await castTo(device, fallbackQueue);
+                  onClose();
+                } catch (cause) {
+                  setError(errorMessage(cause));
+                } finally {
+                  setConnecting(null);
+                }
+              }}
+            />
+          ))
+        )}
+      </List>
+      <Stack gap={2}>
+        <Inline gap={2}>
           <input
-            className="grow"
             value={address}
             placeholder="Speaker IP, e.g. 192.168.1.20"
             inputMode="decimal"
             onChange={(event) => setAddress(event.target.value)}
           />
-          <button
-            className="btn ghost small"
-            disabled={searching}
-            onClick={() => void search(address.trim() || undefined)}
-          >
-            {searching ? <Spinner /> : address.trim() ? "Connect" : "Search again"}
-          </button>
-        </div>
-      </div>
-    </div>
+          <Button loading={searching} onClick={() => void search(address.trim() || undefined)}>
+            {address.trim() ? "Connect" : "Search"}
+          </Button>
+        </Inline>
+        <Text variant="caption" tone="faint">
+          The songs stream from this phone, so keep it on the same Wi-Fi. A speaker's IP is in
+          the Sonos app under Settings → System → About My System.
+        </Text>
+      </Stack>
+    </Sheet>
   );
 }

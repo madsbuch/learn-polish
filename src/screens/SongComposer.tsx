@@ -1,8 +1,18 @@
-import { BackIcon } from "../components/icons";
 import { useEffect, useState } from "react";
 
-import { Info } from "../components/Info";
-import { Banner, Spinner } from "../components/ui";
+import {
+  Banner,
+  Button,
+  Card,
+  Choice,
+  ChoiceRow,
+  Field,
+  Screen,
+  Section,
+  Segmented,
+  Stack,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import { sectionsToText, textToSections } from "../lib/lyrics";
 import type { Sentence, Settings, SongDraft, TopicProgress } from "../lib/types";
@@ -80,199 +90,144 @@ export function SongComposer({
   }
 
   return (
-    <div className="scroll">
-      <div className="row" style={{ marginBottom: 12 }}>
-        <button className="icon-btn" onClick={onCancel} aria-label="Back to music">
-          <BackIcon />
-        </button>
-        <h1 className="grow" style={{ marginBottom: 0, fontSize: 22 }}>
-          {draft ? "Your song" : "New song"}
-        </h1>
-      </div>
-
-      {error ? <Banner kind="error">{error}</Banner> : null}
-
-      {!songwriter ? (
-        <Banner kind="info">
-          Pick a songwriter model in Settings.
-        </Banner>
-      ) : null}
+    <Screen title={draft ? "Your song" : "New song"} onBack={onCancel}>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {!songwriter ? <Banner tone="info">Pick a songwriter model in Settings.</Banner> : null}
 
       {!draft ? (
         <>
-          <div className="card">
-            <label className="field">
-              <span>What should it be about?</span>
-              <textarea
-                rows={2}
-                value={brief}
-                placeholder="e.g. ordering breakfast in a café in Kraków"
-                onChange={(event) => setBrief(event.target.value)}
-              />
-            </label>
+          <Section title="What it is about">
+            <Card>
+              <Stack gap={4}>
+                <Field label="Theme">
+                  <textarea
+                    rows={2}
+                    value={brief}
+                    placeholder="e.g. ordering breakfast in a café in Kraków"
+                    onChange={(event) => setBrief(event.target.value)}
+                  />
+                </Field>
+                <Field label="Words from">
+                  <select
+                    value={topicId ?? ""}
+                    onChange={(event) => setTopicId(event.target.value ? Number(event.target.value) : null)}
+                  >
+                    <option value="">Words I have practised</option>
+                    {topics.map((entry) => (
+                      <option key={entry.topic.id} value={entry.topic.id}>
+                        {entry.topic.titlePl} — {entry.topic.title}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Chorus sentence" hint="The one sentence to get stuck in your head.">
+                  <select value={chorusChoice} onChange={(event) => setChorusChoice(event.target.value)}>
+                    <option value="">Let the songwriter choose</option>
+                    {sentences.map((sentence) => (
+                      <option key={sentence.id} value={sentence.pl}>
+                        {sentence.pl} — {sentence.meaning}
+                      </option>
+                    ))}
+                    <option value="custom">Write my own…</option>
+                  </select>
+                </Field>
+                {chorusChoice === "custom" ? (
+                  <input
+                    value={customChorus}
+                    placeholder="Polish sentence, e.g. Poproszę kawę z mlekiem"
+                    onChange={(event) => setCustomChorus(event.target.value)}
+                  />
+                ) : null}
+              </Stack>
+            </Card>
+          </Section>
 
-            <label className="field">
-              <span>Words from</span>
-              <select
-                value={topicId ?? ""}
-                onChange={(event) =>
-                  setTopicId(event.target.value ? Number(event.target.value) : null)
-                }
-              >
-                <option value="">Words I have practised</option>
-                {topics.map((entry) => (
-                  <option key={entry.topic.id} value={entry.topic.id}>
-                    {entry.topic.titlePl} — {entry.topic.title}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <Section title="Sound">
+            <Card>
+              <Stack gap={4}>
+                <ChoiceRow>
+                  {PRESET_NAMES.map((name, i) => (
+                    <Choice key={name} selected={style === STYLE_PRESETS[i]} onClick={() => setStyle(STYLE_PRESETS[i])}>
+                      {name}
+                    </Choice>
+                  ))}
+                </ChoiceRow>
+                <Field label="Style for Suno">
+                  <input value={style} onChange={(event) => setStyle(event.target.value)} />
+                </Field>
+                <Field label="Voice">
+                  <Segmented
+                    value={vocalGender}
+                    onChange={setVocalGender}
+                    options={[
+                      { value: "", label: "Any" },
+                      { value: "f", label: "Female" },
+                      { value: "m", label: "Male" },
+                    ]}
+                  />
+                </Field>
+              </Stack>
+            </Card>
+          </Section>
 
-            <label className="field" style={{ marginBottom: chorusChoice === "custom" ? 8 : 0 }}>
-              <span>Chorus sentence — the one to get stuck in your head</span>
-              <select
-                value={chorusChoice}
-                onChange={(event) => setChorusChoice(event.target.value)}
-              >
-                <option value="">Let the songwriter choose</option>
-                {sentences.map((sentence) => (
-                  <option key={sentence.id} value={sentence.pl}>
-                    {sentence.pl} — {sentence.meaning}
-                  </option>
-                ))}
-                <option value="custom">Write my own…</option>
-              </select>
-            </label>
-            {chorusChoice === "custom" ? (
-              <input
-                value={customChorus}
-                placeholder="Polish sentence, e.g. Poproszę kawę z mlekiem"
-                onChange={(event) => setCustomChorus(event.target.value)}
-              />
-            ) : null}
-          </div>
-
-          <div className="card">
-            <h3>Sound</h3>
-            <div className="row wrap" style={{ gap: 6, marginBottom: 10 }}>
-              {PRESET_NAMES.map((name, i) => (
-                <button
-                  key={name}
-                  className="chip preset"
-                  data-active={style === STYLE_PRESETS[i]}
-                  onClick={() => setStyle(STYLE_PRESETS[i])}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <label className="field">
-              <span>Style for Suno</span>
-              <input value={style} onChange={(event) => setStyle(event.target.value)} />
-            </label>
-            <div className="segmented">
-              {[
-                ["", "Any voice"],
-                ["f", "Female"],
-                ["m", "Male"],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  data-active={vocalGender === value}
-                  onClick={() => setVocalGender(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button
-            className="btn primary block"
-            disabled={busy !== null || !songwriter || (chorusChoice === "custom" && !chorus)}
-            onClick={() =>
-              run("draft", async () =>
-                accept(
-                  await api.songDraft({ brief, topicId, chorusPl: chorus, style, vocalGender }),
-                ),
-              )
-            }
-          >
-            {busy === "draft" ? (
-              <>
-                <Spinner /> The songwriter is writing…
-              </>
-            ) : (
-              "✍️ Write the lyrics"
-            )}
-          </button>
-          <div className="row tiny faint" style={{ justifyContent: "center", gap: 6, marginTop: 8 }}>
-            {songwriter || "—"}
-            <Info title="The songwriter">
-              <p>
-                An AI model on OpenRouter ({songwriter || "none chosen"}) writes the lyrics
-                from your words, leaning on the ones you keep forgetting.
-              </p>
-              <p>Nothing is sent to Suno until you approve the lyrics.</p>
-            </Info>
-          </div>
+          <Stack gap={2}>
+            <Button
+              variant="primary"
+              size="lg"
+              block
+              loading={busy === "draft"}
+              disabled={busy !== null || !songwriter || (chorusChoice === "custom" && !chorus)}
+              onClick={() =>
+                run("draft", async () =>
+                  accept(await api.songDraft({ brief, topicId, chorusPl: chorus, style, vocalGender })),
+                )
+              }
+            >
+              {busy === "draft" ? "The songwriter is writing…" : "Write the lyrics"}
+            </Button>
+            <Text variant="caption" tone="faint" align="center">
+              Written by {songwriter || "—"}. Nothing goes to Suno until you approve the lyrics.
+            </Text>
+          </Stack>
         </>
       ) : (
         <>
-          <div className="card">
-            <label className="field">
-              <span>Title</span>
-              <input
-                value={draft.title}
-                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-              />
-            </label>
-            <div className="row" style={{ gap: 8 }}>
-              <label className="field grow">
-                <span>Chorus (Polish)</span>
+          <Card>
+            <Stack gap={4}>
+              <Field label="Title">
+                <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+              </Field>
+              <Field label="Chorus (Polish)">
                 <input
                   value={draft.chorusPl}
                   onChange={(event) => setDraft({ ...draft, chorusPl: event.target.value })}
                 />
-              </label>
-              <label className="field grow">
-                <span>Meaning</span>
+              </Field>
+              <Field label="Its meaning">
                 <input
                   value={draft.chorusEn}
                   onChange={(event) => setDraft({ ...draft, chorusEn: event.target.value })}
                 />
-              </label>
-            </div>
-            <label className="field">
-              <span>Style for Suno</span>
-              <input
-                value={draft.style}
-                onChange={(event) => setDraft({ ...draft, style: event.target.value })}
-              />
-            </label>
-            <label className="field" style={{ marginBottom: 4 }}>
-              <span className="with-info">
-                Lyrics
-                <Info title="Editing lyrics">
-                  <p>One phrase per line: <b>English | Polish</b>.</p>
-                  <p>
-                    Verses sing the English, then the Polish. The chorus sings only the
-                    Polish. Section names go in brackets, like <b>[Chorus]</b>.
-                  </p>
-                </Info>
-              </span>
-              <textarea
-                className="lyrics-editor"
-                rows={16}
-                value={lyricsText}
-                spellCheck={false}
-                onChange={(event) => setLyricsText(event.target.value)}
-              />
-            </label>
-          </div>
+              </Field>
+              <Field label="Style for Suno">
+                <input value={draft.style} onChange={(event) => setDraft({ ...draft, style: event.target.value })} />
+              </Field>
+              <Field
+                label="Lyrics"
+                hint="One phrase per line: English | Polish. Verses sing the English, then the Polish; the chorus only the Polish. Section names go in brackets, like [Chorus]."
+              >
+                <textarea
+                  className="lyrics-editor"
+                  rows={16}
+                  value={lyricsText}
+                  spellCheck={false}
+                  onChange={(event) => setLyricsText(event.target.value)}
+                />
+              </Field>
+            </Stack>
+          </Card>
 
-          <div className="card">
-            <h3>Ask the songwriter for changes</h3>
+          <Section title="Ask the songwriter for changes">
             <div className="composer">
               <textarea
                 rows={2}
@@ -280,8 +235,8 @@ export function SongComposer({
                 placeholder="e.g. shorter verses, more food words, a happier chorus"
                 onChange={(event) => setFeedback(event.target.value)}
               />
-              <button
-                className="btn ghost"
+              <Button
+                loading={busy === "refine"}
                 disabled={busy !== null || feedback.trim().length === 0}
                 onClick={() =>
                   run("refine", async () => {
@@ -292,45 +247,38 @@ export function SongComposer({
                   })
                 }
               >
-                {busy === "refine" ? <Spinner /> : "Revise"}
-              </button>
+                Revise
+              </Button>
             </div>
-          </div>
+          </Section>
 
-          <button
-            className="btn primary block"
-            disabled={busy !== null || !settings.hasKieKey}
-            onClick={() =>
-              run("create", async () => {
-                const current = edited();
-                if (!current) return;
-                await api.songCreate(current);
-                onCreated();
-              })
-            }
-          >
-            {busy === "create" ? <Spinner /> : `🎤 Make it with Suno ${settings.sunoModel}`}
-          </button>
-          <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            <button className="btn ghost small grow" onClick={() => setDraft(null)}>
+          <Stack gap={2}>
+            <Button
+              variant="primary"
+              size="lg"
+              block
+              loading={busy === "create"}
+              disabled={busy !== null || !settings.hasKieKey}
+              onClick={() =>
+                run("create", async () => {
+                  const current = edited();
+                  if (!current) return;
+                  await api.songCreate(current);
+                  onCreated();
+                })
+              }
+            >
+              Make it with Suno {settings.sunoModel}
+            </Button>
+            <Text variant="caption" tone="faint" align="center">
+              Uses kie.ai credits. Suno sings two takes in 2–4 minutes; you can leave meanwhile.
+            </Text>
+            <Button variant="plain" onClick={() => setDraft(null)}>
               Start over
-            </button>
-          </div>
-          <div className="row tiny faint" style={{ justifyContent: "center", gap: 6, marginTop: 8 }}>
-            Uses kie.ai credits
-            <Info title="Making the song">
-              <p>
-                Suno sings two takes, usually in 2–4 minutes. You can leave the screen
-                meanwhile.
-              </p>
-              <p>
-                Both takes are downloaded to this device, so they keep playing after kie.ai
-                deletes its copy (after 14 days).
-              </p>
-            </Info>
-          </div>
+            </Button>
+          </Stack>
         </>
       )}
-    </div>
+    </Screen>
   );
 }

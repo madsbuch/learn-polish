@@ -1,8 +1,6 @@
-import { BackIcon } from "../components/icons";
 import { TopicList } from "../components/TopicList";
-import { Bar, Stat } from "../components/ui";
+import { Card, Inline, Progress as Meter, Screen, Section, Stack, Stat, StatGrid, Text } from "../design";
 import type { Stats, TopicProgress } from "../lib/types";
-
 /** 18 weeks of activity, oldest first, in Sunday-aligned columns. */
 function Heatmap({ stats }: { stats: Stats }) {
   const byDay = new Map(stats.history.map((entry) => [entry.day, entry]));
@@ -14,6 +12,31 @@ function Heatmap({ stats }: { stats: Stats }) {
     cells.push(<i key={day} data-level={level} />);
   }
   return <div className="heat">{cells}</div>;
+}
+
+/** One line of the vocabulary card: a count, its total, and a bar. */
+function Measure({
+  label,
+  value,
+  max,
+  tone,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  tone?: "gold" | "mint";
+}) {
+  return (
+    <Stack gap={2}>
+      <Inline justify="between">
+        <Text variant="small">{label}</Text>
+        <Text variant="small" tone="faint">
+          {value} of {max}
+        </Text>
+      </Inline>
+      <Meter value={value} max={max} tone={tone} />
+    </Stack>
+  );
 }
 
 export function Progress({
@@ -30,69 +53,56 @@ export function Progress({
   onBack: () => void;
 }) {
   return (
-    <div className="scroll no-nav">
-      <div className="row" style={{ marginBottom: 14 }}>
-        <button className="icon-btn" onClick={onBack} aria-label="Back">
-          <BackIcon />
-        </button>
-        <div className="grow">
-          <h1 style={{ marginBottom: 0, fontSize: 21 }}>Progress</h1>
-          <div className="small faint">Everything you have learned so far.</div>
-        </div>
-      </div>
-
-      <div className="stat-grid" style={{ marginBottom: 14 }}>
+    <Screen title="Progress" subtitle="Everything you have learned so far" onBack={onBack} nav={false}>
+      <StatGrid>
         <Stat value={stats.currentStreak} label="day streak" />
         <Stat value={stats.longestStreak} label="best streak" />
         <Stat value={stats.totalXp} label="total XP" />
         <Stat value={stats.level} label="level" />
-      </div>
+      </StatGrid>
 
-      <div className="card">
-        <h3>Last 18 weeks</h3>
-        <Heatmap stats={stats} />
-      </div>
+      <Section title="Last 18 weeks">
+        <Card>
+          <Heatmap stats={stats} />
+        </Card>
+      </Section>
 
-      <div className="card">
-        <h3>Vocabulary</h3>
-        <div className="row between small muted" style={{ marginBottom: 6 }}>
-          <span>{stats.wordsSeen} met</span>
-          <span>{stats.wordsTotal} total</span>
+      <Section title="Vocabulary">
+        <Card>
+          <Stack gap={4}>
+            <Measure label="Words met" value={stats.wordsSeen} max={stats.wordsTotal} />
+            <Measure label="Words mastered" value={stats.wordsMastered} max={stats.wordsTotal} tone="mint" />
+            <Measure label="Sentences practised" value={stats.sentencesSeen} max={stats.sentencesTotal} tone="gold" />
+          </Stack>
+        </Card>
+      </Section>
+
+      <Section title="Topics">
+        <TopicList entries={topics} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
+      </Section>
+
+      <Section title="Achievements">
+        <div className="achievement-grid">
+          {stats.achievements.map((achievement) => (
+            <div
+              key={achievement.code}
+              className="achievement"
+              data-locked={!achievement.unlocked}
+              title={achievement.description}
+            >
+              <span className="achievement-icon">{achievement.icon}</span>
+              <Text variant="caption" weight="bold">
+                {achievement.title}
+              </Text>
+              {!achievement.unlocked ? (
+                <div className="full-width">
+                  <Meter value={achievement.progress} max={1} size="sm" />
+                </div>
+              ) : null}
+            </div>
+          ))}
         </div>
-        <Bar value={stats.wordsSeen} max={stats.wordsTotal} />
-        <div className="row between small muted" style={{ margin: "14px 0 6px" }}>
-          <span>{stats.wordsMastered} mastered</span>
-          <span>{Math.round((stats.wordsMastered / Math.max(1, stats.wordsTotal)) * 100)}%</span>
-        </div>
-        <Bar value={stats.wordsMastered} max={stats.wordsTotal} tone="mint" />
-        <div className="row between small muted" style={{ margin: "14px 0 6px" }}>
-          <span>{stats.sentencesSeen} sentences practised</span>
-          <span>{stats.sentencesTotal} total</span>
-        </div>
-        <Bar value={stats.sentencesSeen} max={stats.sentencesTotal} tone="gold" />
-      </div>
-
-      <h2 style={{ marginTop: 22 }}>Topics</h2>
-      <TopicList entries={topics} focusTopicId={focusTopicId} onOpen={onOpenTopic} />
-
-      <h2 style={{ marginTop: 22 }}>Achievements</h2>
-      <div className="badge-grid">
-        {stats.achievements.map((achievement) => (
-          <div
-            key={achievement.code}
-            className={`badge${achievement.unlocked ? "" : " locked"}`}
-            title={achievement.description}
-          >
-            <span className="glyph">{achievement.icon}</span>
-            <b>{achievement.title}</b>
-            {!achievement.unlocked ? (
-              <span style={{ display: "block", marginTop: 6 }}>
-                <Bar value={achievement.progress} max={1} />
-              </span>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </div>
+      </Section>
+    </Screen>
   );
 }

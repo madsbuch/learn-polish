@@ -7,22 +7,20 @@ export function Lyrics({ sections }: { sections: SongSection[] }) {
     <div className="lyrics selectable">
       {sections.map((section, i) => (
         <div key={i} className="lyric-section" data-kind={section.kind}>
-          <div className="eyebrow">{sectionLabel(section.kind)}</div>
-          {section.lines.map((line, j) => (
-            <div key={j} className="lyric-line">
-              {section.kind === "chorus" ? (
-                <>
-                  <span className="pl">{line.pl}</span>
-                  {line.en ? <span className="en">{line.en}</span> : null}
-                </>
-              ) : (
-                <>
-                  {line.en ? <span className="en">{line.en}</span> : null}
-                  <span className="pl">{line.pl}</span>
-                </>
-              )}
-            </div>
-          ))}
+          <div className="t-eyebrow">{sectionLabel(section.kind)}</div>
+          {section.lines.map((line, j) =>
+            section.kind === "chorus" ? (
+              <div key={j}>
+                <span className="lyric-pl">{line.pl}</span>
+                {line.en ? <span className="lyric-en">{line.en}</span> : null}
+              </div>
+            ) : (
+              <div key={j}>
+                {line.en ? <span className="lyric-en">{line.en}</span> : null}
+                <span className="lyric-pl">{line.pl}</span>
+              </div>
+            ),
+          )}
         </div>
       ))}
     </div>

@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { TitleWithInfo } from "../components/Info";
+import { CheckIcon, NavIcon, PlayerIcon, SendIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
-import { Banner, Spinner } from "../components/ui";
+import {
+  Banner,
+  Button,
+  EmptyState,
+  IconButton,
+  Inline,
+  List,
+  ListItem,
+  Screen,
+  Section,
+  Spinner,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import type { ChatMessage, StreamEvent, TutorAction, TutorStatus } from "../lib/types";
 
@@ -128,32 +140,37 @@ export function Tutor({
         action.kind === "focusSet");
     return (
       <div className="tutor-action">
-        <div className="small">
-          <span aria-hidden>✓ </span>
-          {action.label}
-        </div>
+        <Inline gap={2} align="top">
+          <span className="tone-ok">
+            <CheckIcon />
+          </span>
+          <Text variant="small" weight="medium">
+            {action.label}
+          </Text>
+        </Inline>
         {action.kind === "songStarted" && songId !== null ? (
-          <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
-            <button className="btn ghost small" onClick={() => onOpenSong(songId)}>
-              ♪ Open in Music
-            </button>
-          </div>
+          <Inline gap={2} wrap>
+            <Button size="sm" icon={<NavIcon.songs />} onClick={() => onOpenSong(songId)}>
+              Open in Music
+            </Button>
+          </Inline>
         ) : null}
         {practisable ? (
-          <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
-            <button className="btn primary small" onClick={() => onPractise(topicId)}>
-              ▶︎ Practise now
-            </button>
+          <Inline gap={2} wrap>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<PlayerIcon.play size={14} />}
+              onClick={() => onPractise(topicId)}
+            >
+              Practise now
+            </Button>
             {action.kind === "programmeCreated" && focusTopicId !== topicId ? (
-              <button
-                className="btn ghost small"
-                disabled={focusing === topicId}
-                onClick={() => focus(topicId)}
-              >
-                {focusing === topicId ? <Spinner /> : "Make it my daily check-in"}
-              </button>
+              <Button size="sm" loading={focusing === topicId} onClick={() => focus(topicId)}>
+                Use for daily check-in
+              </Button>
             ) : null}
-          </div>
+          </Inline>
         ) : null}
       </div>
     );
@@ -161,23 +178,32 @@ export function Tutor({
 
   if (!hasApiKey || !hasModel) {
     return (
-      <div className="scroll">
-        <TitleWithInfo as="h1" title="Tutor" info={<TutorInfo />} />
-        <p>{hasApiKey ? "Pick a model to start." : "Needs an OpenRouter key."}</p>
-        <button className="btn primary block" onClick={onOpenSettings}>
-          {hasApiKey ? "Choose a model in Settings" : "Add API key in Settings"}
-        </button>
-      </div>
+      <Screen title="Tutor" info={<TutorInfo />}>
+        <EmptyState
+          icon="✨"
+          title={hasApiKey ? "Pick a model" : "Add an OpenRouter key"}
+          action={
+            <Button variant="primary" onClick={onOpenSettings}>
+              Open Settings
+            </Button>
+          }
+        >
+          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can
+          build programmes and songs for you.
+        </EmptyState>
+      </Screen>
     );
   }
 
   return (
-    <div className="scroll">
-      <div className="row between" style={{ marginBottom: 4 }}>
-        <TitleWithInfo as="h1" title="Tutor" info={<TutorInfo />} />
-        {messages.length > 0 ? (
-          <button
-            className="btn ghost small"
+    <Screen
+      title="Tutor"
+      info={<TutorInfo />}
+      actions={
+        messages.length > 0 ? (
+          <Button
+            variant="plain"
+            size="sm"
             disabled={sending}
             onClick={async () => {
               await api.tutorClear();
@@ -185,36 +211,25 @@ export function Tutor({
             }}
           >
             Clear
-          </button>
-        ) : null}
-      </div>
-
-      {error ? <Banner kind="error">{error}</Banner> : null}
+          </Button>
+        ) : null
+      }
+    >
+      {error ? <Banner tone="error">{error}</Banner> : null}
 
       {messages.length === 0 && !sending ? (
-        <div className="card">
-          <p className="small" style={{ marginTop: 0 }}>
-            Ask about Polish or the app. I can build practice programmes on any theme,
-            check your progress, and set up your daily check-in.
-          </p>
-          <div className="stack">
+        <Section title="Try asking">
+          <List>
             {STARTERS.map((starter) => (
-              <button
-                key={starter}
-                className="btn ghost"
-                style={{ textAlign: "left", justifyContent: "flex-start" }}
-                onClick={() => send(starter)}
-              >
-                {starter}
-              </button>
+              <ListItem key={starter} title={starter} onClick={() => send(starter)} />
             ))}
-          </div>
-        </div>
+          </List>
+        </Section>
       ) : null}
 
       <div className="chat">
         {messages.map((message) => (
-          <div key={message.id} className={`msg ${message.role} selectable`}>
+          <div key={message.id} className="msg selectable" data-role={message.role}>
             {message.role === "assistant" ? (
               <>
                 <Markdown text={message.content} />
@@ -228,30 +243,31 @@ export function Tutor({
           </div>
         ))}
         {sending ? (
-          <div className="msg assistant">
+          <div className="msg" data-role="assistant">
             {live ? (
-              <>
+              <div>
                 <Markdown text={live} />
                 {status ? null : <span className="caret" />}
-              </>
+              </div>
             ) : null}
             {status || !live ? (
-              <div className="row small faint" style={{ gap: 8, marginTop: live ? 8 : 0 }}>
+              <Inline gap={2}>
                 <Spinner />
-                {status ?? ""}
-              </div>
+                <Text variant="small" tone="faint">
+                  {status ?? "Thinking…"}
+                </Text>
+              </Inline>
             ) : null}
           </div>
         ) : null}
         <div ref={endRef} />
       </div>
 
-      <div className="composer" style={{ marginBottom: 12 }}>
+      <div className="composer composer-bar">
         <textarea
-          className="grow"
-          rows={2}
+          rows={1}
           value={draft}
-          placeholder="Ask the tutor…"
+          placeholder="Ask the tutor"
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -260,17 +276,15 @@ export function Tutor({
             }
           }}
         />
-        <button
-          className="btn primary"
-          style={{ padding: "14px 18px" }}
+        <IconButton
+          variant="primary"
+          icon={<SendIcon />}
+          label="Send"
           disabled={sending || draft.trim().length === 0}
           onClick={() => send(draft)}
-          aria-label="Send"
-        >
-          ➤
-        </button>
+        />
       </div>
-    </div>
+    </Screen>
   );
 }
 

@@ -3,9 +3,24 @@ import { useState } from "react";
 import { CastPicker } from "../components/CastPicker";
 import { Cover } from "../components/Cover";
 import { FollowLyrics } from "../components/FollowLyrics";
-import { DownIcon, PlayerIcon } from "../components/icons";
+import { MoreIcon, PlayerIcon } from "../components/icons";
 import { AddToPlaylist, useTrackExport } from "../components/TrackActions";
-import { Banner, Spinner } from "../components/ui";
+import {
+  Action,
+  ActionBar,
+  Banner,
+  Button,
+  EmptyState,
+  Hero,
+  IconButton,
+  Inline,
+  List,
+  ListItem,
+  Screen,
+  Segmented,
+  Stack,
+  Text,
+} from "../design";
 import {
   currentItem,
   cycleRepeat,
@@ -42,14 +57,9 @@ export function Player({
 
   if (!item) {
     return (
-      <div className="scroll no-nav">
-        <div className="row" style={{ marginBottom: 14 }}>
-          <button className="icon-btn bare" onClick={onClose} aria-label="Close the player">
-            <DownIcon />
-          </button>
-        </div>
-        <p className="faint center">Nothing is playing.</p>
-      </div>
+      <Screen title="Now playing" onClose={onClose} nav={false}>
+        <EmptyState icon="🎵" title="Nothing is playing" />
+      </Screen>
     );
   }
 
@@ -57,93 +67,87 @@ export function Player({
   const duration = player.duration || item.track.duration;
 
   return (
-    <div className="scroll no-nav player-screen">
-      <div className="row between" style={{ marginBottom: 10 }}>
-        <button className="icon-btn bare" onClick={onClose} aria-label="Close the player">
-          <DownIcon />
-        </button>
-        <span className="eyebrow" style={{ margin: 0 }}>
-          {cast ? `Playing on ${cast.device.name}` : "Now playing"}
-        </span>
-        <button
-          className="icon-btn bare"
-          onClick={() => onOpenSong(item.song.id)}
-          aria-label="Song details"
-          title="Song details"
-        >
-          ⋯
-        </button>
-      </div>
+    <Screen
+      title={cast ? `Playing on ${cast.device.name}` : "Now playing"}
+      onClose={onClose}
+      nav={false}
+    >
+      {player.error ? <Banner tone="error">{player.error}</Banner> : null}
+      {message ? <Banner tone={message.error ? "error" : "ok"}>{message.text}</Banner> : null}
 
-      {player.error ? <Banner kind="error">{player.error}</Banner> : null}
-      {message ? <Banner kind={message.error ? "error" : "info"}>{message.text}</Banner> : null}
-
-      <div className="hero now-playing">
+      <Hero className="player-card">
         <div className="player-cover">
           <Cover path={item.track.imagePath} size={232} />
         </div>
-        <div className="center">
-          <div style={{ fontSize: 20, fontWeight: 760, lineHeight: 1.25 }}>{item.song.title}</div>
-          <div className="selectable" style={{ fontSize: 14.5, fontWeight: 650, marginTop: 4 }}>
+        <Stack gap={1} align="center">
+          <h2 className="t-center">{item.song.title}</h2>
+          <Text weight="bold" align="center" selectable>
             „{item.song.chorusPl}”
-          </div>
-          <div style={{ fontSize: 12.5, opacity: 0.75 }}>
+          </Text>
+          <Text variant="small" tone="dim" align="center">
             {item.song.chorusEn} · take {item.track.ord + 1}
-          </div>
-        </div>
+          </Text>
+        </Stack>
 
-        <input
-          className="scrubber"
-          type="range"
-          min={0}
-          max={Math.max(1, duration)}
-          step={0.5}
-          value={Math.min(player.position, duration || player.position)}
-          onChange={(event) => seek(Number(event.target.value))}
-          aria-label="Position"
-        />
-        <div className="row between tiny" style={{ opacity: 0.75, marginTop: -2 }}>
-          <span>{formatTime(player.position)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
+        <Stack gap={1}>
+          <input
+            className="scrubber"
+            type="range"
+            min={0}
+            max={Math.max(1, duration)}
+            step={0.5}
+            value={Math.min(player.position, duration || player.position)}
+            onChange={(event) => seek(Number(event.target.value))}
+            aria-label="Position"
+          />
+          <Inline justify="between">
+            <Text variant="caption" tone="dim">
+              {formatTime(player.position)}
+            </Text>
+            <Text variant="caption" tone="dim">
+              {formatTime(duration)}
+            </Text>
+          </Inline>
+        </Stack>
 
         <div className="transport">
-          <button
-            className="icon-btn ghost-light"
+          <IconButton
+            variant="inverse"
+            icon={
+              <span className="icon-mark">
+                <PlayerIcon.repeat />
+                {player.repeat === "one" ? <b>1</b> : null}
+              </span>
+            }
+            label={`Repeat: ${player.repeat === "one" ? "this song" : player.repeat === "all" ? "all" : "off"}`}
+            off={player.repeat === "off"}
             onClick={cycleRepeat}
-            aria-label={`Repeat: ${player.repeat}`}
-            title={`Repeat: ${player.repeat}`}
-            data-mode={player.repeat}
-            style={{ opacity: player.repeat === "off" ? 0.55 : 1 }}
-          >
-            <PlayerIcon.repeat />
-            {player.repeat === "one" ? <span className="tiny">1</span> : null}
-          </button>
-          <button className="icon-btn ghost-light" onClick={previous} aria-label="Previous">
-            <PlayerIcon.previous />
-          </button>
-          <button className="play-btn" onClick={toggle} aria-label={player.playing ? "Pause" : "Play"}>
-            {player.playing ? <PlayerIcon.pause size={26} /> : <PlayerIcon.play size={26} />}
-          </button>
-          <button className="icon-btn ghost-light" onClick={next} aria-label="Next">
-            <PlayerIcon.next />
-          </button>
-          <button
-            className="icon-btn ghost-light"
-            onClick={() => setPicking(true)}
-            aria-label="Play on a speaker"
-            title="Play on a speaker"
+          />
+          <IconButton variant="inverse" icon={<PlayerIcon.previous />} label="Previous" onClick={previous} />
+          <IconButton
+            variant="inverse-solid"
+            size="xl"
+            icon={player.playing ? <PlayerIcon.pause size={26} /> : <PlayerIcon.play size={26} />}
+            label={player.playing ? "Pause" : "Play"}
+            onClick={toggle}
+          />
+          <IconButton variant="inverse" icon={<PlayerIcon.next />} label="Next" onClick={next} />
+          <IconButton
+            variant="inverse"
+            icon={<PlayerIcon.speaker />}
+            label="Play on a speaker"
             disabled={Boolean(cast)}
-          >
-            <PlayerIcon.speaker />
-          </button>
+            onClick={() => setPicking(true)}
+          />
         </div>
 
         {cast ? (
           <div className="cast-bar">
-            <span aria-hidden="true">🔊</span>
+            <PlayerIcon.speaker />
             {cast.detached ? (
-              <span className="grow small">{cast.device.name} is playing something else.</span>
+              <Text variant="small" className="grow">
+                {cast.device.name} is playing something else.
+              </Text>
             ) : cast.volume >= 0 ? (
               <input
                 className="grow"
@@ -155,68 +159,65 @@ export function Player({
                 aria-label={`Volume on ${cast.device.name}`}
               />
             ) : (
-              <span className="grow small">{cast.device.name}</span>
+              <Text variant="small" className="grow">
+                {cast.device.name}
+              </Text>
             )}
-            <button className="cast-chip" onClick={() => void stopCasting()}>
+            <Button variant="inverse" size="sm" onClick={() => void stopCasting()}>
               Stop
-            </button>
+            </Button>
           </div>
         ) : null}
-      </div>
+      </Hero>
 
-      <div className="player-actions">
-        <button onClick={() => setAdding(true)}>
-          <PlayerIcon.addToPlaylist />
-          <span>Playlist</span>
-        </button>
+      <ActionBar>
+        <Action icon={<PlayerIcon.addToPlaylist />} label="Playlist" onClick={() => setAdding(true)} />
         {exporter.canShare ? (
-          <button disabled={exporter.busy !== null} onClick={() => exporter.share(item)}>
-            {exporter.busy === "share" ? <Spinner /> : <PlayerIcon.share />}
-            <span>Share</span>
-          </button>
+          <Action
+            icon={<PlayerIcon.share />}
+            label="Share"
+            loading={exporter.busy === "share"}
+            disabled={exporter.busy !== null}
+            onClick={() => exporter.share(item)}
+          />
         ) : null}
-        <button disabled={exporter.busy !== null} onClick={() => exporter.save(item)}>
-          {exporter.busy === "save" ? <Spinner /> : <PlayerIcon.download />}
-          <span>Save MP3</span>
-        </button>
-        <button onClick={() => onOpenSong(item.song.id)}>
-          <span style={{ fontSize: 20, lineHeight: "22px" }}>⋯</span>
-          <span>Song</span>
-        </button>
-      </div>
+        <Action
+          icon={<PlayerIcon.download />}
+          label="Save MP3"
+          loading={exporter.busy === "save"}
+          disabled={exporter.busy !== null}
+          onClick={() => exporter.save(item)}
+        />
+        <Action icon={<MoreIcon />} label="Song" onClick={() => onOpenSong(item.song.id)} />
+      </ActionBar>
 
-      <div className="segmented" style={{ marginBottom: 12 }}>
-        <button data-active={panel === "lyrics"} onClick={() => setPanel("lyrics")}>
-          Lyrics
-        </button>
-        <button data-active={panel === "queue"} onClick={() => setPanel("queue")}>
-          Up next · {player.queue.length}
-        </button>
-      </div>
-
-      {panel === "lyrics" ? (
-        <FollowLyrics item={item} />
-      ) : (
-        <div className="card flush">
-          {player.queue.map((entry, index) => (
-            <button
-              key={`${entry.track.id}-${index}`}
-              className="list-row"
-              data-current={index === player.index}
-              onClick={() => skipTo(index)}
-            >
-              <Cover path={entry.track.imagePath} size={40} />
-              <span className="grow" style={{ minWidth: 0 }}>
-                <span className="pl ellipsis">{entry.song.title}</span>
-                <span className="tr ellipsis">
-                  {index === player.index ? "Playing · " : ""}take {entry.track.ord + 1} ·{" "}
-                  {formatTime(entry.track.duration)}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <Stack gap={3}>
+        <Segmented
+          value={panel}
+          onChange={setPanel}
+          options={[
+            { value: "lyrics", label: "Lyrics" },
+            { value: "queue", label: `Up next · ${player.queue.length}` },
+          ]}
+        />
+        {panel === "lyrics" ? (
+          <FollowLyrics item={item} />
+        ) : (
+          <List>
+            {player.queue.map((entry, index) => (
+              <ListItem
+                key={`${entry.track.id}-${index}`}
+                leading={<Cover path={entry.track.imagePath} size={44} />}
+                title={entry.song.title}
+                subtitle={`${index === player.index ? "Playing · " : ""}take ${entry.track.ord + 1} · ${formatTime(entry.track.duration)}`}
+                selected={index === player.index}
+                chevron={false}
+                onClick={() => skipTo(index)}
+              />
+            ))}
+          </List>
+        )}
+      </Stack>
 
       {picking ? <CastPicker fallbackQueue={player.queue} onClose={() => setPicking(false)} /> : null}
       {adding ? (
@@ -226,6 +227,6 @@ export function Player({
           onDone={(text) => setMessage({ text, error: false })}
         />
       ) : null}
-    </div>
+    </Screen>
   );
 }

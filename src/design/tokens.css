@@ -1,0 +1,184 @@
+/*
+ * Design tokens: the only place a raw size, colour, radius or duration may
+ * appear. Everything else in the app refers to these by name. See DESIGN.md.
+ */
+
+:root {
+  /* ---- Spacing: a 4px grid. Use these for every margin, padding and gap. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  /* Left and right edge of every screen. */
+  --gutter: var(--space-4);
+
+  /* ---- Type: seven steps, each with its own line height and weight. */
+  --font-caption: 12px;
+  --leading-caption: 16px;
+  --font-small: 13.5px;
+  --leading-small: 19px;
+  --font-body: 15px;
+  --leading-body: 22px;
+  --font-lead: 17px;
+  --leading-lead: 24px;
+  --font-title: 20px;
+  --leading-title: 26px;
+  --font-headline: 26px;
+  --leading-headline: 32px;
+  --font-display: 32px;
+  --leading-display: 38px;
+
+  --weight-regular: 450;
+  --weight-medium: 600;
+  --weight-bold: 700;
+  --weight-heavy: 780;
+
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* ---- Shape */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-full: 999px;
+
+  /* ---- Controls. 44px is the smallest comfortable touch target. */
+  --control-sm: 36px;
+  --control-md: 44px;
+  --control-lg: 52px;
+  --icon-sm: 18px;
+  --icon-md: 22px;
+  --icon-lg: 26px;
+
+  /* ---- Layers and motion */
+  --z-raised: 2;
+  --z-toast: 5;
+  --z-sheet: 10;
+  --duration-fast: 0.12s;
+  --duration: 0.2s;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ---- Shell */
+  --nav-height: 64px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --max-width: 620px;
+
+  /* ---- Colours that read the same in both themes (they sit on the brand
+     gradient, or are the brand itself). */
+  --hero: linear-gradient(150deg, #7a5cff 0%, #5236e0 52%, #2c1a8c 100%);
+  --hero-ring: #3a24a6;
+  --on-hero: #ffffff;
+  --on-hero-dim: rgba(255, 255, 255, 0.78);
+  --on-hero-tint: rgba(255, 255, 255, 0.16);
+  --brand-gradient: linear-gradient(135deg, #7c5cff 0%, #5b3ff0 100%);
+  --on-brand: #ffffff;
+  /* A white control on the brand gradient (the hero's main button). */
+  --inverse-bg: #ffffff;
+  --inverse-ink: #3b22c4;
+  --success-gradient: linear-gradient(135deg, #16a34a 0%, #059669 100%);
+  --gold-gradient: linear-gradient(90deg, #fbbf24, #f97316);
+  /* The tiny mark on an icon, e.g. repeat-one. */
+  --font-micro: 10px;
+  --crimson: #e11d48;
+  --gold: #fbbf24;
+  --mint: #34d399;
+  --sky: #38bdf8;
+  --scrim: rgba(8, 6, 20, 0.55);
+}
+
+/* ---- Themes. Dark is the default so nothing flashes white at start-up. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0c0b16;
+  --bg-glow: rgba(110, 80, 255, 0.16);
+  --surface: #1a1933;
+  --surface-raised: #15142a;
+  --surface-sunken: #110f23;
+  --line: #2e2b52;
+  --line-soft: #23203f;
+
+  --text: #f2f0fb;
+  --text-dim: #aba7c9;
+  --text-faint: #75719b;
+
+  --brand: #7c5cff;
+  --brand-ink: #a99bff;
+  --brand-tint: rgba(124, 92, 255, 0.16);
+
+  --tint: rgba(255, 255, 255, 0.07);
+  --tint-strong: rgba(255, 255, 255, 0.12);
+  --nav-bg: rgba(17, 16, 34, 0.86);
+  --bubble-mine: #2a2152;
+
+  --gold-ink: #fbbf24;
+  --mint-ink: #34d399;
+  --sky-ink: #38bdf8;
+  --crimson-ink: #fb7185;
+
+  --ok: #22c55e;
+  --ok-bg: #0e2e1e;
+  --ok-line: rgba(34, 197, 94, 0.45);
+  --bad: #f43f5e;
+  --bad-bg: #351424;
+  --bad-line: rgba(244, 63, 94, 0.45);
+  --error-ink: #fda4af;
+  --info-bg: rgba(56, 189, 248, 0.1);
+  --info-line: rgba(56, 189, 248, 0.3);
+  --info-ink: #bae6fd;
+
+  --shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.85);
+  --card-shadow: none;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f6f5fb;
+  --bg-glow: rgba(110, 80, 255, 0.1);
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f1f9;
+  --line: #dcd9ee;
+  --line-soft: #eae8f4;
+
+  --text: #16132d;
+  --text-dim: #54506f;
+  --text-faint: #8a86a5;
+
+  --brand: #5b3df5;
+  --brand-ink: #5b3df5;
+  --brand-tint: rgba(91, 61, 245, 0.09);
+
+  --tint: rgba(40, 25, 110, 0.05);
+  --tint-strong: rgba(40, 25, 110, 0.09);
+  --nav-bg: rgba(255, 255, 255, 0.88);
+  --bubble-mine: #ece8ff;
+
+  --gold-ink: #b45309;
+  --mint-ink: #047857;
+  --sky-ink: #0369a1;
+  --crimson-ink: #be123c;
+
+  --ok: #16a34a;
+  --ok-bg: #eaf8ef;
+  --ok-line: rgba(22, 163, 74, 0.4);
+  --bad: #e11d48;
+  --bad-bg: #fdedf0;
+  --bad-line: rgba(225, 29, 72, 0.35);
+  --error-ink: #9f1239;
+  --info-bg: rgba(56, 189, 248, 0.1);
+  --info-line: rgba(3, 105, 161, 0.25);
+  --info-ink: #075985;
+
+  --shadow: 0 18px 36px -18px rgba(60, 40, 160, 0.45);
+  --card-shadow: 0 1px 2px rgba(30, 20, 80, 0.04), 0 6px 18px -10px rgba(30, 20, 80, 0.12);
+}

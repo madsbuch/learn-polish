@@ -1,4 +1,18 @@
-import { Stat } from "../components/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Hero,
+  Inline,
+  List,
+  ListItem,
+  Screen,
+  Section,
+  Stack,
+  Stat,
+  StatGrid,
+  Text,
+} from "../design";
 import type { SessionResult } from "../lib/types";
 
 export function SessionSummary({
@@ -14,58 +28,56 @@ export function SessionSummary({
   const goalMet = stats.dayXp >= stats.dailyGoal;
 
   return (
-    <div className="scroll no-nav">
-      <div className="center" style={{ padding: "24px 0 8px" }}>
-        <div className="pop" style={{ fontSize: 62 }}>
+    <Screen nav={false} header={<div />}>
+      <Stack gap={2} align="center">
+        <Text variant="display" className="pop">
           {goalMet ? "🎉" : "👏"}
-        </div>
+        </Text>
         <h1>{goalMet ? "Goal reached!" : "Nice work"}</h1>
-        <p>
+        <Text tone="dim" align="center" as="p">
           {result.firstCompletionToday
-            ? "Today's conversation is done. Tomorrow brings the next one."
+            ? "Today's check-in is done. Tomorrow brings the next topic."
             : "Extra practice always counts."}
-        </p>
-      </div>
+        </Text>
+      </Stack>
 
-      <div className="hero center">
-        <div style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.03em" }}>
-          +{sessionXp}
-        </div>
-        <div style={{ opacity: 0.8, fontWeight: 650 }}>XP this session</div>
-        <div className="row" style={{ justifyContent: "center", gap: 8, marginTop: 16 }}>
-          <span className="chip">🔥 {stats.currentStreak} day streak</span>
-          <span className="chip">Level {stats.level}</span>
-        </div>
-      </div>
+      <Hero>
+        <Stack gap={3} align="center">
+          <Text variant="display">+{sessionXp}</Text>
+          <Text weight="medium" tone="dim">
+            XP this session
+          </Text>
+          <Inline gap={2} justify="center">
+            <Badge>🔥 {stats.currentStreak} day streak</Badge>
+            <Badge>Level {stats.level}</Badge>
+          </Inline>
+        </Stack>
+      </Hero>
 
-      <div className="stat-grid" style={{ marginBottom: 14 }}>
+      <StatGrid>
         <Stat value={stats.dayXp} label="XP today" />
         <Stat value={stats.wordsSeen} label="words met" />
         <Stat value={`${Math.round(stats.accuracy * 100)}%`} label="accuracy" />
-      </div>
+      </StatGrid>
 
       {newlyUnlocked.length > 0 ? (
-        <div className="card">
-          <h3>New achievement{newlyUnlocked.length > 1 ? "s" : ""}</h3>
-          <div className="stack">
+        <Section title={`New achievement${newlyUnlocked.length > 1 ? "s" : ""}`}>
+          <List>
             {newlyUnlocked.map((achievement) => (
-              <div key={achievement.code} className="row pop">
-                <span style={{ fontSize: 30 }}>{achievement.icon}</span>
-                <span className="grow">
-                  <span style={{ display: "block", fontWeight: 700 }}>
-                    {achievement.title}
-                  </span>
-                  <span className="small faint">{achievement.description}</span>
-                </span>
-              </div>
+              <ListItem
+                key={achievement.code}
+                leading={<Avatar>{achievement.icon}</Avatar>}
+                title={achievement.title}
+                subtitle={achievement.description}
+              />
             ))}
-          </div>
-        </div>
+          </List>
+        </Section>
       ) : null}
 
-      <button className="btn primary block" onClick={onDone}>
+      <Button variant="primary" size="lg" block onClick={onDone}>
         Done
-      </button>
-    </div>
+      </Button>
+    </Screen>
   );
 }

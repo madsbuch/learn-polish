@@ -188,3 +188,97 @@ export function DownIcon() {
     </Glyph>
   );
 }
+
+/** Marks a row that opens another screen. */
+export function ChevronIcon() {
+  return (
+    <Glyph>
+      <path d="M9 5l7 7-7 7" />
+    </Glyph>
+  );
+}
+
+export function CloseIcon() {
+  return (
+    <Glyph>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Glyph>
+  );
+}
+
+export function SpeakerIcon() {
+  return (
+    <Glyph>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" />
+    </Glyph>
+  );
+}
+
+export function MutedIcon() {
+  return (
+    <Glyph>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="M16 9.5l5 5M21 9.5l-5 5" />
+    </Glyph>
+  );
+}
+
+export function SearchIcon() {
+  return (
+    <Glyph>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4.5 4.5" />
+    </Glyph>
+  );
+}
+
+export function PlusIcon() {
+  return (
+    <Glyph>
+      <path d="M12 5v14M5 12h14" />
+    </Glyph>
+  );
+}
+
+export function MoreIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5.5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="18.5" cy="12" r="1.8" />
+    </svg>
+  );
+}
+
+export function SendIcon() {
+  return (
+    <Glyph>
+      <path d="M5 12h13M13 6l6 6-6 6" />
+    </Glyph>
+  );
+}
+
+export function ArrowUpIcon() {
+  return (
+    <Glyph>
+      <path d="M12 19V5M6 11l6-6 6 6" />
+    </Glyph>
+  );
+}
+
+export function ArrowDownIcon() {
+  return (
+    <Glyph>
+      <path d="M12 5v14M6 13l6 6 6-6" />
+    </Glyph>
+  );
+}
+
+export function CheckIcon() {
+  return (
+    <Glyph>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </Glyph>
+  );
+}

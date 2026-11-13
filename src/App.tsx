@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { NavIcon } from "./components/icons";
 import { MiniPlayer } from "./components/MiniPlayer";
-import { Banner, Loading } from "./components/ui";
+import { Banner, Loading, Stack } from "./design";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
 import { resumeCast, syncRepeatFromSettings } from "./lib/player";
@@ -183,10 +183,10 @@ export default function App() {
   if (error && !settings) {
     return (
       <div className="center-screen">
-        <div>
+        <Stack gap={4}>
           <h1>Could not start</h1>
-          <Banner kind="error">{error}</Banner>
-        </div>
+          <Banner tone="error">{error}</Banner>
+        </Stack>
       </div>
     );
   }
@@ -342,7 +342,7 @@ export default function App() {
 
       {error ? (
         <button className="toast" onClick={() => setError(null)}>
-          {error} <span className="faint">· dismiss</span>
+          {error} · tap to dismiss
         </button>
       ) : null}
 
@@ -354,11 +354,10 @@ export default function App() {
           return (
             <button
               key={entry.id}
-              data-active={tab === entry.id}
               aria-current={tab === entry.id ? "page" : undefined}
               onClick={() => setTab(entry.id)}
             >
-              <span className="glyph">
+              <span className="nav-glyph">
                 <Icon />
               </span>
               {entry.label}

@@ -1,76 +1,40 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
+import { IconButton } from "../design";
 import { speak } from "../lib/speech";
-
-export function Banner({ kind, children }: { kind: "error" | "info"; children: ReactNode }) {
-  return <div className={`banner ${kind}`}>{children}</div>;
-}
-
-export function Spinner() {
-  return <span className="spinner" />;
-}
-
-export function Loading({ label = "Loading…" }: { label?: string }) {
-  return (
-    <div className="center-screen">
-      <div className="stack" style={{ alignItems: "center" }}>
-        <Spinner />
-        <span className="faint small">{label}</span>
-      </div>
-    </div>
-  );
-}
-
-export function Bar({
-  value,
-  max,
-  tone,
-}: {
-  value: number;
-  max: number;
-  tone?: "gold" | "mint";
-}) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  return (
-    <div className={`bar${tone ? ` ${tone}` : ""}`}>
-      <span style={{ width: `${pct}%` }} />
-    </div>
-  );
-}
+import { MutedIcon, SpeakerIcon } from "./icons";
 
 /**
- * Speaker button. Always rendered — a button that silently vanishes is more
- * confusing than one that explains why it cannot play. Shows a spinner while
- * the first play of a line is being synthesised, and surfaces the reason on
- * failure instead of doing nothing.
+ * Plays a line of Polish. Always shown — a button that silently vanishes is
+ * more confusing than one that explains why it cannot play. Spins while the
+ * first play of a line is being made, and says why on failure.
  */
 export function SpeakButton({
   text,
   gender,
   label,
-  size,
+  size = "md",
+  variant,
 }: {
   text: string;
   /** "f" or "m" for dialogue lines; omitted elsewhere. */
   gender?: string;
   label?: string;
-  size?: number;
+  size?: "sm" | "md";
+  variant?: "tinted";
 }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
-  const dimension = size ?? 38;
-
   return (
-    <button
-      className="icon-btn"
-      style={size ? { width: size, height: size, fontSize: size * 0.42 } : undefined}
-      aria-label={failure ?? label ?? `Listen to ${text}`}
-      title={failure ?? undefined}
-      data-failed={failure ? "true" : undefined}
-      onClick={async (event) => {
-        event.stopPropagation();
-        if (busy) return;
+    <IconButton
+      icon={failure ? <MutedIcon /> : <SpeakerIcon />}
+      label={failure ?? label ?? `Listen to ${text}`}
+      size={size}
+      variant={variant}
+      loading={busy}
+      failed={Boolean(failure)}
+      onClick={async () => {
         setFailure(null);
         setBusy(true);
         try {
@@ -81,26 +45,6 @@ export function SpeakButton({
           setBusy(false);
         }
       }}
-    >
-      {busy ? (
-        <span
-          className="spinner"
-          style={{ width: dimension * 0.4, height: dimension * 0.4 }}
-        />
-      ) : failure ? (
-        "🔇"
-      ) : (
-        "🔊"
-      )}
-    </button>
-  );
-}
-
-export function Stat({ value, label }: { value: ReactNode; label: string }) {
-  return (
-    <div className="stat">
-      <b>{value}</b>
-      <span>{label}</span>
-    </div>
+    />
   );
 }

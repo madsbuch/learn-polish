@@ -2,11 +2,34 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { listen } from "@tauri-apps/api/event";
 
 import { Cover } from "../components/Cover";
-import { BackIcon, PlayerIcon } from "../components/icons";
-import { TitleWithInfo } from "../components/Info";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CheckIcon,
+  CloseIcon,
+  MoreIcon,
+  PlayerIcon,
+  PlusIcon,
+} from "../components/icons";
 import { Lyrics } from "../components/Lyrics";
 import { AddToPlaylist, useTrackExport } from "../components/TrackActions";
-import { Banner, Spinner } from "../components/ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  ConfirmButton,
+  EmptyState,
+  IconButton,
+  Inline,
+  List,
+  ListItem,
+  Screen,
+  Section,
+  Segmented,
+  Spinner,
+  Stack,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import {
   currentItem,
@@ -39,6 +62,9 @@ function allTakes(songs: Song[]): QueueItem[] {
     .flatMap((song) => song.tracks.map((track) => ({ song, track })));
 }
 
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
 
 export function Music({
   settings,
@@ -58,6 +84,7 @@ export function Music({
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [tab, setTab] = useState<"songs" | "playlists">("songs");
   const [view, setView] = useState<View>({ kind: "library" });
+  const [selecting, setSelecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -100,33 +127,38 @@ export function Music({
     else setNotice(text);
   };
 
-  if (view.kind === "compose") {
-    return (
-      <SongComposer
-        settings={settings}
-        topics={topics}
-        onCancel={() => setView({ kind: "library" })}
-        onCreated={() => {
-          setView({ kind: "library" });
-          refresh();
-        }}
-      />
-    );
-  }
-
   const back = () => {
     setView({ kind: "library" });
     setError(null);
     setNotice(null);
   };
 
+  if (view.kind === "compose") {
+    return (
+      <SongComposer
+        settings={settings}
+        topics={topics}
+        onCancel={back}
+        onCreated={() => {
+          back();
+          refresh();
+        }}
+      />
+    );
+  }
+
+  const feedback = (
+    <>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {notice ? <Banner tone="ok">{notice}</Banner> : null}
+    </>
+  );
+
   if (view.kind === "song") {
     const song = songs?.find((entry) => entry.id === view.songId);
     return (
-      <div className="scroll">
-        <BackHeader title="Song" onBack={back} />
-        {error ? <Banner kind="error">{error}</Banner> : null}
-        {notice ? <Banner kind="info">{notice}</Banner> : null}
+      <Screen title="Song" onBack={back}>
+        {feedback}
         {song ? (
           <SongPage
             song={song}
@@ -141,18 +173,17 @@ export function Music({
         ) : songs === null ? (
           <Spinner />
         ) : (
-          <p className="faint">This song no longer exists.</p>
+          <EmptyState title="This song no longer exists" />
         )}
-      </div>
+      </Screen>
     );
   }
 
   if (view.kind === "playlist") {
     const playlist = playlists?.find((entry) => entry.id === view.playlistId);
     return (
-      <div className="scroll">
-        <BackHeader title={playlist?.name ?? "Playlist"} onBack={back} />
-        {error ? <Banner kind="error">{error}</Banner> : null}
+      <Screen title={playlist?.name ?? "Playlist"} onBack={back}>
+        {feedback}
         {playlist ? (
           <PlaylistPage
             playlist={playlist}
@@ -171,72 +202,74 @@ export function Music({
         ) : playlists === null ? (
           <Spinner />
         ) : (
-          <p className="faint">This playlist no longer exists.</p>
+          <EmptyState title="This playlist no longer exists" />
         )}
-      </div>
+      </Screen>
     );
   }
 
   const ready = settings.hasKieKey && settings.hasApiKey;
 
   return (
-    <div className="scroll">
-      <div className="row between" style={{ marginBottom: 4 }}>
-        <TitleWithInfo
-          as="h1"
-          title="Music"
-          info={
-            <>
-              <p>
-                Short lines in English, then straight into Polish — and a Polish chorus that
-                gets stuck in your head. Play them on repeat.
-              </p>
-              <p>
-                Make one with <b>+ New song</b>: pick a theme and a chorus sentence, the
-                songwriter drafts the lyrics, and Suno sings two takes. Both are kept on this
-                device. Put the ones you like into playlists, and save or share any take as
-                an MP3.
-              </p>
-            </>
-          }
-        />
-        <button
-          className="btn primary compact"
-          onClick={() => setView({ kind: "compose" })}
+    <Screen
+      title="Music"
+      info={
+        <>
+          <p>
+            Short lines in English, then straight into Polish — and a Polish chorus that gets
+            stuck in your head. Play them on repeat.
+          </p>
+          <p>
+            Make one with <b>+</b>: pick a theme and a chorus sentence, the songwriter drafts the
+            lyrics, and Suno sings two takes. Put the ones you like into playlists, and save or
+            share any take as an MP3.
+          </p>
+        </>
+      }
+      actions={
+        <IconButton
+          variant="primary"
+          icon={<PlusIcon />}
+          label="New song"
           disabled={!ready}
-        >
-          + New song
-        </button>
-      </div>
-
-      {error ? <Banner kind="error">{error}</Banner> : null}
+          onClick={() => setView({ kind: "compose" })}
+        />
+      }
+    >
+      {feedback}
 
       {!ready ? (
-        <Banner kind="info">
+        <Banner tone="info">
           {!settings.hasKieKey && !settings.hasApiKey
-            ? "Making songs needs kie.ai and OpenRouter keys."
+            ? "Making songs needs kie.ai and OpenRouter keys. "
             : !settings.hasKieKey
-              ? "Making songs needs a kie.ai key."
-              : "Making songs needs an OpenRouter key."}{" "}
-          <button className="link" onClick={onOpenSettings}>
+              ? "Making songs needs a kie.ai key. "
+              : "Making songs needs an OpenRouter key. "}
+          <Button variant="plain" onClick={onOpenSettings}>
             Open Settings
-          </button>
+          </Button>
         </Banner>
       ) : null}
 
-      <div className="segmented" style={{ marginBottom: 14 }}>
-        <button data-active={tab === "songs"} onClick={() => setTab("songs")}>
-          Songs
-        </button>
-        <button data-active={tab === "playlists"} onClick={() => setTab("playlists")}>
-          Playlists
-        </button>
-      </div>
+      <Segmented
+        value={tab}
+        onChange={(next) => {
+          setTab(next);
+          setSelecting(false);
+        }}
+        options={[
+          { value: "songs", label: "Songs" },
+          { value: "playlists", label: "Playlists" },
+        ]}
+      />
 
       {tab === "songs" ? (
         <SongList
           songs={songs}
+          selecting={selecting}
+          onSelecting={setSelecting}
           onOpen={(songId) => setView({ kind: "song", songId })}
+          onCompose={ready ? () => setView({ kind: "compose" }) : undefined}
           onDeleted={refresh}
           onError={setError}
         />
@@ -252,42 +285,55 @@ export function Music({
           onError={setError}
         />
       )}
-    </div>
+    </Screen>
   );
 }
 
-function BackHeader({ title, onBack, action }: { title: string; onBack: () => void; action?: ReactNode }) {
-  return (
-    <div className="row" style={{ marginBottom: 14 }}>
-      <button className="icon-btn" onClick={onBack} aria-label="Back to music">
-        <BackIcon />
-      </button>
-      <h1 className="grow ellipsis" style={{ marginBottom: 0, fontSize: 20 }}>
-        {title}
-      </h1>
-      {action}
-    </div>
-  );
-}
-
+/** Play and Shuffle for a list of takes. */
 function PlayButtons({ queue }: { queue: QueueItem[] }) {
   if (queue.length === 0) return null;
   return (
-    <div className="row" style={{ gap: 8, marginBottom: 14 }}>
-      <button className="btn primary compact grow" onClick={() => playQueue(queue, 0)}>
-        <PlayerIcon.play size={16} /> Play
-      </button>
-      <button
-        className="btn ghost compact grow"
-        onClick={() => playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })}
-      >
-        <PlayerIcon.shuffle /> Shuffle
-      </button>
-    </div>
+    <Inline gap={2}>
+      <div className="grow">
+        <Button variant="primary" block icon={<PlayerIcon.play size={16} />} onClick={() => playQueue(queue, 0)}>
+          Play
+        </Button>
+      </div>
+      <div className="grow">
+        <Button
+          block
+          icon={<PlayerIcon.shuffle />}
+          onClick={() => playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })}
+        >
+          Shuffle
+        </Button>
+      </div>
+    </Inline>
   );
 }
 
-/** A row that plays its take when tapped, or pauses it if it is playing. */
+/** A cover that shows play/pause over it while its take is the one playing. */
+function TrackCover({ item, size = 48 }: { item: QueueItem; size?: number }) {
+  const player = usePlayer();
+  const current = currentItem(player)?.track.id === item.track.id;
+  return (
+    <span className="cover-wrap">
+      <Cover path={item.track.imagePath} size={size} />
+      {current ? (
+        <span className="cover-badge">
+          {player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function useIsCurrent(trackId: number): boolean {
+  const player = usePlayer();
+  return currentItem(player)?.track.id === trackId;
+}
+
+/** A row that plays its take when tapped, or pauses it while it plays. */
 function TrackRow({
   item,
   subtitle,
@@ -299,26 +345,18 @@ function TrackRow({
   onPlay: () => void;
   trailing?: ReactNode;
 }) {
-  const player = usePlayer();
-  const current = currentItem(player)?.track.id === item.track.id;
+  const current = useIsCurrent(item.track.id);
   return (
-    <div className="track-row" data-current={current}>
-      <button className="list-row grow" onClick={() => (current ? toggle() : onPlay())}>
-        <span className="cover-wrap">
-          <Cover path={item.track.imagePath} size={48} />
-          {current ? (
-            <span className="cover-badge">
-              {player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
-            </span>
-          ) : null}
-        </span>
-        <span className="grow" style={{ minWidth: 0 }}>
-          <span className="pl ellipsis">{item.song.title}</span>
-          <span className="tr ellipsis">{subtitle}</span>
-        </span>
-      </button>
-      {trailing}
-    </div>
+    <ListItem
+      leading={<TrackCover item={item} />}
+      title={item.song.title}
+      subtitle={subtitle}
+      selected={current}
+      label={`Play ${item.song.title}`}
+      onClick={() => (current ? toggle() : onPlay())}
+      trailing={trailing}
+      chevron={false}
+    />
   );
 }
 
@@ -326,40 +364,47 @@ function TrackRow({
 
 function SongList({
   songs,
+  selecting,
+  onSelecting,
   onOpen,
+  onCompose,
   onDeleted,
   onError,
 }: {
   songs: Song[] | null;
+  selecting: boolean;
+  onSelecting: (selecting: boolean) => void;
   onOpen: (songId: number) => void;
+  onCompose?: () => void;
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
-  const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
-  if (songs === null) {
-    return (
-      <div className="center" style={{ padding: 30 }}>
-        <Spinner />
-      </div>
-    );
-  }
+  if (songs === null) return <Spinner />;
   if (songs.length === 0) {
     return (
-      <div className="card center">
-        <div style={{ fontSize: 40 }}>🎵</div>
-        <h3 style={{ marginBottom: 0 }}>No songs yet</h3>
-        <p className="small faint">Make one with + New song, or ask the tutor.</p>
-      </div>
+      <List>
+        <EmptyState
+          icon="🎵"
+          title="No songs yet"
+          action={
+            onCompose ? (
+              <Button variant="primary" size="sm" onClick={onCompose}>
+                Make a song
+              </Button>
+            ) : undefined
+          }
+        >
+          Make one with +, or ask the tutor for a song about anything.
+        </EmptyState>
+      </List>
     );
   }
+
   const queue = libraryQueue(songs);
 
   function pick(songId: number) {
-    setConfirming(false);
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(songId)) next.delete(songId);
@@ -368,142 +413,117 @@ function SongList({
     });
   }
 
-  function stopSelecting() {
-    setSelecting(false);
+  function stop() {
+    onSelecting(false);
     setSelected(new Set());
-    setConfirming(false);
-  }
-
-  async function deleteSelected() {
-    setDeleting(true);
-    try {
-      for (const songId of selected) await api.songDelete(songId);
-      stopSelecting();
-    } catch (cause) {
-      onError(errorMessage(cause));
-    } finally {
-      setDeleting(false);
-      onDeleted();
-    }
   }
 
   return (
-    <>
-      {selecting ? (
-        <div className="row" style={{ gap: 8, marginBottom: 14 }}>
-          <button
-            className="btn ghost compact"
-            onClick={() =>
-              setSelected(selected.size === songs.length ? new Set() : new Set(songs.map((s) => s.id)))
-            }
-          >
-            {selected.size === songs.length ? "Select none" : "Select all"}
-          </button>
-          <span className="grow small faint center">{selected.size} selected</span>
-          <button className="btn ghost compact" onClick={stopSelecting}>
-            Done
-          </button>
-        </div>
-      ) : (
-        <div className="row" style={{ gap: 8, marginBottom: 14 }}>
-          {queue.length > 0 ? (
-            <>
-              <button className="btn primary compact grow" onClick={() => playQueue(queue, 0)}>
-                <PlayerIcon.play size={16} /> Play
-              </button>
-              <button
-                className="btn ghost compact grow"
+    <Stack gap={4}>
+      {selecting ? null : <PlayButtons queue={queue} />}
+
+      <Section
+        title={selecting ? `${selected.size} selected` : plural(songs.length, "song")}
+        action={
+          selecting ? (
+            <Inline gap={1}>
+              <Button
+                variant="plain"
+                size="sm"
                 onClick={() =>
-                  playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })
+                  setSelected(selected.size === songs.length ? new Set() : new Set(songs.map((s) => s.id)))
                 }
               >
-                <PlayerIcon.shuffle /> Shuffle
-              </button>
-            </>
+                {selected.size === songs.length ? "None" : "All"}
+              </Button>
+              <Button variant="plain" size="sm" onClick={stop}>
+                Done
+              </Button>
+            </Inline>
           ) : (
-            <span className="grow" />
-          )}
-          <button className="btn ghost compact" onClick={() => setSelecting(true)}>
-            Select
-          </button>
-        </div>
-      )}
-
-      <div className="card flush">
-        {songs.map((song) => {
-          if (selecting) {
-            const checked = selected.has(song.id);
+            <Button variant="plain" size="sm" onClick={() => onSelecting(true)}>
+              Select
+            </Button>
+          )
+        }
+      >
+        <List>
+          {songs.map((song) => {
+            if (selecting) {
+              const checked = selected.has(song.id);
+              return (
+                <ListItem
+                  key={song.id}
+                  leading={
+                    <Inline gap={3}>
+                      <span className="check" data-checked={checked}>
+                        {checked ? <CheckIcon /> : null}
+                      </span>
+                      <Cover path={song.tracks[0]?.imagePath ?? null} size={48} />
+                    </Inline>
+                  }
+                  title={song.title}
+                  subtitle={`„${song.chorusPl}”`}
+                  selected={checked}
+                  chevron={false}
+                  onClick={() => pick(song.id)}
+                />
+              );
+            }
+            const index = queue.findIndex((item) => item.song.id === song.id);
+            if (index < 0) {
+              // Still being made, or failed: nothing to play yet.
+              return (
+                <ListItem
+                  key={song.id}
+                  leading={<Cover path={null} size={48} />}
+                  title={song.title}
+                  subtitle={song.status === "generating" ? "Suno is singing… (2–4 min)" : "Could not be made"}
+                  trailing={
+                    song.status === "generating" ? <Spinner /> : <Badge tone="crimson">Failed</Badge>
+                  }
+                  onClick={() => onOpen(song.id)}
+                />
+              );
+            }
+            const item = queue[index];
             return (
-              <button
+              <TrackRow
                 key={song.id}
-                className="list-row"
-                data-current={checked}
-                onClick={() => pick(song.id)}
-                aria-pressed={checked}
-              >
-                <span className="check" data-checked={checked}>
-                  {checked ? "✓" : ""}
-                </span>
-                <Cover path={song.tracks[0]?.imagePath ?? null} size={48} />
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="pl ellipsis">{song.title}</span>
-                  <span className="tr ellipsis">„{song.chorusPl}”</span>
-                </span>
-              </button>
+                item={item}
+                subtitle={`„${song.chorusPl}” · ${formatTime(item.track.duration)}`}
+                onPlay={() => playQueue(queue, index)}
+                trailing={
+                  <IconButton icon={<MoreIcon />} label={`More about ${song.title}`} onClick={() => onOpen(song.id)} />
+                }
+              />
             );
-          }
-          const index = queue.findIndex((item) => item.song.id === song.id);
-          if (index < 0) {
-            // Still being made, or failed: no take to play yet.
-            return (
-              <button key={song.id} className="list-row" onClick={() => onOpen(song.id)}>
-                <Cover path={null} size={48} />
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="pl ellipsis">{song.title}</span>
-                  <span className="tr">
-                    {song.status === "generating" ? "Suno is singing…" : "Could not be made"}
-                  </span>
-                </span>
-                {song.status === "generating" ? <Spinner /> : <span className="chip crimson">Failed</span>}
-              </button>
-            );
-          }
-          const item = queue[index];
-          return (
-            <TrackRow
-              key={song.id}
-              item={item}
-              subtitle={`„${song.chorusPl}” · ${formatTime(item.track.duration)}`}
-              onPlay={() => playQueue(queue, index)}
-              trailing={
-                <button className="icon-btn bare" onClick={() => onOpen(song.id)} aria-label={`More about ${song.title}`}>
-                  ⋯
-                </button>
-              }
-            />
-          );
-        })}
-      </div>
+          })}
+        </List>
+      </Section>
 
       {selecting && selected.size > 0 ? (
         <div className="select-bar">
-          {confirming ? (
-            <>
-              <button className="btn danger grow" disabled={deleting} onClick={deleteSelected}>
-                {deleting ? <Spinner /> : `Yes, delete ${selected.size} song${selected.size === 1 ? "" : "s"}`}
-              </button>
-              <button className="btn ghost" onClick={() => setConfirming(false)}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button className="btn danger grow" onClick={() => setConfirming(true)}>
-              Delete {selected.size} song{selected.size === 1 ? "" : "s"}
-            </button>
-          )}
+          <div className="grow">
+            <ConfirmButton
+              label={`Delete ${plural(selected.size, "song")}`}
+              confirmLabel="Delete"
+              block
+              onConfirm={async () => {
+                try {
+                  for (const songId of selected) await api.songDelete(songId);
+                  stop();
+                } catch (cause) {
+                  onError(errorMessage(cause));
+                } finally {
+                  onDeleted();
+                }
+              }}
+            />
+          </div>
         </div>
       ) : null}
-    </>
+    </Stack>
   );
 }
 
@@ -522,7 +542,6 @@ function SongPage({
   onMessage: (message: string, isError?: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<"song" | number | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
   const exporter = useTrackExport(onMessage);
   const player = usePlayer();
@@ -538,7 +557,6 @@ function SongPage({
       onMessage(errorMessage(cause), true);
     } finally {
       setBusy(false);
-      setConfirm(null);
     }
   }
 
@@ -554,145 +572,115 @@ function SongPage({
 
   return (
     <>
-      <div className="song-hero">
+      <div className="song-head">
         <Cover path={song.tracks[0]?.imagePath ?? null} size={112} />
-        <div className="grow" style={{ minWidth: 0 }}>
-          <div className="song-hero-title">{song.title}</div>
-          <div className="selectable song-hero-chorus">„{song.chorusPl}”</div>
-          <div className="small faint">{song.chorusEn}</div>
-        </div>
+        <Stack gap={1} className="grow">
+          <h2>{song.title}</h2>
+          <Text weight="bold" tone="polish" selectable>
+            „{song.chorusPl}”
+          </Text>
+          <Text variant="small" tone="dim">
+            {song.chorusEn}
+          </Text>
+        </Stack>
       </div>
-      <p className="tiny faint song-style">{song.style}</p>
 
       {song.status === "failed" ? (
-        <>
-          {song.error ? <Banner kind="error">{song.error}</Banner> : null}
-          <button
-            className="btn primary block"
-            style={{ marginBottom: 16 }}
-            disabled={busy}
-            onClick={() => act(() => api.songRetry(song.id))}
-          >
-            {busy ? <Spinner /> : "Try again"}
-          </button>
-        </>
+        <Stack gap={3}>
+          {song.error ? <Banner tone="error">{song.error}</Banner> : null}
+          <Button variant="primary" block loading={busy} onClick={() => act(() => api.songRetry(song.id))}>
+            Try again
+          </Button>
+        </Stack>
       ) : null}
       {song.status === "generating" ? (
-        <Banner kind="info">Suno is singing — this usually takes 2–4 minutes.</Banner>
+        <Banner tone="info">Suno is singing — this usually takes 2–4 minutes.</Banner>
       ) : null}
 
       {takes.length > 0 ? (
-        <>
-          <h3 className="section-title">Takes</h3>
-          <div className="card flush" style={{ marginBottom: 18 }}>
+        <Section title="Takes">
+          <List>
             {takes.map((item) => {
               const current = item.track.id === playingId;
               return (
-                <div key={item.track.id} className="take-row" data-current={current}>
-                  <button
-                    className="take-play"
-                    onClick={() => play(item)}
-                    aria-label={current && player.playing ? "Pause" : `Play take ${item.track.ord + 1}`}
-                  >
-                    {current && player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
-                  </button>
-                  <button className="grow take-label" onClick={() => play(item)}>
-                    <span className="pl">Take {item.track.ord + 1}</span>
-                    <span className="tr">
-                      {formatTime(item.track.duration)} · played {item.track.playCount}×
-                    </span>
-                  </button>
-                  <button
-                    className="icon-btn bare"
-                    onClick={() => setAdding(item.track.id)}
-                    aria-label="Add to playlist"
-                    title="Add to playlist"
-                  >
-                    <PlayerIcon.addToPlaylist />
-                  </button>
-                  {exporter.canShare ? (
-                    <button
-                      className="icon-btn bare"
-                      disabled={exporter.busy !== null}
-                      onClick={() => exporter.share(item)}
-                      aria-label="Share"
-                      title="Share"
-                    >
-                      {exporter.busy === "share" ? <Spinner /> : <PlayerIcon.share />}
-                    </button>
-                  ) : null}
-                  <button
-                    className="icon-btn bare"
-                    disabled={exporter.busy !== null}
-                    onClick={() => exporter.save(item)}
-                    aria-label="Save MP3"
-                    title="Save MP3"
-                  >
-                    {exporter.busy === "save" ? <Spinner /> : <PlayerIcon.download />}
-                  </button>
-                </div>
+                <ListItem
+                  key={item.track.id}
+                  selected={current}
+                  leading={
+                    <IconButton
+                      variant="primary"
+                      size="sm"
+                      icon={current && player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
+                      label={current && player.playing ? "Pause" : `Play take ${item.track.ord + 1}`}
+                      onClick={() => play(item)}
+                    />
+                  }
+                  title={`Take ${item.track.ord + 1}`}
+                  subtitle={`${formatTime(item.track.duration)} · played ${item.track.playCount}×`}
+                  onClick={() => play(item)}
+                  chevron={false}
+                  trailing={
+                    <>
+                      <IconButton
+                        icon={<PlayerIcon.addToPlaylist />}
+                        label="Add to playlist"
+                        onClick={() => setAdding(item.track.id)}
+                      />
+                      {exporter.canShare ? (
+                        <IconButton
+                          icon={<PlayerIcon.share />}
+                          label="Share"
+                          loading={exporter.busy === "share"}
+                          disabled={exporter.busy !== null}
+                          onClick={() => exporter.share(item)}
+                        />
+                      ) : null}
+                      <IconButton
+                        icon={<PlayerIcon.download />}
+                        label="Save MP3"
+                        loading={exporter.busy === "save"}
+                        disabled={exporter.busy !== null}
+                        onClick={() => exporter.save(item)}
+                      />
+                    </>
+                  }
+                />
               );
             })}
-          </div>
-        </>
+          </List>
+        </Section>
       ) : null}
 
-      <h3 className="section-title">Lyrics</h3>
-      <div style={{ marginBottom: 22 }}>
+      <Section title="Lyrics">
         <Lyrics sections={song.sections} />
-      </div>
+        <Text variant="caption" tone="faint" clamp={2}>
+          Style: {song.style}
+        </Text>
+      </Section>
 
-      <h3 className="section-title">Manage</h3>
-      <div className="card flush" style={{ marginBottom: 8 }}>
-        {takes.length > 1
-          ? takes.map((item) => (
-              <div key={item.track.id} className="manage-row">
-                <span className="grow small">Take {item.track.ord + 1}</span>
-                {confirm === item.track.id ? (
-                  <>
-                    <button className="btn ghost small" onClick={() => setConfirm(null)}>
-                      Keep
-                    </button>
-                    <button
-                      className="btn danger small"
-                      disabled={busy}
-                      onClick={() => act(() => api.songTrackDelete(item.track.id))}
-                    >
-                      Remove
-                    </button>
-                  </>
-                ) : (
-                  <button className="btn ghost small" onClick={() => setConfirm(item.track.id)}>
-                    Remove take
-                  </button>
-                )}
-              </div>
-            ))
-          : null}
-        <div className="manage-row">
-          <span className="grow small">
-            {confirm === "song" ? "Delete the song and all its takes?" : "The whole song"}
-          </span>
-          {confirm === "song" ? (
-            <>
-              <button className="btn ghost small" onClick={() => setConfirm(null)}>
-                Keep
-              </button>
-              <button
-                className="btn danger small"
-                disabled={busy}
-                onClick={() => act(() => api.songDelete(song.id), onDeleted)}
-              >
-                {busy ? <Spinner /> : "Delete"}
-              </button>
-            </>
-          ) : (
-            <button className="btn danger small" onClick={() => setConfirm("song")}>
-              Delete song
-            </button>
-          )}
-        </div>
-      </div>
+      <Section title="Manage">
+        <Stack gap={3}>
+          {takes.length > 1
+            ? takes.map((item) => (
+                <ConfirmButton
+                  key={item.track.id}
+                  label={`Remove take ${item.track.ord + 1}`}
+                  confirmLabel="Remove"
+                  question={`Remove take ${item.track.ord + 1}? The other take stays.`}
+                  block
+                  onConfirm={() => act(() => api.songTrackDelete(item.track.id))}
+                />
+              ))
+            : null}
+          <ConfirmButton
+            label="Delete song"
+            confirmLabel="Delete"
+            question="Delete the song and all its takes? It also leaves your playlists."
+            block
+            onConfirm={() => act(() => api.songDelete(song.id), onDeleted)}
+          />
+        </Stack>
+      </Section>
 
       {adding !== null ? (
         <AddToPlaylist trackId={adding} onClose={() => setAdding(null)} onDone={(text) => onMessage(text)} />
@@ -741,46 +729,44 @@ function PlaylistList({
   }
 
   return (
-    <>
-      <div className="composer" style={{ marginBottom: 14 }}>
+    <Stack gap={4}>
+      <div className="composer">
         <input
           value={name}
-          placeholder="New playlist…"
+          placeholder="New playlist name"
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && void create()}
         />
-        <button className="btn primary" disabled={busy || !name.trim()} onClick={create}>
+        <Button variant="primary" loading={busy} disabled={!name.trim()} onClick={create}>
           Create
-        </button>
+        </Button>
       </div>
       {playlists === null ? (
         <Spinner />
       ) : playlists.length === 0 ? (
-        <p className="small faint center">
-          No playlists yet. Make one here, or use <b>+ Playlist</b> on a song.
-        </p>
+        <List>
+          <EmptyState icon="🎧" title="No playlists yet">
+            Name one above, or use “Add to playlist” on a song.
+          </EmptyState>
+        </List>
       ) : (
-        <div className="card flush">
+        <List>
           {playlists.map((playlist) => {
             const items = playlistItems(playlist, tracks);
             const seconds = items.reduce((sum, row) => sum + row.item.track.duration, 0);
             return (
-              <button key={playlist.id} className="list-row" onClick={() => onOpen(playlist.id)}>
-                <Cover path={items[0]?.item.track.imagePath ?? null} size={44} />
-                <span className="grow">
-                  <span className="pl">{playlist.name}</span>
-                  <span className="tr">
-                    {items.length} song{items.length === 1 ? "" : "s"}
-                    {seconds > 0 ? ` · ${formatTime(seconds)}` : ""}
-                  </span>
-                </span>
-                <span className="faint">›</span>
-              </button>
+              <ListItem
+                key={playlist.id}
+                leading={<Cover path={items[0]?.item.track.imagePath ?? null} size={48} />}
+                title={playlist.name}
+                subtitle={`${plural(items.length, "song")}${seconds > 0 ? ` · ${formatTime(seconds)}` : ""}`}
+                onClick={() => onOpen(playlist.id)}
+              />
             );
           })}
-        </div>
+        </List>
       )}
-    </>
+    </Stack>
   );
 }
 
@@ -799,7 +785,6 @@ function PlaylistPage({
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(playlist.name);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const rows = playlistItems(playlist, tracks);
   const queue = rows.map((row) => row.item);
 
@@ -815,75 +800,78 @@ function PlaylistPage({
     <>
       <PlayButtons queue={queue} />
 
-      {rows.length === 0 ? (
-        <p className="small faint center">
-          Empty. Open a song and tap <b>+ Playlist</b> to add it here.
-        </p>
-      ) : (
-        <div className="card flush" style={{ marginBottom: 16 }}>
-          {rows.map(({ entry, item }, index) => (
-            <TrackRow
-              key={entry.id}
-              item={item}
-              subtitle={`Take ${item.track.ord + 1} · ${formatTime(item.track.duration)}`}
-              onPlay={() => playQueue(queue, index)}
-              trailing={
-                <span className="row" style={{ gap: 2, flex: "none" }}>
-                  <button
-                    className="icon-btn small"
-                    disabled={index === 0}
-                    onClick={() => act(() => api.playlistMove(playlist.id, entry.id, -1))}
-                    aria-label="Move up"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    className="icon-btn small"
-                    disabled={index === rows.length - 1}
-                    onClick={() => act(() => api.playlistMove(playlist.id, entry.id, 1))}
-                    aria-label="Move down"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    className="icon-btn small"
-                    onClick={() => act(() => api.playlistRemove(playlist.id, entry.id))}
-                    aria-label="Remove from playlist"
-                  >
-                    ✕
-                  </button>
-                </span>
-              }
-            />
-          ))}
-        </div>
-      )}
+      <Section title={plural(rows.length, "song")}>
+        {rows.length === 0 ? (
+          <List>
+            <EmptyState icon="🎧" title="Empty playlist">
+              Open a song and use “Add to playlist” to put a take here.
+            </EmptyState>
+          </List>
+        ) : (
+          <List>
+            {rows.map(({ entry, item }, index) => (
+              <TrackRow
+                key={entry.id}
+                item={item}
+                subtitle={`Take ${item.track.ord + 1} · ${formatTime(item.track.duration)}`}
+                onPlay={() => playQueue(queue, index)}
+                trailing={
+                  <>
+                    <IconButton
+                      size="sm"
+                      icon={<ArrowUpIcon />}
+                      label="Move up"
+                      disabled={index === 0}
+                      onClick={() => act(() => api.playlistMove(playlist.id, entry.id, -1))}
+                    />
+                    <IconButton
+                      size="sm"
+                      icon={<ArrowDownIcon />}
+                      label="Move down"
+                      disabled={index === rows.length - 1}
+                      onClick={() => act(() => api.playlistMove(playlist.id, entry.id, 1))}
+                    />
+                    <IconButton
+                      size="sm"
+                      icon={<CloseIcon />}
+                      label="Remove from playlist"
+                      onClick={() => act(() => api.playlistRemove(playlist.id, entry.id))}
+                    />
+                  </>
+                }
+              />
+            ))}
+          </List>
+        )}
+      </Section>
 
-      {editing ? (
-        <div className="composer" style={{ marginBottom: 10 }}>
-          <input value={name} onChange={(event) => setName(event.target.value)} />
-          <button
-            className="btn primary"
-            disabled={!name.trim()}
-            onClick={async () => {
-              await act(() => api.playlistRename(playlist.id, name));
-              setEditing(false);
-            }}
-          >
-            Save
-          </button>
-        </div>
-      ) : (
-        <button className="btn ghost block" style={{ marginBottom: 10 }} onClick={() => setEditing(true)}>
-          Rename playlist
-        </button>
-      )}
-
-      {confirmDelete ? (
-        <div className="row">
-          <button
-            className="btn danger grow"
-            onClick={async () => {
+      <Section title="Manage">
+        <Stack gap={3}>
+          {editing ? (
+            <div className="composer">
+              <input value={name} onChange={(event) => setName(event.target.value)} />
+              <Button
+                variant="primary"
+                disabled={!name.trim()}
+                onClick={async () => {
+                  await act(() => api.playlistRename(playlist.id, name));
+                  setEditing(false);
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          ) : (
+            <Button block onClick={() => setEditing(true)}>
+              Rename playlist
+            </Button>
+          )}
+          <ConfirmButton
+            label="Delete playlist"
+            confirmLabel="Delete"
+            question="Delete this playlist? Its songs stay in your library."
+            block
+            onConfirm={async () => {
               try {
                 await api.playlistDelete(playlist.id);
                 onDeleted();
@@ -891,19 +879,10 @@ function PlaylistPage({
                 onError(errorMessage(cause));
               }
             }}
-          >
-            Yes, delete the playlist
-          </button>
-          <button className="btn ghost" onClick={() => setConfirmDelete(false)}>
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button className="btn danger block" onClick={() => setConfirmDelete(true)}>
-          Delete playlist
-        </button>
-      )}
-      <p className="tiny faint center">Deleting a playlist keeps its songs.</p>
+          />
+        </Stack>
+      </Section>
     </>
   );
 }
+

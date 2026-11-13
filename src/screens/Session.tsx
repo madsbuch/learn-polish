@@ -3,7 +3,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
 import { GapFill, Memory } from "../components/SetExercises";
-import { Bar, Banner, SpeakButton, Spinner } from "../components/ui";
+import { CloseIcon } from "../components/icons";
+import { SpeakButton } from "../components/ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  IconButton,
+  Inline,
+  Progress,
+  Spinner,
+  Stack,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import { speakQuietly } from "../lib/speech";
 import { useAiStream } from "../lib/useAiStream";
@@ -110,8 +125,9 @@ export function Session({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memoryTurns]);
 
-  async function check() {
-    if (!exercise || busy) return;
+  /** Submits the answer; true when it was recorded. */
+  async function check(): Promise<boolean> {
+    if (!exercise || busy) return false;
     setBusy(true);
     setError(null);
     try {
@@ -128,8 +144,10 @@ export function Session({
       if (answer.correct) setCorrectCount((n) => n + 1);
       setPhase("checked");
       if (answer.correct && exercise.pl && exercise.itemKind !== "dialogue") speakQuietly(exercise.pl);
+      return true;
     } catch (cause) {
       setError(errorMessage(cause));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -159,12 +177,15 @@ export function Session({
   if (!exercise) {
     return (
       <div className="center-screen">
-        <div>
-          <p>Nothing to practise right now.</p>
-          <button className="btn primary" onClick={onQuit}>
-            Back
-          </button>
-        </div>
+        <EmptyState
+          icon="🎉"
+          title="Nothing to practise right now"
+          action={
+            <Button variant="primary" onClick={onQuit}>
+              Back
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -177,165 +198,161 @@ export function Session({
     return "idle";
   };
 
+  const options = (
+    <div className="options">
+      {exercise.options.map((option) => (
+        <button
+          key={option}
+          className="option"
+          data-state={optionState(option)}
+          disabled={isChecked}
+          onClick={() => setPicked(option)}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+
+  const reading =
+    exercise.kind === "dialogueRead" || exercise.kind === "intro" || exercise.kind === "sentenceIntro";
+
   return (
     <div className="session">
       <div className="session-top">
-        <button className="icon-btn" onClick={onQuit} aria-label="Leave practice">
-          ✕
-        </button>
+        <IconButton icon={<CloseIcon />} label="Leave practice" onClick={onQuit} />
         <div className="grow">
-          <Bar value={index} max={total} />
+          <Progress value={index} max={total} />
         </div>
-        <span className="chip gold">+{sessionXp} XP</span>
+        <Badge tone="gold">+{sessionXp} XP</Badge>
       </div>
 
-      <div className="session-body" ref={bodyRef}>
-        {error ? <Banner kind="error">{error}</Banner> : null}
+      <div className="session-body fade-in" key={exercise.key} ref={bodyRef}>
+        {error ? <Banner tone="error">{error}</Banner> : null}
 
         {exercise.kind === "dialogueRead" ? (
-          <div className="fade-in">
-            <div className="eyebrow">Today's conversation</div>
-            <h1>{exercise.pl}</h1>
-            <p className="small">{exercise.hint}</p>
+          <>
+            <Stack gap={1}>
+              <Text variant="eyebrow">Today's conversation</Text>
+              <h1>{exercise.pl}</h1>
+              <Text variant="small" tone="dim" as="p">
+                {exercise.hint}
+              </Text>
+            </Stack>
             <DialogueToolbar
               lines={plan.dialogue}
               revealAll={revealAll}
               onToggleReveal={() => setRevealAll((v) => !v)}
             />
             <DialogueView lines={plan.dialogue} revealAll={revealAll} />
-          </div>
+          </>
         ) : null}
 
         {exercise.kind === "intro" ? (
-          <div className="fade-in">
-            <div className="eyebrow">New word</div>
+          <>
+            <Text variant="eyebrow">New word</Text>
             <div className="prompt-card">
-              <div className="prompt-word selectable">{exercise.pl}</div>
-              <div className="row" style={{ justifyContent: "center", marginBottom: 12 }}>
-                <SpeakButton text={exercise.pl} />
-              </div>
-              <div className="muted" style={{ fontSize: 17, fontWeight: 600 }}>
+              <Text variant="display" selectable>
+                {exercise.pl}
+              </Text>
+              <SpeakButton text={exercise.pl} variant="tinted" />
+              <Text variant="lead" tone="dim" weight="medium">
                 {exercise.meaning}
-              </div>
-              <div className="tiny faint" style={{ marginTop: 8 }}>
+              </Text>
+              <Text variant="caption" tone="faint">
                 {exercise.hint}
-              </div>
+              </Text>
             </div>
-          </div>
+          </>
         ) : null}
 
         {exercise.kind === "sentenceIntro" ? (
-          <div className="fade-in">
-            <div className="eyebrow">New sentence</div>
+          <>
+            <Text variant="eyebrow">New sentence</Text>
             <div className="prompt-card">
-              <div className="prompt-sentence selectable">{exercise.pl}</div>
-              <div className="row" style={{ justifyContent: "center", margin: "12px 0" }}>
-                <SpeakButton text={exercise.pl} />
-              </div>
-              <div className="muted">{exercise.meaning}</div>
+              <Text variant="title" selectable>
+                {exercise.pl}
+              </Text>
+              <SpeakButton text={exercise.pl} variant="tinted" />
+              <Text tone="dim">{exercise.meaning}</Text>
             </div>
-          </div>
+          </>
         ) : null}
 
         {exercise.kind === "recognise" || exercise.kind === "produce" ? (
-          <div className="fade-in">
-            <div className="eyebrow">
+          <>
+            <Text variant="eyebrow">
               {exercise.kind === "recognise" ? "What does this mean?" : "How do you say this?"}
-            </div>
+            </Text>
             <div className="prompt-card">
-              <div className="prompt-word selectable">{exercise.prompt}</div>
-              {exercise.kind === "recognise" ? (
-                <div className="row" style={{ justifyContent: "center", marginTop: 10 }}>
-                  <SpeakButton text={exercise.prompt} />
-                </div>
-              ) : null}
-              <div className="tiny faint" style={{ marginTop: 8 }}>
+              <Text variant="display" selectable>
+                {exercise.prompt}
+              </Text>
+              {exercise.kind === "recognise" ? <SpeakButton text={exercise.prompt} variant="tinted" /> : null}
+              <Text variant="caption" tone="faint">
                 {exercise.hint}
-              </div>
+              </Text>
             </div>
-            <div className="options">
-              {exercise.options.map((option) => (
-                <button
-                  key={option}
-                  className="option"
-                  data-state={optionState(option)}
-                  disabled={isChecked}
-                  onClick={() => setPicked(option)}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
+            {options}
+          </>
         ) : null}
 
         {exercise.kind === "dialogueGap" ? (
-          <div className="fade-in">
-            <div className="eyebrow">What comes next?</div>
-            <div className="card">
-              <div className="tiny faint" style={{ marginBottom: 6 }}>
-                {exercise.hint}
-              </div>
-              <div className="selectable" style={{ fontSize: 17, fontWeight: 600 }}>
-                {exercise.prompt}
-              </div>
-            </div>
-            <div className="options">
-              {exercise.options.map((option) => (
-                <button
-                  key={option}
-                  className="option"
-                  data-state={optionState(option)}
-                  disabled={isChecked}
-                  onClick={() => setPicked(option)}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
+          <>
+            <Text variant="eyebrow">What comes next?</Text>
+            <Card>
+              <Stack gap={1}>
+                <Text variant="caption" tone="faint">
+                  {exercise.hint}
+                </Text>
+                <Text variant="lead" weight="medium" selectable>
+                  {exercise.prompt}
+                </Text>
+              </Stack>
+            </Card>
+            {options}
+          </>
         ) : null}
 
         {exercise.kind === "type" ? (
-          <div className="fade-in">
-            <div className="eyebrow">Write it in Polish</div>
+          <>
+            <Text variant="eyebrow">Write it in Polish</Text>
             <div className="prompt-card">
-              <div className="prompt-word">{exercise.prompt}</div>
-              <div className="tiny faint" style={{ marginTop: 8 }}>
+              <Text variant="display">{exercise.prompt}</Text>
+              <Text variant="caption" tone="faint">
                 {exercise.hint}
-              </div>
+              </Text>
             </div>
-            <input
-              ref={inputRef}
-              value={typed}
-              placeholder="Type here…"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              disabled={isChecked}
-              onChange={(event) => setTyped(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  if (isChecked) void advance();
-                  else if (canSubmit) void check();
-                }
-              }}
-            />
-            <p className="tiny faint" style={{ marginTop: 8 }}>
-              Polish letters are optional — "czesc" counts as "cześć".
-            </p>
-          </div>
+            <Field label="Your answer" hint={'Polish letters are optional — "czesc" counts as "cześć".'}>
+              <input
+                ref={inputRef}
+                value={typed}
+                placeholder="Type here"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={isChecked}
+                onChange={(event) => setTyped(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    if (isChecked) void advance();
+                    else if (canSubmit) void check();
+                  }
+                }}
+              />
+            </Field>
+          </>
         ) : null}
 
         {exercise.kind === "wordOrder" ? (
-          <div className="fade-in">
-            <div className="eyebrow">Build the Polish sentence</div>
-            <div className="card">
-              <div className="selectable" style={{ fontSize: 17, fontWeight: 600 }}>
+          <>
+            <Text variant="eyebrow">Build the Polish sentence</Text>
+            <Card>
+              <Text variant="lead" weight="medium" selectable>
                 {exercise.prompt}
-              </div>
-            </div>
+              </Text>
+            </Card>
             <div className="answer-slot">
               {built.map((tokenIndex, position) => (
                 <button
@@ -352,111 +369,104 @@ export function Session({
               {exercise.tokens.map((token, tokenIndex) => (
                 <button
                   key={`${token}-${tokenIndex}`}
-                  className={`token${built.includes(tokenIndex) ? " used" : ""}`}
-                  disabled={isChecked}
+                  className="token"
+                  data-used={built.includes(tokenIndex)}
+                  disabled={isChecked || built.includes(tokenIndex)}
                   onClick={() => setBuilt([...built, tokenIndex])}
                 >
                   {token}
                 </button>
               ))}
             </div>
-          </div>
+          </>
         ) : null}
 
         {exercise.kind === "gapFill" ? (
-          <div className="fade-in">
-            <div className="eyebrow">Fill the gaps</div>
-            <GapFill
-              exercise={exercise}
-              filled={gapsFilled}
-              onChange={setGapsFilled}
-              checked={isChecked}
-            />
-          </div>
+          <>
+            <Text variant="eyebrow">Fill the gaps</Text>
+            <GapFill exercise={exercise} filled={gapsFilled} onChange={setGapsFilled} checked={isChecked} />
+          </>
         ) : null}
 
         {exercise.kind === "memory" ? (
-          <div className="fade-in">
-            <div className="eyebrow">Memory · find the pairs</div>
+          <>
+            <Text variant="eyebrow">Memory · find the pairs</Text>
             <Memory exercise={exercise} onComplete={setMemoryTurns} />
-          </div>
+          </>
         ) : null}
 
-        {isChecked && result ? (
-          <div className={`verdict pop ${result.correct ? "right" : "wrong"}`}>
-            <b>
+        {isChecked && result && !reading ? (
+          <div className="verdict pop" data-correct={result.correct}>
+            <Text weight="bold">
               {result.correct ? "Dobrze! ✓" : "Not quite"}
               {result.xpGained > 0 ? `  +${result.xpGained} XP` : ""}
-            </b>
-            {/* Always show both sides of the pair, whichever direction was asked. */}
+            </Text>
             {exercise.kind === "memory" && memoryTurns !== null ? (
-              <div className="small">
+              <Text variant="small">
                 All {exercise.pairs.length} pairs in {memoryTurns} turns
                 {memoryTurns <= exercise.pairs.length + 2 ? " — a sharp memory!" : "."}
-              </div>
+              </Text>
             ) : null}
+            {/* Always show both sides of the pair, whichever direction was asked. */}
             {exercise.itemKind !== "set" && (!result.correct || exercise.kind === "type") ? (
-              <div className="small selectable">
-                {exercise.itemKind === "dialogue"
-                  ? exercise.answer
-                  : `${exercise.pl} — ${exercise.meaning}`}
-              </div>
+              <Text variant="small" selectable>
+                {exercise.itemKind === "dialogue" ? exercise.answer : `${exercise.pl} — ${exercise.meaning}`}
+              </Text>
             ) : null}
             {exercise.itemKind !== "dialogue" &&
             exercise.itemKind !== "set" &&
             !explanation.text &&
             !explanation.streaming ? (
-              <button className="btn ghost small" style={{ marginTop: 10 }} onClick={explain}>
-                ✨ Explain with AI
-              </button>
+              <Button size="sm" icon={<span aria-hidden="true">✨</span>} onClick={explain}>
+                Explain with AI
+              </Button>
             ) : null}
             {explanation.streaming && !explanation.text ? (
-              <div className="row small faint" style={{ marginTop: 12 }}>
-                <Spinner /> Thinking…
-              </div>
+              <Inline gap={2}>
+                <Spinner />
+                <Text variant="small" tone="faint">
+                  Thinking…
+                </Text>
+              </Inline>
             ) : null}
             {explanation.text ? (
-              <div style={{ marginTop: 12 }}>
+              <div>
                 <Markdown text={explanation.text} />
                 {explanation.streaming ? <span className="caret" /> : null}
               </div>
             ) : null}
             {explanation.error ? (
-              <div className="small" style={{ marginTop: 10, color: "var(--bad)" }}>
+              <Text variant="small" tone="bad">
                 {explanation.error}
-              </div>
+              </Text>
             ) : null}
           </div>
         ) : null}
       </div>
 
       <div className="session-foot">
-        {isChecked ? (
-          <button className="btn success block" disabled={busy} onClick={advance}>
-            {busy ? <Spinner /> : index + 1 < total ? "Continue" : "Finish session"}
-          </button>
+        {isChecked && !reading ? (
+          <Button variant="success" size="lg" block loading={busy} onClick={advance}>
+            {index + 1 < total ? "Continue" : "Finish"}
+          </Button>
         ) : (
-          <button
-            className="btn primary block"
-            disabled={!canSubmit || busy || exercise.kind === "memory"}
-            onClick={check}
+          <Button
+            variant="primary"
+            size="lg"
+            block
+            loading={busy}
+            disabled={!canSubmit || exercise.kind === "memory"}
+            onClick={async () => {
+              // Reading cards have nothing to check: record them and move on.
+              if ((await check()) && reading) await advance();
+            }}
           >
-            {busy ? (
-              <Spinner />
-            ) : exercise.kind === "dialogueRead" ||
-              exercise.kind === "intro" ||
-              exercise.kind === "sentenceIntro" ? (
-              "Got it"
-            ) : exercise.kind === "memory" ? (
-              "Find every pair"
-            ) : (
-              "Check"
-            )}
-          </button>
+            {reading ? "Got it" : exercise.kind === "memory" ? "Find every pair" : "Check"}
+          </Button>
         )}
-        <div className="center tiny faint" style={{ marginTop: 8 }}>
+        <Text variant="caption" tone="faint" align="center" as="div">
           {index + 1} of {total} · {correctCount} correct
-        </div>
+        </Text>
       </div>
     </div>
   );

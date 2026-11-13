@@ -273,10 +273,18 @@ also drive the tutor's tools to build, practise, focus and delete a programme,
 and upgrade a database from before the English-only schema — no Tauri runtime
 required.
 
+### Design
+
+The UI is built from a small design system in `src/design/` — tokens for
+every size and colour, and components for every screen element. Read
+[DESIGN.md](DESIGN.md) before adding a screen; `bun run build` checks the
+rules (`bun run check:design` runs the check alone).
+
 ### Layout
 
 ```
 src/                       React UI
+  design/                  the design system: tokens, components (see DESIGN.md)
   lib/api.ts               typed wrappers over the Tauri commands
   lib/useAiStream.ts       accumulates a streamed answer from Tauri events
   components/Markdown.tsx  markdown to React elements, no HTML in between
