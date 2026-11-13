@@ -245,8 +245,19 @@ export interface TutorAction {
   songId: number | null;
 }
 
+export interface Conversation {
+  id: number;
+  title: string;
+  /** The last thing said, shortened. */
+  preview: string;
+  messages: number;
+  /** Seconds since the epoch. */
+  updatedAt: number;
+}
+
 export interface ChatMessage {
   id: number;
+  conversationId: number;
   role: "user" | "assistant";
   content: string;
   actions: TutorAction[];

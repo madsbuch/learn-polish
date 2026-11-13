@@ -146,39 +146,42 @@ export function Screen({
   children: ReactNode;
 }) {
   const pushed = Boolean(onBack || onClose);
-  const page = (
-    <div className="screen" data-nav={nav} data-footer={Boolean(footer)}>
-      {header ?? (
-        <header className="screen-header" data-pushed={pushed}>
-          {onBack ? (
-            <IconButton icon={<BackIcon />} label="Back" onClick={onBack} />
-          ) : null}
-          {onClose ? (
-            <IconButton icon={<DownIcon />} label="Close" onClick={onClose} />
-          ) : null}
-          <div className="screen-header__titles">
-            {title ? (
-              <h1 className="screen-header__title with-info">
-                {title}
-                {info ? <Info title={typeof title === "string" ? title : "About"}>{info}</Info> : null}
-              </h1>
-            ) : null}
-            {subtitle ? (
-              <Text variant="small" tone="dim" ellipsis>
-                {subtitle}
-              </Text>
-            ) : null}
-          </div>
-          {actions ? <div className="screen-header__actions">{actions}</div> : null}
-        </header>
-      )}
-      <div className="screen-body">{children}</div>
-    </div>
+  const head = header ?? (
+    <header className="screen-header" data-pushed={pushed}>
+      {onBack ? <IconButton icon={<BackIcon />} label="Back" onClick={onBack} /> : null}
+      {onClose ? <IconButton icon={<DownIcon />} label="Close" onClick={onClose} /> : null}
+      <div className="screen-header__titles">
+        {title ? (
+          <h1 className="screen-header__title with-info">
+            {title}
+            {info ? <Info title={typeof title === "string" ? title : "About"}>{info}</Info> : null}
+          </h1>
+        ) : null}
+        {subtitle ? (
+          <Text variant="small" tone="dim" ellipsis>
+            {subtitle}
+          </Text>
+        ) : null}
+      </div>
+      {actions ? <div className="screen-header__actions">{actions}</div> : null}
+    </header>
   );
-  if (!footer) return page;
+  if (!footer) {
+    return (
+      <div className="screen" data-nav={nav}>
+        {head}
+        <div className="screen-body">{children}</div>
+      </div>
+    );
+  }
+  // With a footer (a chat), the header is docked too: only the middle scrolls,
+  // so Back and the input are always in reach.
   return (
     <>
-      {page}
+      <div className="screen-top">{head}</div>
+      <div className="screen" data-nav={nav} data-footer="true">
+        <div className="screen-body">{children}</div>
+      </div>
       <div className="screen-footer" data-nav={nav}>
         {footer}
       </div>

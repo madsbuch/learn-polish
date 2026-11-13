@@ -10,6 +10,7 @@ import type {
   CastDevice,
   CastState,
   ChatMessage,
+  Conversation,
   Dialogue,
   DraftRequest,
   Playlist,
@@ -68,10 +69,15 @@ export const api = {
   aiExplainStream: (itemKind: string, itemId: number, streamId: string) =>
     invoke<string>("ai_explain_stream", { itemKind, itemId, streamId }),
 
-  tutorSend: (message: string, streamId: string) =>
-    invoke<ChatMessage>("tutor_send", { message, streamId }),
-  tutorHistory: () => invoke<ChatMessage[]>("tutor_history"),
-  tutorClear: () => invoke<void>("tutor_clear"),
+  /** `conversationId` null starts a new conversation; the reply says its id. */
+  tutorSend: (message: string, streamId: string, conversationId: number | null) =>
+    invoke<ChatMessage>("tutor_send", { message, streamId, conversationId }),
+  tutorConversations: () => invoke<Conversation[]>("tutor_conversations"),
+  tutorHistory: (conversationId: number) =>
+    invoke<ChatMessage[]>("tutor_history", { conversationId }),
+  tutorRename: (conversationId: number, title: string) =>
+    invoke<void>("tutor_rename", { conversationId, title }),
+  tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
   programmeDelete: (topicId: number) => invoke<void>("programme_delete", { topicId }),
   setFocus: (topicId: number | null) => invoke<Settings>("set_focus", { topicId }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */

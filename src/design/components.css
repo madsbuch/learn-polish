@@ -28,10 +28,26 @@
 .app:has(.mini-player) .screen[data-nav="true"] {
   padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--player-bar-space) + var(--space-5));
 }
-/* With a docked footer, the footer takes the bottom; the page just ends. */
+/* With a docked header and footer, only the middle scrolls. */
 .screen[data-footer="true"],
 .app:has(.mini-player) .screen[data-footer="true"] {
+  padding-top: var(--space-4);
   padding-bottom: var(--space-4);
+}
+.screen-top {
+  flex: none;
+  padding: var(--safe-top) var(--gutter) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.screen-top .screen-header {
+  margin-bottom: var(--space-2);
+  margin-top: var(--space-2);
+}
+.screen-top .screen-header__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
 }
 /* A plain block in the app's column, so it sits exactly above whatever
    overlays the bottom: the tab bar, and the player bar when it shows. */

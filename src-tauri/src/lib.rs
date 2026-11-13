@@ -62,8 +62,10 @@ pub fn run() {
             commands::ai_list_models,
             commands::ai_explain_stream,
             tutor::tutor_send,
+            tutor::tutor_conversations,
             tutor::tutor_history,
-            tutor::tutor_clear,
+            tutor::tutor_rename,
+            tutor::tutor_delete,
             commands::programme_delete,
             commands::set_focus,
             commands::export_database,
@@ -112,6 +114,14 @@ mod integration {
 
     use super::*;
     use rusqlite::Connection;
+
+    /// Reopens a scratch database without wiping it, to exercise migrations.
+    fn scratch_db_keep(name: &str) -> Connection {
+        let path = std::env::temp_dir()
+            .join("learn-polish-tests")
+            .join(format!("{name}-{}.db", std::process::id()));
+        db::open(&path).expect("reopen")
+    }
 
     fn scratch_db(name: &str) -> Connection {
         let path = std::env::temp_dir()
@@ -473,6 +483,27 @@ mod integration {
         conn.execute("DELETE FROM song_tracks WHERE id = 10", []).unwrap();
         assert_eq!(order(&playlists::list(&conn).unwrap()[0]), vec![11]);
         assert!(playlists::create(&conn, "   ", &[]).is_err());
+    }
+
+    #[test]
+    fn tutor_conversations_keep_their_own_history() {
+        let conn = scratch_db("conversations");
+        // A message from before conversations existed is adopted, not lost.
+        conn.execute(
+            "INSERT INTO tutor_messages (role, content, created_at) VALUES ('user', 'old question', 5)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let conn = scratch_db_keep("conversations");
+        let listed = tutor::list_conversations(&conn).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].title, "Earlier conversation");
+        assert_eq!(tutor::load_history(&conn, listed[0].id).unwrap().len(), 1);
+
+        let id = tutor::create_conversation(&conn, "How do numbers work?").unwrap();
+        assert_eq!(tutor::load_history(&conn, id).unwrap().len(), 0, "a new one starts empty");
+        assert_eq!(tutor::list_conversations(&conn).unwrap().len(), 2);
     }
 
     #[test]

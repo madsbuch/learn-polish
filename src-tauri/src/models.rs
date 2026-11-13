@@ -222,10 +222,23 @@ pub struct Settings {
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: i64,
+    pub conversation_id: i64,
     pub role: String,
     pub content: String,
     /// What the tutor did in the app during this turn.
     pub actions: Vec<TutorAction>,
+}
+
+/// A conversation with the tutor, as listed on the Tutor tab.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Conversation {
+    pub id: i64,
+    pub title: String,
+    /// The last thing said, shortened, for the list.
+    pub preview: String,
+    pub messages: i64,
+    pub updated_at: i64,
 }
 
 /// Something the tutor did in the app, shown under its reply (and, for a

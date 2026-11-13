@@ -131,7 +131,16 @@ CREATE TABLE IF NOT EXISTS audio_cache (
     created_at INTEGER NOT NULL
 );
 
--- The conversation with the tutor. `actions` is a JSON list of what the tutor
+-- Conversations with the tutor: each has its own history, so a question
+-- about grammar does not drag along the context of last week's programme.
+CREATE TABLE IF NOT EXISTS tutor_conversations (
+    id         INTEGER PRIMARY KEY,
+    title      TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- The messages of a conversation with the tutor. `actions` is a JSON list of what the tutor
 -- did in the app during that turn (programmes created, focus changed, …), so
 -- the UI can offer buttons and later turns know what already happened.
 CREATE TABLE IF NOT EXISTS tutor_messages (
@@ -207,7 +216,42 @@ fn migrate(conn: &Connection) -> Result<()> {
     add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
     add_column(conn, "song_tracks", "audio_bytes", "BLOB")?;
     add_column(conn, "song_tracks", "image_bytes", "BLOB")?;
+    add_column(
+        conn,
+        "tutor_messages",
+        "conversation_id",
+        "INTEGER REFERENCES tutor_conversations(id) ON DELETE CASCADE",
+    )?;
+    adopt_loose_tutor_messages(conn)?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    Ok(())
+}
+
+/// Messages from before conversations existed become one conversation, so
+/// nothing the learner talked about disappears.
+fn adopt_loose_tutor_messages(conn: &Connection) -> Result<()> {
+    let loose: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tutor_messages WHERE conversation_id IS NULL",
+        [],
+        |r| r.get(0),
+    )?;
+    if loose == 0 {
+        return Ok(());
+    }
+    let (first, last): (i64, i64) = conn.query_row(
+        "SELECT MIN(created_at), MAX(created_at) FROM tutor_messages WHERE conversation_id IS NULL",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    conn.execute(
+        "INSERT INTO tutor_conversations (title, created_at, updated_at) VALUES ('Earlier conversation', ?1, ?2)",
+        [first, last],
+    )?;
+    let id = conn.last_insert_rowid();
+    conn.execute(
+        "UPDATE tutor_messages SET conversation_id = ?1 WHERE conversation_id IS NULL",
+        [id],
+    )?;
     Ok(())
 }
 

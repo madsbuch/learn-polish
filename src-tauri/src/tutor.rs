@@ -14,7 +14,7 @@ use tauri::{Emitter, State};
 use crate::ai::{self, Wire};
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
-use crate::models::{ChatMessage, TutorAction, TutorStatus};
+use crate::models::{ChatMessage, Conversation, TutorAction, TutorStatus};
 use crate::programmes::{self, NewLine, NewProgramme, NewSentence, NewWord};
 use crate::session;
 use crate::songs;
@@ -835,13 +835,16 @@ fn parse_actions(json: Option<String>) -> Vec<TutorAction> {
     json.and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
 }
 
-pub fn load_history(conn: &Connection) -> Result<Vec<ChatMessage>> {
-    let mut stmt =
-        conn.prepare("SELECT id, role, content, actions FROM tutor_messages ORDER BY id")?;
+pub fn load_history(conn: &Connection, conversation_id: i64) -> Result<Vec<ChatMessage>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, role, content, actions FROM tutor_messages
+         WHERE conversation_id = ?1 ORDER BY id",
+    )?;
     let messages = stmt
-        .query_map([], |r| {
+        .query_map([conversation_id], |r| {
             Ok(ChatMessage {
                 id: r.get(0)?,
+                conversation_id,
                 role: r.get(1)?,
                 content: r.get(2)?,
                 actions: parse_actions(r.get(3)?),
@@ -853,23 +856,25 @@ pub fn load_history(conn: &Connection) -> Result<Vec<ChatMessage>> {
 
 /// The recent conversation as the model should see it. What the tutor did in
 /// earlier turns is spelled out, so it knows the ids of what it made.
-fn recent_history(conn: &Connection) -> Result<Vec<Wire>> {
+fn recent_history(conn: &Connection, conversation_id: i64) -> Result<Vec<Wire>> {
     let mut stmt = conn.prepare(
         "SELECT role, content, actions FROM (
-             SELECT id, role, content, actions FROM tutor_messages ORDER BY id DESC LIMIT ?1
+             SELECT id, role, content, actions FROM tutor_messages
+             WHERE conversation_id = ?1 ORDER BY id DESC LIMIT ?2
          ) ORDER BY id",
     )?;
     let history = stmt
-        .query_map([HISTORY_LIMIT], |r| {
+        .query_map(rusqlite::params![conversation_id, HISTORY_LIMIT], |r| {
             let role: String = r.get(0)?;
             let mut content: String = r.get(1)?;
             let actions = parse_actions(r.get(2)?);
             if !actions.is_empty() {
                 let notes: Vec<String> = actions
                     .iter()
-                    .map(|a| match a.topic_id {
-                        Some(id) => format!("{} (topic id {id})", a.label),
-                        None => a.label.clone(),
+                    .map(|a| match (a.topic_id, a.song_id) {
+                        (Some(id), _) => format!("{} (topic id {id})", a.label),
+                        (_, Some(id)) => format!("{} (song id {id})", a.label),
+                        _ => a.label.clone(),
                     })
                     .collect();
                 content.push_str(&format!("\n\n[Done in the app: {}]", notes.join("; ")));
@@ -880,13 +885,77 @@ fn recent_history(conn: &Connection) -> Result<Vec<Wire>> {
     Ok(history)
 }
 
-fn append(conn: &Connection, role: &str, content: &str, actions: &[TutorAction]) -> Result<i64> {
+fn append(
+    conn: &Connection,
+    conversation_id: i64,
+    role: &str,
+    content: &str,
+    actions: &[TutorAction],
+) -> Result<i64> {
     let actions = if actions.is_empty() { None } else { Some(serde_json::to_string(actions)?) };
+    let now = db::now_secs();
     conn.execute(
-        "INSERT INTO tutor_messages (role, content, actions, created_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![role, content, actions, db::now_secs()],
+        "INSERT INTO tutor_messages (conversation_id, role, content, actions, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![conversation_id, role, content, actions, now],
+    )?;
+    let id = conn.last_insert_rowid();
+    conn.execute(
+        "UPDATE tutor_conversations SET updated_at = ?2 WHERE id = ?1",
+        [conversation_id, now],
+    )?;
+    Ok(id)
+}
+
+/// A conversation's title: its first question, cut at a word near 48 characters.
+pub fn title_from(message: &str) -> String {
+    let text = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= 48 {
+        return text;
+    }
+    let cut: String = text.chars().take(48).collect();
+    let at_word = cut.rfind(' ').filter(|&i| i > 24).map_or(cut.as_str(), |i| &cut[..i]);
+    format!("{}…", at_word.trim_end_matches([',', '.', ';', ':']))
+}
+
+pub fn create_conversation(conn: &Connection, first_message: &str) -> Result<i64> {
+    let now = db::now_secs();
+    conn.execute(
+        "INSERT INTO tutor_conversations (title, created_at, updated_at) VALUES (?1, ?2, ?2)",
+        rusqlite::params![title_from(first_message), now],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+pub fn list_conversations(conn: &Connection) -> Result<Vec<Conversation>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.title, c.updated_at,
+                (SELECT COUNT(*) FROM tutor_messages m WHERE m.conversation_id = c.id),
+                COALESCE((SELECT content FROM tutor_messages m WHERE m.conversation_id = c.id
+                          ORDER BY m.id DESC LIMIT 1), '')
+         FROM tutor_conversations c ORDER BY c.updated_at DESC, c.id DESC",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            let last: String = r.get(4)?;
+            Ok(Conversation {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                updated_at: r.get(2)?,
+                messages: r.get(3)?,
+                // Markdown marks would show as stray symbols in a one-line preview.
+                preview: last
+                    .replace(['*', '_', '#', '`'], "")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .chars()
+                    .take(120)
+                    .collect(),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 // ---------------------------------------------------------------------------
@@ -894,13 +963,35 @@ fn append(conn: &Connection, role: &str, content: &str, actions: &[TutorAction])
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn tutor_history(db: State<'_, Db>) -> Result<Vec<ChatMessage>> {
-    load_history(&db.lock())
+pub async fn tutor_conversations(db: State<'_, Db>) -> Result<Vec<Conversation>> {
+    list_conversations(&db.lock())
 }
 
 #[tauri::command]
-pub async fn tutor_clear(db: State<'_, Db>) -> Result<()> {
-    db.lock().execute("DELETE FROM tutor_messages", [])?;
+pub async fn tutor_history(db: State<'_, Db>, conversation_id: i64) -> Result<Vec<ChatMessage>> {
+    load_history(&db.lock(), conversation_id)
+}
+
+#[tauri::command]
+pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String) -> Result<()> {
+    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if title.is_empty() {
+        return Err(Error::msg("A conversation needs a title."));
+    }
+    db.lock().execute(
+        "UPDATE tutor_conversations SET title = ?2 WHERE id = ?1",
+        rusqlite::params![conversation_id, title],
+    )?;
+    Ok(())
+}
+
+/// Deletes one conversation and its messages. What the tutor made in the app
+/// (programmes, songs) stays.
+#[tauri::command]
+pub async fn tutor_delete(db: State<'_, Db>, conversation_id: i64) -> Result<()> {
+    let conn = db.lock();
+    conn.execute("DELETE FROM tutor_messages WHERE conversation_id = ?1", [conversation_id])?;
+    conn.execute("DELETE FROM tutor_conversations WHERE id = ?1", [conversation_id])?;
     Ok(())
 }
 
@@ -927,6 +1018,8 @@ pub async fn tutor_send(
     db: State<'_, Db>,
     message: String,
     stream_id: String,
+    // None starts a new conversation, titled after this message.
+    conversation_id: Option<i64>,
 ) -> Result<ChatMessage> {
     let message = message.trim().to_string();
     if message.is_empty() {
@@ -938,7 +1031,9 @@ pub async fn tutor_send(
         let key = ai::api_key(&conn)?;
         let model = ai::require_model(&conn)?;
         let mut wire = vec![Wire::system(system_prompt(&conn)?)];
-        wire.extend(recent_history(&conn)?);
+        if let Some(id) = conversation_id {
+            wire.extend(recent_history(&conn, id)?);
+        }
         wire.push(Wire::user(message.clone()));
         (key, model, wire)
     };
@@ -1015,10 +1110,15 @@ pub async fn tutor_send(
     if reply.trim().is_empty() {
         reply = "Done.".into();
     }
+    // The conversation is only created once there is a reply worth keeping.
     let conn = db.lock();
-    append(&conn, "user", &message, &[])?;
-    let id = append(&conn, "assistant", &reply, &actions)?;
-    Ok(ChatMessage { id, role: "assistant".into(), content: reply, actions })
+    let conversation_id = match conversation_id {
+        Some(id) => id,
+        None => create_conversation(&conn, &message)?,
+    };
+    append(&conn, conversation_id, "user", &message, &[])?;
+    let id = append(&conn, conversation_id, "assistant", &reply, &actions)?;
+    Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
 }
 
 #[cfg(test)]
@@ -1037,6 +1137,15 @@ mod tests {
             assert_eq!(tool["function"]["parameters"]["type"], "object", "{name}");
             assert_ne!(status_label(name), "", "{name}");
         }
+    }
+
+    #[test]
+    fn conversations_are_titled_by_their_first_question() {
+        assert_eq!(title_from("  Build me a   programme for colours "), "Build me a programme for colours");
+        let long = title_from("Can you explain the difference between the instrumental and the locative case, with examples?");
+        assert!(long.ends_with('…'), "{long}");
+        assert!(long.chars().count() <= 49, "{long}");
+        assert!(!long.contains("locat…"), "cut at a word: {long}");
     }
 
     #[test]

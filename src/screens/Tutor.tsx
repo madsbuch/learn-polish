@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { CheckIcon, NavIcon, PlayerIcon, SendIcon } from "../components/icons";
+import { CheckIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon, SendIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
 import {
   Banner,
   Button,
+  ConfirmButton,
   EmptyState,
+  Field,
+  Sheet,
   IconButton,
   Inline,
   List,
@@ -17,7 +20,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { ChatMessage, StreamEvent, TutorAction, TutorStatus } from "../lib/types";
+import type { ChatMessage, Conversation, StreamEvent, TutorAction, TutorStatus } from "../lib/types";
 
 const STARTERS = [
   "Build me a programme for learning the colours",
@@ -29,26 +32,161 @@ const STARTERS = [
 
 let nextStream = 0;
 
-export function Tutor({
-  hasApiKey,
-  hasModel,
-  focusTopicId,
-  onOpenSettings,
-  onPractise,
-  onOpenSong,
-  onChanged,
-}: {
-  hasApiKey: boolean;
-  /** A key alone is not enough — a model has to be chosen too. */
-  hasModel: boolean;
+/** "3 min ago", "yesterday", "12 Nov" — for the conversation list. */
+function when(seconds: number): string {
+  const elapsed = Date.now() / 1000 - seconds;
+  if (elapsed < 60) return "now";
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)} min ago`;
+  if (elapsed < 86_400) return `${Math.floor(elapsed / 3600)} h ago`;
+  if (elapsed < 2 * 86_400) return "yesterday";
+  return new Date(seconds * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+type Shared = {
   focusTopicId: number | null;
-  onOpenSettings: () => void;
   /** Starts a practice session for a topic or programme. */
   onPractise: (topicId: number) => void;
   /** Shows a song in the Music tab. */
   onOpenSong: (songId: number) => void;
   /** The tutor changed something in the app; reload what the screens show. */
   onChanged: () => void;
+};
+
+/**
+ * The Tutor tab: your conversations, newest first. Each keeps its own
+ * history; a new one starts from a blank page.
+ */
+export function Tutor({
+  hasApiKey,
+  hasModel,
+  onOpenSettings,
+  ...shared
+}: Shared & {
+  hasApiKey: boolean;
+  /** A key alone is not enough — a model has to be chosen too. */
+  hasModel: boolean;
+  onOpenSettings: () => void;
+}) {
+  // null: the list; "new": a blank conversation; a number: that conversation.
+  const [open, setOpen] = useState<number | "new" | null>(null);
+  const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    api
+      .tutorConversations()
+      .then((list) => {
+        setConversations(list);
+        // With nothing to list, go straight to a new conversation.
+        if (list.length === 0) setOpen((current) => current ?? "new");
+      })
+      .catch((cause) => setError(errorMessage(cause)));
+  }, []);
+
+  useEffect(refresh, [refresh]);
+
+  if (!hasApiKey || !hasModel) {
+    return (
+      <Screen title="Tutor" info={<TutorInfo />}>
+        <EmptyState
+          icon="✨"
+          title={hasApiKey ? "Pick a model" : "Add an OpenRouter key"}
+          action={
+            <Button variant="primary" onClick={onOpenSettings}>
+              Open Settings
+            </Button>
+          }
+        >
+          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can
+          build programmes and songs for you.
+        </EmptyState>
+      </Screen>
+    );
+  }
+
+  if (open !== null) {
+    const conversation =
+      open === "new" ? null : (conversations?.find((entry) => entry.id === open) ?? null);
+    return (
+      <Chat
+        key={open}
+        conversationId={open === "new" ? null : open}
+        title={conversation?.title ?? "New conversation"}
+        canGoBack={(conversations?.length ?? 0) > 0 || open !== "new"}
+        onStarted={(id) => {
+          setOpen(id);
+          refresh();
+        }}
+        onBack={() => {
+          setOpen(null);
+          refresh();
+        }}
+        onRenamed={refresh}
+        onDeleted={() => {
+          setOpen(null);
+          refresh();
+        }}
+        {...shared}
+      />
+    );
+  }
+
+  return (
+    <Screen
+      title="Tutor"
+      info={<TutorInfo />}
+      actions={
+        <IconButton
+          variant="primary"
+          icon={<PlusIcon />}
+          label="New conversation"
+          onClick={() => setOpen("new")}
+        />
+      }
+    >
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {conversations === null ? (
+        <Spinner />
+      ) : (
+        <Section title="Conversations">
+          <List>
+            {conversations.map((conversation) => (
+              <ListItem
+                key={conversation.id}
+                title={conversation.title}
+                subtitle={`${when(conversation.updatedAt)} · ${conversation.preview}`}
+                onClick={() => setOpen(conversation.id)}
+              />
+            ))}
+          </List>
+        </Section>
+      )}
+    </Screen>
+  );
+}
+
+function Chat({
+  conversationId,
+  title,
+  canGoBack,
+  onStarted,
+  onBack,
+  onRenamed,
+  onDeleted,
+  focusTopicId,
+  onPractise,
+  onOpenSong,
+  onChanged,
+}: Shared & {
+  /** null for a conversation not yet started. */
+  conversationId: number | null;
+  title: string;
+  canGoBack: boolean;
+  /** The first reply arrived; the conversation now exists with this id. */
+  onStarted: (id: number) => void;
+  onBack: () => void;
+  onRenamed: () => void;
+  onDeleted: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -57,12 +195,18 @@ export function Tutor({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [focusing, setFocusing] = useState<number | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [name, setName] = useState(title);
   const activeStream = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.tutorHistory().then(setMessages).catch(() => setMessages([]));
-  }, []);
+    if (conversationId === null) return;
+    api
+      .tutorHistory(conversationId)
+      .then(setMessages)
+      .catch((cause) => setError(errorMessage(cause)));
+  }, [conversationId]);
 
   // Streamed text and "working on it" lines, for the request in flight only.
   useEffect(() => {
@@ -99,12 +243,13 @@ export function Tutor({
     // Show the learner's turn immediately; the backend persists both sides.
     setMessages((current) => [
       ...current,
-      { id: -Date.now(), role: "user", content: message, actions: [] },
+      { id: -Date.now(), conversationId: conversationId ?? 0, role: "user", content: message, actions: [] },
     ]);
     try {
-      const reply = await api.tutorSend(message, streamId);
+      const reply = await api.tutorSend(message, streamId, conversationId);
       setMessages((current) => [...current, reply]);
       if (reply.actions.length > 0) onChanged();
+      if (conversationId === null) onStarted(reply.conversationId);
     } catch (cause) {
       setError(errorMessage(cause));
       setMessages((current) => current.slice(0, -1));
@@ -176,29 +321,10 @@ export function Tutor({
     );
   }
 
-  if (!hasApiKey || !hasModel) {
-    return (
-      <Screen title="Tutor" info={<TutorInfo />}>
-        <EmptyState
-          icon="✨"
-          title={hasApiKey ? "Pick a model" : "Add an OpenRouter key"}
-          action={
-            <Button variant="primary" onClick={onOpenSettings}>
-              Open Settings
-            </Button>
-          }
-        >
-          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can
-          build programmes and songs for you.
-        </EmptyState>
-      </Screen>
-    );
-  }
-
   return (
     <Screen
-      title="Tutor"
-      info={<TutorInfo />}
+      title={title}
+      onBack={canGoBack ? onBack : undefined}
       footer={
         <div className="composer">
           <textarea
@@ -223,18 +349,8 @@ export function Tutor({
         </div>
       }
       actions={
-        messages.length > 0 ? (
-          <Button
-            variant="plain"
-            size="sm"
-            disabled={sending}
-            onClick={async () => {
-              await api.tutorClear();
-              setMessages([]);
-            }}
-          >
-            Clear
-          </Button>
+        conversationId !== null ? (
+          <IconButton icon={<MoreIcon />} label="Rename or delete" onClick={() => setManaging(true)} />
         ) : null
       }
     >
@@ -285,6 +401,41 @@ export function Tutor({
         ) : null}
         <div ref={endRef} />
       </div>
+
+      {managing && conversationId !== null ? (
+        <Sheet title="Conversation" onClose={() => setManaging(false)}>
+          <Field label="Title">
+            <div className="composer">
+              <input value={name} onChange={(event) => setName(event.target.value)} />
+              <Button
+                variant="primary"
+                disabled={!name.trim() || name.trim() === title}
+                onClick={async () => {
+                  try {
+                    await api.tutorRename(conversationId, name);
+                    onRenamed();
+                    setManaging(false);
+                  } catch (cause) {
+                    setError(errorMessage(cause));
+                  }
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </Field>
+          <ConfirmButton
+            label="Delete conversation"
+            confirmLabel="Delete"
+            question="Delete this conversation? Programmes and songs the tutor made stay."
+            block
+            onConfirm={async () => {
+              await api.tutorDelete(conversationId);
+              onDeleted();
+            }}
+          />
+        </Sheet>
+      ) : null}
 
     </Screen>
   );

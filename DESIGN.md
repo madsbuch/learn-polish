@@ -71,7 +71,8 @@ Every screen is a `Screen`:
   with `Section` and `Stack` instead.
 - An input that must stay in reach (the tutor's message box) goes in
   `footer`: it is docked above the tab bar and player bar, never sticky or
-  floating.
+  floating. A screen with a footer docks its header too, so only the middle
+  scrolls and Back is always in reach.
 - Sheets (`Sheet`) are for short tasks that return to where you were: picking
   a playlist, a speaker, reading an explanation.
 

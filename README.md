@@ -93,6 +93,11 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | `suggest_practice` | Puts a *Practise now* button under its reply |
 | `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |
 
+You can keep **several conversations**: the Tutor tab lists them, newest
+first, each titled after its first question, and each with its own history —
+so a grammar question does not drag along last week's programme. Rename or
+delete one from its ⋯ menu; what the tutor made in the app stays.
+
 So *"Can you build me a programme for learning the colours?"* produces a
 programme you can start from a button under the reply. What the tutor did is
 stored with each message, so later turns know the ids of what it made.

@@ -437,6 +437,7 @@ pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
          DELETE FROM day_log;
          DELETE FROM achievements;
          DELETE FROM tutor_messages;
+         DELETE FROM tutor_conversations;
          DELETE FROM settings WHERE key IN ('lesson_index', 'focus_topic_id');",
     )?;
     Ok(())
