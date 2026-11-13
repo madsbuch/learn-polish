@@ -1343,3 +1343,50 @@ label.field > span {
   font-weight: 700;
   color: var(--brand-soft);
 }
+
+/* ------------------------------------------------------------------ info */
+
+.with-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.info-btn {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+  color: var(--text-faint);
+  border: 1.5px solid var(--line);
+  background: transparent;
+  padding: 0;
+}
+.info-btn:active {
+  transform: scale(0.92);
+}
+.hero .info-btn {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.info-sheet {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.info-body p,
+.info-body li {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+.info-body ul {
+  padding-left: 18px;
+  margin: 0 0 10px;
+}

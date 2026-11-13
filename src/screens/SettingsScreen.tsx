@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
+import { TitleWithInfo } from "../components/Info";
 import { Bar, Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { useThemePreference, type ThemePreference } from "../lib/theme";
@@ -134,7 +135,11 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>I am learning Polish from</h3>
+        <TitleWithInfo
+          title="I am learning Polish from"
+          infoTitle="Your language"
+          info={<p>Every word, sentence and conversation is translated into both English and Danish. Switching changes every translation in the app.</p>}
+        />
         <div className="segmented">
           <button
             data-active={settings.sourceLanguage === "en"}
@@ -149,9 +154,6 @@ export function SettingsScreen({
             🇩🇰 Dansk
           </button>
         </div>
-        <p className="tiny faint" style={{ marginTop: 10, marginBottom: 0 }}>
-          Every word, sentence and conversation is translated into both.
-        </p>
       </div>
 
       <div className="card">
@@ -225,12 +227,15 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>OpenRouter</h3>
-        <p className="small">
-          Powers the AI tutor, the songwriter and the Polish voice. Requests are made from the app's
-          Rust core, never from the web layer — so there is no CORS involved and your key
-          stays out of JavaScript.
-        </p>
+        <TitleWithInfo
+          title="OpenRouter"
+          info={
+            <>
+              <p>Powers the AI tutor, the songwriter and the Polish voice.</p>
+              <p>Get a key at openrouter.ai/keys. It is stored in the app's private database on this device, and requests are made from the app's core — the key never reaches the web layer.</p>
+            </>
+          }
+        />
 
         {settings.hasApiKey ? (
           <div className="row" style={{ marginBottom: 4 }}>
@@ -281,24 +286,28 @@ export function SettingsScreen({
             >
               {busy === "save-key" ? <Spinner /> : "Save key"}
             </button>
-            <p className="tiny faint" style={{ marginTop: 10, marginBottom: 0 }}>
-              Get one at openrouter.ai/keys. It is stored in the app's private database on
-              this device.
-            </p>
           </>
         )}
       </div>
 
       <div className="card">
-        <h3>AI models</h3>
+        <TitleWithInfo
+          title="AI models"
+          info={
+            <>
+              <p><b>Tutor</b> answers in the AI tutor and explains words and sentences.</p>
+              <p><b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.</p>
+              <p>Models come from OpenRouter's live catalogue, so nothing goes stale.</p>
+            </>
+          }
+        />
         {settings.aiModel ? (
           <p className="tiny faint" style={{ marginBottom: 10 }}>
             Using <b className="muted">{settings.aiModel}</b>
           </p>
         ) : (
           <Banner kind="info">
-            No model chosen yet. Load the catalogue and pick one — the tutor stays off
-            until you do.
+            Load the models and pick one.
           </Banner>
         )}
 
@@ -353,11 +362,16 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>Songs — Suno via kie.ai</h3>
-        <p className="small">
-          Suno sings the learning songs. Requests go from the app's Rust core straight to
-          kie.ai; finished songs are downloaded and kept on this device.
-        </p>
+        <TitleWithInfo
+          title="Songs — Suno via kie.ai"
+          infoTitle="Suno"
+          info={
+            <>
+              <p>Suno sings the learning songs, through your kie.ai account.</p>
+              <p>Requests go from the app's core straight to kie.ai. Finished songs are downloaded and kept on this device.</p>
+            </>
+          }
+        />
 
         {settings.hasKieKey ? (
           <div className="row" style={{ marginBottom: 12 }}>
@@ -429,12 +443,15 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>Polish voices</h3>
-        <p className="small">
-          Android's webview has no built-in speech engine, so the 🔊 buttons speak through
-          Gemini. Dialogue lines are read in a voice matching the speaker. Each line is
-          generated once and then stored on the device.
-        </p>
+        <TitleWithInfo
+          title="Polish voices"
+          info={
+            <>
+              <p>Android has no built-in Polish speech, so the 🔊 buttons speak through Gemini on OpenRouter.</p>
+              <p>Dialogue lines use the voice matching the speaker. Each line is generated once, then stored on the device.</p>
+            </>
+          }
+        />
 
         {(["f", "m"] as const).map((gender) => {
           const label = gender === "f" ? "Female voice" : "Male voice";
@@ -495,7 +512,10 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-          <h3>Downloaded audio</h3>
+          <TitleWithInfo
+            title="Downloaded audio"
+            info={<p>Stored lines replay instantly and for free, even offline. Downloading everything ahead of time means practice never waits on the network.</p>}
+          />
           {cache ? (
             <>
               <div className="row between small muted" style={{ marginBottom: 6 }}>
@@ -505,10 +525,7 @@ export function SettingsScreen({
                 <span>{megabytes(cache.bytes)}</span>
               </div>
               <Bar value={cache.sentencesCached} max={cache.sentencesTotal} tone="mint" />
-              <p className="tiny faint" style={{ marginTop: 8 }}>
-                {cache.clips} clips stored. Cached lines replay instantly and for free,
-                even offline.
-              </p>
+              <p className="tiny faint" style={{ marginTop: 8 }}>{cache.clips} clips</p>
             </>
           ) : null}
 
@@ -523,10 +540,7 @@ export function SettingsScreen({
           ) : null}
 
           <label className="field" style={{ marginTop: 12 }}>
-            <span>
-              Prefetch each session's audio in the background —{" "}
-              {settings.ttsPrefetch ? "on" : "off"}
-            </span>
+            <span>Prefetch session audio</span>
             <button
               className={`btn small ${settings.ttsPrefetch ? "success" : "ghost"}`}
               onClick={() => patch({ ttsPrefetch: !settings.ttsPrefetch }, "prefetch")}
@@ -573,11 +587,10 @@ export function SettingsScreen({
       </div>
 
       <div className="card">
-        <h3>Danger zone</h3>
-        <p className="small">
-          Clears every review, streak and achievement. The 2000 words, 200 sentences and 10
-          conversations stay.
-        </p>
+        <TitleWithInfo
+          title="Danger zone"
+          info={<p>Reset clears every review, streak and achievement. The words, sentences, conversations and your songs stay.</p>}
+        />
         {confirmReset ? (
           <div className="row">
             <button

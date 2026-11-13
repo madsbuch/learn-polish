@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { CastPicker } from "../components/CastPicker";
 import { PlayerIcon } from "../components/icons";
+import { Info, TitleWithInfo } from "../components/Info";
 import { Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { sectionLabel, sectionsToText, textToSections } from "../lib/lyrics";
@@ -95,7 +96,23 @@ export function Songs({
   return (
     <div className="scroll">
       <div className="row between" style={{ marginBottom: 4 }}>
-        <h1 style={{ marginBottom: 0 }}>Songs</h1>
+        <TitleWithInfo
+          as="h1"
+          title="Songs"
+          info={
+            <>
+              <p>
+                Short lines in English, then straight into Polish — and a Polish chorus that
+                gets stuck in your head. Play them on repeat.
+              </p>
+              <p>
+                Make one with <b>+ New song</b>: pick a theme and a chorus sentence, the
+                songwriter drafts the lyrics, and Suno sings two takes. Both are kept on this
+                device.
+              </p>
+            </>
+          }
+        />
         <button
           className="btn primary small"
           onClick={() => setComposing(true)}
@@ -104,20 +121,16 @@ export function Songs({
           + New song
         </button>
       </div>
-      <p className="small">
-        Short lines in English, then straight into Polish — and a Polish chorus that gets
-        stuck in your head. Play them on repeat.
-      </p>
 
       {error ? <Banner kind="error">{error}</Banner> : null}
 
       {!ready ? (
         <Banner kind="info">
           {!settings.hasKieKey && !settings.hasApiKey
-            ? "Add a kie.ai key (for Suno) and an OpenRouter key (for the songwriter) in Settings to make songs."
+            ? "Needs kie.ai and OpenRouter keys."
             : !settings.hasKieKey
-              ? "Add your kie.ai key in Settings — Suno sings the songs through it."
-              : "Add your OpenRouter key in Settings — the songwriter needs it."}{" "}
+              ? "Needs a kie.ai key."
+              : "Needs an OpenRouter key."}{" "}
           <button className="link" onClick={onOpenSettings}>
             Open Settings
           </button>
@@ -171,11 +184,7 @@ export function Songs({
       ) : songs.length === 0 ? (
         <div className="card center">
           <div style={{ fontSize: 40 }}>🎵</div>
-          <h3>No songs yet</h3>
-          <p className="small" style={{ marginBottom: 0 }}>
-            Make your first one: pick a theme and a chorus sentence, let the songwriter draft
-            the lyrics, and Suno sings it. Each song comes in two takes.
-          </p>
+          <h3 style={{ marginBottom: 0 }}>No songs yet</h3>
         </div>
       ) : (
         <div className="card flush">
@@ -354,7 +363,7 @@ function SongRow({
           <span className="tr">„{song.chorusPl}”</span>
           <span className="tiny faint" style={{ display: "block", marginTop: 3 }}>
             {song.status === "generating"
-              ? "Suno is singing it — usually 2–4 minutes…"
+              ? "Suno is singing…"
               : song.status === "failed"
                 ? "Could not be made"
                 : `${song.tracks.length} take${song.tracks.length === 1 ? "" : "s"} · played ${plays}×`}
@@ -546,7 +555,7 @@ function Composer({
 
       {!songwriter ? (
         <Banner kind="info">
-          Pick a songwriter model (or a tutor model) in Settings first.
+          Pick a songwriter model in Settings.
         </Banner>
       ) : null}
 
@@ -658,10 +667,16 @@ function Composer({
               "✍️ Write the lyrics"
             )}
           </button>
-          <p className="tiny faint center" style={{ marginTop: 8 }}>
-            Written by {songwriter || "—"} through OpenRouter. Nothing is sent to Suno until
-            you approve the lyrics.
-          </p>
+          <div className="row tiny faint" style={{ justifyContent: "center", gap: 6, marginTop: 8 }}>
+            {songwriter || "—"}
+            <Info title="The songwriter">
+              <p>
+                An AI model on OpenRouter ({songwriter || "none chosen"}) writes the lyrics
+                from your words, leaning on the ones you keep forgetting.
+              </p>
+              <p>Nothing is sent to Suno until you approve the lyrics.</p>
+            </Info>
+          </div>
         </>
       ) : (
         <>
@@ -697,7 +712,16 @@ function Composer({
               />
             </label>
             <label className="field" style={{ marginBottom: 4 }}>
-              <span>Lyrics — English | Polish. Verses sing both; the chorus sings the Polish.</span>
+              <span className="with-info">
+                Lyrics
+                <Info title="Editing lyrics">
+                  <p>One phrase per line: <b>English | Polish</b>.</p>
+                  <p>
+                    Verses sing the English, then the Polish. The chorus sings only the
+                    Polish. Section names go in brackets, like <b>[Chorus]</b>.
+                  </p>
+                </Info>
+              </span>
               <textarea
                 className="lyrics-editor"
                 rows={16}
@@ -753,10 +777,19 @@ function Composer({
               Start over
             </button>
           </div>
-          <p className="tiny faint center" style={{ marginTop: 8 }}>
-            Uses kie.ai credits. Suno sings two takes; both are downloaded to this device
-            so they keep playing after kie.ai deletes its copy.
-          </p>
+          <div className="row tiny faint" style={{ justifyContent: "center", gap: 6, marginTop: 8 }}>
+            Uses kie.ai credits
+            <Info title="Making the song">
+              <p>
+                Suno sings two takes, usually in 2–4 minutes. You can leave the screen
+                meanwhile.
+              </p>
+              <p>
+                Both takes are downloaded to this device, so they keep playing after kie.ai
+                deletes its copy (after 14 days).
+              </p>
+            </Info>
+          </div>
         </>
       )}
     </div>

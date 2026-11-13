@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { castTo, discoverSpeakers, type QueueItem } from "../lib/player";
 import type { CastDevice } from "../lib/types";
+import { Info } from "./Info";
 import { Banner, Spinner } from "./ui";
 import { errorMessage } from "../lib/api";
 
@@ -44,15 +45,23 @@ export function CastPicker({
     <div className="sheet-backdrop fade-in" onClick={onClose}>
       <div className="sheet" onClick={(event) => event.stopPropagation()}>
         <div className="row between" style={{ marginBottom: 6 }}>
-          <h2 style={{ margin: 0 }}>Play on a speaker</h2>
+          <h2 className="with-info" style={{ margin: 0 }}>
+            Play on a speaker
+            <Info title="Sonos">
+              <p>
+                Sonos rooms and groups on this Wi-Fi. The songs stream from this phone, so
+                keep it on the same network while they play.
+              </p>
+              <p>
+                Not listed? Type a speaker's IP address — it is in the Sonos app under
+                Settings → System → About My System.
+              </p>
+            </Info>
+          </h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
-        <p className="small">
-          Sonos speakers on this Wi-Fi. The songs stream from this phone, so keep it on the
-          same network.
-        </p>
 
         {error ? <Banner kind="error">{error}</Banner> : null}
 
@@ -63,9 +72,7 @@ export function CastPicker({
             </div>
           ) : devices.length === 0 ? (
             <p className="small" style={{ padding: 16, margin: 0 }}>
-              No Sonos found. Check that the phone is on the same Wi-Fi as the speakers, or
-              type a speaker's IP address below (Sonos app → Settings → System → About My
-              System).
+              No speakers found. Try an IP address below.
             </p>
           ) : (
             devices.map((device) => (

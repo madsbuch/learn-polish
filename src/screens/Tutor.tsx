@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TitleWithInfo } from "../components/Info";
 
 import { Markdown } from "../components/Markdown";
 import { Banner, Spinner } from "../components/ui";
@@ -83,25 +84,23 @@ export function Tutor({
   if (!hasApiKey || !hasModel) {
     return (
       <div className="scroll">
-        <h1>AI tutor</h1>
-        <p>
-          {hasApiKey
-            ? "Your key is saved — now pick a model in Settings and the tutor is ready."
-            : "Add an OpenRouter API key and this becomes a Polish conversation partner that knows exactly which words you are working on."}
-        </p>
-        <div className="card">
-          <h3>What you get</h3>
-          <ul className="muted small" style={{ paddingLeft: 18, lineHeight: 1.7 }}>
-            <li>Free conversation in Polish, on today's topic</li>
-            <li>Gentle corrections of what you write</li>
-            <li>Grammar explanations for any word or sentence</li>
-            <li>Extra drills built from the words you keep forgetting</li>
-          </ul>
-          <p className="tiny faint">
-            Every request is made from the app's Rust core, so your key never touches the
-            web layer and there are no cross-origin calls.
-          </p>
-        </div>
+        <TitleWithInfo
+          as="h1"
+          title="AI tutor"
+          info={
+            <>
+              <p>A Polish conversation partner that knows which words you are working on:</p>
+              <ul>
+                <li>Free conversation in Polish, on today's topic</li>
+                <li>Gentle corrections of what you write</li>
+                <li>Grammar explanations for any word or sentence</li>
+                <li>Extra drills built from the words you keep forgetting</li>
+              </ul>
+              <p>It runs on your own OpenRouter key, which never leaves the app's core.</p>
+            </>
+          }
+        />
+        <p>{hasApiKey ? "Pick a model to start." : "Needs an OpenRouter key."}</p>
         <button className="btn primary block" onClick={onOpenSettings}>
           {hasApiKey ? "Choose a model in Settings" : "Add API key in Settings"}
         </button>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { TitleWithInfo } from "../components/Info";
 import { Banner, Loading, SpeakButton } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import type { CataloguePage, TopicProgress } from "../lib/types";
@@ -50,11 +51,11 @@ export function Library({
 
   return (
     <div className="scroll">
-      <h1>Library</h1>
-      <p className="small">
-        Every word, sentence and conversation in the app — whether or not you have met it
-        yet.
-      </p>
+      <TitleWithInfo
+        as="h1"
+        title="Library"
+        info={<p>Every word, sentence and conversation in the app — whether or not you have met it yet.</p>}
+      />
 
       {error ? <Banner kind="error">{error}</Banner> : null}
 
