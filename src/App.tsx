@@ -178,7 +178,7 @@ export default function App() {
     [prefetchAudio],
   );
 
-  /** Opens a topic or programme by id (the tutor's buttons). */
+  /** Opens a course by id (the tutor's buttons). */
   const openTopicById = useCallback(async (topicId: number) => {
     try {
       const fresh = await api.getTopicProgress();
@@ -269,6 +269,7 @@ export default function App() {
             setOverlay(overlay.back);
             void reloadAll();
           }}
+          onChanged={() => void reloadAll()}
         />
       </div>
     );

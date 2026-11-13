@@ -69,10 +69,13 @@ pub struct Block {
     pub summary: String,
     /// "low" | "medium" | "high"
     pub complexity: String,
+    /// The course it is filed under. Every block has one; the column is only
+    /// nullable because of how the table was first created.
     pub topic_id: Option<i64>,
-    /// The topic or programme it belongs to, for display.
+    /// The course's title, for display.
     pub topic_title: Option<String>,
-    /// "course" | "builtin" | "tutor"
+    /// Who made it: "starter" (came with the app) | "tutor" | "you".
+    /// Informational only — every block can be edited and deleted.
     pub origin: String,
     pub period_days: i64,
     pub interval_days: i64,
@@ -110,8 +113,6 @@ pub struct Overview {
     pub today: i64,
     pub due: Vec<Block>,
     pub next: Vec<Block>,
-    /// Built-in and tutor-made study blocks without a topic.
-    pub lessons: Vec<Block>,
     /// Blocks done today.
     pub done_today: i64,
 }
@@ -193,6 +194,10 @@ pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
     })
 }
 
+/// How courses are listed everywhere: the newest first (the starter courses
+/// are dated 0), then in their course order.
+pub const COURSE_ORDER: &str = "t.created_at DESC, t.ord, t.id";
+
 pub fn for_topic(conn: &Connection, topic_id: i64) -> Result<Vec<Block>> {
     query(conn, "WHERE b.topic_id = ?1 ORDER BY b.ord, b.id", [topic_id])
 }
@@ -207,42 +212,33 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
         [today],
     )?;
 
+    // The next couple of blocks from each of the first few courses with
+    // something left to start, in the order the course list shows them: the
+    // newest courses first (the tutor just made them for a reason).
     let mut next = Vec::new();
-    // The newest programmes first: the tutor just made them for a reason.
-    let programmes: Vec<i64> = {
-        let mut stmt = conn.prepare(
-            "SELECT id FROM topics WHERE kind = 'programme' ORDER BY created_at DESC LIMIT 3",
-        )?;
+    let courses: Vec<i64> = {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT t.id FROM topics t
+             WHERE EXISTS (SELECT 1 FROM blocks b WHERE b.topic_id = t.id AND b.due_day IS NULL)
+             ORDER BY {COURSE_ORDER} LIMIT 3"
+        ))?;
         let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
         ids
     };
-    for topic in programmes {
+    for course in courses {
         next.extend(query(
             conn,
             "WHERE b.topic_id = ?1 AND b.due_day IS NULL ORDER BY b.ord, b.id LIMIT 2",
-            [topic],
+            [course],
         )?);
     }
-    // Then the course, in order: the first topic with something left to start.
-    next.extend(query(
-        conn,
-        "JOIN topics c ON c.id = b.topic_id
-         WHERE c.kind = 'course' AND b.due_day IS NULL
-         ORDER BY c.ord, b.ord LIMIT 3",
-        [],
-    )?);
 
-    let lessons = query(
-        conn,
-        "WHERE b.kind = 'study' AND b.topic_id IS NULL ORDER BY b.ord, b.id",
-        [],
-    )?;
     let done_today: i64 = conn.query_row(
         "SELECT COUNT(*) FROM blocks WHERE last_day = ?1",
         [today],
         |r| r.get(0),
     )?;
-    Ok(Overview { today, due, next, lessons, done_today })
+    Ok(Overview { today, due, next, done_today })
 }
 
 // ---------------------------------------------------------------------------
@@ -327,8 +323,8 @@ pub struct NewStudy {
     pub objectives: Vec<String>,
     #[serde(default)]
     pub period_days: Option<i64>,
-    /// A programme to file it under; None files it with the lessons.
-    #[serde(default)]
+    /// The course to file it under; None files it in the "Lessons" course.
+    #[serde(default, alias = "course_id")]
     pub topic_id: Option<i64>,
 }
 
@@ -347,13 +343,20 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
         .period_days
         .unwrap_or_else(|| default_period("study", &input.complexity))
         .clamp(1, 60);
-    let ord = next_ord(conn, input.topic_id)?;
+    let topic_id = match input.topic_id {
+        Some(id) => {
+            crate::courses::require_course(conn, id)?;
+            id
+        }
+        None => crate::courses::lessons_course(conn)?,
+    };
+    let ord = next_ord(conn, Some(topic_id))?;
     conn.execute(
         "INSERT INTO blocks (kind, format, topic_id, ord, title, summary, complexity, lesson,
              objectives, period_days, origin, created_at)
          VALUES ('study', '', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
-            input.topic_id,
+            topic_id,
             ord,
             title,
             clean(&input.summary),
@@ -395,11 +398,12 @@ pub fn create_listening(
         Some(focus) => format!("Listen to the song a couple of times. Pay attention to: {focus}"),
         None => "Listen to the song a couple of times, then check in. Try it without the lyrics first.".into(),
     };
-    let ord = next_ord(conn, None)?;
+    let topic_id = crate::courses::listening_course(conn)?;
+    let ord = next_ord(conn, Some(topic_id))?;
     conn.execute(
         "INSERT INTO blocks (kind, format, topic_id, ord, title, summary, complexity, lesson,
              objectives, period_days, origin, created_at, song_id)
-         VALUES ('study', 'song', NULL, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         VALUES ('study', 'song', ?11, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
             ord,
             format!("Listen: {title}"),
@@ -410,7 +414,8 @@ pub fn create_listening(
             default_period("study", complexity),
             origin,
             db::now_secs(),
-            song_id
+            song_id,
+            topic_id
         ],
     )?;
     load(conn, conn.last_insert_rowid())
@@ -510,23 +515,12 @@ pub struct BlockChanges {
 }
 
 pub fn update(conn: &Connection, id: i64, changes: BlockChanges) -> Result<Block> {
-    let block = load(conn, id)?;
-    let editable_content = block.origin == "tutor";
+    load(conn, id)?;
     if let Some(period) = changes.period_days {
         conn.execute(
             "UPDATE blocks SET period_days = ?2 WHERE id = ?1",
             rusqlite::params![id, period.clamp(1, 60)],
         )?;
-    }
-    let touches_content = changes.title.is_some()
-        || changes.summary.is_some()
-        || changes.complexity.is_some()
-        || changes.lesson.is_some()
-        || changes.objectives.is_some();
-    if touches_content && !editable_content {
-        return Err(Error::msg(
-            "Built-in blocks can only have their check-in period changed. Make a new block instead.",
-        ));
     }
     if let Some(title) = changes.title.map(|t| clean(&t)).filter(|t| !t.is_empty()) {
         conn.execute("UPDATE blocks SET title = ?2 WHERE id = ?1", rusqlite::params![id, title])?;
@@ -551,12 +545,10 @@ pub fn update(conn: &Connection, id: i64, changes: BlockChanges) -> Result<Block
     load(conn, id)
 }
 
-/// Deletes a block the tutor or learner made. Course and built-in blocks stay.
+/// Deletes a block with its check-in history. Its words and sentences stay
+/// in the course.
 pub fn delete(conn: &Connection, id: i64) -> Result<String> {
     let block = load(conn, id)?;
-    if block.origin == "course" || block.origin == "builtin" {
-        return Err(Error::msg("Built-in blocks cannot be deleted."));
-    }
     conn.execute("DELETE FROM blocks WHERE id = ?1", [id])?;
     Ok(block.title)
 }
@@ -571,6 +563,11 @@ fn ids(conn: &Connection, sql: &str, topic_id: i64) -> Result<Vec<(i64, String)>
         .query_map([topic_id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// The slug prefix of the drills a course is cut into.
+pub fn split_prefix(topic_id: i64) -> String {
+    format!("topic/{topic_id}")
 }
 
 /// Cuts a topic into small drills: its dialogue, its words in eights, and its
@@ -660,26 +657,8 @@ pub fn split_topic(conn: &Connection, topic_id: i64, prefix: &str, origin: &str)
     Ok(made)
 }
 
-/// Schedules a word drill the learner already worked through before blocks
-/// existed, so their history carries over instead of everything being new.
-pub fn adopt_history(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "UPDATE blocks SET
-             reps = 1, last_result = 'pass', interval_days = period_days,
-             due_day = (SELECT MIN(r.due_day) FROM block_items i JOIN reviews r
-                        ON r.kind = i.kind AND r.item_id = i.item_id WHERE i.block_id = blocks.id)
-         WHERE kind = 'drill' AND due_day IS NULL
-           AND EXISTS (SELECT 1 FROM block_items i WHERE i.block_id = blocks.id)
-           AND NOT EXISTS (
-               SELECT 1 FROM block_items i WHERE i.block_id = blocks.id
-                 AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.kind = i.kind AND r.item_id = i.item_id))",
-        [],
-    )?;
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
-// Built-in lessons
+// Starter lessons
 // ---------------------------------------------------------------------------
 
 pub struct LessonFile {
@@ -735,7 +714,8 @@ pub fn parse_lesson(text: &str) -> Result<LessonFile> {
     Ok(lesson)
 }
 
-/// Adds or refreshes the built-in lessons, keeping their schedules.
+/// Writes the starter lessons, on a fresh install (filed in a course by
+/// `db::unify_courses`).
 pub fn seed_lessons(conn: &Connection) -> Result<()> {
     for (ord, text) in crate::content::LESSONS.iter().enumerate() {
         let lesson = parse_lesson(text)?;
@@ -743,7 +723,7 @@ pub fn seed_lessons(conn: &Connection) -> Result<()> {
         conn.execute(
             "INSERT INTO blocks (slug, kind, format, topic_id, ord, title, summary, complexity, lesson,
                  objectives, period_days, origin, created_at)
-             VALUES (?1, 'study', '', NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'builtin', ?9)
+             VALUES (?1, 'study', '', NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'starter', ?9)
              ON CONFLICT(slug) DO UPDATE SET
                  ord = excluded.ord, title = excluded.title, summary = excluded.summary,
                  complexity = excluded.complexity, lesson = excluded.lesson,

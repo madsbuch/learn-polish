@@ -520,7 +520,7 @@ where
             model,
             messages,
             temperature: 0.4,
-            // Room for a whole programme's worth of tool arguments.
+            // Room for a whole course's worth of tool arguments.
             max_tokens: if tools.is_some() { 8000 } else { 1200 },
             stream: true,
             tools,
@@ -868,7 +868,7 @@ mod tests {
     fn sse_assembles_tool_calls_from_fragments() {
         let mut parser = SseParser::default();
         let mut items = parser.push(
-            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"create_programme\",\"arguments\":\"\"}}]}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"create_course\",\"arguments\":\"\"}}]}}]}\n",
         );
         items.extend(parser.push(
             "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"title\\\":\"}}]}}]}\n",
@@ -886,7 +886,7 @@ mod tests {
         let calls = calls.finish();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].id, "call_1");
-        assert_eq!(calls[0].function.name, "create_programme");
+        assert_eq!(calls[0].function.name, "create_course");
         assert_eq!(calls[0].function.arguments, "{\"title\":\"Colours\"}");
     }
 

@@ -10,7 +10,7 @@ use crate::costs;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
-use crate::programmes;
+use crate::courses;
 use crate::session;
 use crate::songs;
 use crate::srs;
@@ -961,12 +961,25 @@ pub async fn ai_explain_stream(
 }
 
 // ---------------------------------------------------------------------------
-// Programmes and the daily focus
+// Courses
 // ---------------------------------------------------------------------------
 
+/// Deletes a course with all its blocks, words and practice history.
 #[tauri::command]
-pub async fn programme_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
-    programmes::delete(&db.lock(), topic_id).map(|_| ())
+pub async fn course_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
+    courses::delete(&db.lock(), topic_id).map(|_| ())
+}
+
+/// Renames a course or changes its summary.
+#[tauri::command]
+pub async fn course_rename(
+    db: State<'_, Db>,
+    topic_id: i64,
+    title: String,
+    title_pl: String,
+    summary: String,
+) -> Result<()> {
+    courses::rename(&db.lock(), topic_id, Some(&title), Some(&title_pl), Some(&summary)).map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -988,7 +1001,7 @@ fn civil_date(days: i64) -> (i64, i64, i64) {
     (year, month, day)
 }
 
-/// Writes a consistent copy of the whole database — progress, programmes,
+/// Writes a consistent copy of the whole database — progress, courses,
 /// tutor conversation, settings, cached audio and songs — to a file the
 /// learner picks. API keys are left out unless asked for. Returns where it
 /// went, or `None` if the learner cancelled the dialog.

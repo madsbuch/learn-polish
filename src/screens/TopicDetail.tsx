@@ -5,13 +5,16 @@ import { BlockRow } from "../components/BlockRow";
 import { SpeakButton } from "../components/ui";
 import {
   Banner,
+  Button,
   ConfirmButton,
+  Field,
   List,
   ListEmpty,
   ListItem,
   Screen,
   Section,
   Segmented,
+  Sheet,
   Spinner,
   Stack,
   Text,
@@ -28,6 +31,7 @@ export function TopicDetail({
   onBack,
   onOpenBlock,
   onDeleted,
+  onChanged,
 }: {
   progress: TopicProgress;
   /** Which tab to land on. */
@@ -36,6 +40,8 @@ export function TopicDetail({
   onBack: () => void;
   onOpenBlock: (block: Block) => void;
   onDeleted: () => void;
+  /** The course was renamed; reload the lists that show it. */
+  onChanged: () => void;
 }) {
   const [blocks, setBlocks] = useState<Block[] | null>(null);
   const [tab, setTab] = useState<TopicSection>(initialSection ?? "conversation");
@@ -45,14 +51,24 @@ export function TopicDetail({
   const [query, setQuery] = useState("");
   const [revealAll, setRevealAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [names, setNames] = useState({
+    title: progress.topic.title,
+    titlePl: progress.topic.titlePl,
+    summary: progress.topic.summary,
+  });
+  const [renaming, setRenaming] = useState<typeof names | null>(null);
 
   const topicId = progress.topic.id;
-  const programme = progress.topic.kind === "programme";
 
-  // Programmes may have no dialogue; then there is no conversation tab.
+  // A course may have no dialogue, words or sentences (a course of lessons):
+  // the browser shows what there is, and nothing when there is nothing.
+  const hasLines = lines === null || lines.length > 0;
+  const hasWords = words === null || words.length > 0;
+  const hasSentences = sentences === null || sentences.length > 0;
   useEffect(() => {
-    if (lines && lines.length === 0 && tab === "conversation") setTab("words");
-  }, [lines, tab]);
+    if (tab === "conversation" && !hasLines) setTab(hasWords ? "words" : "sentences");
+    if (tab === "words" && !hasWords) setTab(hasSentences ? "sentences" : "conversation");
+  }, [tab, hasLines, hasWords, hasSentences]);
 
   async function act(action: () => Promise<void>) {
     setError(null);
@@ -94,8 +110,13 @@ export function TopicDetail({
   }, [words, query]);
 
   return (
-    <Screen title={progress.topic.titlePl} subtitle={progress.topic.title} onBack={onBack} nav={false}>
+    <Screen title={names.titlePl} subtitle={names.title} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {names.summary ? (
+        <Text variant="small" tone="dim" as="p">
+          {names.summary}
+        </Text>
+      ) : null}
 
       <Section title={blocks ? `${blocks.length} blocks` : "Blocks"}>
         {blocks ? (
@@ -109,28 +130,24 @@ export function TopicDetail({
         )}
       </Section>
 
+      {hasLines || hasWords || hasSentences ? (
       <Section title="Browse">
       <Stack gap={4}>
         <Segmented
           value={tab}
           onChange={setTab}
           options={[
-            ...(lines === null || lines.length > 0
-              ? [{ value: "conversation" as const, label: "Conversation" }]
+            ...(hasLines ? [{ value: "conversation" as const, label: "Conversation" }] : []),
+            ...(hasWords
+              ? [{ value: "words" as const, label: `Words ${progress.seenWords}/${progress.totalWords}` }]
               : []),
-            { value: "words" as const, label: `Words ${progress.seenWords}/${progress.totalWords}` },
-            { value: "sentences" as const, label: "Sentences" },
+            ...(hasSentences ? [{ value: "sentences" as const, label: "Sentences" }] : []),
           ]}
         />
 
         {tab === "conversation" ? (
           lines ? (
             <Stack gap={4}>
-              {progress.topic.summary ? (
-                <Text variant="small" tone="dim" as="p">
-                  {progress.topic.summary}
-                </Text>
-              ) : null}
               <DialogueToolbar
                 lines={lines}
                 revealAll={revealAll}
@@ -188,24 +205,73 @@ export function TopicDetail({
           )
         ) : null}
       </Stack>
-
       </Section>
+      ) : null}
 
-      {programme ? (
-        <Section title="Manage">
+      <Section title="Manage">
+        <Stack gap={2}>
+          <Button block onClick={() => setRenaming(names)}>
+            Rename
+          </Button>
           <ConfirmButton
-            label="Delete programme"
+            label="Delete course"
             confirmLabel="Delete"
-            question="Delete this programme, its words and your progress on them?"
+            question="Delete this course, all its blocks, its words and your progress on them?"
             block
             onConfirm={() =>
               act(async () => {
-                await api.programmeDelete(topicId);
+                await api.courseDelete(topicId);
                 onDeleted();
               })
             }
           />
-        </Section>
+        </Stack>
+      </Section>
+
+      {renaming ? (
+        <Sheet title="Rename course" onClose={() => setRenaming(null)}>
+          <Stack gap={4}>
+            <Field label="Title in Polish">
+              <input
+                value={renaming.titlePl}
+                onChange={(event) => setRenaming({ ...renaming, titlePl: event.target.value })}
+              />
+            </Field>
+            <Field label="Title in English">
+              <input
+                value={renaming.title}
+                onChange={(event) => setRenaming({ ...renaming, title: event.target.value })}
+              />
+            </Field>
+            <Field label="What it is about">
+              <textarea
+                rows={2}
+                value={renaming.summary}
+                onChange={(event) => setRenaming({ ...renaming, summary: event.target.value })}
+              />
+            </Field>
+            <Button
+              variant="primary"
+              size="lg"
+              block
+              disabled={!renaming.title.trim() || !renaming.titlePl.trim()}
+              onClick={() =>
+                act(async () => {
+                  await api.courseRename(topicId, renaming.title, renaming.titlePl, renaming.summary);
+                  setNames({
+                    title: renaming.title.trim(),
+                    titlePl: renaming.titlePl.trim(),
+                    summary: renaming.summary.trim(),
+                  });
+                  setRenaming(null);
+                  onChanged();
+                })
+              }
+            >
+              Save
+            </Button>
+          </Stack>
+        </Sheet>
       ) : null}
     </Screen>
   );

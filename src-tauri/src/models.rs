@@ -6,8 +6,8 @@ pub struct Topic {
     pub id: i64,
     pub ord: i64,
     pub slug: String,
-    /// "course" for the built-in topics, "programme" for ones the learner or
-    /// the tutor made.
+    /// Always "course" now (older databases told built-in topics from
+    /// "programme"s; they were merged).
     pub kind: String,
     pub title_pl: String,
     /// The English title.
@@ -158,6 +158,9 @@ pub struct TopicProgress {
     pub mastered_words: i64,
     pub total_sentences: i64,
     pub seen_sentences: i64,
+    pub total_blocks: i64,
+    /// Blocks done at least once.
+    pub started_blocks: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -241,13 +244,13 @@ pub struct Conversation {
 }
 
 /// Something the tutor did in the app, shown under its reply (and, for a
-/// programme, with a button to start practising it).
+/// course, with a button to open it).
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TutorAction {
-    /// programmeCreated | programmeUpdated | programmeDeleted | focusSet |
-    /// focusCleared | settingsChanged | practiceSuggested | songStarted |
-    /// songsDeleted
+    /// courseCreated | courseUpdated | courseDeleted | settingsChanged |
+    /// songStarted | songsDeleted | block… | memory. Older messages may hold
+    /// programmeCreated / programmeUpdated / programmeDeleted.
     pub kind: String,
     /// One line for the learner, e.g. "Created “Colours” — 24 words".
     pub label: String,

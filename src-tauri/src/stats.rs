@@ -235,11 +235,10 @@ pub fn collect(conn: &Connection) -> Result<Stats> {
 }
 
 pub fn topic_progress(conn: &Connection) -> Result<Vec<TopicProgress>> {
-    // The course first, in order, then programmes newest first.
-    let mut stmt = conn.prepare(
-        "SELECT id FROM topics
-         ORDER BY kind = 'programme', CASE WHEN kind = 'course' THEN ord ELSE -created_at END, id DESC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT t.id FROM topics t ORDER BY {}",
+        crate::blocks::COURSE_ORDER
+    ))?;
     let ids: Vec<i64> = stmt
         .query_map([], |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -270,6 +269,8 @@ pub fn topic_progress(conn: &Connection) -> Result<Vec<TopicProgress>> {
                     "SELECT COUNT(*) FROM sentences s JOIN reviews r
                      ON r.kind = 'sentence' AND r.item_id = s.id WHERE s.topic_id = ?1",
                 )?,
+                total_blocks: one("SELECT COUNT(*) FROM blocks WHERE topic_id = ?1")?,
+                started_blocks: one("SELECT COUNT(*) FROM blocks WHERE topic_id = ?1 AND due_day IS NOT NULL")?,
             })
         })
         .collect()

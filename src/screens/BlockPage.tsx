@@ -81,7 +81,7 @@ export function BlockPage({
       );
 
   return (
-    <Screen title={block.title} subtitle={block.topicTitle ?? (block.songId !== null ? "Listening" : "Study")} onBack={onBack} nav={false}>
+    <Screen title={block.title} subtitle={block.topicTitle ?? undefined} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
 
       <Stack gap={3}>
@@ -214,24 +214,22 @@ export function BlockPage({
         </List>
       </Section>
 
-      {block.origin === "tutor" ? (
-        <Section title="Manage">
-          <ConfirmButton
-            label="Delete block"
-            confirmLabel="Delete"
-            question="Delete this block and its check-in history?"
-            block
-            onConfirm={async () => {
-              try {
-                await api.blockDelete(block.id);
-                onDeleted();
-              } catch (cause) {
-                setError(errorMessage(cause));
-              }
-            }}
-          />
-        </Section>
-      ) : null}
+      <Section title="Manage">
+        <ConfirmButton
+          label="Delete block"
+          confirmLabel="Delete"
+          question="Delete this block and its check-in history? Its words stay in the course."
+          block
+          onConfirm={async () => {
+            try {
+              await api.blockDelete(block.id);
+              onDeleted();
+            } catch (cause) {
+              setError(errorMessage(cause));
+            }
+          }}
+        />
+      </Section>
     </Screen>
   );
 }

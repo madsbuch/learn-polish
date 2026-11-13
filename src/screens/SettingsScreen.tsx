@@ -303,7 +303,7 @@ export function SettingsScreen({
           <>
             <p>
               <b>Tutor</b> answers in the Tutor tab and explains words and sentences. To build
-              programmes and songs it needs a model that can use tools — those are marked 🛠.
+              courses, lessons and songs it needs a model that can use tools — those are marked 🛠.
             </p>
             <p>
               <b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.
@@ -360,7 +360,7 @@ export function SettingsScreen({
         </List>
         {settings.aiModel && chatModels?.some((model) => model.id === settings.aiModel && !model.tools) ? (
           <Banner tone="error">
-            This model can't use tools, so the tutor won't be able to build programmes or songs
+            This model can't use tools, so the tutor won't be able to build courses or songs
             with it. Pick one marked 🛠.
           </Banner>
         ) : null}
@@ -639,7 +639,7 @@ export function SettingsScreen({
         title="Your data"
         info={
           <p>
-            Everything the app keeps — progress, programmes, the tutor conversation, settings,
+            Everything the app keeps — progress, courses, the tutor conversations, settings,
             downloaded audio and your songs — lives in one SQLite database on this device. Export
             saves a copy wherever you choose; it opens in any SQLite tool.
           </p>
@@ -671,7 +671,7 @@ export function SettingsScreen({
         <ConfirmButton
           label="Reset progress"
           confirmLabel="Erase progress"
-          question="Erase every review, streak and achievement, the daily focus and the tutor conversation? Words, programmes and songs stay."
+          question="Erase every review, streak and achievement, the daily focus and the tutor conversation? Courses, memories and songs stay."
           block
           onConfirm={() =>
             run("reset", async () => {

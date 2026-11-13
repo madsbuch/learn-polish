@@ -1,9 +1,10 @@
-//! Programmes: practice topics made by the learner, through the tutor.
+//! Courses: the folders blocks live in.
 //!
-//! A programme is stored as a topic of kind `programme`, with its own words,
-//! sentences and (optionally) a short dialogue. That is all the session
-//! builder, the scheduler, the library and the progress screen need, so a
-//! programme on colours is practised exactly like a course topic.
+//! A course is a topic with its own words, sentences and (optionally) a short
+//! dialogue, cut into small drill blocks, plus any study, drill and listening
+//! blocks filed under it. The starter courses a fresh install comes with and
+//! the ones the tutor makes are the same thing: every course can be extended,
+//! edited and deleted.
 
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ pub struct NewLine {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct NewProgramme {
+pub struct NewCourse {
     /// English title, e.g. "Colours".
     pub title: String,
     #[serde(default)]
@@ -55,9 +56,9 @@ pub struct NewProgramme {
     pub dialogue: Vec<NewLine>,
 }
 
-/// What a programme holds after a change, reported back to the tutor.
+/// What a course holds after a change, reported back to the tutor.
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct ProgrammeSummary {
+pub struct CourseSummary {
     pub topic_id: i64,
     pub title: String,
     pub words: i64,
@@ -101,39 +102,28 @@ fn normalize_pos(pos: &str) -> String {
     code.to_string()
 }
 
-fn require_programme(conn: &Connection, topic_id: i64) -> Result<String> {
-    let row: Option<(String, String)> = conn
-        .query_row(
-            "SELECT kind, title_en FROM topics WHERE id = ?1",
-            [topic_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?;
-    match row {
-        None => Err(Error::msg(format!("There is no topic with id {topic_id}."))),
-        Some((kind, _)) if kind != "programme" => Err(Error::msg(
-            "That is one of the built-in course topics, which cannot be changed. \
-             Create a programme instead.",
-        )),
-        Some((_, title)) => Ok(title),
-    }
+pub fn require_course(conn: &Connection, topic_id: i64) -> Result<String> {
+    conn.query_row("SELECT title_en FROM topics WHERE id = ?1", [topic_id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| Error::msg(format!("There is no course with id {topic_id}.")))
 }
 
-pub fn create(conn: &Connection, input: NewProgramme) -> Result<ProgrammeSummary> {
+/// The position after the last course.
+fn next_ord(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT COALESCE(MAX(ord), 0) + 1 FROM topics", [], |r| r.get(0))?)
+}
+
+pub fn create(conn: &Connection, input: NewCourse) -> Result<CourseSummary> {
     let title = clean(&input.title);
     if title.is_empty() {
-        return Err(Error::msg("A programme needs a title."));
+        return Err(Error::msg("A course needs a title."));
     }
     if input.words.is_empty() && input.sentences.is_empty() {
-        return Err(Error::msg("A programme needs at least one word or sentence."));
+        return Err(Error::msg("A course needs at least one word or sentence."));
     }
 
     let tx = conn.unchecked_transaction()?;
-    let ord: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(ord), 0) + 1 FROM topics WHERE kind = 'programme'",
-        [],
-        |r| r.get(0),
-    )?;
+    let ord = next_ord(&tx)?;
     let now = db::now_secs();
     let title_pl = match clean(&input.title_pl) {
         empty if empty.is_empty() => title.clone(),
@@ -141,9 +131,9 @@ pub fn create(conn: &Connection, input: NewProgramme) -> Result<ProgrammeSummary
     };
     tx.execute(
         "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en, created_at)
-         VALUES (?1, ?2, 'programme', ?3, ?4, ?5, ?6)",
+         VALUES (?1, ?2, 'course', ?3, ?4, ?5, ?6)",
         rusqlite::params![
-            format!("programme-{now}-{ord}"),
+            format!("course-{now}-{ord}"),
             ord,
             title_pl,
             title,
@@ -153,64 +143,88 @@ pub fn create(conn: &Connection, input: NewProgramme) -> Result<ProgrammeSummary
     )?;
     let topic_id = tx.last_insert_rowid();
     let skipped = insert_items(&tx, topic_id, &input.words, &input.sentences, &input.dialogue)?;
-    crate::blocks::split_topic(&tx, topic_id, &format!("programme/{topic_id}"), "tutor")?;
+    crate::blocks::split_topic(&tx, topic_id, &crate::blocks::split_prefix(topic_id), "tutor")?;
     tx.commit()?;
     summary(conn, topic_id, skipped)
 }
 
-/// A programme with nothing in it yet, for drills the tutor fills itself.
-pub fn create_empty(conn: &Connection, title: &str, summary: &str) -> Result<i64> {
-    let title = clean(title);
-    if title.is_empty() {
-        return Err(Error::msg("A programme needs a title."));
+/// The course with this slug, made (empty) if it does not exist yet. For the
+/// courses blocks are filed in when nobody chose one.
+pub fn ensure(conn: &Connection, slug: &str, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
+    if let Some(id) = conn
+        .query_row("SELECT id FROM topics WHERE slug = ?1", [slug], |r| r.get(0))
+        .optional()?
+    {
+        return Ok(id);
     }
-    let ord: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(ord), 0) + 1 FROM topics WHERE kind = 'programme'",
-        [],
-        |r| r.get(0),
-    )?;
-    let now = db::now_secs();
+    let ord = next_ord(conn)?;
     conn.execute(
         "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en, created_at)
-         VALUES (?1, ?2, 'programme', ?3, ?3, ?4, ?5)",
-        rusqlite::params![format!("programme-{now}-{ord}"), ord, title, clean(summary), now],
+         VALUES (?1, ?2, 'course', ?3, ?4, ?5, ?6)",
+        rusqlite::params![slug, ord, title_pl, title, summary, db::now_secs()],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
-/// Puts words and sentences into a programme without cutting them into
+/// Where a lesson goes when no course was chosen.
+pub fn lessons_course(conn: &Connection) -> Result<i64> {
+    ensure(conn, "lessons", "Lessons", "Lekcje", "Lessons on grammar, verbs and culture.")
+}
+
+/// Where listening blocks for songs go.
+pub fn listening_course(conn: &Connection) -> Result<i64> {
+    ensure(conn, "listening", "Listening", "Słuchanie", "Listen to your songs and answer questions about them.")
+}
+
+/// A course with nothing in it yet, for drills the tutor fills itself.
+pub fn create_empty(conn: &Connection, title: &str, summary: &str) -> Result<i64> {
+    let title = clean(title);
+    if title.is_empty() {
+        return Err(Error::msg("A course needs a title."));
+    }
+    let ord = next_ord(conn)?;
+    let now = db::now_secs();
+    conn.execute(
+        "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en, created_at)
+         VALUES (?1, ?2, 'course', ?3, ?3, ?4, ?5)",
+        rusqlite::params![format!("course-{now}-{ord}"), ord, title, clean(summary), now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Puts words and sentences into a course without cutting them into
 /// drills — for a drill block that will hold them itself.
 pub fn add_items(conn: &Connection, topic_id: i64, words: &[NewWord], sentences: &[NewSentence]) -> Result<()> {
-    require_programme(conn, topic_id)?;
+    require_course(conn, topic_id)?;
     insert_items(conn, topic_id, words, sentences, &[])?;
     Ok(())
 }
 
-/// Adds words, sentences or dialogue lines to an existing programme.
+/// Adds words, sentences or dialogue lines to an existing course.
 pub fn extend(
     conn: &Connection,
     topic_id: i64,
     words: &[NewWord],
     sentences: &[NewSentence],
     dialogue: &[NewLine],
-) -> Result<ProgrammeSummary> {
-    require_programme(conn, topic_id)?;
+) -> Result<CourseSummary> {
+    require_course(conn, topic_id)?;
     let tx = conn.unchecked_transaction()?;
     let skipped = insert_items(&tx, topic_id, words, sentences, dialogue)?;
-    crate::blocks::split_topic(&tx, topic_id, &format!("programme/{topic_id}"), "tutor")?;
+    crate::blocks::split_topic(&tx, topic_id, &crate::blocks::split_prefix(topic_id), "tutor")?;
     tx.commit()?;
     summary(conn, topic_id, skipped)
 }
 
-/// Removes words or sentences (matched on their Polish text) from a programme,
+/// Removes words or sentences (matched on their Polish text) from a course,
 /// along with their review history.
 pub fn remove_items(
     conn: &Connection,
     topic_id: i64,
     words: &[String],
     sentences: &[String],
-) -> Result<ProgrammeSummary> {
-    require_programme(conn, topic_id)?;
+) -> Result<CourseSummary> {
+    require_course(conn, topic_id)?;
     let tx = conn.unchecked_transaction()?;
     for (table, kind, items) in [("words", "word", words), ("sentences", "sentence", sentences)] {
         for pl in items {
@@ -234,13 +248,13 @@ pub fn remove_items(
             }
         }
     }
-    crate::blocks::split_topic(&tx, topic_id, &format!("programme/{topic_id}"), "tutor")?;
+    crate::blocks::split_topic(&tx, topic_id, &crate::blocks::split_prefix(topic_id), "tutor")?;
     tx.commit()?;
     summary(conn, topic_id, 0)
 }
 
-pub fn rename(conn: &Connection, topic_id: i64, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<ProgrammeSummary> {
-    require_programme(conn, topic_id)?;
+pub fn rename(conn: &Connection, topic_id: i64, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<CourseSummary> {
+    require_course(conn, topic_id)?;
     if let Some(title) = title.map(clean).filter(|t| !t.is_empty()) {
         conn.execute("UPDATE topics SET title_en = ?2 WHERE id = ?1", rusqlite::params![topic_id, title])?;
     }
@@ -253,10 +267,10 @@ pub fn rename(conn: &Connection, topic_id: i64, title: Option<&str>, title_pl: O
     summary(conn, topic_id, 0)
 }
 
-/// Deletes a programme with everything in it, including review history.
+/// Deletes a course with everything in it, including review history.
 /// Returns its title.
 pub fn delete(conn: &Connection, topic_id: i64) -> Result<String> {
-    let title = require_programme(conn, topic_id)?;
+    let title = require_course(conn, topic_id)?;
     let tx = conn.unchecked_transaction()?;
     tx.execute(
         "DELETE FROM reviews WHERE kind = 'word'
@@ -353,9 +367,9 @@ fn insert_items(
     Ok(skipped)
 }
 
-fn summary(conn: &Connection, topic_id: i64, skipped: i64) -> Result<ProgrammeSummary> {
+fn summary(conn: &Connection, topic_id: i64, skipped: i64) -> Result<CourseSummary> {
     let one = |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, [topic_id], |r| r.get(0))?) };
-    Ok(ProgrammeSummary {
+    Ok(CourseSummary {
         topic_id,
         title: conn.query_row("SELECT title_en FROM topics WHERE id = ?1", [topic_id], |r| r.get(0))?,
         words: one("SELECT COUNT(*) FROM words WHERE topic_id = ?1")?,

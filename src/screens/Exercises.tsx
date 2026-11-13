@@ -34,8 +34,8 @@ function estimate(blocks: Block[]): number {
 }
 
 /**
- * Everything to practise: what is due for a check-in, what to start next,
- * the study lessons, and the topics and programmes they come from.
+ * Everything to practise, top to bottom: today (what is due for a check-in),
+ * what to start next, and the courses every block lives in.
  */
 export function Exercises({
   overview,
@@ -56,11 +56,8 @@ export function Exercises({
   onOpenProgress: () => void;
   onOpenSearch: () => void;
 }) {
-  const course = topics.filter((entry) => entry.topic.kind === "course");
-  const programmes = topics.filter((entry) => entry.topic.kind === "programme");
   const goalPct = Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
   const upNext = overview.due[0] ?? overview.next[0] ?? null;
-  const lessonsToStart = overview.lessons.filter((lesson) => lesson.dueDay === null);
 
   return (
     <Screen
@@ -124,7 +121,10 @@ export function Exercises({
       </Hero>
 
       {overview.due.length > 0 ? (
-        <Section title="Due now">
+        <Section
+          title="Due now"
+          info={<p>Blocks you have done before whose check-in day has come. Clear these first.</p>}
+        >
           <List>
             {overview.due.map((block) => (
               <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
@@ -134,7 +134,15 @@ export function Exercises({
       ) : null}
 
       {overview.next.length > 0 ? (
-        <Section title="Start next">
+        <Section
+          title="Start next"
+          info={
+            <p>
+              The next blocks you have not started yet, from your newest courses first. They also
+              sit in their course below.
+            </p>
+          }
+        >
           <List>
             {overview.next.map((block) => (
               <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
@@ -142,20 +150,6 @@ export function Exercises({
           </List>
         </Section>
       ) : null}
-
-      <Section title="Study">
-        <List>
-          {(lessonsToStart.length > 0 ? lessonsToStart : overview.lessons).slice(0, 4).map((block) => (
-            <BlockRow key={block.id} block={block} today={overview.today} onOpen={onOpenBlock} />
-          ))}
-          <ListItem
-            leading={<Avatar>✨</Avatar>}
-            title="Ask the tutor for a lesson"
-            subtitle="Any conjugation, grammar point or bit of culture"
-            onClick={onOpenTutor}
-          />
-        </List>
-      </Section>
 
       <List>
         <ListItem
@@ -172,28 +166,43 @@ export function Exercises({
         />
       </List>
 
-      <Section title="Your programmes">
-        {programmes.length === 0 ? (
+      <Section
+        title="Courses"
+        info={
+          <p>
+            A course is a folder of blocks on one theme: drills on its words, sentences and
+            dialogue, and lessons with a check-in. Ask the tutor for a new course on anything, or to
+            add lessons and drills to one you have.
+          </p>
+        }
+      >
+        {topics.length === 0 ? (
           <List>
             <EmptyState
               icon="✨"
-              title="Make your own"
+              title="No courses yet"
               action={
                 <Button variant="primary" size="sm" onClick={onOpenTutor}>
                   Ask the tutor
                 </Button>
               }
             >
-              Ask the tutor for practice on anything — “colours”, “numbers”, “at the airport”.
+              Ask the tutor for a course on anything — “colours”, “numbers”, “at the airport”.
             </EmptyState>
           </List>
         ) : (
-          <TopicList entries={programmes} onOpen={onOpenTopic} />
+          <Stack gap={3}>
+            <TopicList entries={topics} onOpen={onOpenTopic} />
+            <List>
+              <ListItem
+                leading={<Avatar>✨</Avatar>}
+                title="New course or lesson"
+                subtitle="Ask the tutor for anything — a theme, a conjugation, a grammar point"
+                onClick={onOpenTutor}
+              />
+            </List>
+          </Stack>
         )}
-      </Section>
-
-      <Section title="Course">
-        <TopicList entries={course} onOpen={onOpenTopic} />
       </Section>
     </Screen>
   );

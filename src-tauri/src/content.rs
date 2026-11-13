@@ -34,7 +34,7 @@ pub const TOPICS: &[TopicFiles] = &[
     topic!("leisure", "10-leisure"),
 ];
 
-/// The built-in study lessons, in the order they are offered.
+/// The starter lessons, written once on a fresh install.
 pub const LESSONS: &[&str] = &[
     include_str!("../content/lessons/01-byc.md"),
     include_str!("../content/lessons/02-miec.md"),

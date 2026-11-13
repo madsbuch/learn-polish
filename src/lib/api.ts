@@ -103,7 +103,9 @@ export const api = {
   tutorRename: (conversationId: number, title: string) =>
     invoke<void>("tutor_rename", { conversationId, title }),
   tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
-  programmeDelete: (topicId: number) => invoke<void>("programme_delete", { topicId }),
+  courseDelete: (topicId: number) => invoke<void>("course_delete", { topicId }),
+  courseRename: (topicId: number, title: string, titlePl: string, summary: string) =>
+    invoke<void>("course_rename", { topicId, title, titlePl, summary }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */
   exportDatabase: (includeKeys: boolean) =>
     invoke<string | null>("export_database", { includeKeys }),

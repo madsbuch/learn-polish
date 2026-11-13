@@ -4,8 +4,8 @@ export interface Topic {
   id: number;
   ord: number;
   slug: string;
-  /** "course" for the ten built-in topics, "programme" for ones made with the tutor. */
-  kind: "course" | "programme";
+  /** Always "course": every topic is a course, a folder of blocks. */
+  kind: string;
   titlePl: string;
   title: string;
   summary: string;
@@ -137,7 +137,8 @@ export interface Block {
   complexity: Complexity;
   topicId: number | null;
   topicTitle: string | null;
-  origin: "course" | "builtin" | "tutor";
+  /** Who made it; informational — every block can be edited and deleted. */
+  origin: "starter" | "tutor" | "you";
   periodDays: number;
   intervalDays: number;
   /** Day number; null until done once. */
@@ -162,7 +163,6 @@ export interface BlockOverview {
   today: number;
   due: Block[];
   next: Block[];
-  lessons: Block[];
   doneToday: number;
 }
 
@@ -217,6 +217,9 @@ export interface TopicProgress {
   masteredWords: number;
   totalSentences: number;
   seenSentences: number;
+  totalBlocks: number;
+  /** Blocks done at least once. */
+  startedBlocks: number;
 }
 
 export interface Stats {
@@ -298,6 +301,10 @@ export interface SessionResult {
 
 export interface TutorAction {
   kind:
+    | "courseCreated"
+    | "courseUpdated"
+    | "courseDeleted"
+    // Older conversations, from before programmes became courses.
     | "programmeCreated"
     | "programmeUpdated"
     | "programmeDeleted"

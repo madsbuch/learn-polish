@@ -4,13 +4,13 @@ mod cast;
 mod commands;
 mod content;
 mod costs;
+mod courses;
 mod db;
 mod error;
 mod examiner;
 mod memories;
 mod models;
 mod playlists;
-mod programmes;
 mod session;
 mod songs;
 mod srs;
@@ -79,7 +79,8 @@ pub fn run() {
             tutor::tutor_history,
             tutor::tutor_rename,
             tutor::tutor_delete,
-            commands::programme_delete,
+            commands::course_delete,
+            commands::course_rename,
             commands::export_database,
             commands::costs_summary,
             memories::commands::memories_overview,
@@ -142,6 +143,15 @@ mod integration {
         db::open(&path).expect("reopen")
     }
 
+    fn grammar_course(conn: &Connection) -> i64 {
+        conn.query_row("SELECT id FROM topics WHERE slug = 'grammar-essentials'", [], |r| r.get(0))
+            .expect("the starter lessons have a course")
+    }
+
+    fn starter_lesson(conn: &Connection) -> blocks::Block {
+        blocks::for_topic(conn, grammar_course(conn)).unwrap().remove(0)
+    }
+
     fn scratch_db(name: &str) -> Connection {
         let path = std::env::temp_dir()
             .join("learn-polish-tests")
@@ -157,14 +167,18 @@ mod integration {
     fn a_fresh_install_seeds_the_whole_curriculum() {
         let conn = scratch_db("seed");
         let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-        assert_eq!(count("SELECT COUNT(*) FROM topics"), 10);
+        // Ten topics and the course holding the grammar lessons.
+        assert_eq!(count("SELECT COUNT(*) FROM topics"), 11);
         assert!(count("SELECT COUNT(*) FROM words") >= 2000);
         assert_eq!(count("SELECT COUNT(*) FROM sentences"), 200);
         assert!(count("SELECT COUNT(*) FROM conversation_lines") >= 100);
 
-        // Opening again must not duplicate anything.
+        // Opening again must not duplicate anything — and a starter course the
+        // learner deleted stays deleted: it is theirs now, never seeded again.
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        crate::courses::delete(&conn, basics).unwrap();
         drop(conn);
-        let conn = scratch_db("seed");
+        let conn = scratch_db_keep("seed");
         assert_eq!(
             conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM topics", [], |r| r.get(0))
                 .unwrap(),
@@ -213,12 +227,66 @@ mod integration {
             }
         }
 
-        // The built-in lessons are there, as study blocks without a topic.
+        // The starter lessons are there, as study blocks in their own course.
+        let lessons = blocks::for_topic(&conn, grammar_course(&conn)).unwrap();
+        assert!(lessons.len() >= 7);
+        assert!(lessons.iter().all(|b| b.kind == "study" && b.origin == "starter"));
         let overview = blocks::overview(&conn).unwrap();
-        assert!(overview.lessons.len() >= 7);
-        assert!(overview.lessons.iter().all(|b| b.kind == "study"));
         assert!(overview.due.is_empty(), "nothing is due on a fresh install");
         assert_eq!(overview.next[0].topic_id, Some(basics), "the course starts at the beginning");
+    }
+
+    #[test]
+    fn an_older_install_becomes_plain_courses() {
+        let conn = scratch_db("unify");
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        // Put the database back in its old shape: a programme, loose lessons,
+        // old drill slugs and origins, and a content version instead of the
+        // starter flag.
+        conn.execute_batch(&format!(
+            "INSERT INTO topics (id, slug, ord, kind, title_pl, title_en, summary_en, created_at)
+                 VALUES (900, 'programme-1-1', 1, 'programme', 'Kolory', 'Colours', '', 50);
+             INSERT INTO words (topic_id, ord, pl, en, pos) VALUES (900, 0, 'czerwony', 'red', 'adj');
+             INSERT INTO blocks (slug, kind, format, topic_id, ord, title, complexity, period_days, origin, created_at)
+                 VALUES ('programme/900/words-1', 'drill', 'words', 900, 1, 'Words 1', 'low', 2, 'tutor', 50);
+             INSERT INTO blocks (kind, topic_id, ord, title, complexity, lesson, period_days, origin, created_at)
+                 VALUES ('study', NULL, 1, 'Iść', 'low', 'idę', 5, 'tutor', 60);
+             UPDATE blocks SET topic_id = NULL, origin = 'builtin' WHERE slug LIKE 'lesson/%';
+             UPDATE blocks SET slug = 'course/' || (SELECT slug FROM topics WHERE id = {basics})
+                                      || substr(slug, length('topic/{basics}') + 1),
+                               origin = 'course'
+                 WHERE topic_id = {basics};
+             UPDATE topics SET created_at = 0 WHERE slug = 'grammar-essentials';
+             DELETE FROM settings WHERE key = 'starter_seeded';
+             INSERT INTO settings (key, value) VALUES ('content_version', '4');"
+        ))
+        .unwrap();
+        let words_before = blocks::for_topic(&conn, basics).unwrap().len();
+        drop(conn);
+
+        let conn = scratch_db_keep("unify");
+        let kinds: Vec<String> = conn
+            .prepare("SELECT DISTINCT kind FROM topics").unwrap()
+            .query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(kinds, vec!["course"]);
+        let loose: i64 = conn.query_row("SELECT COUNT(*) FROM blocks WHERE topic_id IS NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(loose, 0, "every block is in a course");
+        assert!(blocks::for_topic(&conn, grammar_course(&conn)).unwrap().len() >= 7);
+        let origins: i64 = conn
+            .query_row("SELECT COUNT(*) FROM blocks WHERE origin IN ('course', 'builtin')", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(origins, 0);
+        assert_eq!(db::get_setting(&conn, "content_version").unwrap(), None);
+
+        // Old drill slugs now match their course, so cutting again does not duplicate them.
+        crate::blocks::split_topic(&conn, basics, &crate::blocks::split_prefix(basics), "starter").unwrap();
+        assert_eq!(blocks::for_topic(&conn, basics).unwrap().len(), words_before);
+        crate::blocks::split_topic(&conn, 900, &crate::blocks::split_prefix(900), "tutor").unwrap();
+        assert_eq!(blocks::for_topic(&conn, 900).unwrap().len(), 1);
+        let lesson: String = conn
+            .query_row("SELECT t.title_en FROM blocks b JOIN topics t ON t.id = b.topic_id WHERE b.title = 'Iść'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(lesson, "Lessons");
     }
 
     #[test]
@@ -265,7 +333,7 @@ mod integration {
     #[test]
     fn the_examiner_s_verdict_schedules_the_study_block() {
         let conn = scratch_db("examiner");
-        let lesson = blocks::overview(&conn).unwrap().lessons[0].clone();
+        let lesson = starter_lesson(&conn);
         conn.execute("INSERT INTO checkins (block_id, started_at) VALUES (?1, 0)", [lesson.id]).unwrap();
         let checkin = conn.last_insert_rowid();
         let (assessment, first) = examiner::record(
@@ -404,13 +472,13 @@ mod integration {
     }
 
     #[test]
-    fn the_tutor_builds_a_programme_that_can_be_practised() {
-        let conn = scratch_db("programme");
+    fn the_tutor_builds_a_course_that_can_be_practised() {
+        let conn = scratch_db("course");
 
-        // "Can you build me a programme for learning the colours?"
+        // "Can you build me a programme for learning the colours?" — a course.
         let result = tutor::run_tool_for_test(
             &conn,
-            "create_programme",
+            "create_course",
             serde_json::json!({
                 "title": "Colours",
                 "title_pl": "Kolory",
@@ -437,7 +505,7 @@ mod integration {
         let created = &result["created"];
         assert_eq!(created["words"], 4);
         assert_eq!(created["skipped_duplicates"], 1);
-        assert_eq!(result["_action"]["kind"], "programmeCreated");
+        assert_eq!(result["_action"]["kind"], "courseCreated");
         let topic_id = created["topic_id"].as_i64().unwrap();
 
         // It is cut into drills, and they are offered first.
@@ -446,23 +514,31 @@ mod integration {
         assert_eq!(formats, vec!["dialogue", "words", "sentences"]);
         assert_eq!(blocks::overview(&conn).unwrap().next[0].topic_id, Some(topic_id));
         let plan = session::build_block(&conn, list[1].id).unwrap();
-        assert_eq!(plan.topic.kind, "programme");
+        assert_eq!(plan.topic.kind, "course");
         assert_eq!(plan.new_words, 4);
 
         // Adding words re-cuts the drills without losing the existing ones.
         tutor::run_tool_for_test(
             &conn,
-            "add_to_programme",
-            serde_json::json!({ "topic_id": topic_id, "words": [{ "pl": "żółty", "en": "yellow", "pos": "adj" }] }),
+            "add_to_course",
+            serde_json::json!({ "course_id": topic_id, "words": [{ "pl": "żółty", "en": "yellow", "pos": "adj" }] }),
         );
         let words_block = blocks::load(&conn, list[1].id).unwrap();
         assert_eq!(words_block.items, 5);
 
-        // Course topics are read-only; programmes can be deleted with their blocks.
+        // Starter courses are ordinary courses: they can be extended too.
         let course = db::require_topic_id(&conn, 1).unwrap();
-        let refused = tutor::run_tool_for_test(&conn, "add_to_programme", serde_json::json!({ "topic_id": course, "words": [] }));
-        assert!(refused["error"].as_str().unwrap().contains("built-in"));
-        let deleted = tutor::run_tool_for_test(&conn, "delete_programme", serde_json::json!({ "topic_id": topic_id }));
+        let before = blocks::for_topic(&conn, course).unwrap().len();
+        let grown = tutor::run_tool_for_test(
+            &conn,
+            "add_to_course",
+            serde_json::json!({ "course_id": course, "words": [{ "pl": "sąsiedztwo", "en": "neighbourhood", "pos": "n-n" }] }),
+        );
+        assert!(grown.get("error").is_none(), "{grown}");
+        assert!(blocks::for_topic(&conn, course).unwrap().len() >= before);
+
+        // Any course can be deleted with its blocks.
+        let deleted = tutor::run_tool_for_test(&conn, "delete_course", serde_json::json!({ "course_id": topic_id }));
         assert_eq!(deleted["deleted"], "Colours");
         assert!(blocks::for_topic(&conn, topic_id).unwrap().is_empty());
     }
@@ -485,7 +561,8 @@ mod integration {
         let study_id = study["_action"]["blockId"].as_i64().unwrap();
         let block = blocks::load(&conn, study_id).unwrap();
         assert_eq!((block.kind.as_str(), block.complexity.as_str(), block.period_days), ("study", "low", 5));
-        assert!(blocks::overview(&conn).unwrap().lessons.iter().any(|b| b.id == study_id));
+        // Without a course it is filed in "Lessons".
+        assert_eq!(block.topic_title.as_deref(), Some("Lessons"));
 
         // A study block without objectives is refused: the examiner needs them.
         let refused = tutor::run_tool_for_test(
@@ -518,13 +595,13 @@ mod integration {
         let plan = session::build_block(&conn, drill_id).unwrap();
         assert!(plan.exercises.iter().all(|e| e.kind == "memory"));
 
-        // Built-in blocks keep their content; only the period may change.
-        let builtin = blocks::overview(&conn).unwrap().lessons[0].id;
-        let edit = tutor::run_tool_for_test(&conn, "update_block", serde_json::json!({ "block_id": builtin, "title": "Mine now" }));
-        assert!(edit["error"].is_string());
-        let period = tutor::run_tool_for_test(&conn, "update_block", serde_json::json!({ "block_id": builtin, "period_days": 3 }));
-        assert!(period.get("error").is_none(), "{period}");
-        assert!(tutor::run_tool_for_test(&conn, "delete_block", serde_json::json!({ "block_id": builtin }))["error"].is_string());
+        // Starter blocks are ordinary blocks: they can be edited and deleted.
+        let starter = starter_lesson(&conn).id;
+        let edit = tutor::run_tool_for_test(&conn, "update_block", serde_json::json!({ "block_id": starter, "title": "Mine now" }));
+        assert!(edit.get("error").is_none(), "{edit}");
+        assert_eq!(blocks::load(&conn, starter).unwrap().title, "Mine now");
+        let gone = tutor::run_tool_for_test(&conn, "delete_block", serde_json::json!({ "block_id": starter }));
+        assert_eq!(gone["_action"]["kind"], "blockDeleted");
 
         // Scheduling makes it due now.
         tutor::run_tool_for_test(&conn, "schedule_block", serde_json::json!({ "block_id": study_id }));
@@ -599,8 +676,8 @@ mod integration {
         assert!(blocks::detail(&conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
         // One per song: asking again returns the same block.
         assert_eq!(blocks::create_listening(&conn, 1, None, None, "tutor").unwrap().id, id);
-        // It is a lesson on the home screen, and goes when the song goes.
-        assert!(blocks::overview(&conn).unwrap().lessons.iter().any(|b| b.id == id));
+        // It is filed in the Listening course, and goes when the song goes.
+        assert_eq!(block.topic_title.as_deref(), Some("Listening"));
         songs::delete_song(&conn, 1).unwrap();
         assert!(blocks::load(&conn, id).is_err());
     }
@@ -634,8 +711,8 @@ mod integration {
         assert_eq!(progress["words_met"], 0);
         let found = tutor::run_tool_for_test(&conn, "search_vocabulary", serde_json::json!({ "query": "dzień dobry" }));
         assert!(!found["words"].as_array().unwrap().is_empty());
-        let topics = tutor::run_tool_for_test(&conn, "list_topics", serde_json::json!({}));
-        assert_eq!(topics.as_array().unwrap().len(), 10);
+        let topics = tutor::run_tool_for_test(&conn, "list_courses", serde_json::json!({}));
+        assert_eq!(topics.as_array().unwrap().len(), 11);
         let unknown = tutor::run_tool_for_test(&conn, "fly_to_the_moon", serde_json::json!({}));
         assert!(unknown["error"].is_string());
     }
@@ -691,7 +768,7 @@ mod integration {
         assert_eq!(db::get_setting(&conn, "source_language").unwrap(), None);
         // The rest of the curriculum seeds on top, without duplicating.
         let topics: i64 = conn.query_row("SELECT COUNT(*) FROM topics", [], |r| r.get(0)).unwrap();
-        assert_eq!(topics, 10);
+        assert_eq!(topics, 11);
         let basics_words: i64 = conn
             .query_row("SELECT COUNT(*) FROM words WHERE pl = 'cześć'", [], |r| r.get(0))
             .unwrap();

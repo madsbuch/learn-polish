@@ -36,9 +36,9 @@ pub fn open(path: &std::path::Path) -> Result<Connection> {
 const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = r#"
--- A topic is anything the learner can practise: one of the ten built-in
--- course topics (kind 'course'), or a programme the learner or the tutor made
--- (kind 'programme'). Both go through exactly the same session machinery.
+-- A topic is a course: a folder of blocks, with the words, sentences and
+-- dialogue its drills practise. `kind` is always 'course' now (it once told
+-- built-in topics from the learner's programmes).
 CREATE TABLE IF NOT EXISTS topics (
     id         INTEGER PRIMARY KEY,
     slug       TEXT    NOT NULL UNIQUE,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS topics (
     created_at INTEGER NOT NULL DEFAULT 0
 );
 
--- A headword is unique within a topic, not globally: a programme on colours
+-- A headword is unique within a topic, not globally: a course on colours
 -- may well repeat a word the course already teaches.
 CREATE TABLE IF NOT EXISTS words (
     id       INTEGER PRIMARY KEY,
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS audio_cache (
 -- and is checked by an examiner. Each has its own check-in schedule.
 CREATE TABLE IF NOT EXISTS blocks (
     id            INTEGER PRIMARY KEY,
-    slug          TEXT    UNIQUE,                -- built-in blocks; NULL for made ones
+    slug          TEXT    UNIQUE,                -- split drills: topic/<id>/…; NULL for made ones
     kind          TEXT    NOT NULL,              -- drill | study
     format        TEXT    NOT NULL DEFAULT '',   -- drills: words | memory | typing | sentences | gaps | dialogue
     topic_id      INTEGER REFERENCES topics(id) ON DELETE CASCADE,
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS blocks (
     last_day      INTEGER,
     last_result   TEXT,                          -- pass | partial | fail
     reps          INTEGER NOT NULL DEFAULT 0,
-    origin        TEXT    NOT NULL DEFAULT 'course', -- course | builtin | tutor
+    origin        TEXT    NOT NULL DEFAULT 'tutor', -- starter | tutor | you
     created_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS blocks_topic ON blocks(topic_id, ord);
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS checkin_messages (
 );
 
 -- Conversations with the tutor: each has its own history, so a question
--- about grammar does not drag along the context of last week's programme.
+-- about grammar does not drag along the context of last week's course.
 CREATE TABLE IF NOT EXISTS tutor_conversations (
     id         INTEGER PRIMARY KEY,
     title      TEXT    NOT NULL,
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS tutor_conversations (
 );
 
 -- The messages of a conversation with the tutor. `actions` is a JSON list of what the tutor
--- did in the app during that turn (programmes created, focus changed, …), so
+-- did in the app during that turn (courses created, blocks made, …), so
 -- the UI can offer buttons and later turns know what already happened.
 CREATE TABLE IF NOT EXISTS tutor_messages (
     id         INTEGER PRIMARY KEY,
@@ -448,24 +448,27 @@ fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) ->
     Ok(())
 }
 
-/// Content version. Bump this when the TSV/JSON files change so existing
-/// installs re-seed while keeping their review history (keyed by row id, which
-/// is stable because rows are upserted on their natural key).
-const CONTENT_VERSION: i64 = 4;
-
+/// The starter content (the ten topics and the lessons in `content/`) is
+/// written once. After that it is ordinary data: courses and blocks the
+/// learner and the tutor can change or delete, never seeded over again.
+///
+/// Installs from before this had the content as read-only built-ins: they are
+/// converted to courses first, and the starter content is then written over
+/// them by its natural keys (it could not have been changed), which keeps row
+/// ids and so review history.
 fn seed(conn: &Connection) -> Result<()> {
-    let seeded: Option<String> = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'content_version'",
-            [],
-            |r| r.get(0),
-        )
-        .optional()?;
-
-    if seeded.as_deref() == Some(&CONTENT_VERSION.to_string()) {
+    if get_setting(conn, "starter_seeded")?.is_some() {
         return Ok(());
     }
+    unify_courses(conn)?;
+    seed_starter(conn)?;
+    unify_courses(conn)?;
+    conn.execute("DELETE FROM settings WHERE key = 'content_version'", [])?;
+    set_setting(conn, "starter_seeded", "1")?;
+    Ok(())
+}
 
+fn seed_starter(conn: &Connection) -> Result<()> {
     for (index, topic) in content::TOPICS.iter().enumerate() {
         let convo: Conversation = serde_json::from_str(topic.conversation)?;
         if convo.slug != topic.slug {
@@ -474,22 +477,16 @@ fn seed(conn: &Connection) -> Result<()> {
                 topic.slug, convo.slug
             )));
         }
-        let ord = index as i64 + 1;
-
         conn.execute(
             "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en)
              VALUES (?1, ?2, 'course', ?3, ?4, ?5)
              ON CONFLICT(slug) DO UPDATE SET
                  ord = excluded.ord, kind = 'course', title_pl = excluded.title_pl,
                  title_en = excluded.title_en, summary_en = excluded.summary_en",
-            rusqlite::params![topic.slug, ord, convo.title_pl, convo.title_en, convo.summary_en],
+            rusqlite::params![topic.slug, index as i64 + 1, convo.title_pl, convo.title_en, convo.summary_en],
         )?;
-
-        let topic_id: i64 = conn.query_row(
-            "SELECT id FROM topics WHERE slug = ?1",
-            [topic.slug],
-            |r| r.get(0),
-        )?;
+        let topic_id: i64 =
+            conn.query_row("SELECT id FROM topics WHERE slug = ?1", [topic.slug], |r| r.get(0))?;
 
         for (i, w) in content::parse_words(topic.words).iter().enumerate() {
             conn.execute(
@@ -499,17 +496,14 @@ fn seed(conn: &Connection) -> Result<()> {
                 rusqlite::params![topic_id, i as i64, w.pl, w.en, w.pos],
             )?;
         }
-
         for (i, s) in content::parse_sentences(topic.sentences).iter().enumerate() {
             conn.execute(
                 "INSERT INTO sentences (topic_id, ord, pl, en) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(topic_id, pl) DO UPDATE SET
-                     ord = excluded.ord, en = excluded.en",
+                 ON CONFLICT(topic_id, pl) DO UPDATE SET ord = excluded.ord, en = excluded.en",
                 rusqlite::params![topic_id, i as i64, s.pl, s.en],
             )?;
         }
-
-        // Conversation lines have no natural key, so replace them wholesale.
+        // Conversation lines have no natural key, so they are replaced.
         conn.execute("DELETE FROM conversation_lines WHERE topic_id = ?1", [topic_id])?;
         for (i, line) in convo.lines.iter().enumerate() {
             let gender = convo.speakers.get(&line.speaker).ok_or_else(|| {
@@ -524,28 +518,83 @@ fn seed(conn: &Connection) -> Result<()> {
                 rusqlite::params![topic_id, i as i64, line.speaker, gender, line.pl, line.en],
             )?;
         }
-    }
-
-    // Cut every topic into small blocks, add the built-in lessons, and carry
-    // over what the learner already practised.
-    let topics: Vec<(i64, String, String)> = {
-        let mut stmt = conn.prepare("SELECT id, slug, kind FROM topics")?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-            .collect::<rusqlite::Result<_>>()?;
-        rows
-    };
-    for (id, slug, kind) in topics {
-        if kind == "course" {
-            crate::blocks::split_topic(conn, id, &format!("course/{slug}"), "course")?;
-        } else {
-            crate::blocks::split_topic(conn, id, &format!("programme/{id}"), "tutor")?;
-        }
+        crate::blocks::split_topic(conn, topic_id, &crate::blocks::split_prefix(topic_id), "starter")?;
     }
     crate::blocks::seed_lessons(conn)?;
-    crate::blocks::adopt_history(conn)?;
+    Ok(())
+}
 
-    set_setting(conn, "content_version", &CONTENT_VERSION.to_string())?;
+/// One kind of folder: every topic is a course, every block is in one.
+///
+/// Built-in topics and the learner's programmes both become plain courses
+/// (programmes after the starter ones, in the order they were made). Blocks
+/// without a topic are filed: the starter lessons in "Grammar essentials",
+/// listening blocks in "Listening", the tutor's lessons in "Lessons". Split
+/// drills get a slug prefix of their own course id, so cutting a course again
+/// later matches them. Safe to run twice.
+pub fn unify_courses(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Starter courses keep their order; former programmes follow.
+    let ids: Vec<i64> = {
+        let mut stmt = tx.prepare(
+            "SELECT id FROM topics ORDER BY kind = 'programme', ord, created_at, id",
+        )?;
+        let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        ids
+    };
+    for (i, id) in ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE topics SET ord = ?2, kind = 'course' WHERE id = ?1",
+            rusqlite::params![id, i as i64 + 1],
+        )?;
+    }
+
+    // Blocks without a course.
+    let loose = |filter: &str| -> Result<bool> {
+        Ok(tx.query_row(
+            &format!("SELECT EXISTS (SELECT 1 FROM blocks WHERE topic_id IS NULL AND {filter})"),
+            [],
+            |r| r.get(0),
+        )?)
+    };
+    if loose("slug LIKE 'lesson/%'")? {
+        let id = crate::courses::ensure(
+            &tx,
+            "grammar-essentials",
+            "Grammar essentials",
+            "Podstawy gramatyki",
+            "Być and mieć, verb patterns, gender, the cases, and when to say ty or Pan.",
+        )?;
+        // Dated like the other starter courses, so it sorts with them.
+        tx.execute("UPDATE topics SET created_at = 0 WHERE id = ?1", [id])?;
+        tx.execute(
+            "UPDATE blocks SET topic_id = ?1 WHERE topic_id IS NULL AND slug LIKE 'lesson/%'",
+            [id],
+        )?;
+    }
+    if loose("song_id IS NOT NULL")? {
+        let id = crate::courses::listening_course(&tx)?;
+        tx.execute("UPDATE blocks SET topic_id = ?1 WHERE topic_id IS NULL AND song_id IS NOT NULL", [id])?;
+    }
+    if loose("1")? {
+        let id = crate::courses::lessons_course(&tx)?;
+        tx.execute("UPDATE blocks SET topic_id = ?1 WHERE topic_id IS NULL", [id])?;
+    }
+
+    // Split drills: "course/<slug>/…" and "programme/<id>/…" become "topic/<id>/…".
+    tx.execute(
+        "UPDATE blocks SET slug = 'topic/' || topic_id || substr(slug, instr(substr(slug, 8), '/') + 7)
+         WHERE slug LIKE 'course/%/%'",
+        [],
+    )?;
+    tx.execute(
+        "UPDATE blocks SET slug = 'topic/' || topic_id || substr(slug, instr(substr(slug, 11), '/') + 10)
+         WHERE slug LIKE 'programme/%/%'",
+        [],
+    )?;
+    tx.execute("UPDATE blocks SET origin = 'starter' WHERE origin IN ('course', 'builtin')", [])?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -601,7 +650,7 @@ pub fn today(conn: &Connection) -> i64 {
 #[cfg(test)]
 pub fn require_topic_id(conn: &Connection, ord: i64) -> Result<i64> {
     conn.query_row(
-        "SELECT id FROM topics WHERE kind = 'course' AND ord = ?1",
+        "SELECT id FROM topics WHERE ord = ?1",
         [ord],
         |r| r.get(0),
     )

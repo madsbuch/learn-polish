@@ -23,9 +23,9 @@ import { api, errorMessage } from "../lib/api";
 import type { ChatMessage, Conversation, StreamEvent, TutorAction, TutorStatus } from "../lib/types";
 
 const STARTERS = [
-  "Build me a programme for learning the colours",
+  "Build me a course for learning the colours",
   "What should I practise today?",
-  "Make a programme from the words I keep getting wrong",
+  "Make a course from the words I keep getting wrong",
   "Make me a song about ordering coffee",
   "When do I use “ty” and when “pan” or “pani”?",
 ];
@@ -43,7 +43,7 @@ function when(seconds: number): string {
 }
 
 type Shared = {
-  /** Opens a topic or programme page. */
+  /** Opens a course page. */
   onOpenTopic: (topicId: number) => void;
   /** Opens a block's page. */
   onOpenBlock: (blockId: number) => void;
@@ -101,7 +101,7 @@ export function Tutor({
           }
         >
           The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can
-          build programmes and songs for you.
+          build courses, lessons and songs for you.
         </EmptyState>
       </Screen>
     );
@@ -267,8 +267,9 @@ function Chat({
 
   function ActionRow({ action }: { action: TutorAction }) {
     const { topicId, songId, blockId } = action;
-    const opensProgramme =
-      topicId !== null && (action.kind === "programmeCreated" || action.kind === "programmeUpdated");
+    const opensCourse =
+      topicId !== null &&
+      ["courseCreated", "courseUpdated", "programmeCreated", "programmeUpdated"].includes(action.kind);
     return (
       <div className="tutor-action">
         <Inline gap={2} align="top">
@@ -305,7 +306,7 @@ function Chat({
             </Button>
           </Inline>
         ) : null}
-        {opensProgramme ? (
+        {opensCourse ? (
           <Inline gap={2} wrap>
             <Button
               variant="primary"
@@ -313,7 +314,7 @@ function Chat({
               icon={<PlayerIcon.play size={14} />}
               onClick={() => onOpenTopic(topicId)}
             >
-              Open programme
+              Open course
             </Button>
           </Inline>
         ) : null}
@@ -427,7 +428,7 @@ function Chat({
           <ConfirmButton
             label="Delete conversation"
             confirmLabel="Delete"
-            question="Delete this conversation? Programmes and songs the tutor made stay."
+            question="Delete this conversation? Courses and songs the tutor made stay."
             block
             onConfirm={async () => {
               await api.tutorDelete(conversationId);
@@ -446,9 +447,9 @@ function TutorInfo() {
     <>
       <p>Your assistant for the app. It speaks English and can:</p>
       <ul>
-        <li>Build a practice programme on any theme — words, sentences and a dialogue</li>
-        <li>Add to, edit or delete your programmes</li>
-        <li>Make a programme your daily check-in</li>
+        <li>Build a course on any theme — words, sentences and a dialogue, cut into drills</li>
+        <li>Write lessons (a conjugation, a grammar point, culture) with a check-in</li>
+        <li>Add to, edit or delete any course or block</li>
         <li>Look at your progress and the words you find hardest</li>
         <li>Make learning songs, and tidy up the ones you don't want</li>
         <li>Explain grammar, words and phrases</li>

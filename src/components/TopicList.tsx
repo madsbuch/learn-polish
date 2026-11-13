@@ -1,7 +1,7 @@
 import { Avatar, List, ListItem, Progress, Stack } from "../design";
 import type { TopicProgress } from "../lib/types";
 
-/** Course topics and programmes, each with how much of it has been met. */
+/** Courses, each with how many of its blocks have been started. */
 export function TopicList({
   entries,
   onOpen,
@@ -15,17 +15,17 @@ export function TopicList({
         <ListItem
           key={entry.topic.id}
           leading={
-            <Avatar muted={entry.seenWords === 0}>
-              {entry.topic.kind === "course" ? entry.topic.ord : "✦"}
+            <Avatar muted={entry.startedBlocks === 0}>
+              {(entry.topic.titlePl || entry.topic.title).charAt(0).toUpperCase()}
             </Avatar>
           }
           title={entry.topic.title}
           subtitle={
             <Stack gap={2}>
               <span>
-                {entry.topic.titlePl} · {entry.seenWords}/{entry.totalWords} words
+                {entry.topic.titlePl} · {entry.startedBlocks}/{entry.totalBlocks} blocks started
               </span>
-              <Progress value={entry.seenWords} max={entry.totalWords} size="sm" />
+              <Progress value={entry.startedBlocks} max={entry.totalBlocks} size="sm" />
             </Stack>
           }
           onClick={() => onOpen(entry)}
