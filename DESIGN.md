@@ -69,6 +69,9 @@ Every screen is a `Screen`:
   cover the tab bar pass `nav={false}`.
 - The body spaces its children `--space-6` apart. Don't add margins; group
   with `Section` and `Stack` instead.
+- An input that must stay in reach (the tutor's message box) goes in
+  `footer`: it is docked above the tab bar and player bar, never sticky or
+  floating.
 - Sheets (`Sheet`) are for short tasks that return to where you were: picking
   a playlist, a speaker, reading an explanation.
 

@@ -199,6 +199,29 @@ export function Tutor({
     <Screen
       title="Tutor"
       info={<TutorInfo />}
+      footer={
+        <div className="composer">
+          <textarea
+            rows={1}
+            value={draft}
+            placeholder="Ask the tutor"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void send(draft);
+              }
+            }}
+          />
+          <IconButton
+            variant="primary"
+            icon={<SendIcon />}
+            label="Send"
+            disabled={sending || draft.trim().length === 0}
+            onClick={() => send(draft)}
+          />
+        </div>
+      }
       actions={
         messages.length > 0 ? (
           <Button
@@ -263,27 +286,6 @@ export function Tutor({
         <div ref={endRef} />
       </div>
 
-      <div className="composer composer-bar">
-        <textarea
-          rows={1}
-          value={draft}
-          placeholder="Ask the tutor"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void send(draft);
-            }
-          }}
-        />
-        <IconButton
-          variant="primary"
-          icon={<SendIcon />}
-          label="Send"
-          disabled={sending || draft.trim().length === 0}
-          onClick={() => send(draft)}
-        />
-      </div>
     </Screen>
   );
 }

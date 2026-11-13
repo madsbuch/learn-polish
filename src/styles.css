@@ -316,16 +316,6 @@
 .composer textarea {
   max-height: 120px;
 }
-/* The tutor's composer stays above the tab bar while the chat scrolls. */
-.composer-bar {
-  position: sticky;
-  bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-2));
-  padding: var(--space-2) 0;
-  background: var(--bg);
-}
-.app:has(.mini-player) .composer-bar {
-  bottom: calc(var(--nav-height) + var(--safe-bottom) + 76px);
-}
 
 .caret {
   display: inline-block;
@@ -611,6 +601,7 @@
   left: var(--space-2);
   right: var(--space-2);
   bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-2));
+  min-height: calc(var(--player-bar-space) - var(--space-3));
   display: flex;
   align-items: center;
   gap: var(--space-1);

@@ -46,6 +46,13 @@ What the app does:
 - A daily check-in: read a short dialogue, meet new words, review due words (spaced repetition), \
   build sentences, fill gaps in the dialogue. By default it walks through ten built-in course \
   topics in order.
+- A session mixes these formats on its own: reading the dialogue (when there is one), new-word \
+  cards, multiple choice both ways, typing the Polish, building a sentence from shuffled words, \
+  memory cards (turn cards over to pair each Polish word with its meaning), fill-the-gaps \
+  (sentences with a word missing, from a word bank), and gaps in the dialogue. The learner \
+  cannot pick formats per programme yet; if they ask for one (e.g. only memory cards), say so \
+  plainly, and point out that every session of a programme includes it. A programme made \
+  without a dialogue simply skips the dialogue parts.
 - Programmes: practice topics made through you, on any theme (colours, numbers, verbs of motion, \
   words for a trip…). A programme is practised exactly like a course topic — the learner can \
   start it from the button under your reply or from the Exercises tab, and it can be made the daily \

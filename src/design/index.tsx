@@ -123,6 +123,7 @@ export function Screen({
   actions,
   header,
   nav = true,
+  footer,
   children,
 }: {
   title?: ReactNode;
@@ -137,11 +138,16 @@ export function Screen({
   header?: ReactNode;
   /** False on screens that cover the tab bar. */
   nav?: boolean;
+  /**
+   * Docked below the scrolling content and above the tab bar and player bar,
+   * e.g. the tutor's message box. It never scrolls away or floats.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const pushed = Boolean(onBack || onClose);
-  return (
-    <div className="screen" data-nav={nav}>
+  const page = (
+    <div className="screen" data-nav={nav} data-footer={Boolean(footer)}>
       {header ?? (
         <header className="screen-header" data-pushed={pushed}>
           {onBack ? (
@@ -168,6 +174,15 @@ export function Screen({
       )}
       <div className="screen-body">{children}</div>
     </div>
+  );
+  if (!footer) return page;
+  return (
+    <>
+      {page}
+      <div className="screen-footer" data-nav={nav}>
+        {footer}
+      </div>
+    </>
   );
 }
 

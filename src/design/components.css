@@ -26,7 +26,28 @@
 }
 /* Room for the player bar, so it never hides the end of a page. */
 .app:has(.mini-player) .screen[data-nav="true"] {
-  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 96px);
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--player-bar-space) + var(--space-5));
+}
+/* With a docked footer, the footer takes the bottom; the page just ends. */
+.screen[data-footer="true"],
+.app:has(.mini-player) .screen[data-footer="true"] {
+  padding-bottom: var(--space-4);
+}
+/* A plain block in the app's column, so it sits exactly above whatever
+   overlays the bottom: the tab bar, and the player bar when it shows. */
+.screen-footer {
+  flex: none;
+  padding: var(--space-2) var(--gutter);
+  margin-bottom: calc(var(--nav-height) + var(--safe-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--line-soft);
+}
+.screen-footer[data-nav="false"] {
+  margin-bottom: 0;
+  padding-bottom: calc(var(--safe-bottom) + var(--space-2));
+}
+.app:has(.mini-player) .screen-footer[data-nav="true"] {
+  margin-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--player-bar-space));
 }
 
 .screen-header {
