@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::db;
+use crate::text::clean;
 use crate::error::{Error, Result};
 
 /// Words per word drill when a course's words are cut into drills: enough to
@@ -336,10 +337,6 @@ pub fn due_now(conn: &Connection, block_id: i64) -> Result<Block> {
 // Making and changing blocks
 // ---------------------------------------------------------------------------
 
-fn clean(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 fn check_complexity(complexity: &str) -> Result<()> {
     if COMPLEXITIES.contains(&complexity) {
         Ok(())
@@ -632,6 +629,53 @@ pub fn seed_lessons(conn: &Connection) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+pub mod commands {
+    use tauri::State;
+
+    use crate::db::Db;
+    use crate::error::Result;
+
+    #[tauri::command]
+    pub async fn blocks_overview(db: State<'_, Db>) -> Result<super::Overview> {
+        super::overview(&db.lock())
+    }
+
+    #[tauri::command]
+    pub async fn blocks_for_topic(db: State<'_, Db>, topic_id: i64) -> Result<Vec<super::Block>> {
+        super::for_topic(&db.lock(), topic_id)
+    }
+
+    #[tauri::command]
+    pub async fn block_detail(db: State<'_, Db>, block_id: i64) -> Result<super::BlockDetail> {
+        super::detail(&db.lock(), block_id)
+    }
+
+    /// The learner changes how often a block checks in.
+    #[tauri::command]
+    pub async fn block_set_period(db: State<'_, Db>, block_id: i64, period_days: i64) -> Result<super::Block> {
+        super::update(
+            &db.lock(),
+            block_id,
+            super::BlockChanges { period_days: Some(period_days), ..Default::default() },
+        )
+    }
+
+    /// The listening block for a song, made on first ask.
+    #[tauri::command]
+    pub async fn block_for_song(db: State<'_, Db>, song_id: i64) -> Result<super::Block> {
+        super::create_listening(&db.lock(), song_id, None, None, "tutor")
+    }
+
+    #[tauri::command]
+    pub async fn block_delete(db: State<'_, Db>, block_id: i64) -> Result<()> {
+        super::delete(&db.lock(), block_id).map(|_| ())
+    }
 }
 
 #[cfg(test)]

@@ -354,37 +354,59 @@ init` generates — CI copies it in and sets `adjustResize` — and turns the
 keyboard's height into bottom padding, so the page lays out above it.
 `src/lib/keyboard.ts` then hides the tab bar and player bar while you type.
 
-### Layout
+### Architecture
+
+The webview never touches the network or the database: every read, write and
+request is a Tauri command in Rust, and the UI is a typed layer over them
+(`src/lib/api.ts`). Rust is organised by part of the app, and **each module
+holds its own commands** next to the logic they call (in a `commands`
+submodule where the module is otherwise pure); `commands.rs` keeps only what
+belongs to the app as a whole.
 
 ```
-src/                       React UI
+src-tauri/src/
+  db.rs          schema, migrations (old databases are rebuilt in place, ids kept), starter content
+  courses.rs     courses: the folders blocks are listed in; cutting items into drills; moving blocks
+  blocks.rs      blocks: what they own, their check-in schedule, the home screen's lists
+  session.rs     a drill's exercises, by format
+  practice.rs    doing a block: checking answers, finishing a drill, the results
+  srs.rs         the per-item scheduler inside drills
+  stats.rs       XP, levels, streaks, achievements, per-course progress
+  agent.rs       the one AI loop: streaming, tool rounds, memory tools, costs
+  ai.rs          OpenRouter transport: chat (streamed, with tool calls) and speech
+  tutor.rs       the tutor's prompt and tools (each declared with its status line)
+  examiner.rs    the check-in interviewer and its verdict
+  memories.rs    long-term memory shared by the agents
+  costs.rs       the cost center
+  speech.rs      Polish read aloud, the voices, the audio cache
+  songs.rs       songwriter prompt, kie.ai/Suno generation, downloads, lyric timing
+  playlists.rs   playlists, and saving or sharing a take's MP3
+  cast.rs        Sonos/UPnP casting
+  http.rs        the HTTP clients (OpenRouter, downloads, home network)
+  text.rs        shared text helpers
+  commands.rs    app-level commands: settings, keys, browsing, explain, reset, export
+
+src/
   design/                  the design system: tokens, components (see DESIGN.md)
   lib/api.ts               typed wrappers over the Tauri commands
-  lib/useAiStream.ts       accumulates a streamed answer from Tauri events
-  components/Markdown.tsx  markdown to React elements, no HTML in between
-  screens/Session.tsx      the practice flow (ten exercise shapes)
-  components/SetExercises.tsx  memory cards and fill-the-gaps
-  screens/Exercises.tsx    the home tab: today, due, start next, courses
-  screens/Search.tsx       search every word and sentence
-  screens/Music.tsx        the music library: songs, playlists, a song's page
-  screens/Player.tsx       the full-screen player
-  screens/SongComposer.tsx the songwriter
-  src/playlists.rs         playlists, and saving or sharing a take's MP3
+  lib/useAiStream.ts       any streamed AI answer: text, tool status, errors, stale streams
+  lib/back.ts              Android's back button over in-app pages
   lib/player.ts            the app-wide music player and queue
-src-tauri/
-  content/                 the curriculum: TSV word lists, TSV sentences, JSON dialogues
-  src/db.rs                schema, migration and seeding
-  src/blocks.rs            blocks: storage, scheduling, cutting topics into drills
-  src/session.rs           a drill block's exercises, by format
-  src/examiner.rs          the agent that interviews the learner on a study block
-  src/srs.rs               the scheduler
-  src/stats.rs             XP, levels, streaks, achievements
-  src/ai.rs                OpenRouter chat (with streamed tool calls) + speech
-  src/tutor.rs             the tutor: prompt, tools and the agent loop
-  src/courses.rs           creating, changing and deleting courses
-  src/songs.rs             songwriter prompt, kie.ai/Suno generation and song downloads
-  src/commands.rs          the command surface, including the audio cache
+  screens/                 one file per screen (Exercises, BlockPage, Session, CheckIn, Tutor, Music…)
+  components/              pieces shared between screens (Markdown, SetExercises, MiniPlayer…)
 ```
+
+A few conventions keep it that way:
+
+- **Every AI feature goes through `agent::Agent`.** A new agent declares its
+  tools with `agent::tool(name, status line, description, schema)` and says
+  how to run a call; streaming, costs, memory and errors come with it.
+- **Words reach a course only through its blocks.** Query a course's items
+  through the `course_words`, `course_sentences` and `course_lines` views.
+- **"Topic" in the code is "course" in the app.** The table and ids kept the
+  old name (`topics`, `topic_id`); everything the learner sees says course.
+- **Pages with a way back use `Screen`'s `onBack`/`onClose` or a `Sheet`**, so
+  the system back button works without extra code.
 
 ## Navigation
 

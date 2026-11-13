@@ -148,6 +148,19 @@ pub fn summary(conn: &Connection, days: i64) -> Result<CostSummary> {
     Ok(CostSummary { today, days, today_usd, total_usd, all_time_usd, features, per_day })
 }
 
+pub mod commands {
+    use tauri::State;
+
+    use crate::db::Db;
+    use crate::error::Result;
+
+    /// What the AI features cost, per day and per feature, over the last `days`.
+    #[tauri::command]
+    pub async fn costs_summary(db: State<'_, Db>, days: i64) -> Result<super::CostSummary> {
+        super::summary(&db.lock(), days)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

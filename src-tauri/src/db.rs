@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS day_log (
     xp        INTEGER NOT NULL DEFAULT 0,
     answered  INTEGER NOT NULL DEFAULT 0,
     correct   INTEGER NOT NULL DEFAULT 0,
-    topic_id  INTEGER,
+    topic_id  INTEGER,                    -- unused: the old daily session's topic
     completed INTEGER NOT NULL DEFAULT 0
 );
 
@@ -692,7 +692,12 @@ fn seed(conn: &Connection) -> Result<()> {
     unify_courses(conn)?;
     seed_starter(conn)?;
     unify_courses(conn)?;
-    conn.execute("DELETE FROM settings WHERE key = 'content_version'", [])?;
+    // Settings of models the app no longer has: the content version (the
+    // starter content is no longer re-seeded) and the old daily session's place.
+    conn.execute(
+        "DELETE FROM settings WHERE key IN ('content_version', 'lesson_index', 'focus_topic_id')",
+        [],
+    )?;
     set_setting(conn, "starter_seeded", "1")?;
     Ok(())
 }

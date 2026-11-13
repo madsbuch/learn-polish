@@ -1,72 +1,23 @@
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
-use rusqlite::{Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, State};
+//! App-level commands: setup and settings, API keys and models, stats and
+//! browsing the catalogue, explanations, reset and export.
+//!
+//! Commands that belong to one part of the app live in that part's module
+//! (blocks, courses, practice, speech, songs, playlists, tutor, examiner,
+//! memories, costs, cast); this is what is left over.
 
+use rusqlite::Connection;
+use serde::Deserialize;
+use tauri::State;
+
+use crate::agent::{Agent, ToolFuture, ToolOutput};
 use crate::ai;
-use crate::blocks;
 use crate::costs;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
 use crate::models::*;
-use crate::courses;
 use crate::session;
 use crate::songs;
-use crate::srs;
 use crate::stats;
-
-// ---------------------------------------------------------------------------
-// Answer checking
-// ---------------------------------------------------------------------------
-
-/// Folds away everything a learner should not be penalised for: case,
-/// punctuation, doubled spaces and missing Polish diacritics. Typing "czesc"
-/// counts as "cześć" — the correct spelling is shown in the feedback anyway.
-fn normalize(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut last_was_space = true;
-    for ch in text.trim().chars() {
-        let folded = match ch.to_lowercase().next().unwrap_or(ch) {
-            'ą' => 'a',
-            'ć' => 'c',
-            'ę' => 'e',
-            'ł' => 'l',
-            'ń' => 'n',
-            'ó' => 'o',
-            'ś' => 's',
-            'ź' | 'ż' => 'z',
-            other => other,
-        };
-        if folded.is_whitespace() {
-            if !last_was_space {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else if folded.is_alphanumeric() {
-            out.push(folded);
-            last_was_space = false;
-        }
-        // Punctuation is dropped entirely.
-    }
-    out.trim_end().to_string()
-}
-
-fn answers_match(expected: &str, given: &str) -> bool {
-    let given = normalize(given);
-    if normalize(expected).is_empty() {
-        return true;
-    }
-    if normalize(expected) == given {
-        return true;
-    }
-    // Glosses often carry alternatives ("piece, bit"); any one of them will do.
-    // The split happens before normalising, which strips the separator.
-    expected
-        .split(',')
-        .map(normalize)
-        .any(|alternative| !alternative.is_empty() && alternative == given)
-}
 
 // ---------------------------------------------------------------------------
 // Setup and settings
@@ -199,192 +150,6 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
         db::set_setting(&conn, "suno_model", &model)?;
     }
     read_settings(&conn)
-}
-
-// ---------------------------------------------------------------------------
-// The daily session
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SubmitAnswer {
-    pub kind: String,
-    pub item_kind: String,
-    pub item_id: i64,
-    pub is_new: bool,
-    pub expected: String,
-    pub given: String,
-    /// Optional override; normally derived from whether the answer was right.
-    pub grade: Option<i64>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnswerResult {
-    pub correct: bool,
-    pub expected: String,
-    pub xp_gained: i64,
-    pub total_xp: i64,
-    pub day_xp: i64,
-    pub level: i64,
-}
-
-#[tauri::command]
-pub async fn submit_answer(db: State<'_, Db>, answer: SubmitAnswer) -> Result<AnswerResult> {
-    let conn = db.lock();
-    let today = db::today(&conn);
-
-    let correct = answers_match(&answer.expected, &answer.given);
-    let grade = answer
-        .grade
-        .unwrap_or(if correct { srs::GOOD } else { srs::AGAIN })
-        .clamp(srs::AGAIN, srs::EASY);
-
-    // Conversation gaps exercise the dialogue rather than a scheduled item, so
-    // they earn XP without creating review rows.
-    if answer.item_kind == "word" || answer.item_kind == "sentence" {
-        let state = srs::load(&conn, &answer.item_kind, answer.item_id)?
-            .unwrap_or_else(|| srs::ReviewState::fresh(today));
-        let next = srs::grade(state, grade, today);
-        srs::save(&conn, &answer.item_kind, answer.item_id, &next)?;
-    }
-
-    let xp = stats::xp_for_answer(&answer.kind, correct, answer.is_new);
-    stats::record_answer(&conn, today, xp, correct)?;
-
-    let total_xp = stats::total_xp(&conn)?;
-    let day_xp = conn
-        .query_row("SELECT xp FROM day_log WHERE day = ?1", [today], |r| r.get(0))
-        .unwrap_or(0);
-
-    Ok(AnswerResult {
-        correct,
-        expected: answer.expected,
-        xp_gained: xp,
-        total_xp,
-        day_xp,
-        level: stats::level_from_xp(total_xp),
-    })
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionResult {
-    pub first_completion_today: bool,
-    pub newly_unlocked: Vec<Achievement>,
-    pub stats: Stats,
-}
-
-/// Achievements unlocked by whatever just happened, with fresh stats.
-fn finish_up(conn: &Connection, before: &std::collections::HashSet<String>, first: bool) -> Result<SessionResult> {
-    // collect() writes newly earned achievements as a side effect.
-    let stats = stats::collect(conn)?;
-    let newly_unlocked = stats
-        .achievements
-        .iter()
-        .filter(|a| a.unlocked && !before.contains(&a.code))
-        .cloned()
-        .collect();
-    Ok(SessionResult { first_completion_today: first, newly_unlocked, stats })
-}
-
-fn unlocked_codes(conn: &Connection) -> Result<std::collections::HashSet<String>> {
-    let mut stmt = conn.prepare("SELECT code FROM achievements")?;
-    let codes = stmt.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<_>>()?;
-    Ok(codes)
-}
-
-// ---------------------------------------------------------------------------
-// Blocks
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub async fn blocks_overview(db: State<'_, Db>) -> Result<blocks::Overview> {
-    blocks::overview(&db.lock())
-}
-
-#[tauri::command]
-pub async fn blocks_for_topic(db: State<'_, Db>, topic_id: i64) -> Result<Vec<blocks::Block>> {
-    blocks::for_topic(&db.lock(), topic_id)
-}
-
-#[tauri::command]
-pub async fn block_detail(db: State<'_, Db>, block_id: i64) -> Result<blocks::BlockDetail> {
-    blocks::detail(&db.lock(), block_id)
-}
-
-/// The exercises of a drill block.
-#[tauri::command]
-pub async fn block_session(db: State<'_, Db>, block_id: i64) -> Result<SessionPlan> {
-    session::build_block(&db.lock(), block_id)
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockFinished {
-    pub block: blocks::Block,
-    /// "pass" | "partial" | "fail"
-    pub result: String,
-    #[serde(flatten)]
-    pub session: SessionResult,
-}
-
-/// A drill is done: its score becomes a result that schedules the next
-/// check-in, and the day counts toward the streak.
-#[tauri::command]
-pub async fn block_finish(db: State<'_, Db>, block_id: i64, correct: i64, total: i64) -> Result<BlockFinished> {
-    let conn = db.lock();
-    let before = unlocked_codes(&conn)?;
-    let result = blocks::result_from_score(correct, total);
-    let block = blocks::record(&conn, block_id, result)?;
-    let first = stats::mark_practised(&conn, db::today(&conn))?;
-    Ok(BlockFinished { block, result: result.into(), session: finish_up(&conn, &before, first)? })
-}
-
-/// The learner changes how often a block checks in.
-#[tauri::command]
-pub async fn block_set_period(db: State<'_, Db>, block_id: i64, period_days: i64) -> Result<blocks::Block> {
-    blocks::update(
-        &db.lock(),
-        block_id,
-        blocks::BlockChanges { period_days: Some(period_days), ..Default::default() },
-    )
-}
-
-#[tauri::command]
-pub async fn block_due_now(db: State<'_, Db>, block_id: i64) -> Result<blocks::Block> {
-    blocks::due_now(&db.lock(), block_id)
-}
-
-/// The listening block for a song, made on first ask.
-#[tauri::command]
-pub async fn block_for_song(db: State<'_, Db>, song_id: i64) -> Result<blocks::Block> {
-    blocks::create_listening(&db.lock(), song_id, None, None, "tutor")
-}
-
-#[tauri::command]
-pub async fn block_delete(db: State<'_, Db>, block_id: i64) -> Result<()> {
-    blocks::delete(&db.lock(), block_id).map(|_| ())
-}
-
-/// Lists a block in another course too.
-#[tauri::command]
-pub async fn block_add_to_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<()> {
-    courses::add_block(&db.lock(), topic_id, block_id)
-}
-
-/// Takes a block out of a course; true when that was its last course and
-/// the block was deleted.
-#[tauri::command]
-pub async fn block_remove_from_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<bool> {
-    courses::remove_block(&db.lock(), topic_id, block_id)
-}
-
-/// Stats after a study check-in, for the summary screen.
-#[tauri::command]
-pub async fn checkin_summary(db: State<'_, Db>, first_completion_today: bool) -> Result<SessionResult> {
-    let conn = db.lock();
-    finish_up(&conn, &Default::default(), first_completion_today)
 }
 
 // ---------------------------------------------------------------------------
@@ -523,14 +288,13 @@ pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
          DELETE FROM tutor_messages;
          DELETE FROM tutor_conversations;
          DELETE FROM checkins;
-         UPDATE blocks SET due_day = NULL, last_day = NULL, last_result = NULL, reps = 0, interval_days = 0;
-         DELETE FROM settings WHERE key IN ('lesson_index', 'focus_topic_id');",
+         UPDATE blocks SET due_day = NULL, last_day = NULL, last_result = NULL, reps = 0, interval_days = 0;",
     )?;
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// AI — all network access happens here, never in the webview
+// Keys, models and explanations (all network access is in Rust, never the webview)
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
@@ -574,320 +338,6 @@ pub async fn ai_list_models() -> Result<Vec<AiModel>> {
     ai::list_models().await
 }
 
-/// The voices the app can read Polish in. Shipped with the binary rather than
-/// fetched, because the speech model is pinned.
-#[tauri::command]
-pub async fn list_voices() -> Result<Vec<Voice>> {
-    Ok(ai::GEMINI_VOICES
-        .iter()
-        .map(|(name, gender, description)| Voice {
-            name: (*name).to_string(),
-            gender: (*gender).to_string(),
-            description: (*description).to_string(),
-        })
-        .collect())
-}
-
-/// Plays a sample so a voice can be judged on Polish before it is chosen.
-#[tauri::command]
-pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Result<AudioClip> {
-    let (key, speed) = {
-        let conn = db.lock();
-        let speed = db::get_setting(&conn, "tts_speed")?
-            .and_then(|value| value.parse::<f32>().ok())
-            .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
-        (ai::api_key(&conn)?, speed)
-    };
-
-    let cached = {
-        let conn = db.lock();
-        cached_clip(&conn, &audio_key(ai::SPEECH_MODEL, &voice, &text))?
-    };
-    if let Some((mime, bytes)) = cached {
-        return Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: true });
-    }
-
-    let (mime, bytes) =
-        ai::synthesize(&key, ai::SPEECH_MODEL, &voice, &text, speed).await?;
-    {
-        let conn = db.lock();
-        record_speech(&conn, ai::SPEECH_MODEL, &text);
-        store_clip(
-            &conn,
-            &audio_key(ai::SPEECH_MODEL, &voice, &text),
-            ai::SPEECH_MODEL,
-            &voice,
-            &text,
-            &mime,
-            &bytes,
-        )?;
-    }
-    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
-}
-
-// ---------------------------------------------------------------------------
-// Speech
-// ---------------------------------------------------------------------------
-
-/// Cache identity: the same text spoken by a different model or voice is a
-/// different clip. Unit separators keep the parts from running together.
-fn audio_key(model: &str, voice: &str, text: &str) -> String {
-    format!("{model}\u{1}{voice}\u{1}{text}")
-}
-
-fn cached_clip(conn: &Connection, key: &str) -> Result<Option<(String, Vec<u8>)>> {
-    Ok(conn
-        .query_row(
-            "SELECT mime, bytes FROM audio_cache WHERE cache_key = ?1",
-            [key],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?)
-}
-
-fn store_clip(
-    conn: &Connection,
-    key: &str,
-    model: &str,
-    voice: &str,
-    text: &str,
-    mime: &str,
-    bytes: &[u8],
-) -> Result<()> {
-    conn.execute(
-        "INSERT INTO audio_cache (cache_key, model, voice, text, mime, bytes, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-         ON CONFLICT(cache_key) DO UPDATE SET
-             mime = excluded.mime, bytes = excluded.bytes",
-        rusqlite::params![key, model, voice, text, mime, bytes, db::now_secs()],
-    )?;
-    Ok(())
-}
-
-/// Everything needed to synthesise, read in one lock so the await is clean.
-struct SpeechConfig {
-    key: String,
-    model: String,
-    voice: String,
-    speed: Option<f32>,
-}
-
-/// `gender` is "f" or "m" for dialogue lines; everything else reads in the
-/// female voice.
-fn speech_config(conn: &Connection, gender: &str) -> Result<SpeechConfig> {
-    let speed = db::get_setting(conn, "tts_speed")?
-        .and_then(|value| value.parse::<f32>().ok())
-        .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
-    Ok(SpeechConfig {
-        key: ai::api_key(conn)?,
-        model: ai::SPEECH_MODEL.to_string(),
-        voice: ai::voice_for(conn, gender),
-        speed,
-    })
-}
-
-/// Speaks a line of Polish, generating it only the first time.
-#[tauri::command]
-pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<AudioClip> {
-    let text = text.trim().to_string();
-    if text.is_empty() {
-        return Err(Error::msg("Nothing to say."));
-    }
-    let gender = gender.unwrap_or_default();
-
-    let (config, cached) = {
-        let conn = db.lock();
-        let config = speech_config(&conn, &gender)?;
-        let hit = cached_clip(&conn, &audio_key(&config.model, &config.voice, &text))?;
-        (config, hit)
-    };
-
-    if let Some((mime, bytes)) = cached {
-        return Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: true });
-    }
-
-    let (mime, bytes) = ai::synthesize(
-        &config.key,
-        &config.model,
-        &config.voice,
-        &text,
-        config.speed,
-    )
-    .await?;
-
-    {
-        let conn = db.lock();
-        record_speech(&conn, &config.model, &text);
-        store_clip(
-            &conn,
-            &audio_key(&config.model, &config.voice, &text),
-            &config.model,
-            &config.voice,
-            &text,
-            &mime,
-            &bytes,
-        )?;
-    }
-
-    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
-}
-
-/// True when this exact line is already stored, so the UI can show which lines
-/// will play instantly and which will cost a request.
-#[tauri::command]
-pub async fn audio_is_cached(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<bool> {
-    let conn = db.lock();
-    let Ok(config) = speech_config(&conn, &gender.unwrap_or_default()) else {
-        return Ok(false);
-    };
-    Ok(cached_clip(&conn, &audio_key(&config.model, &config.voice, text.trim()))?.is_some())
-}
-
-/// A line to synthesise, with the gender that decides which voice reads it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpeechLine {
-    pub text: String,
-    #[serde(default)]
-    pub gender: String,
-}
-
-/// Generates and stores audio for a batch of lines, reporting progress as it
-/// goes. Used to warm a topic's sentences ahead of practice.
-#[tauri::command]
-pub async fn cache_audio(
-    app: tauri::AppHandle,
-    db: State<'_, Db>,
-    lines: Vec<SpeechLine>,
-) -> Result<CacheProgress> {
-    // Drop duplicates and anything already stored before spending a request.
-    // A line spoken by two genders is two clips, so the pair is the key.
-    let mut pending: Vec<(SpeechConfig, String)> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    {
-        let conn = db.lock();
-        for line in lines {
-            let text = line.text.trim().to_string();
-            if text.is_empty() || !seen.insert((text.clone(), line.gender.clone())) {
-                continue;
-            }
-            let config = speech_config(&conn, &line.gender)?;
-            let key = audio_key(&config.model, &config.voice, &text);
-            if cached_clip(&conn, &key)?.is_none() {
-                pending.push((config, text));
-            }
-        }
-    }
-
-    let total = pending.len() as i64;
-    let mut done = 0;
-    let mut failed = 0;
-    let mut first_error: Option<String> = None;
-
-    for (config, line) in pending {
-        match ai::synthesize(&config.key, &config.model, &config.voice, &line, config.speed).await {
-            Ok((mime, bytes)) => {
-                let conn = db.lock();
-                record_speech(&conn, &config.model, &line);
-                let key = audio_key(&config.model, &config.voice, &line);
-                store_clip(&conn, &key, &config.model, &config.voice, &line, &mime, &bytes)?;
-                done += 1;
-            }
-            Err(error) => {
-                failed += 1;
-                if first_error.is_none() {
-                    first_error = Some(error.to_string());
-                }
-                // A bad key or model fails on every line; stop rather than
-                // hammering the API two hundred times.
-                if failed >= 3 {
-                    break;
-                }
-            }
-        }
-        let _ = app.emit(
-            "tts://progress",
-            CacheProgress { done, total, failed, finished: false, error: None },
-        );
-    }
-
-    let progress = CacheProgress {
-        done,
-        total,
-        failed,
-        finished: true,
-        error: first_error,
-    };
-    let _ = app.emit("tts://progress", progress.clone());
-    Ok(progress)
-}
-
-/// Every Polish line of a topic: its sentences, then its conversation with the
-/// gender each line should be read in.
-#[tauri::command]
-pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<SpeechLine>> {
-    let conn = db.lock();
-    let mut stmt = conn.prepare(
-        "SELECT pl, '' FROM course_sentences WHERE topic_id = ?1
-         UNION ALL
-         SELECT pl, gender FROM course_lines WHERE topic_id = ?1",
-    )?;
-    let lines = stmt
-        .query_map([topic_id], |r| {
-            Ok(SpeechLine { text: r.get(0)?, gender: r.get(1)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(lines)
-}
-
-#[tauri::command]
-pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
-    let conn = db.lock();
-    let (clips, bytes): (i64, i64) = conn.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(LENGTH(bytes)), 0) FROM audio_cache",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    // Sentences are narrated by the female voice, so that is what counts here.
-    let sentences_cached = match speech_config(&conn, "f") {
-        Ok(config) => conn.query_row(
-            "SELECT COUNT(*) FROM sentences s
-             JOIN audio_cache a ON a.text = s.pl
-             WHERE a.model = ?1 AND a.voice = ?2",
-            rusqlite::params![config.model, config.voice],
-            |r| r.get(0),
-        )?,
-        Err(_) => 0,
-    };
-    Ok(AudioCacheStats {
-        clips,
-        bytes,
-        sentences_cached,
-        sentences_total: conn.query_row("SELECT COUNT(*) FROM sentences", [], |r| r.get(0))?,
-    })
-}
-
-#[tauri::command]
-pub async fn clear_audio_cache(db: State<'_, Db>) -> Result<()> {
-    let conn = db.lock();
-    conn.execute("DELETE FROM audio_cache", [])?;
-    // Reclaim the space; audio is by far the largest thing in the database.
-    conn.execute_batch("VACUUM")?;
-    Ok(())
-}
-
-/// What the AI features cost, per day and per feature, over the last `days`.
-#[tauri::command]
-pub async fn costs_summary(db: State<'_, Db>, days: i64) -> Result<costs::CostSummary> {
-    costs::summary(&db.lock(), days)
-}
-
-/// OpenRouter's speech endpoint reports no price, so speech is logged as a
-/// count with the characters spoken.
-fn record_speech(conn: &Connection, model: &str, text: &str) {
-    let detail = format!("{} characters", text.chars().count());
-    let _ = costs::record(conn, costs::SPEECH, "openrouter", model, None, &detail);
-}
-
 /// Verifies the stored key with the cheapest possible round trip.
 #[tauri::command]
 pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
@@ -900,56 +350,6 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
     Ok(reply.text.trim().to_string())
 }
 
-/// Pushes a streamed answer to the frontend as it arrives.
-///
-/// Every stream carries a caller-supplied id, so a screen that fires two
-/// requests (or is re-entered) never renders another one's tokens.
-pub fn stream_to_frontend(
-    app: &tauri::AppHandle,
-    stream_id: &str,
-    delta: Option<&str>,
-    done: bool,
-    error: Option<String>,
-) {
-    let _ = app.emit(
-        "ai://stream",
-        StreamEvent {
-            id: stream_id.to_string(),
-            delta: delta.unwrap_or_default().to_string(),
-            done,
-            error,
-        },
-    );
-}
-
-async fn run_stream(
-    app: tauri::AppHandle,
-    stream_id: String,
-    key: String,
-    model: String,
-    messages: Vec<ai::Wire>,
-    feature: &str,
-) -> Result<String> {
-    let emitter = app.clone();
-    let id = stream_id.clone();
-    let result = ai::complete_streaming(&key, &model, &messages, move |delta| {
-        stream_to_frontend(&emitter, &id, Some(delta), false, None);
-    })
-    .await;
-
-    match &result {
-        Ok(reply) => {
-            stream_to_frontend(&app, &stream_id, None, true, None);
-            let db = app.state::<Db>();
-            let _ = costs::record(&db.lock(), feature, "openrouter", &model, reply.cost, "");
-        }
-        Err(error) => {
-            stream_to_frontend(&app, &stream_id, None, true, Some(error.to_string()))
-        }
-    }
-    result.map(|reply| reply.text)
-}
-
 /// Explains a word or sentence. Text arrives as `ai://stream` events.
 #[tauri::command]
 pub async fn ai_explain_stream(
@@ -959,10 +359,8 @@ pub async fn ai_explain_stream(
     item_id: i64,
     stream_id: String,
 ) -> Result<String> {
-    let (key, model, messages) = {
+    let messages = {
         let conn = db.lock();
-        let key = ai::api_key(&conn)?;
-        let model = ai::require_model(&conn)?;
         let table = match item_kind.as_str() {
             "word" => "words",
             "sentence" => "sentences",
@@ -973,31 +371,26 @@ pub async fn ai_explain_stream(
             [item_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        (key, model, ai::explain_prompt(&polish, &gloss))
+        ai::explain_prompt(&polish, &gloss)
     };
-    run_stream(app, stream_id, key, model, messages, costs::EXPLAIN).await
-}
-
-// ---------------------------------------------------------------------------
-// Courses
-// ---------------------------------------------------------------------------
-
-/// Deletes a course with all its blocks, words and practice history.
-#[tauri::command]
-pub async fn course_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
-    courses::delete(&db.lock(), topic_id).map(|_| ())
-}
-
-/// Renames a course or changes its summary.
-#[tauri::command]
-pub async fn course_rename(
-    db: State<'_, Db>,
-    topic_id: i64,
-    title: String,
-    title_pl: String,
-    summary: String,
-) -> Result<()> {
-    courses::rename(&db.lock(), topic_id, Some(&title), Some(&title_pl), Some(&summary)).map(|_| ())
+    let agent = Agent {
+        app: &app,
+        db: &db,
+        name: costs::EXPLAIN,
+        stream_id: &stream_id,
+        tools: None,
+        max_rounds: 1,
+        stop_once_answered: true,
+        show_status: false,
+    };
+    let outcome = agent
+        .run(messages, |_| -> ToolFuture<'_, ()> { Box::pin(async { ToolOutput::reply(serde_json::Value::Null) }) })
+        .await;
+    match outcome.failed {
+        Some(error) => Err(error),
+        None if outcome.text.trim().is_empty() => Err(Error::msg("OpenRouter returned an empty answer.")),
+        None => Ok(outcome.text),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1094,36 +487,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn typing_is_forgiving_about_diacritics_and_case() {
-        assert!(answers_match("cześć", "Czesc"));
-        assert!(answers_match("dzień dobry", "  dzien   dobry "));
-        assert!(answers_match("Do widzenia!", "do widzenia"));
-        assert!(!answers_match("kot", "pies"));
-    }
-
-    #[test]
-    fn cache_keys_separate_voices_and_models() {
-        let a = audio_key("google/tts", "Kore", "Cześć");
-        assert_eq!(a, audio_key("google/tts", "Kore", "Cześć"));
-        assert_ne!(a, audio_key("google/tts", "Puck", "Cześć"));
-        assert_ne!(a, audio_key("openai/tts", "Kore", "Cześć"));
-        assert_ne!(a, audio_key("google/tts", "Kore", "Dobranoc"));
-        // The separator must stop adjacent fields from colliding.
-        assert_ne!(audio_key("a", "b", "c"), audio_key("ab", "", "c"));
-    }
-
-    #[test]
     fn export_names_carry_the_calendar_date() {
         assert_eq!(civil_date(0), (1970, 1, 1));
         assert_eq!(civil_date(20_405), (2025, 11, 13));
         assert_eq!(civil_date(11_016), (2000, 2, 29));
-    }
-
-    #[test]
-    fn any_listed_gloss_counts() {
-        assert!(answers_match("piece, bit", "bit"));
-        assert!(answers_match("piece, bit", "piece"));
-        assert!(answers_match("piece, bit", "piece, bit"));
-        assert!(!answers_match("piece, bit", "chunk"));
     }
 }

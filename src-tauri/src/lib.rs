@@ -1,3 +1,4 @@
+mod agent;
 mod ai;
 mod blocks;
 mod cast;
@@ -8,13 +9,17 @@ mod courses;
 mod db;
 mod error;
 mod examiner;
+mod http;
 mod memories;
+mod practice;
 mod models;
 mod playlists;
 mod session;
 mod songs;
+mod speech;
 mod srs;
 mod stats;
+mod text;
 mod tutor;
 
 use std::sync::Mutex;
@@ -50,17 +55,16 @@ pub fn run() {
             commands::init_app,
             commands::get_settings,
             commands::update_settings,
-            commands::submit_answer,
-            commands::blocks_overview,
-            commands::blocks_for_topic,
-            commands::block_detail,
-            commands::block_session,
-            commands::block_finish,
-            commands::block_set_period,
-            commands::block_due_now,
-            commands::block_delete,
-            commands::block_for_song,
-            commands::checkin_summary,
+            practice::submit_answer,
+            blocks::commands::blocks_overview,
+            blocks::commands::blocks_for_topic,
+            blocks::commands::block_detail,
+            practice::block_session,
+            practice::block_finish,
+            blocks::commands::block_set_period,
+            blocks::commands::block_delete,
+            blocks::commands::block_for_song,
+            practice::checkin_summary,
             examiner::checkin_start,
             examiner::checkin_send,            commands::get_stats,
             commands::get_topic_progress,
@@ -79,26 +83,25 @@ pub fn run() {
             tutor::tutor_history,
             tutor::tutor_rename,
             tutor::tutor_delete,
-            commands::course_delete,
-            commands::block_add_to_course,
-            commands::block_remove_from_course,
-            commands::course_rename,
+            courses::commands::course_delete,
+            courses::commands::block_add_to_course,
+            courses::commands::block_remove_from_course,
+            courses::commands::course_rename,
             commands::export_database,
-            commands::costs_summary,
+            costs::commands::costs_summary,
             memories::commands::memories_overview,
             memories::commands::memories_set_enabled,
             memories::commands::memory_add,
             memories::commands::memory_update,
             memories::commands::memory_delete,
             memories::commands::memories_clear,
-            commands::list_voices,
-            commands::preview_voice,
-            commands::speak,
-            commands::audio_is_cached,
-            commands::cache_audio,
-            commands::topic_audio_lines,
-            commands::audio_cache_stats,
-            commands::clear_audio_cache,
+            speech::list_voices,
+            speech::preview_voice,
+            speech::speak,
+            speech::cache_audio,
+            speech::topic_audio_lines,
+            speech::audio_cache_stats,
+            speech::clear_audio_cache,
             commands::kie_set_key,
             commands::kie_clear_key,
             songs::kie_credits,

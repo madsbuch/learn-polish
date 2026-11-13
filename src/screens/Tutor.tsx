@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon, SendIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
@@ -20,7 +19,8 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { ChatMessage, Conversation, StreamEvent, TutorAction, TutorStatus } from "../lib/types";
+import { useAiStream } from "../lib/useAiStream";
+import type { ChatMessage, Conversation, TutorAction } from "../lib/types";
 
 const STARTERS = [
   "Build me a course for learning the colours",
@@ -30,7 +30,6 @@ const STARTERS = [
   "When do I use “ty” and when “pan” or “pani”?",
 ];
 
-let nextStream = 0;
 
 /** "3 min ago", "yesterday", "12 Nov" — for the conversation list. */
 function when(seconds: number): string {
@@ -194,13 +193,14 @@ function Chat({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [live, setLive] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const stream = useAiStream();
+  const sending = stream.streaming;
+  const live = stream.text;
+  const status = stream.status;
+  const [localError, setError] = useState<string | null>(null);
+  const error = localError ?? stream.error;
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState(title);
-  const activeStream = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -211,24 +211,6 @@ function Chat({
       .catch((cause) => setError(errorMessage(cause)));
   }, [conversationId]);
 
-  // Streamed text and "working on it" lines, for the request in flight only.
-  useEffect(() => {
-    const offText = listen<StreamEvent>("ai://stream", (event) => {
-      if (event.payload.id !== activeStream.current) return;
-      if (event.payload.delta) {
-        setStatus(null);
-        setLive((current) => current + event.payload.delta);
-      }
-    });
-    const offStatus = listen<TutorStatus>("tutor://status", (event) => {
-      if (event.payload.id === activeStream.current) setStatus(event.payload.label);
-    });
-    return () => {
-      void offText.then((off) => off());
-      void offStatus.then((off) => off());
-    };
-  }, []);
-
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, live, status, sending]);
@@ -236,32 +218,22 @@ function Chat({
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
-    const streamId = `tutor${nextStream++}`;
-    activeStream.current = streamId;
     setDraft("");
     setError(null);
-    setLive("");
-    setStatus(null);
-    setSending(true);
     // Show the learner's turn immediately; the backend persists both sides.
     setMessages((current) => [
       ...current,
       { id: -Date.now(), conversationId: conversationId ?? 0, role: "user", content: message, actions: [] },
     ]);
-    try {
-      const reply = await api.tutorSend(message, streamId, conversationId);
+    const reply = await stream.run((streamId) => api.tutorSend(message, streamId, conversationId));
+    if (reply) {
+      stream.reset();
       setMessages((current) => [...current, reply]);
       if (reply.actions.length > 0) onChanged();
       if (conversationId === null) onStarted(reply.conversationId);
-    } catch (cause) {
-      setError(errorMessage(cause));
+    } else {
       setMessages((current) => current.slice(0, -1));
       setDraft(message);
-    } finally {
-      activeStream.current = null;
-      setLive("");
-      setStatus(null);
-      setSending(false);
     }
   }
 

@@ -40,18 +40,6 @@ const ZONE_TOPOLOGY: (&str, &str) = (
 );
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
-static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-fn client() -> &'static reqwest::Client {
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(6))
-            // Speakers are on the LAN; never route them through a proxy.
-            .no_proxy()
-            .build()
-            .expect("failed to build HTTP client")
-    })
-}
 
 fn speaker_error(error: reqwest::Error) -> Error {
     Error::msg(format!("Could not reach the speaker: {error}"))
@@ -241,7 +229,7 @@ async fn soap(
     args: &[(&str, &str)],
 ) -> Result<String> {
     let (path, service) = endpoint;
-    let response = client()
+    let response = crate::http::lan()
         .post(format!("{base_url}{path}"))
         .header("Content-Type", "text/xml; charset=\"utf-8\"")
         .header("SOAPACTION", format!("\"{service}#{action}\""))
@@ -367,7 +355,7 @@ async fn devices_via(base_url: &str) -> Result<Vec<CastDevice>> {
             }
         }
     }
-    let description = client()
+    let description = crate::http::lan()
         .get(format!("{base_url}/xml/device_description.xml"))
         .send()
         .await

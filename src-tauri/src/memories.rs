@@ -11,6 +11,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::agent::{tool, Tool};
+
 use crate::db;
 use crate::error::{Error, Result};
 
@@ -49,7 +51,7 @@ fn clean_category(category: &str) -> String {
 }
 
 fn clean_content(content: &str) -> Result<String> {
-    let content = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    let content = crate::text::clean(content);
     if content.is_empty() {
         return Err(Error::msg("A memory needs some content."));
     }
@@ -213,18 +215,12 @@ Using memory:
 // Tools
 // ---------------------------------------------------------------------------
 
-fn function(name: &str, description: &str, parameters: Value) -> Value {
-    json!({
-        "type": "function",
-        "function": { "name": name, "description": description, "parameters": parameters }
-    })
-}
-
 /// The memory tools, offered to every agent while memory is switched on.
-pub fn tool_definitions() -> Vec<Value> {
+pub fn tools() -> Vec<Tool> {
     vec![
-        function(
+        tool(
             "remember",
+            "Remembering…",
             "Save one lasting fact about the learner to long-term memory, shared with the app's other agents.",
             json!({
                 "type": "object",
@@ -235,8 +231,9 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["content", "category"]
             }),
         ),
-        function(
+        tool(
             "update_memory",
+            "Remembering…",
             "Correct or refresh a memory that has changed, e.g. a struggle that is now a strength.",
             json!({
                 "type": "object",
@@ -248,8 +245,9 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["id"]
             }),
         ),
-        function(
+        tool(
             "forget_memory",
+            "Remembering…",
             "Delete a memory that is no longer true or that the learner wants forgotten.",
             json!({
                 "type": "object",

@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 
-use crate::ai::{self, Wire};
+use crate::agent::{tool, Agent, Tool, ToolOutput};
+use crate::ai::Wire;
 use crate::blocks;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
@@ -122,24 +123,22 @@ fn memory_section(conn: &Connection) -> Result<String> {
     ))
 }
 
-fn tools() -> serde_json::Value {
-    json!([{
-        "type": "function",
-        "function": {
-            "name": "finish_assessment",
-            "description": "End the check-in with your verdict.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "result": { "type": "string", "enum": ["pass", "partial", "fail"] },
-                    "summary": { "type": "string", "description": "Two or three sentences to the learner: how it went." },
-                    "strengths": { "type": "array", "items": { "type": "string" } },
-                    "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely." }
-                },
-                "required": ["result", "summary"]
-            }
-        }
-    }])
+fn tools() -> Vec<Tool> {
+    vec![tool(
+        "finish_assessment",
+        "Weighing it up…",
+        "End the check-in with your verdict.",
+        json!({
+            "type": "object",
+            "properties": {
+                "result": { "type": "string", "enum": ["pass", "partial", "fail"] },
+                "summary": { "type": "string", "description": "Two or three sentences to the learner: how it went." },
+                "strengths": { "type": "array", "items": { "type": "string" } },
+                "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely." }
+            },
+            "required": ["result", "summary"]
+        }),
+    )]
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -226,7 +225,7 @@ async fn turn(
     user: Option<String>,
     stream_id: &str,
 ) -> Result<CheckinTurn> {
-    let (key, model, mut wire) = {
+    let wire = {
         let conn = db.lock();
         let (block_id, finished): (i64, Option<i64>) = conn.query_row(
             "SELECT block_id, finished_at FROM checkins WHERE id = ?1",
@@ -246,78 +245,40 @@ async fn turn(
             wire.push(Wire::user("I'm ready for the check-in."));
         }
         wire.extend(past);
-        (ai::api_key(&conn)?, ai::require_model(&conn)?, wire)
+        wire
     };
 
-    let mut tools = tools();
-    if crate::memories::enabled(&db.lock()) {
-        if let Some(list) = tools.as_array_mut() {
-            list.extend(crate::memories::tool_definitions());
-        }
-    }
-    let finished_stream = |error: Option<String>| {
-        crate::commands::stream_to_frontend(app, stream_id, None, true, error);
+    let agent = Agent {
+        app,
+        db,
+        name: crate::costs::EXAMINER,
+        stream_id,
+        tools: Some(tools()),
+        max_rounds: MAX_ROUNDS,
+        // One question per turn. Memory calls alone are not an answer, so after
+        // them the examiner gets another round to say something.
+        stop_once_answered: true,
+        show_status: false,
     };
-
-    let mut reply = String::new();
-    let mut remembered: Vec<String> = Vec::new();
-    let mut verdict: Option<Assessment> = None;
-    // A turn is a question, a verdict, or both. Memory calls alone are not an
-    // answer, so after them the examiner gets another round to say something.
-    for round in 0..MAX_ROUNDS {
-        let emitter = app.clone();
-        let id = stream_id.to_string();
-        let mut separated = reply.is_empty();
-        let result = ai::stream_turn(&key, &model, &wire, Some(&tools), |delta| {
-            if !separated {
-                crate::commands::stream_to_frontend(&emitter, &id, Some("\n\n"), false, None);
-                separated = true;
-            }
-            crate::commands::stream_to_frontend(&emitter, &id, Some(delta), false, None);
+    let outcome = agent
+        .run(wire, |call| {
+            Box::pin(async move {
+                if call.function.name != "finish_assessment" {
+                    return ToolOutput::reply(json!({ "error": "unknown tool" }));
+                }
+                match serde_json::from_str::<Assessment>(&call.function.arguments) {
+                    Ok(verdict) => ToolOutput { result: json!({ "recorded": true }), extra: Some(verdict), ends_turn: true },
+                    Err(e) => ToolOutput::reply(json!({ "error": format!("The verdict was unreadable: {e}. Call it again.") })),
+                }
+            })
         })
         .await;
-        let turn = match result {
-            Ok(turn) => turn,
-            Err(error) => {
-                finished_stream(Some(error.to_string()));
-                return Err(error);
-            }
-        };
-
-        let conn = db.lock();
-        let _ = crate::costs::record(&conn, crate::costs::EXAMINER, "openrouter", &model, turn.cost, "");
-        let text = turn.text.trim();
-        if !text.is_empty() {
-            if !reply.is_empty() {
-                reply.push_str("\n\n");
-            }
-            reply.push_str(text);
-        }
-        let mut results = Vec::new();
-        for call in &turn.tool_calls {
-            if crate::memories::is_tool(&call.function.name) {
-                let outcome =
-                    crate::memories::run_tool(&conn, "examiner", &call.function.name, &call.function.arguments);
-                remembered.extend(outcome.label);
-                results.push(Wire::tool_result(&call.id, outcome.result.to_string()));
-            } else if call.function.name == "finish_assessment" {
-                let parsed: Assessment = serde_json::from_str(&call.function.arguments).map_err(|e| {
-                    Error::msg(format!("The examiner's verdict was unreadable: {e}"))
-                })?;
-                verdict = Some(parsed);
-                results.push(Wire::tool_result(&call.id, "{\"recorded\":true}"));
-            } else {
-                results.push(Wire::tool_result(&call.id, "{\"error\":\"unknown tool\"}"));
-            }
-        }
-        let answered = !reply.is_empty() || verdict.is_some();
-        if answered || turn.tool_calls.is_empty() || round + 1 == MAX_ROUNDS {
-            break;
-        }
-        wire.push(Wire::tool_request(&turn.text, turn.tool_calls.clone()));
-        wire.extend(results);
+    if let Some(error) = outcome.failed {
+        return Err(error);
     }
-    finished_stream(None);
+    let reply = outcome.text;
+    let remembered = outcome.remembered;
+    let verdict = outcome.extras.into_iter().next();
 
     let conn = db.lock();
     if !reply.is_empty() {

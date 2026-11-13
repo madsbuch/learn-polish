@@ -264,14 +264,6 @@ pub struct TutorAction {
     pub block_id: Option<i64>,
 }
 
-/// The tutor is working: a tool is running. Emitted as `tutor://status`.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TutorStatus {
-    pub id: String,
-    pub label: String,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiModel {
@@ -304,17 +296,6 @@ pub struct AudioCacheStats {
     /// How many of the app's 200 sentences already have audio stored.
     pub sentences_cached: i64,
     pub sentences_total: i64,
-}
-
-/// One fragment of a streamed AI answer, emitted as an `ai://stream` event.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamEvent {
-    /// Matches the id the caller passed, so concurrent streams stay separate.
-    pub id: String,
-    pub delta: String,
-    pub done: bool,
-    pub error: Option<String>,
 }
 
 /// A selectable voice, with the character Google publishes for it.

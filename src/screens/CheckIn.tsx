@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { MemoryIcon, PlayerIcon, SendIcon } from "../components/icons";
 import { playSong, useSongItem } from "../components/SongToListen";
@@ -18,12 +17,12 @@ import {
   Stack,
   Text,
 } from "../design";
-import { api, errorMessage } from "../lib/api";
+import { api } from "../lib/api";
+import { useAiStream } from "../lib/useAiStream";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/blocks";
-import type { Assessment, StreamEvent } from "../lib/types";
+import type { Assessment } from "../lib/types";
 
-let nextStream = 0;
 
 const VERDICT = {
   pass: { title: "Passed", tone: "mint", line: "You know this." },
@@ -58,13 +57,14 @@ export function CheckIn({
 }) {
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
-  const [live, setLive] = useState("");
-  const [busy, setBusy] = useState(true);
+  const stream = useAiStream();
+  const live = stream.text;
+  // Busy from the start: the examiner opens with the first question.
+  const busy = stream.streaming || checkinId === null && !stream.error;
   const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const error = stream.error;
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [first, setFirst] = useState(false);
-  const activeStream = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const song = useSongItem(songId).item;
@@ -72,47 +72,24 @@ export function CheckIn({
   const songCurrent = song !== null && currentItem(player)?.track.id === song.track.id;
 
   useEffect(() => {
-    const off = listen<StreamEvent>("ai://stream", (event) => {
-      if (event.payload.id === activeStream.current && event.payload.delta) {
-        setLive((current) => current + event.payload.delta);
-      }
-    });
-    return () => {
-      void off.then((stop) => stop());
-    };
-  }, []);
-
-  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [lines, live, assessment]);
 
   async function exchange(run: (streamId: string) => ReturnType<typeof api.checkinStart>) {
-    const streamId = `checkin${nextStream++}`;
-    activeStream.current = streamId;
-    setLive("");
-    setBusy(true);
-    setError(null);
-    try {
-      const turn = await run(streamId);
-      setCheckinId(turn.checkinId);
-      setLines((current) => [
-        ...current,
-        ...(turn.reply ? [{ role: "assistant" as const, content: turn.reply }] : []),
-        ...turn.remembered.map((content) => ({ role: "memory" as const, content })),
-      ]);
-      if (turn.assessment) {
-        setAssessment(turn.assessment);
-        setFirst(turn.firstCompletionToday);
-      }
-      return true;
-    } catch (cause) {
-      setError(errorMessage(cause));
-      return false;
-    } finally {
-      activeStream.current = null;
-      setLive("");
-      setBusy(false);
+    const turn = await stream.run(run);
+    if (!turn) return false;
+    stream.reset();
+    setCheckinId(turn.checkinId);
+    setLines((current) => [
+      ...current,
+      ...(turn.reply ? [{ role: "assistant" as const, content: turn.reply }] : []),
+      ...turn.remembered.map((content) => ({ role: "memory" as const, content })),
+    ]);
+    if (turn.assessment) {
+      setAssessment(turn.assessment);
+      setFirst(turn.firstCompletionToday);
     }
+    return true;
   }
 
   // The examiner opens with the first question.

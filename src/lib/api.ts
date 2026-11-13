@@ -66,7 +66,6 @@ export const api = {
     invoke<BlockFinished>("block_finish", { blockId, correct, total }),
   blockSetPeriod: (blockId: number, periodDays: number) =>
     invoke<Block>("block_set_period", { blockId, periodDays }),
-  blockDueNow: (blockId: number) => invoke<Block>("block_due_now", { blockId }),
   blockDelete: (blockId: number) => invoke<void>("block_delete", { blockId }),
   blockAddToCourse: (blockId: number, topicId: number) =>
     invoke<void>("block_add_to_course", { blockId, topicId }),
@@ -131,8 +130,6 @@ export const api = {
   previewVoice: (voice: string, text: string) =>
     invoke<AudioClip>("preview_voice", { voice, text }),
   speak: (text: string, gender?: string) => invoke<AudioClip>("speak", { text, gender }),
-  audioIsCached: (text: string, gender?: string) =>
-    invoke<boolean>("audio_is_cached", { text, gender }),
   cacheAudio: (lines: SpeechLine[]) => invoke<CacheProgress>("cache_audio", { lines }),
   topicAudioLines: (topicId: number) => invoke<SpeechLine[]>("topic_audio_lines", { topicId }),
   audioCacheStats: () => invoke<AudioCacheStats>("audio_cache_stats"),

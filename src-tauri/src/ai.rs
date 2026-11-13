@@ -2,8 +2,6 @@
 //! the webview never issues a cross-origin request (so CORS never applies), and
 //! the API key never has to be handed to JavaScript.
 
-use std::sync::OnceLock;
-use std::time::Duration;
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -13,19 +11,7 @@ use crate::error::{Error, Result};
 use crate::models::AiModel;
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 
-static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-fn client() -> &'static reqwest::Client {
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(REQUEST_TIMEOUT)
-            .user_agent(concat!("learn-polish/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("failed to build HTTP client")
-    })
-}
 
 pub fn api_key(conn: &Connection) -> Result<String> {
     db::get_setting(conn, "openrouter_api_key")?
@@ -256,7 +242,7 @@ pub async fn complete_with(
     temperature: f32,
     max_tokens: u32,
 ) -> Result<Reply> {
-    let response = client()
+    let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
         // OpenRouter uses these for attribution on its dashboard.
@@ -427,24 +413,6 @@ impl SseParser {
     }
 }
 
-/// Streams a completion, handing each new fragment of text to `on_delta` as it
-/// arrives. Returns the full text once the stream ends.
-pub async fn complete_streaming<F>(
-    key: &str,
-    model: &str,
-    messages: &[Wire],
-    on_delta: F,
-) -> Result<Reply>
-where
-    F: FnMut(&str),
-{
-    let turn = stream_turn(key, model, messages, None, on_delta).await?;
-    if turn.text.trim().is_empty() {
-        return Err(Error::msg("OpenRouter returned an empty answer."));
-    }
-    Ok(Reply { text: turn.text, cost: turn.cost })
-}
-
 /// One streamed assistant turn: whatever text it wrote, and the tools it
 /// asked to run.
 #[derive(Debug, Default)]
@@ -510,7 +478,7 @@ where
 {
     use futures_util::StreamExt;
 
-    let response = client()
+    let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
         .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
@@ -600,7 +568,7 @@ struct Pricing {
 
 async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
     // The catalogue is public, so this works before a key is entered.
-    let response = client().get(format!("{BASE_URL}/models{query}")).send().await?;
+    let response = crate::http::api().get(format!("{BASE_URL}/models{query}")).send().await?;
     if !response.status().is_success() {
         return Err(Error::msg(format!(
             "Could not load the model list (HTTP {}).",
@@ -693,7 +661,7 @@ async fn speech_request(
     speed: Option<f32>,
     format: &str,
 ) -> Result<Clip> {
-    let response = client()
+    let response = crate::http::api()
         .post(format!("{BASE_URL}/audio/speech"))
         .bearer_auth(key)
         .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")

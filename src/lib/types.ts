@@ -313,10 +313,7 @@ export interface TutorAction {
     | "programmeCreated"
     | "programmeUpdated"
     | "programmeDeleted"
-    | "focusSet"
-    | "focusCleared"
     | "settingsChanged"
-    | "practiceSuggested"
     | "songStarted"
     | "songsDeleted"
     | "blockCreated"
@@ -350,7 +347,8 @@ export interface ChatMessage {
   actions: TutorAction[];
 }
 
-export interface TutorStatus {
+/** What a tool is doing while an agent runs (`agent://status`). */
+export interface AgentStatus {
   id: string;
   label: string;
 }

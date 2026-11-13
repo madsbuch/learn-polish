@@ -9,13 +9,14 @@
 use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::{Emitter, State};
+use tauri::State;
 
-use crate::ai::{self, Wire};
+use crate::agent::{tool, Agent, Tool, ToolOutput};
+use crate::ai::Wire;
 use crate::blocks;
 use crate::db::{self, Db};
 use crate::error::{Error, Result};
-use crate::models::{ChatMessage, Conversation, TutorAction, TutorStatus};
+use crate::models::{ChatMessage, Conversation, TutorAction};
 use crate::courses::{self, NewCourse, NewLine, NewSentence, NewWord};
 use crate::session;
 use crate::songs;
@@ -257,18 +258,13 @@ fn dialogue_schema() -> Value {
     })
 }
 
-fn function(name: &str, description: &str, parameters: Value) -> Value {
-    json!({
-        "type": "function",
-        "function": { "name": name, "description": description, "parameters": parameters }
-    })
-}
-
-pub fn tool_definitions() -> Value {
+/// Everything the tutor can do in the app.
+pub fn tool_definitions() -> Vec<Tool> {
     let none = json!({ "type": "object", "properties": {} });
-    Value::Array(vec![
-        function(
+    vec![
+        tool(
             "create_course",
+            "Building the course…",
             "Create a new course on a theme, with words, sentences and optionally a dialogue. \
              It is cut into drill blocks and can be practised straight away.",
             json!({
@@ -284,8 +280,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["title", "title_pl", "summary", "words", "sentences"]
             }),
         ),
-        function(
+        tool(
             "add_to_course",
+            "Updating the course…",
             "Add words, sentences or dialogue lines to a course; its drills are cut again to include them.",
             json!({
                 "type": "object",
@@ -298,8 +295,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["course_id"]
             }),
         ),
-        function(
+        tool(
             "edit_course",
+            "Updating the course…",
             "Rename a course, change its summary, or remove words/sentences from it (by their exact Polish text).",
             json!({
                 "type": "object",
@@ -314,8 +312,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["course_id"]
             }),
         ),
-        function(
+        tool(
             "delete_course",
+            "Deleting the course…",
             "Permanently delete a course with all its blocks and practice history. Only after the learner confirmed.",
             json!({
                 "type": "object",
@@ -323,13 +322,15 @@ pub fn tool_definitions() -> Value {
                 "required": ["course_id"]
             }),
         ),
-        function(
+        tool(
             "list_courses",
+            "Looking at your courses…",
             "List every course, with how much of each the learner has met.",
             none.clone(),
         ),
-        function(
+        tool(
             "get_course",
+            "Looking at your courses…",
             "The words, sentences and dialogue of one course, with the learner's progress on each word.",
             json!({
                 "type": "object",
@@ -337,8 +338,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["course_id"]
             }),
         ),
-        function(
+        tool(
             "search_vocabulary",
+            "Searching the vocabulary…",
             "Search every word and sentence in the app, in Polish or English.",
             json!({
                 "type": "object",
@@ -346,13 +348,15 @@ pub fn tool_definitions() -> Value {
                 "required": ["query"]
             }),
         ),
-        function(
+        tool(
             "get_progress",
+            "Checking your progress…",
             "The learner's statistics: XP, level, streak, accuracy, words met and mastered, recent days, and the words they get wrong most.",
             none,
         ),
-        function(
+        tool(
             "create_study_block",
+            "Writing the lesson…",
             "Write a study block: a short lesson (conjugation, grammar, culture) with objectives. \
              The examiner interviews the learner on the objectives at each check-in.",
             json!({
@@ -369,8 +373,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["title", "summary", "complexity", "lesson", "objectives"]
             }),
         ),
-        function(
+        tool(
             "create_drill_block",
+            "Making the drill…",
             "Make one drill block in a chosen format over words and/or sentences you give. \
              The items are added to a course (a new one named after the block if none is given).",
             json!({
@@ -388,8 +393,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["title", "format", "complexity"]
             }),
         ),
-        function(
+        tool(
             "create_listening_block",
+            "Making the listening block…",
             "Make a listening block for a song: the learner listens, then the examiner asks about what they heard (meaning, missing words, translation, grammar). One per song.",
             json!({
                 "type": "object",
@@ -401,8 +407,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["song_id"]
             }),
         ),
-        function(
+        tool(
             "list_blocks",
+            "Looking at your blocks…",
             "List blocks: those due now, one course's blocks, or every study block.",
             json!({
                 "type": "object",
@@ -413,8 +420,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["which"]
             }),
         ),
-        function(
+        tool(
             "get_block",
+            "Looking at your blocks…",
             "One block in full: lesson and objectives or its words and sentences, its schedule, and the last check-in's verdict.",
             json!({
                 "type": "object",
@@ -422,8 +430,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id"]
             }),
         ),
-        function(
+        tool(
             "update_block",
+            "Updating the block…",
             "Change a block: title, summary, complexity, lesson, objectives or check-in period.",
             json!({
                 "type": "object",
@@ -439,8 +448,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id"]
             }),
         ),
-        function(
+        tool(
             "delete_block",
+            "Deleting the block…",
             "Permanently delete a block and its check-in history. Only after the learner confirmed.",
             json!({
                 "type": "object",
@@ -448,8 +458,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id"]
             }),
         ),
-        function(
+        tool(
             "add_block_to_course",
+            "Rearranging your courses…",
             "List a block in another course too. It stays one block — one schedule, one history — shown in each course.",
             json!({
                 "type": "object",
@@ -457,8 +468,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id", "course_id"]
             }),
         ),
-        function(
+        tool(
             "remove_block_from_course",
+            "Rearranging your courses…",
             "Take a block out of a course. If no other course lists it, the block is deleted with its words, sentences and history — only after the learner confirmed that.",
             json!({
                 "type": "object",
@@ -466,8 +478,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id", "course_id"]
             }),
         ),
-        function(
+        tool(
             "move_block",
+            "Rearranging your courses…",
             "Move a block from one course to another; its words and history go with it.",
             json!({
                 "type": "object",
@@ -479,8 +492,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id", "from_course_id", "to_course_id"]
             }),
         ),
-        function(
+        tool(
             "order_course_blocks",
+            "Rearranging your courses…",
             "Put a course's blocks in an order (block ids, first to last). Blocks left out keep their order after these.",
             json!({
                 "type": "object",
@@ -491,8 +505,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["course_id", "block_ids"]
             }),
         ),
-        function(
+        tool(
             "schedule_block",
+            "Updating the block…",
             "Make a block due now, so it shows at the top of the learner's list.",
             json!({
                 "type": "object",
@@ -500,8 +515,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id"]
             }),
         ),
-        function(
+        tool(
             "suggest_block",
+            "Finding the block…",
             "Show the learner a button that opens a block right now.",
             json!({
                 "type": "object",
@@ -509,8 +525,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["block_id"]
             }),
         ),
-        function(
+        tool(
             "update_practice_settings",
+            "Updating your settings…",
             "Change the daily XP goal (10–1000).",
             json!({
                 "type": "object",
@@ -520,8 +537,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["daily_goal"]
             }),
         ),
-        function(
+        tool(
             "make_song",
+            "Writing the song…",
             "Have a learning song written and sung (takes 2–4 minutes, costs kie.ai credits). \
              The songwriter writes the lyrics from this brief.",
             json!({
@@ -542,13 +560,15 @@ pub fn tool_definitions() -> Value {
                 "required": ["about"]
             }),
         ),
-        function(
+        tool(
             "list_songs",
+            "Looking at your songs…",
             "The learner's songs: title, chorus, status, takes and how often each was played.",
             json!({ "type": "object", "properties": {} }),
         ),
-        function(
+        tool(
             "delete_songs",
+            "Deleting songs…",
             "Permanently delete songs (all their takes). Only after the learner confirmed.",
             json!({
                 "type": "object",
@@ -556,13 +576,15 @@ pub fn tool_definitions() -> Value {
                 "required": ["song_ids"]
             }),
         ),
-        function(
+        tool(
             "list_playlists",
+            "Looking at your playlists…",
             "The learner's playlists, each with its songs in order.",
             json!({ "type": "object", "properties": {} }),
         ),
-        function(
+        tool(
             "create_playlist",
+            "Updating your playlists…",
             "Make a playlist, optionally with songs in it already.",
             json!({
                 "type": "object",
@@ -573,8 +595,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["name"]
             }),
         ),
-        function(
+        tool(
             "add_to_playlist",
+            "Updating your playlists…",
             "Add songs to the end of a playlist. Songs already in it are skipped.",
             json!({
                 "type": "object",
@@ -585,8 +608,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["playlist_id", "song_ids"]
             }),
         ),
-        function(
+        tool(
             "remove_from_playlist",
+            "Updating your playlists…",
             "Take songs out of a playlist. The songs stay in the library.",
             json!({
                 "type": "object",
@@ -597,8 +621,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["playlist_id", "song_ids"]
             }),
         ),
-        function(
+        tool(
             "rename_playlist",
+            "Updating your playlists…",
             "Rename a playlist.",
             json!({
                 "type": "object",
@@ -606,8 +631,9 @@ pub fn tool_definitions() -> Value {
                 "required": ["playlist_id", "name"]
             }),
         ),
-        function(
+        tool(
             "delete_playlist",
+            "Updating your playlists…",
             "Delete a playlist (its songs stay in the library). Only after the learner confirmed.",
             json!({
                 "type": "object",
@@ -615,7 +641,7 @@ pub fn tool_definitions() -> Value {
                 "required": ["playlist_id"]
             }),
         ),
-    ])
+    ]
 }
 
 /// What a tool produced: JSON for the model, and, when the app changed, an
@@ -652,36 +678,6 @@ impl Outcome {
             result,
             action: Some(TutorAction { kind: kind.into(), label, topic_id: None, song_id, block_id: None }),
         }
-    }
-}
-
-/// A short "working on it" line for the UI while a tool runs.
-fn status_label(name: &str) -> &'static str {
-    match name {
-        "create_course" => "Building the course…",
-        "add_to_course" | "edit_course" => "Updating the course…",
-        "delete_course" => "Deleting the course…",
-        "list_courses" | "get_course" => "Looking at your courses…",
-        "search_vocabulary" => "Searching the vocabulary…",
-        "get_progress" => "Checking your progress…",
-        "create_study_block" => "Writing the lesson…",
-        "create_drill_block" => "Making the drill…",
-        "create_listening_block" => "Making the listening block…",
-        "list_blocks" | "get_block" => "Looking at your blocks…",
-        "update_block" | "schedule_block" => "Updating the block…",
-        "delete_block" => "Deleting the block…",
-        "add_block_to_course" | "remove_block_from_course" | "move_block" | "order_course_blocks" => {
-            "Rearranging your courses…"
-        }
-        "update_practice_settings" => "Updating your settings…",
-        "make_song" => "Writing the song…",
-        "list_songs" => "Looking at your songs…",
-        "delete_songs" => "Deleting songs…",
-        "list_playlists" => "Looking at your playlists…",
-        "create_playlist" | "add_to_playlist" | "remove_from_playlist" | "rename_playlist"
-        | "delete_playlist" => "Updating your playlists…",
-        "remember" | "update_memory" | "forget_memory" => "Remembering…",
-        _ => "Working…",
     }
 }
 
@@ -905,13 +901,6 @@ fn execute(conn: &Connection, name: &str, arguments: &str) -> Outcome {
 
 fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
     match name {
-        name if crate::memories::is_tool(name) => {
-            let outcome = crate::memories::run_tool(conn, "tutor", name, arguments);
-            Ok(match outcome.label {
-                Some(label) => Outcome::acted(outcome.result, "memory", label, None),
-                None => Outcome::data(outcome.result),
-            })
-        }
         "create_course" => {
             let args: CreateArgs = parse(arguments)?;
             let created = courses::create(conn, args.course, "tutor")?;
@@ -1594,7 +1583,7 @@ fn append(
 
 /// A conversation's title: its first question, cut at a word near 48 characters.
 pub fn title_from(message: &str) -> String {
-    let text = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = crate::text::clean(message);
     if text.chars().count() <= 48 {
         return text;
     }
@@ -1659,7 +1648,7 @@ pub async fn tutor_history(db: State<'_, Db>, conversation_id: i64) -> Result<Ve
 
 #[tauri::command]
 pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String) -> Result<()> {
-    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let title = crate::text::clean(&title);
     if title.is_empty() {
         return Err(Error::msg("A conversation needs a title."));
     }
@@ -1680,22 +1669,8 @@ pub async fn tutor_delete(db: State<'_, Db>, conversation_id: i64) -> Result<()>
     Ok(())
 }
 
-/// Makes the usual failure — a model that cannot call tools — say what to do.
-fn explain_failure(error: Error, model: &str) -> Error {
-    let text = error.to_string();
-    let lower = text.to_lowercase();
-    if lower.contains("tool") && (lower.contains("support") || lower.contains("no endpoints")) {
-        Error::msg(format!(
-            "The model {model} can't use tools, so the tutor can't act in the app with it. \
-             In Settings, load the models and pick one marked 🛠."
-        ))
-    } else {
-        error
-    }
-}
-
 /// Sends a message to the tutor. Text streams out as `ai://stream` events with
-/// the given id; while a tool runs, a `tutor://status` event says what it is
+/// the given id; while a tool runs, an `agent://status` event says what it is
 /// doing. Returns the stored reply, with the actions taken.
 #[tauri::command]
 pub async fn tutor_send(
@@ -1710,101 +1685,60 @@ pub async fn tutor_send(
     if message.is_empty() {
         return Err(Error::msg("Write something first."));
     }
-
-    let (key, model, mut wire) = {
+    let db: &Db = &db;
+    let wire = {
         let conn = db.lock();
-        let key = ai::api_key(&conn)?;
-        let model = ai::require_model(&conn)?;
         let mut wire = vec![Wire::system(system_prompt(&conn)?)];
         if let Some(id) = conversation_id {
             wire.extend(recent_history(&conn, id)?);
         }
         wire.push(Wire::user(message.clone()));
-        (key, model, wire)
+        wire
     };
 
-    let mut tools = tool_definitions();
-    if crate::memories::enabled(&db.lock()) {
-        if let Some(list) = tools.as_array_mut() {
-            list.extend(crate::memories::tool_definitions());
-        }
-    }
-    let mut reply = String::new();
-    let mut actions: Vec<TutorAction> = Vec::new();
-
-    let result: Result<()> = async {
-        for round in 0..MAX_ROUNDS {
-            // On the last round tools are withheld, so the model has to answer.
-            let offer = if round + 1 < MAX_ROUNDS { Some(&tools) } else { None };
-            // Text from successive rounds is one reply; keep the paragraphs apart.
-            let mut separated = reply.trim().is_empty();
-            let emitter = app.clone();
-            let id = stream_id.clone();
-            let turn = ai::stream_turn(&key, &model, &wire, offer, |delta| {
-                if !separated {
-                    crate::commands::stream_to_frontend(&emitter, &id, Some("\n\n"), false, None);
-                    separated = true;
-                }
-                crate::commands::stream_to_frontend(&emitter, &id, Some(delta), false, None);
-            })
-            .await
-            .map_err(|e| explain_failure(e, &model))?;
-            let _ = crate::costs::record(
-                &db.lock(),
-                crate::costs::TUTOR,
-                "openrouter",
-                &model,
-                turn.cost,
-                "",
-            );
-
-            if !turn.text.trim().is_empty() {
-                if !reply.trim().is_empty() {
-                    reply.push_str("\n\n");
-                }
-                reply.push_str(turn.text.trim());
-            }
-            if turn.tool_calls.is_empty() {
-                break;
-            }
-
-            wire.push(Wire::tool_request(&turn.text, turn.tool_calls.clone()));
-            for call in &turn.tool_calls {
-                let _ = app.emit(
-                    "tutor://status",
-                    TutorStatus {
-                        id: stream_id.clone(),
-                        label: status_label(&call.function.name).into(),
-                    },
-                );
-                let outcome = if call.function.name == "make_song" {
-                    make_song(&app, &db, &call.function.arguments).await
+    let agent = Agent {
+        app: &app,
+        db,
+        name: crate::costs::TUTOR,
+        stream_id: &stream_id,
+        tools: Some(tool_definitions()),
+        max_rounds: MAX_ROUNDS,
+        stop_once_answered: false,
+        show_status: true,
+    };
+    let app_ref = &app;
+    let outcome = agent
+        .run(wire, |call| {
+            Box::pin(async move {
+                let done = if call.function.name == "make_song" {
+                    // The network twice (songwriter, then Suno): not under the lock.
+                    make_song(app_ref, db, &call.function.arguments).await
                 } else {
                     let conn = db.lock();
                     execute(&conn, &call.function.name, &call.function.arguments)
                 };
-                if let Some(action) = outcome.action {
-                    actions.push(action);
-                }
-                wire.push(Wire::tool_result(&call.id, outcome.result.to_string()));
-            }
-        }
-        Ok(())
-    }
-    .await;
+                ToolOutput { result: done.result, extra: done.action, ends_turn: false }
+            })
+        })
+        .await;
 
+    let mut actions = outcome.extras;
+    actions.extend(outcome.remembered.into_iter().map(|label| TutorAction {
+        kind: "memory".into(),
+        label,
+        topic_id: None,
+        song_id: None,
+        block_id: None,
+    }));
+    let mut reply = outcome.text;
     // Even when the conversation fails half-way, whatever the tools already
     // did in the app is real, so it is recorded and shown.
-    if let Err(error) = result {
-        crate::commands::stream_to_frontend(&app, &stream_id, None, true, Some(error.to_string()));
+    if let Some(error) = outcome.failed {
         if actions.is_empty() {
             return Err(error);
         }
         reply.push_str(&format!("\n\n_(The answer was cut short: {error})_"));
-    } else {
-        crate::commands::stream_to_frontend(&app, &stream_id, None, true, None);
     }
-
     if reply.trim().is_empty() {
         reply = "Done.".into();
     }
@@ -1825,15 +1759,16 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_valid_definition() {
-        let mut tools = tool_definitions().as_array().unwrap().clone();
-        tools.extend(crate::memories::tool_definitions());
+        let mut tools = tool_definitions();
+        tools.extend(crate::memories::tools());
         assert!(tools.len() >= 8);
+        let mut names = std::collections::HashSet::new();
         for tool in tools {
-            assert_eq!(tool["type"], "function");
-            let name = tool["function"]["name"].as_str().unwrap();
-            assert!(!name.is_empty());
-            assert_eq!(tool["function"]["parameters"]["type"], "object", "{name}");
-            assert_ne!(status_label(name), "", "{name}");
+            assert_eq!(tool.definition["type"], "function");
+            assert_eq!(tool.definition["function"]["name"], tool.name);
+            assert_eq!(tool.definition["function"]["parameters"]["type"], "object", "{}", tool.name);
+            assert!(tool.label.ends_with('…') && tool.label != "Working…", "{} has no label of its own", tool.name);
+            assert!(names.insert(tool.name), "{} is declared twice", tool.name);
         }
     }
 
@@ -1844,17 +1779,6 @@ mod tests {
         assert!(long.ends_with('…'), "{long}");
         assert!(long.chars().count() <= 49, "{long}");
         assert!(!long.contains("locat…"), "cut at a word: {long}");
-    }
-
-    #[test]
-    fn tool_only_models_get_a_helpful_error() {
-        let error = explain_failure(
-            Error::msg("OpenRouter (404): No endpoints found that support tool use."),
-            "some/model",
-        );
-        assert!(error.to_string().contains("🛠"));
-        let other = explain_failure(Error::msg("rate limited"), "some/model");
-        assert_eq!(other.to_string(), "rate limited");
     }
 
     pub(crate) fn run(conn: &Connection, name: &str, args: Value) -> Value {

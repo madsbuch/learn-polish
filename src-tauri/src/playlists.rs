@@ -26,7 +26,7 @@ pub struct Playlist {
 }
 
 fn clean_name(name: &str) -> Result<String> {
-    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    let name = crate::text::clean(name);
     if name.is_empty() {
         return Err(Error::msg("A playlist needs a name."));
     }
@@ -275,7 +275,7 @@ fn safe_file_name(title: &str) -> String {
         .chars()
         .map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { ' ' } else { c })
         .collect();
-    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cleaned = crate::text::clean(&cleaned);
     if cleaned.is_empty() { "Song".into() } else { cleaned.chars().take(80).collect() }
 }
 

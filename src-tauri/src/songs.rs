@@ -7,7 +7,6 @@
 //! chorus is a single Polish sentence repeated until it sticks.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension};
@@ -37,18 +36,6 @@ const LYRICS_LIMIT: usize = 5000;
 /// Steers Suno away from delivery that is hard to understand.
 const NEGATIVE_TAGS: &str = "rap, spoken word, screaming, mumbled vocals, heavy distortion";
 
-static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-fn client() -> &'static reqwest::Client {
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            // Long enough to download a five-minute MP3 on a slow connection.
-            .timeout(Duration::from_secs(180))
-            .user_agent(concat!("learn-polish/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("failed to build HTTP client")
-    })
-}
 
 fn unreachable(error: reqwest::Error) -> Error {
     Error::msg(format!("Could not reach kie.ai: {error}"))
@@ -563,7 +550,7 @@ async fn kie_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value>
 }
 
 pub async fn credits(key: &str) -> Result<f64> {
-    let data = kie_json(client().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
+    let data = kie_json(crate::http::downloads().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
     data.as_f64()
         .ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
 }
@@ -582,7 +569,7 @@ async fn create_task(key: &str, model: &str, draft: &SongDraft) -> Result<String
         input["vocal_gender"] = draft.vocal_gender.clone().into();
     }
     let data = kie_json(
-        client()
+        crate::http::downloads()
             .post(format!("{KIE_BASE_URL}/jobs/createTask"))
             .bearer_auth(key)
             .json(&serde_json::json!({ "model": KIE_MUSIC_MODEL, "input": input })),
@@ -685,7 +672,7 @@ pub fn credits_consumed(data: &serde_json::Value) -> Option<f64> {
 
 async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)> {
     let data = kie_json(
-        client()
+        crate::http::downloads()
             .get(format!("{KIE_BASE_URL}/jobs/recordInfo"))
             .query(&[("taskId", task_id)])
             .bearer_auth(key),
@@ -697,7 +684,7 @@ async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)
 /// Downloads a file to `path` and returns its bytes, which are also kept in
 /// the database.
 async fn download(url: &str, path: &Path) -> Result<Vec<u8>> {
-    let response = client().get(url).send().await.map_err(unreachable)?;
+    let response = crate::http::downloads().get(url).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(Error::msg(format!("Could not download the song ({}).", response.status())));
     }
@@ -852,7 +839,7 @@ pub fn timed_lines(words: &[TimedWord], sections: &[SongSection]) -> Vec<TimedLi
 
 async fn fetch_timestamps(key: &str, task_id: &str, audio_id: &str) -> Result<Vec<TimedWord>> {
     let data = kie_json(
-        client()
+        crate::http::downloads()
             .post(format!("{KIE_BASE_URL}/jobs/createTask"))
             .bearer_auth(key)
             .json(&serde_json::json!({

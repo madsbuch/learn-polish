@@ -13,6 +13,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::db;
+use crate::text::clean;
 use crate::error::{Error, Result};
 
 const MAX_WORDS: usize = 120;
@@ -69,12 +70,6 @@ pub struct CourseSummary {
     pub dialogue_lines: i64,
     /// Items that were offered but already present, so not added again.
     pub skipped_duplicates: i64,
-}
-
-/// Trims and collapses inner whitespace, so "  czerwony   kolor " is stored
-/// the way it will be typed.
-fn clean(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The part-of-speech codes the session understands. Models tend to spell
@@ -592,6 +587,48 @@ fn summary(conn: &Connection, topic_id: i64, skipped: i64) -> Result<CourseSumma
     })
 }
 
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+pub mod commands {
+    use tauri::State;
+
+    use crate::db::Db;
+    use crate::error::Result;
+
+    /// Deletes a course with all its blocks, words and practice history.
+    #[tauri::command]
+    pub async fn course_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
+        super::delete(&db.lock(), topic_id).map(|_| ())
+    }
+
+    /// Renames a course or changes its summary.
+    #[tauri::command]
+    pub async fn course_rename(
+        db: State<'_, Db>,
+        topic_id: i64,
+        title: String,
+        title_pl: String,
+        summary: String,
+    ) -> Result<()> {
+        super::rename(&db.lock(), topic_id, Some(&title), Some(&title_pl), Some(&summary)).map(|_| ())
+    }
+
+    /// Lists a block in another course too.
+    #[tauri::command]
+    pub async fn block_add_to_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<()> {
+        super::add_block(&db.lock(), topic_id, block_id)
+    }
+
+    /// Takes a block out of a course; true when that was its last course and
+    /// the block was deleted.
+    #[tauri::command]
+    pub async fn block_remove_from_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<bool> {
+        super::remove_block(&db.lock(), topic_id, block_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,10 +640,5 @@ mod tests {
         assert_eq!(normalize_pos("noun, masculine"), "n-m");
         assert_eq!(normalize_pos("something odd"), "phr");
         assert_eq!(normalize_pos(""), "");
-    }
-
-    #[test]
-    fn whitespace_is_collapsed() {
-        assert_eq!(clean("  jasno   niebieski "), "jasno niebieski");
     }
 }
