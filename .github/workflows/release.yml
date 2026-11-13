@@ -62,50 +62,8 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
-  # The builds start alongside the tests instead of waiting for them; only
+  # The build starts alongside the tests instead of waiting for them; only
   # publishing waits for the tests to pass.
-  macos:
-    name: macOS (universal)
-    if: github.event_name != 'pull_request'
-    runs-on: macos-14
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: macos
-
-      - run: bun install --frozen-lockfile
-
-      - name: Build the universal .app and .dmg
-        run: bun tauri build --target universal-apple-darwin --bundles dmg,app
-
-      - name: Collect artefacts
-        run: |
-          mkdir -p out
-          dmg=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -1)
-          cp "$dmg" "out/Polski-macos-universal.dmg"
-          # A zipped .app is handy when Gatekeeper refuses to mount the dmg.
-          ditto -c -k --sequesterRsrc --keepParent \
-            "src-tauri/target/universal-apple-darwin/release/bundle/macos/Polski.app" \
-            "out/Polski-macos-universal.app.zip"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos
-          path: out/*
-          if-no-files-found: error
-
   android:
     name: Android (APK)
     if: github.event_name != 'pull_request'
@@ -212,13 +170,8 @@ jobs:
 
   publish:
     name: Publish latest
-    needs: [check, macos, android]
-    # Publish whatever built: a flaky macOS runner must not hold back the APK.
-    # Tests must still pass, and at least one platform must have built.
-    if: >-
-      !cancelled() && github.event_name != 'pull_request' &&
-      needs.check.result == 'success' &&
-      (needs.macos.result == 'success' || needs.android.result == 'success')
+    needs: [check, android]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -253,10 +206,6 @@ jobs:
           phone and allow installation from this source. Notifications need to be
           granted once, in the app's Settings screen.
 
-          **macOS** — download `Polski-macos-universal.dmg` and drag the app across.
-          The build is not notarised, so the first launch needs
-          `xattr -cr /Applications/Polski.app` or right-click → Open.
-
           HEADER
           if [ "${{ needs.android.outputs.stable-signing }}" != "true" ]; then
             cat >> notes.md <<'WARN'
@@ -267,22 +216,19 @@ jobs:
 
           WARN
           fi
-          for platform in macos android; do
-            result=$([ "$platform" = macos ] && echo "${{ needs.macos.result }}" || echo "${{ needs.android.result }}")
-            if [ "$result" != "success" ]; then
-              cat >> notes.md <<MISSING
-          > **Note** — the $platform build did not finish for this commit, so the
-          > $platform download below is from an earlier build.
-
-          MISSING
-            fi
-          done
           {
             echo "### This build"
             echo
             echo "- Commit \`${GITHUB_SHA::7}\` — ${COMMIT_MESSAGE:-manual run}" | head -1
             echo "- Built $(date -u '+%Y-%m-%d %H:%M UTC')"
           } >> notes.md
+
+      # Start from an empty release each time, so no asset from an older build
+      # (or a platform that is no longer built) is left behind. The tag stays.
+      - name: Remove the previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete latest --yes --repo "$GITHUB_REPOSITORY" || true
 
       - name: Publish
         uses: softprops/action-gh-release@v2

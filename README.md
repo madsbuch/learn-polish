@@ -4,8 +4,8 @@ A Polish learning app for people who speak **English** or **Danish**. One
 check-in a day: today's conversation, the words that belong to it, and its
 sentences.
 
-Built with Tauri 2 (Rust + SQLite) and React, packaged as a native app for
-**Android** and **macOS**.
+Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
+**Android** app. (Tauri can also build it for macOS locally; CI no longer does.)
 
 ---
 
@@ -225,17 +225,13 @@ below 190 words, or if a dialogue has a speaker with no gender.
 ## Releases
 
 Every merge to `main` runs `.github/workflows/release.yml`, which tests, builds
-a universal macOS `.dmg` and an Android `.apk`, and replaces the rolling
+an Android `.apk`, and replaces the rolling
 [**latest**](../../releases/tag/latest) release.
 
 ### Installing
 
 **Android** — download `Polski-android-universal.apk` from the latest release,
 open it on the phone and allow installation from that source.
-
-**macOS** — download `Polski-macos-universal.dmg`. The build is not notarised,
-so the first launch needs `xattr -cr /Applications/Polski.app`, or right-click →
-Open.
 
 ### Android signing
 
