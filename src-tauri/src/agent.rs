@@ -126,8 +126,8 @@ impl<'a> Agent<'a> {
     {
         let mut outcome = Outcome { text: String::new(), extras: Vec::new(), remembered: Vec::new(), failed: None };
         let (key, model) = {
-            let conn = self.db.lock();
-            match (ai::api_key(&conn), ai::require_model(&conn)) {
+            let conn = &mut *self.db.lock();
+            match (ai::api_key(conn), ai::require_model(conn)) {
                 (Ok(key), Ok(model)) => (key, model),
                 (Err(error), _) | (_, Err(error)) => {
                     outcome.failed = Some(error);
@@ -137,7 +137,7 @@ impl<'a> Agent<'a> {
             }
         };
         let memory_tools = match &self.tools {
-            Some(_) if crate::memories::enabled(&self.db.lock()) => crate::memories::tools(),
+            Some(_) if crate::memories::enabled(&mut self.db.lock()) => crate::memories::tools(),
             _ => Vec::new(),
         };
         let all: Vec<&Tool> = self.tools.iter().flatten().chain(memory_tools.iter()).collect();
@@ -163,7 +163,7 @@ impl<'a> Agent<'a> {
                     break;
                 }
             };
-            let _ = crate::costs::record(&self.db.lock(), self.name, "openrouter", &model, turn.cost, "");
+            let _ = crate::costs::record(&mut self.db.lock(), self.name, "openrouter", &model, turn.cost, "");
 
             let text = turn.text.trim();
             if !text.is_empty() {
@@ -192,7 +192,7 @@ impl<'a> Agent<'a> {
                 let id = tool_call.id.clone();
                 let result = if crate::memories::is_tool(&tool_call.function.name) {
                     let saved = crate::memories::run_tool(
-                        &self.db.lock(),
+                        &mut self.db.lock(),
                         self.name,
                         &tool_call.function.name,
                         &tool_call.function.arguments,

@@ -14,6 +14,7 @@ mod memories;
 mod practice;
 mod models;
 mod playlists;
+mod schema;
 mod session;
 mod songs;
 mod speech;
@@ -137,64 +138,66 @@ mod integration {
     //! Drives a real database through a full check-in, without Tauri.
 
     use super::*;
-    use rusqlite::Connection;
+    use crate::db::Conn;
+    use crate::schema as t;
+    use diesel::connection::SimpleConnection;
+    use diesel::prelude::*;
 
     /// Reopens a scratch database without wiping it, to exercise migrations.
-    fn scratch_db_keep(name: &str) -> Connection {
+    fn scratch_db_keep(name: &str) -> Conn {
         let path = std::env::temp_dir()
             .join("learn-polish-tests")
             .join(format!("{name}-{}.db", std::process::id()));
         db::open(&path).expect("reopen")
     }
 
-    fn grammar_course(conn: &Connection) -> i64 {
-        conn.query_row("SELECT id FROM topics WHERE slug = 'grammar-essentials'", [], |r| r.get(0))
+    fn grammar_course(conn: &mut Conn) -> i64 {
+        t::topics::table
+            .filter(t::topics::slug.eq("grammar-essentials"))
+            .select(t::topics::id)
+            .first(conn)
             .expect("the starter lessons have a course")
     }
 
-    fn starter_lesson(conn: &Connection) -> blocks::Block {
-        blocks::for_topic(conn, grammar_course(conn)).unwrap().remove(0)
+    fn starter_lesson(conn: &mut Conn) -> blocks::Block {
+        let grammar = grammar_course(conn);
+        blocks::for_topic(conn, grammar).unwrap().remove(0)
     }
 
-    fn scratch_db(name: &str) -> Connection {
+    fn scratch_db(name: &str) -> Conn {
         let path = std::env::temp_dir()
             .join("learn-polish-tests")
             .join(format!("{name}-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let conn = db::open(&path).expect("open");
+        let mut conn = db::open(&path).expect("open");
         // Pin the clock to a known day so the assertions do not depend on today.
-        db::set_setting(&conn, "tz_offset_minutes", "0").unwrap();
+        db::set_setting(&mut conn, "tz_offset_minutes", "0").unwrap();
         conn
     }
 
     #[test]
     fn a_fresh_install_seeds_the_whole_curriculum() {
-        let conn = scratch_db("seed");
-        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        let mut conn = scratch_db("seed");
         // Ten topics and the course holding the grammar lessons.
-        assert_eq!(count("SELECT COUNT(*) FROM topics"), 11);
-        assert!(count("SELECT COUNT(*) FROM words") >= 2000);
-        assert_eq!(count("SELECT COUNT(*) FROM sentences"), 200);
-        assert!(count("SELECT COUNT(*) FROM conversation_lines") >= 100);
+        assert_eq!(t::topics::table.count().get_result::<i64>(&mut conn).unwrap(), 11);
+        assert!(t::words::table.count().get_result::<i64>(&mut conn).unwrap() >= 2000);
+        assert_eq!(t::sentences::table.count().get_result::<i64>(&mut conn).unwrap(), 200);
+        assert!(t::conversation_lines::table.count().get_result::<i64>(&mut conn).unwrap() >= 100);
 
         // Opening again must not duplicate anything — and a starter course the
         // learner deleted stays deleted: it is theirs now, never seeded again.
-        let basics = db::require_topic_id(&conn, 1).unwrap();
-        crate::courses::delete(&conn, basics).unwrap();
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        crate::courses::delete(&mut conn, basics).unwrap();
         drop(conn);
-        let conn = scratch_db_keep("seed");
-        assert_eq!(
-            conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM topics", [], |r| r.get(0))
-                .unwrap(),
-            10
-        );
+        let mut conn = scratch_db_keep("seed");
+        assert_eq!(t::topics::table.count().get_result::<i64>(&mut conn).unwrap(), 10);
     }
 
     #[test]
     fn the_course_is_cut_into_small_blocks() {
-        let conn = scratch_db("blocks");
-        let basics = db::require_topic_id(&conn, 1).unwrap();
-        let list = blocks::for_topic(&conn, basics).unwrap();
+        let mut conn = scratch_db("blocks");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let list = blocks::for_topic(&mut conn, basics).unwrap();
         let count = |format: &str| list.iter().filter(|b| b.format == format).count();
         assert_eq!(count("dialogue"), 1);
         assert!(count("words") >= 20, "words come in eights");
@@ -204,7 +207,7 @@ mod integration {
         // A word drill is small: eight new words, met then recognised, and a memory round.
         let words = list.iter().find(|b| b.format == "words").unwrap();
         assert_eq!(words.complexity, "low");
-        let plan = session::build_block(&conn, words.id).unwrap();
+        let plan = session::build_block(&mut conn, words.id).unwrap();
         assert_eq!(plan.new_words, 8);
         assert!(plan.exercises.len() <= 17, "{} exercises", plan.exercises.len());
         assert_eq!(plan.exercises[0].kind, "intro");
@@ -212,14 +215,14 @@ mod integration {
 
         // The dialogue drill reads first, then drills its lines.
         let dialogue = list.iter().find(|b| b.format == "dialogue").unwrap();
-        let plan = session::build_block(&conn, dialogue.id).unwrap();
+        let plan = session::build_block(&mut conn, dialogue.id).unwrap();
         assert_eq!(plan.exercises[0].kind, "dialogueRead");
         assert!(plan.exercises.iter().any(|e| e.kind == "dialogueGap"));
 
         // Sentences: build each, then fill gaps from a bank that holds every answer.
         let sentences = list.iter().find(|b| b.format == "sentences").unwrap();
         assert_eq!(sentences.complexity, "medium");
-        let plan = session::build_block(&conn, sentences.id).unwrap();
+        let plan = session::build_block(&mut conn, sentences.id).unwrap();
         assert!(plan.exercises.iter().any(|e| e.kind == "wordOrder"));
         let gaps = plan.exercises.iter().find(|e| e.kind == "gapFill").expect("fill the gaps");
         for gap in &gaps.gaps {
@@ -232,10 +235,11 @@ mod integration {
         }
 
         // The starter lessons are there, as study blocks in their own course.
-        let lessons = blocks::for_topic(&conn, grammar_course(&conn)).unwrap();
+        let grammar = grammar_course(&mut conn);
+        let lessons = blocks::for_topic(&mut conn, grammar).unwrap();
         assert!(lessons.len() >= 7);
         assert!(lessons.iter().all(|b| b.kind == "study" && b.origin == "starter"));
-        let overview = blocks::overview(&conn).unwrap();
+        let overview = blocks::overview(&mut conn).unwrap();
         assert!(overview.due.is_empty(), "nothing is due on a fresh install");
         assert_eq!(overview.next[0].topic_id, Some(basics), "the course starts at the beginning");
     }
@@ -250,8 +254,9 @@ mod integration {
         let _ = std::fs::remove_file(&path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         {
-            let old = Connection::open(&path).unwrap();
-            old.execute_batch(
+            // An old schema, so raw SQL: these tables are not in crate::schema.
+            let mut old = Conn::establish(&path.to_string_lossy()).unwrap();
+            old.batch_execute(
                 "CREATE TABLE topics (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, ord INTEGER NOT NULL,
                      kind TEXT NOT NULL DEFAULT 'course', title_pl TEXT NOT NULL, title_en TEXT NOT NULL,
                      summary_en TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0);
@@ -315,153 +320,165 @@ mod integration {
             .unwrap();
         }
 
-        let conn = db::open(&path).expect("upgrade");
-        let owner = |table: &str, id: i64| -> i64 {
-            conn.query_row(&format!("SELECT block_id FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).unwrap()
+        let mut conn = db::open(&path).expect("upgrade");
+        let word_owner = |conn: &mut Conn, id: i64| -> i64 {
+            t::words::table.find(id).select(t::words::block_id).first(conn).unwrap()
         };
         // Ids — and so review history — survive.
-        assert_eq!(owner("words", 10), 101);
-        assert_eq!(srs::load(&conn, "word", 10).unwrap().unwrap().reps, 2);
-        assert_eq!(srs::load(&conn, "word", 20).unwrap().unwrap().reps, 4);
+        assert_eq!(word_owner(&mut conn, 10), 101);
+        assert_eq!(srs::load(&mut conn, "word", 10).unwrap().unwrap().reps, 2);
+        assert_eq!(srs::load(&mut conn, "word", 20).unwrap().unwrap().reps, 4);
         // A shared word goes to the tutor's drill, not the automatic one.
-        assert_eq!(owner("words", 20), 200);
-        assert_eq!(owner("words", 21), 200);
-        assert_eq!(owner("words", 22), 201);
-        assert_eq!(owner("sentences", 30), 202);
-        assert_eq!(owner("conversation_lines", 40), 100);
+        assert_eq!(word_owner(&mut conn, 20), 200);
+        assert_eq!(word_owner(&mut conn, 21), 200);
+        assert_eq!(word_owner(&mut conn, 22), 201);
+        let sentence: i64 = t::sentences::table.find(30).select(t::sentences::block_id).first(&mut conn).unwrap();
+        assert_eq!(sentence, 202);
+        let line: i64 =
+            t::conversation_lines::table.find(40).select(t::conversation_lines::block_id).first(&mut conn).unwrap();
+        assert_eq!(line, 100);
         // An automatic drill left with nothing goes.
-        assert!(blocks::load(&conn, 203).is_err());
-        assert_eq!(blocks::load(&conn, 101).unwrap().due_day, Some(105), "schedules survive");
+        assert!(blocks::load(&mut conn, 203).is_err());
+        assert_eq!(blocks::load(&mut conn, 101).unwrap().due_day, Some(105), "schedules survive");
 
         // Every block is listed in a course; programmes are courses now.
-        let unlisted: i64 = conn
-            .query_row("SELECT COUNT(*) FROM blocks WHERE id NOT IN (SELECT block_id FROM course_blocks)", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(unlisted, 0);
-        assert_eq!(blocks::load(&conn, 300).unwrap().topic_title.as_deref(), Some("Lessons"));
-        assert_eq!(blocks::detail(&conn, 300).unwrap().last_feedback.as_deref(), Some("Good."));
-        let kinds: i64 = conn.query_row("SELECT COUNT(*) FROM topics WHERE kind != 'course'", [], |r| r.get(0)).unwrap();
+        let listed: std::collections::HashSet<i64> =
+            t::course_blocks::table.select(t::course_blocks::block_id).load::<i64>(&mut conn).unwrap().into_iter().collect();
+        let all: Vec<i64> = t::blocks::table.select(t::blocks::id).load(&mut conn).unwrap();
+        assert!(all.iter().all(|id| listed.contains(id)), "every block is in a course");
+        assert_eq!(blocks::load(&mut conn, 300).unwrap().topic_title.as_deref(), Some("Lessons"));
+        assert_eq!(blocks::detail(&mut conn, 300).unwrap().last_feedback.as_deref(), Some("Good."));
+        let kinds: i64 =
+            t::topics::table.filter(t::topics::kind.ne("course")).count().get_result(&mut conn).unwrap();
         assert_eq!(kinds, 0);
 
         // The starter content is filled in around what was there, without
         // repeating a word the course already teaches.
-        let basics: i64 = conn.query_row("SELECT id FROM topics WHERE slug = 'basics'", [], |r| r.get(0)).unwrap();
-        let czesc: i64 = conn
-            .query_row("SELECT COUNT(*) FROM course_words WHERE topic_id = ?1 AND pl = 'cześć'", [basics], |r| r.get(0))
+        let basics: i64 =
+            t::topics::table.filter(t::topics::slug.eq("basics")).select(t::topics::id).first(&mut conn).unwrap();
+        let czesc: i64 = t::course_words::table
+            .filter(t::course_words::topic_id.eq(basics))
+            .filter(t::course_words::pl.eq("cześć"))
+            .count()
+            .get_result(&mut conn)
             .unwrap();
         assert_eq!(czesc, 1);
-        let dialogues = blocks::for_topic(&conn, basics).unwrap().iter().filter(|b| b.format == "dialogue").count();
+        let dialogues = blocks::for_topic(&mut conn, basics).unwrap().iter().filter(|b| b.format == "dialogue").count();
         assert_eq!(dialogues, 1, "the existing conversation is kept, not doubled");
-        assert!(blocks::for_topic(&conn, grammar_course(&conn)).unwrap().len() >= 7);
+        let grammar = grammar_course(&mut conn);
+        assert!(blocks::for_topic(&mut conn, grammar).unwrap().len() >= 7);
 
         // A word taken out goes with its history.
-        crate::courses::remove_items(&conn, 2, &["czerwony".into()], &[]).unwrap();
-        assert!(srs::load(&conn, "word", 20).unwrap().is_none());
+        crate::courses::remove_items(&mut conn, 2, &["czerwony".into()], &[]).unwrap();
+        assert!(srs::load(&mut conn, "word", 20).unwrap().is_none());
         drop(conn);
         db::open(&path).expect("a second open is a no-op");
     }
 
     #[test]
     fn finishing_a_block_schedules_its_next_check_in() {
-        let conn = scratch_db("schedule");
-        let today = db::today(&conn);
-        let basics = db::require_topic_id(&conn, 1).unwrap();
-        let words = blocks::for_topic(&conn, basics)
+        let mut conn = scratch_db("schedule");
+        let today = db::today(&mut conn);
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let words = blocks::for_topic(&mut conn, basics)
             .unwrap()
             .into_iter()
             .find(|b| b.format == "words")
             .unwrap();
-        let plan = session::build_block(&conn, words.id).unwrap();
+        let plan = session::build_block(&mut conn, words.id).unwrap();
         for exercise in plan.exercises.iter().filter(|e| e.item_kind == "word") {
-            let state = srs::load(&conn, "word", exercise.item_id)
+            let state = srs::load(&mut conn, "word", exercise.item_id)
                 .unwrap()
                 .unwrap_or_else(|| srs::ReviewState::fresh(today));
-            srs::save(&conn, "word", exercise.item_id, &srs::grade(state, srs::GOOD, today)).unwrap();
-            stats::record_answer(&conn, today, 6, true).unwrap();
+            srs::save(&mut conn, "word", exercise.item_id, &srs::grade(state, srs::GOOD, today)).unwrap();
+            stats::record_answer(&mut conn, today, 6, true).unwrap();
         }
 
-        let done = blocks::record(&conn, words.id, blocks::result_from_score(9, 10)).unwrap();
+        let done = blocks::record(&mut conn, words.id, blocks::result_from_score(9, 10)).unwrap();
         assert_eq!(done.due_day, Some(today + words.period_days), "first pass: back after its period");
-        assert!(stats::mark_practised(&conn, today).unwrap(), "first block today");
-        assert!(!stats::mark_practised(&conn, today).unwrap(), "not counted twice");
+        assert!(stats::mark_practised(&mut conn, today).unwrap(), "first block today");
+        assert!(!stats::mark_practised(&mut conn, today).unwrap(), "not counted twice");
 
-        let summary = stats::collect(&conn).unwrap();
+        let summary = stats::collect(&mut conn).unwrap();
         assert_eq!(summary.current_streak, 1);
         assert!(summary.words_seen > 0);
         assert!(summary.achievements.iter().any(|a| a.code == "first_day" && a.unlocked));
 
         // The next block to start is a new one, not the one just done.
-        let overview = blocks::overview(&conn).unwrap();
+        let overview = blocks::overview(&mut conn).unwrap();
         assert!(overview.next.iter().all(|b| b.id != words.id));
         assert_eq!(overview.done_today, 1);
 
         // Failing brings it back tomorrow; passing again spreads it out.
-        let failed = blocks::record(&conn, words.id, "fail").unwrap();
+        let failed = blocks::record(&mut conn, words.id, "fail").unwrap();
         assert_eq!(failed.due_day, Some(today + 1));
-        let passed = blocks::record(&conn, words.id, "pass").unwrap();
+        let passed = blocks::record(&mut conn, words.id, "pass").unwrap();
         assert!(passed.interval_days >= words.period_days);
     }
 
     #[test]
     fn the_examiner_s_verdict_schedules_the_study_block() {
-        let conn = scratch_db("examiner");
-        let lesson = starter_lesson(&conn);
-        conn.execute("INSERT INTO checkins (block_id, started_at) VALUES (?1, 0)", [lesson.id]).unwrap();
-        let checkin = conn.last_insert_rowid();
+        let mut conn = scratch_db("examiner");
+        let lesson = starter_lesson(&mut conn);
+        let checkin: i64 = diesel::insert_into(t::checkins::table)
+            .values((t::checkins::block_id.eq(lesson.id), t::checkins::started_at.eq(0)))
+            .returning(t::checkins::id)
+            .get_result(&mut conn)
+            .unwrap();
         let (assessment, first) = examiner::record(
-            &conn,
+            &mut conn,
             checkin,
             serde_json::from_str(r#"{"result":"partial","summary":"Mostly right.","to_review":["oni są"]}"#).unwrap(),
         )
         .unwrap();
         assert!(first);
         assert!(assessment.xp > 0, "a partial pass still earns something");
-        let block = blocks::load(&conn, lesson.id).unwrap();
+        let block = blocks::load(&mut conn, lesson.id).unwrap();
         assert_eq!(block.last_result.as_deref(), Some("partial"));
-        assert_eq!(block.due_day, Some(db::today(&conn) + block.period_days));
-        let detail = blocks::detail(&conn, lesson.id).unwrap();
+        assert_eq!(block.due_day, Some(db::today(&mut conn) + block.period_days));
+        let detail = blocks::detail(&mut conn, lesson.id).unwrap();
         assert!(detail.last_feedback.unwrap().contains("oni są"), "what to review is kept for next time");
     }
 
     #[test]
     fn the_chat_model_is_never_guessed() {
-        let conn = scratch_db("model");
+        let mut conn = scratch_db("model");
         // Model ids go stale, so nothing is assumed on a fresh install.
-        assert_eq!(ai::stored_model(&conn, "ai_model"), "");
-        let error = ai::require_model(&conn).unwrap_err().to_string();
+        assert_eq!(ai::stored_model(&mut conn, "ai_model"), "");
+        let error = ai::require_model(&mut conn).unwrap_err().to_string();
         assert!(error.contains("Settings"), "unhelpful message: {error}");
 
-        db::set_setting(&conn, "ai_model", "anthropic/claude-haiku-4.5").unwrap();
-        assert_eq!(ai::require_model(&conn).unwrap(), "anthropic/claude-haiku-4.5");
+        db::set_setting(&mut conn, "ai_model", "anthropic/claude-haiku-4.5").unwrap();
+        assert_eq!(ai::require_model(&mut conn).unwrap(), "anthropic/claude-haiku-4.5");
     }
 
     #[test]
     fn voices_are_chosen_by_speaker_gender() {
-        let conn = scratch_db("voices");
+        let mut conn = scratch_db("voices");
         // Speech is pinned, so there are always working voices out of the box.
-        assert_eq!(ai::voice_for(&conn, "f"), ai::DEFAULT_FEMALE_VOICE);
-        assert_eq!(ai::voice_for(&conn, "m"), ai::DEFAULT_MALE_VOICE);
+        assert_eq!(ai::voice_for(&mut conn, "f"), ai::DEFAULT_FEMALE_VOICE);
+        assert_eq!(ai::voice_for(&mut conn, "m"), ai::DEFAULT_MALE_VOICE);
         // Anything that is not a dialogue line reads in the female voice.
-        assert_eq!(ai::voice_for(&conn, ""), ai::DEFAULT_FEMALE_VOICE);
+        assert_eq!(ai::voice_for(&mut conn, ""), ai::DEFAULT_FEMALE_VOICE);
 
-        db::set_setting(&conn, "tts_voice_female", "Leda").unwrap();
-        db::set_setting(&conn, "tts_voice_male", "Charon").unwrap();
-        assert_eq!(ai::voice_for(&conn, "f"), "Leda");
-        assert_eq!(ai::voice_for(&conn, "m"), "Charon");
+        db::set_setting(&mut conn, "tts_voice_female", "Leda").unwrap();
+        db::set_setting(&mut conn, "tts_voice_male", "Charon").unwrap();
+        assert_eq!(ai::voice_for(&mut conn, "f"), "Leda");
+        assert_eq!(ai::voice_for(&mut conn, "m"), "Charon");
 
         // A voice of the wrong gender, or one Gemini does not have, is ignored
         // rather than sent to the API to be rejected.
-        db::set_setting(&conn, "tts_voice_female", "Charon").unwrap();
-        assert_eq!(ai::voice_for(&conn, "f"), ai::DEFAULT_FEMALE_VOICE);
-        db::set_setting(&conn, "tts_voice_male", "NotAVoice").unwrap();
-        assert_eq!(ai::voice_for(&conn, "m"), ai::DEFAULT_MALE_VOICE);
+        db::set_setting(&mut conn, "tts_voice_female", "Charon").unwrap();
+        assert_eq!(ai::voice_for(&mut conn, "f"), ai::DEFAULT_FEMALE_VOICE);
+        db::set_setting(&mut conn, "tts_voice_male", "NotAVoice").unwrap();
+        assert_eq!(ai::voice_for(&mut conn, "m"), ai::DEFAULT_MALE_VOICE);
     }
 
     #[test]
     fn dialogue_lines_carry_the_speaker_gender() {
-        let conn = scratch_db("gender");
-        let topic = db::require_topic_id(&conn, 4).unwrap(); // the clothes shop
-        let lines = session::dialogue_lines(&conn, topic).unwrap();
+        let mut conn = scratch_db("gender");
+        let topic = db::require_topic_id(&mut conn, 4).unwrap(); // the clothes shop
+        let lines = session::dialogue_lines(&mut conn, topic).unwrap();
         assert!(!lines.is_empty());
         for line in &lines {
             assert!(line.gender == "f" || line.gender == "m", "{:?}", line);
@@ -474,38 +491,38 @@ mod integration {
 
     #[test]
     fn audio_cache_round_trips_and_is_keyed_by_voice() {
-        let conn = scratch_db("audio");
-        let insert = |voice: &str, bytes: &[u8]| {
-            conn.execute(
-                "INSERT INTO audio_cache (cache_key, model, voice, text, mime, bytes, created_at)
-                 VALUES (?1, 'm', ?2, 'Cześć', 'audio/mpeg', ?3, 0)",
-                rusqlite::params![format!("m\u{1}{voice}\u{1}Cześć"), voice, bytes],
-            )
-            .unwrap();
+        let mut conn = scratch_db("audio");
+        let mut insert = |voice: &str, bytes: &[u8]| {
+            diesel::insert_into(t::audio_cache::table)
+                .values((
+                    t::audio_cache::cache_key.eq(format!("m\u{1}{voice}\u{1}Cześć")),
+                    t::audio_cache::model.eq("m"),
+                    t::audio_cache::voice.eq(voice),
+                    t::audio_cache::text.eq("Cześć"),
+                    t::audio_cache::mime.eq("audio/mpeg"),
+                    t::audio_cache::bytes.eq(bytes),
+                    t::audio_cache::created_at.eq(0),
+                ))
+                .execute(&mut conn)
+                .unwrap();
         };
         insert("Kore", &[1, 2, 3]);
         insert("Puck", &[9, 9]);
 
-        let stored: Vec<u8> = conn
-            .query_row(
-                "SELECT bytes FROM audio_cache WHERE voice = 'Kore'",
-                [],
-                |r| r.get(0),
-            )
+        let stored: Vec<u8> = t::audio_cache::table
+            .filter(t::audio_cache::voice.eq("Kore"))
+            .select(t::audio_cache::bytes)
+            .first(&mut conn)
             .unwrap();
         assert_eq!(stored, vec![1, 2, 3], "blobs must survive the round trip");
 
-        let total: i64 = conn
-            .query_row("SELECT COALESCE(SUM(LENGTH(bytes)), 0) FROM audio_cache", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(total, 5, "two voices of the same line are stored separately");
+        let stats = speech::audio_cache_stats_in(&mut conn).unwrap();
+        assert_eq!((stats.clips, stats.bytes), (2, 5), "two voices of the same line are stored separately");
     }
 
     #[test]
     fn songs_round_trip_with_their_lyrics_and_takes() {
-        let conn = scratch_db("songs");
+        let mut conn = scratch_db("songs");
         let draft = songs::normalize_draft(songs::SongDraft {
             title: "Kawa".into(),
             chorus_pl: "Poproszę kawę".into(),
@@ -521,16 +538,20 @@ mod integration {
         .unwrap();
         assert!(!draft.style.is_empty(), "a default style is filled in");
 
-        assert_eq!(songs::suno_model(&conn), songs::DEFAULT_SUNO_MODEL);
-        let id = songs::insert_song(&conn, &draft, "V6").unwrap();
-        conn.execute(
-            "INSERT INTO song_tracks (song_id, ord, remote_id, audio_path, duration)
-             VALUES (?1, 0, 'r1', '/tmp/a.mp3', 120.5)",
-            [id],
-        )
-        .unwrap();
+        assert_eq!(songs::suno_model(&mut conn), songs::DEFAULT_SUNO_MODEL);
+        let id = songs::insert_song(&mut conn, &draft, "V6").unwrap();
+        diesel::insert_into(t::song_tracks::table)
+            .values((
+                t::song_tracks::song_id.eq(id),
+                t::song_tracks::ord.eq(0),
+                t::song_tracks::remote_id.eq("r1"),
+                t::song_tracks::audio_path.eq("/tmp/a.mp3"),
+                t::song_tracks::duration.eq(120.5),
+            ))
+            .execute(&mut conn)
+            .unwrap();
 
-        let listed = songs::list_songs(&conn).unwrap();
+        let listed = songs::list_songs(&mut conn).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].status, "generating");
         assert_eq!(listed[0].sections, draft.sections, "lyrics survive storage");
@@ -538,19 +559,19 @@ mod integration {
         assert_eq!(listed[0].tracks[0].duration, 120.5);
 
         // The songwriter falls back to the tutor model until it has its own.
-        db::set_setting(&conn, "ai_model", "tutor/model").unwrap();
-        assert_eq!(songs::songwriter_model(&conn).unwrap(), "tutor/model");
-        db::set_setting(&conn, "songwriter_model", "writer/model").unwrap();
-        assert_eq!(songs::songwriter_model(&conn).unwrap(), "writer/model");
+        db::set_setting(&mut conn, "ai_model", "tutor/model").unwrap();
+        assert_eq!(songs::songwriter_model(&mut conn).unwrap(), "tutor/model");
+        db::set_setting(&mut conn, "songwriter_model", "writer/model").unwrap();
+        assert_eq!(songs::songwriter_model(&mut conn).unwrap(), "writer/model");
     }
 
     #[test]
     fn the_tutor_builds_a_course_that_can_be_practised() {
-        let conn = scratch_db("course");
+        let mut conn = scratch_db("course");
 
         // "Can you build me a programme for learning the colours?" — a course.
         let result = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "create_course",
             serde_json::json!({
                 "title": "Colours",
@@ -582,18 +603,18 @@ mod integration {
         let topic_id = created["topic_id"].as_i64().unwrap();
 
         // It is cut into drills, and they are offered first.
-        let list = blocks::for_topic(&conn, topic_id).unwrap();
+        let list = blocks::for_topic(&mut conn, topic_id).unwrap();
         let formats: Vec<&str> = list.iter().map(|b| b.format.as_str()).collect();
         assert_eq!(formats, vec!["dialogue", "words", "sentences"]);
-        assert_eq!(blocks::overview(&conn).unwrap().next[0].topic_id, Some(topic_id));
-        let plan = session::build_block(&conn, list[1].id).unwrap();
+        assert_eq!(blocks::overview(&mut conn).unwrap().next[0].topic_id, Some(topic_id));
+        let plan = session::build_block(&mut conn, list[1].id).unwrap();
         assert_eq!(plan.topic.kind, "course");
         assert_eq!(plan.new_words, 4);
 
         // Adding words makes a new drill; the existing ones keep theirs, and a
         // word the course already teaches is not added twice.
         let added = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "add_to_course",
             serde_json::json!({ "course_id": topic_id, "words": [
                 { "pl": "żółty", "en": "yellow", "pos": "adj" },
@@ -601,108 +622,106 @@ mod integration {
             ] }),
         );
         assert_eq!(added["updated"]["skipped_duplicates"], 1, "{added}");
-        assert_eq!(blocks::load(&conn, list[1].id).unwrap().items, 4);
-        let words_2 = blocks::for_topic(&conn, topic_id).unwrap().into_iter().last().unwrap();
+        assert_eq!(blocks::load(&mut conn, list[1].id).unwrap().items, 4);
+        let words_2 = blocks::for_topic(&mut conn, topic_id).unwrap().into_iter().last().unwrap();
         assert_eq!((words_2.title.as_str(), words_2.items), ("Words 2", 1));
 
         // Starter courses are ordinary courses: they can be extended too.
-        let course = db::require_topic_id(&conn, 1).unwrap();
-        let before = blocks::for_topic(&conn, course).unwrap().len();
+        let course = db::require_topic_id(&mut conn, 1).unwrap();
+        let before = blocks::for_topic(&mut conn, course).unwrap().len();
         let grown = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "add_to_course",
             serde_json::json!({ "course_id": course, "words": [{ "pl": "sąsiedztwo", "en": "neighbourhood", "pos": "n-n" }] }),
         );
         assert!(grown.get("error").is_none(), "{grown}");
-        assert!(blocks::for_topic(&conn, course).unwrap().len() >= before);
+        assert!(blocks::for_topic(&mut conn, course).unwrap().len() >= before);
 
         // Any course can be deleted with its blocks.
-        let deleted = tutor::run_tool_for_test(&conn, "delete_course", serde_json::json!({ "course_id": topic_id }));
+        let deleted = tutor::run_tool_for_test(&mut conn, "delete_course", serde_json::json!({ "course_id": topic_id }));
         assert_eq!(deleted["deleted"], "Colours");
-        assert!(blocks::for_topic(&conn, topic_id).unwrap().is_empty());
+        assert!(blocks::for_topic(&mut conn, topic_id).unwrap().is_empty());
     }
 
     #[test]
     fn blocks_move_and_are_shared_between_courses() {
-        let conn = scratch_db("membership");
-        let basics = db::require_topic_id(&conn, 1).unwrap();
-        let family = db::require_topic_id(&conn, 2).unwrap();
-        let block = blocks::for_topic(&conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
-        let words = blocks::detail(&conn, block.id).unwrap().words;
+        let mut conn = scratch_db("membership");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let family = db::require_topic_id(&mut conn, 2).unwrap();
+        let block = blocks::for_topic(&mut conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
+        let words = blocks::detail(&mut conn, block.id).unwrap().words;
 
         // Shared: one block, listed in both, with one schedule.
         let shared = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "add_block_to_course",
             serde_json::json!({ "block_id": block.id, "course_id": family }),
         );
         assert!(shared.get("error").is_none(), "{shared}");
-        assert!(blocks::for_topic(&conn, family).unwrap().iter().any(|b| b.id == block.id));
-        assert_eq!(blocks::load(&conn, block.id).unwrap().course_ids, vec![basics, family]);
-        blocks::record(&conn, block.id, "pass").unwrap();
-        assert!(blocks::for_topic(&conn, family).unwrap().iter().any(|b| b.id == block.id && b.reps == 1));
+        assert!(blocks::for_topic(&mut conn, family).unwrap().iter().any(|b| b.id == block.id));
+        assert_eq!(blocks::load(&mut conn, block.id).unwrap().course_ids, vec![basics, family]);
+        blocks::record(&mut conn, block.id, "pass").unwrap();
+        assert!(blocks::for_topic(&mut conn, family).unwrap().iter().any(|b| b.id == block.id && b.reps == 1));
         // The family course now reaches the block's words too.
-        let reach: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM course_words WHERE topic_id = ?1 AND block_id = ?2",
-                [family, block.id],
-                |r| r.get(0),
-            )
+        let reach: i64 = t::course_words::table
+            .filter(t::course_words::topic_id.eq(family))
+            .filter(t::course_words::block_id.eq(block.id))
+            .count()
+            .get_result(&mut conn)
             .unwrap();
         assert_eq!(reach as usize, words.len());
 
         // Out of one course, it stays; out of the last, it goes with its words.
         let out = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "remove_block_from_course",
             serde_json::json!({ "block_id": block.id, "course_id": basics }),
         );
         assert_eq!(out["block_deleted"], false);
-        assert_eq!(blocks::load(&conn, block.id).unwrap().topic_id, Some(family));
-        let word_id: i64 = conn
-            .query_row("SELECT id FROM words WHERE block_id = ?1 LIMIT 1", [block.id], |r| r.get(0))
-            .unwrap();
+        assert_eq!(blocks::load(&mut conn, block.id).unwrap().topic_id, Some(family));
+        let word_id: i64 =
+            t::words::table.filter(t::words::block_id.eq(block.id)).select(t::words::id).first(&mut conn).unwrap();
         let gone = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "remove_block_from_course",
             serde_json::json!({ "block_id": block.id, "course_id": family }),
         );
         assert_eq!(gone["block_deleted"], true);
-        assert!(blocks::load(&conn, block.id).is_err());
-        let left: i64 = conn.query_row("SELECT COUNT(*) FROM words WHERE id = ?1", [word_id], |r| r.get(0)).unwrap();
+        assert!(blocks::load(&mut conn, block.id).is_err());
+        let left: i64 = t::words::table.find(word_id).count().get_result(&mut conn).unwrap();
         assert_eq!(left, 0, "its words went with it");
 
         // Moving takes it out of one course and into another, at the end.
-        let lesson = starter_lesson(&conn);
-        let grammar = grammar_course(&conn);
+        let lesson = starter_lesson(&mut conn);
+        let grammar = grammar_course(&mut conn);
         tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "move_block",
             serde_json::json!({ "block_id": lesson.id, "from_course_id": grammar, "to_course_id": basics }),
         );
-        assert_eq!(blocks::load(&conn, lesson.id).unwrap().course_ids, vec![basics]);
-        assert_eq!(blocks::for_topic(&conn, basics).unwrap().last().unwrap().id, lesson.id);
+        assert_eq!(blocks::load(&mut conn, lesson.id).unwrap().course_ids, vec![basics]);
+        assert_eq!(blocks::for_topic(&mut conn, basics).unwrap().last().unwrap().id, lesson.id);
 
         // Reordering puts it first.
         tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "order_course_blocks",
             serde_json::json!({ "course_id": basics, "block_ids": [lesson.id] }),
         );
-        assert_eq!(blocks::for_topic(&conn, basics).unwrap()[0].id, lesson.id);
+        assert_eq!(blocks::for_topic(&mut conn, basics).unwrap()[0].id, lesson.id);
 
         // Deleting a course keeps blocks another course still lists.
-        let kept = blocks::for_topic(&conn, family).unwrap()[0].id;
-        crate::courses::add_block(&conn, basics, kept).unwrap();
-        crate::courses::delete(&conn, family).unwrap();
-        assert!(blocks::load(&conn, kept).is_ok());
+        let kept = blocks::for_topic(&mut conn, family).unwrap()[0].id;
+        crate::courses::add_block(&mut conn, basics, kept).unwrap();
+        crate::courses::delete(&mut conn, family).unwrap();
+        assert!(blocks::load(&mut conn, kept).is_ok());
     }
 
     #[test]
     fn the_tutor_writes_study_blocks_and_single_format_drills() {
-        let conn = scratch_db("tutor-blocks");
+        let mut conn = scratch_db("tutor-blocks");
         let study = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "create_study_block",
             serde_json::json!({
                 "title": "Iść — to go on foot",
@@ -714,14 +733,14 @@ mod integration {
         );
         assert_eq!(study["_action"]["kind"], "blockCreated", "{study}");
         let study_id = study["_action"]["blockId"].as_i64().unwrap();
-        let block = blocks::load(&conn, study_id).unwrap();
+        let block = blocks::load(&mut conn, study_id).unwrap();
         assert_eq!((block.kind.as_str(), block.complexity.as_str(), block.period_days), ("study", "low", 5));
         // Without a course it is filed in "Lessons".
         assert_eq!(block.topic_title.as_deref(), Some("Lessons"));
 
         // A study block without objectives is refused: the examiner needs them.
         let refused = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "create_study_block",
             serde_json::json!({ "title": "x", "summary": "x", "complexity": "low", "lesson": "x", "objectives": [] }),
         );
@@ -729,7 +748,7 @@ mod integration {
 
         // "I meant memory cards": one drill, memory format, and nothing else made.
         let drill = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "create_drill_block",
             serde_json::json!({
                 "title": "Colours — memory",
@@ -744,31 +763,31 @@ mod integration {
             }),
         );
         let drill_id = drill["_action"]["blockId"].as_i64().unwrap();
-        let block = blocks::load(&conn, drill_id).unwrap();
+        let block = blocks::load(&mut conn, drill_id).unwrap();
         assert_eq!((block.format.as_str(), block.items), ("memory", 4));
-        assert_eq!(blocks::for_topic(&conn, block.topic_id.unwrap()).unwrap().len(), 1);
-        let plan = session::build_block(&conn, drill_id).unwrap();
+        assert_eq!(blocks::for_topic(&mut conn, block.topic_id.unwrap()).unwrap().len(), 1);
+        let plan = session::build_block(&mut conn, drill_id).unwrap();
         assert!(plan.exercises.iter().all(|e| e.kind == "memory"));
 
         // Starter blocks are ordinary blocks: they can be edited and deleted.
-        let starter = starter_lesson(&conn).id;
-        let edit = tutor::run_tool_for_test(&conn, "update_block", serde_json::json!({ "block_id": starter, "title": "Mine now" }));
+        let starter = starter_lesson(&mut conn).id;
+        let edit = tutor::run_tool_for_test(&mut conn, "update_block", serde_json::json!({ "block_id": starter, "title": "Mine now" }));
         assert!(edit.get("error").is_none(), "{edit}");
-        assert_eq!(blocks::load(&conn, starter).unwrap().title, "Mine now");
-        let gone = tutor::run_tool_for_test(&conn, "delete_block", serde_json::json!({ "block_id": starter }));
+        assert_eq!(blocks::load(&mut conn, starter).unwrap().title, "Mine now");
+        let gone = tutor::run_tool_for_test(&mut conn, "delete_block", serde_json::json!({ "block_id": starter }));
         assert_eq!(gone["_action"]["kind"], "blockDeleted");
 
         // Scheduling makes it due now.
-        tutor::run_tool_for_test(&conn, "schedule_block", serde_json::json!({ "block_id": study_id }));
-        assert!(blocks::overview(&conn).unwrap().due.iter().any(|b| b.id == study_id));
-        let gone = tutor::run_tool_for_test(&conn, "delete_block", serde_json::json!({ "block_id": study_id }));
+        tutor::run_tool_for_test(&mut conn, "schedule_block", serde_json::json!({ "block_id": study_id }));
+        assert!(blocks::overview(&mut conn).unwrap().due.iter().any(|b| b.id == study_id));
+        let gone = tutor::run_tool_for_test(&mut conn, "delete_block", serde_json::json!({ "block_id": study_id }));
         assert_eq!(gone["_action"]["kind"], "blockDeleted");
     }
 
     #[test]
     fn playlists_hold_takes_in_order_and_lose_deleted_ones() {
-        let conn = scratch_db("playlists");
-        conn.execute_batch(
+        let mut conn = scratch_db("playlists");
+        conn.batch_execute(
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
              VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0);
              INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path) VALUES
@@ -776,21 +795,21 @@ mod integration {
         )
         .unwrap();
 
-        let list = playlists::create(&conn, "  Morning   run ", &[10, 11, 10]).unwrap();
+        let list = playlists::create(&mut conn, "  Morning   run ", &[10, 11, 10]).unwrap();
         assert_eq!(list.name, "Morning run");
         let order = |p: &playlists::Playlist| p.entries.iter().map(|e| e.track_id).collect::<Vec<_>>();
         assert_eq!(order(&list), vec![10, 11, 10], "the same take may appear twice");
 
-        let moved = playlists::move_entry(&conn, list.id, list.entries[2].id, -2).unwrap();
+        let moved = playlists::move_entry(&mut conn, list.id, list.entries[2].id, -2).unwrap();
         assert_eq!(order(&moved), vec![10, 10, 11]);
         // Moving past either end stays in bounds.
-        let moved = playlists::move_entry(&conn, list.id, moved.entries[0].id, -5).unwrap();
+        let moved = playlists::move_entry(&mut conn, list.id, moved.entries[0].id, -5).unwrap();
         assert_eq!(order(&moved), vec![10, 10, 11]);
 
         // Deleting a take takes it out of every playlist.
-        conn.execute("DELETE FROM song_tracks WHERE id = 10", []).unwrap();
-        assert_eq!(order(&playlists::list(&conn).unwrap()[0]), vec![11]);
-        assert!(playlists::create(&conn, "   ", &[]).is_err());
+        diesel::delete(t::song_tracks::table.find(10)).execute(&mut conn).unwrap();
+        assert_eq!(order(&playlists::list(&mut conn).unwrap()[0]), vec![11]);
+        assert!(playlists::create(&mut conn, "   ", &[]).is_err());
     }
 
     /// Every query an agent prompt, a tutor tool or a screen runs, on a database
@@ -798,10 +817,10 @@ mod integration {
     /// fails here, not on the phone.
     #[test]
     fn every_read_path_runs_on_a_full_database() {
-        let conn = scratch_db("read-paths");
-        let basics = db::require_topic_id(&conn, 1).unwrap();
-        crate::memories::add(&conn, "Wants to order food in Kraków", "goal", "tutor").unwrap();
-        conn.execute_batch(&format!(
+        let mut conn = scratch_db("read-paths");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        crate::memories::add(&mut conn, "Wants to order food in Kraków", "goal", "tutor").unwrap();
+        conn.batch_execute(&format!(
             r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, topic_id)
                VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop',
                        '[{{"kind":"chorus","lines":[{{"en":"A coffee, please","pl":"Poproszę kawę"}}]}}]',
@@ -809,18 +828,18 @@ mod integration {
                       (2, 'Dom', 'Dom', 'Home', 'pop', '[]', '', 'V6', 'ready', 0, NULL);"#
         ))
         .unwrap();
-        let filed = blocks::create_listening(&conn, 1, None, None, None, "tutor").unwrap();
-        let loose = blocks::create_listening(&conn, 2, None, None, None, "tutor").unwrap();
-        crate::playlists::create(&conn, "Rano", &[]).unwrap();
-        let lesson = starter_lesson(&conn);
-        let drill = blocks::for_topic(&conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
+        let filed = blocks::create_listening(&mut conn, 1, None, None, None, "tutor").unwrap();
+        let loose = blocks::create_listening(&mut conn, 2, None, None, None, "tutor").unwrap();
+        crate::playlists::create(&mut conn, "Rano", &[]).unwrap();
+        let lesson = starter_lesson(&mut conn);
+        let drill = blocks::for_topic(&mut conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
 
-        let prompt = tutor::system_prompt(&conn).unwrap();
+        let prompt = tutor::system_prompt(&mut conn).unwrap();
         assert!(prompt.contains("Pierwsze spotkanie") && prompt.contains("Wants to order food"));
         assert!(prompt.contains("still in \"Listening\""), "unsorted songs are pointed out");
         for block in [&lesson, &filed, &loose] {
-            let detail = blocks::detail(&conn, block.id).unwrap();
-            assert!(!examiner::system_prompt(&conn, &detail).unwrap().is_empty());
+            let detail = blocks::detail(&mut conn, block.id).unwrap();
+            assert!(!examiner::system_prompt(&mut conn, &detail).unwrap().is_empty());
         }
 
         for (tool, args) in [
@@ -836,27 +855,27 @@ mod integration {
             ("get_song", serde_json::json!({ "song_id": 1 })),
             ("list_playlists", serde_json::json!({})),
         ] {
-            let result = tutor::run_tool_for_test(&conn, tool, args);
+            let result = tutor::run_tool_for_test(&mut conn, tool, args);
             assert!(result.get("error").is_none(), "{tool}: {result}");
         }
 
-        assert!(!commands::browse_words_in(&conn, Some(basics), String::new(), 50).unwrap().is_empty());
-        assert!(!commands::browse_words_in(&conn, None, "dzień".into(), 50).unwrap().is_empty());
-        assert!(commands::browse_catalogue_in(&conn, None, String::new(), 10).unwrap().total_words > 0);
-        assert!(!commands::browse_sentences_in(&conn, basics).unwrap().is_empty());
-        assert!(!speech::topic_audio_lines_in(&conn, basics).unwrap().is_empty());
-        speech::audio_cache_stats_in(&conn).unwrap();
-        stats::collect(&conn).unwrap();
-        assert!(stats::topic_progress(&conn).unwrap().iter().any(|p| p.total_blocks > 0));
-        blocks::overview(&conn).unwrap();
-        songs::gather_context(&conn, Some(basics)).unwrap();
-        session::build_block(&conn, drill.id).unwrap();
+        assert!(!commands::browse_words_in(&mut conn, Some(basics), String::new(), 50).unwrap().is_empty());
+        assert!(!commands::browse_words_in(&mut conn, None, "dzień".into(), 50).unwrap().is_empty());
+        assert!(commands::browse_catalogue_in(&mut conn, None, String::new(), 10).unwrap().total_words > 0);
+        assert!(!commands::browse_sentences_in(&mut conn, basics).unwrap().is_empty());
+        assert!(!speech::topic_audio_lines_in(&mut conn, basics).unwrap().is_empty());
+        speech::audio_cache_stats_in(&mut conn).unwrap();
+        stats::collect(&mut conn).unwrap();
+        assert!(stats::topic_progress(&mut conn).unwrap().iter().any(|p| p.total_blocks > 0));
+        blocks::overview(&mut conn).unwrap();
+        songs::gather_context(&mut conn, Some(basics)).unwrap();
+        session::build_block(&mut conn, drill.id).unwrap();
     }
 
     #[test]
     fn the_tutor_manages_playlists_by_song() {
-        let conn = scratch_db("tutor-playlists");
-        conn.execute_batch(
+        let mut conn = scratch_db("tutor-playlists");
+        conn.batch_execute(
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
              VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0),
                     (2, 'Kolory', 'Niebo', 'Sky', 'pop', '[]', '', 'V6', 'ready', 0),
@@ -868,7 +887,7 @@ mod integration {
         .unwrap();
 
         let made = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "create_playlist",
             serde_json::json!({ "name": "Morning", "song_ids": [1] }),
         );
@@ -876,11 +895,11 @@ mod integration {
         let id = made["playlist_id"].as_i64().unwrap();
         // The most-played take goes in.
         assert_eq!(made["songs"][0]["take"], 2);
-        assert_eq!(playlists::list(&conn).unwrap()[0].entries[0].track_id, 11);
+        assert_eq!(playlists::list(&mut conn).unwrap()[0].entries[0].track_id, 11);
 
         // "Add Kolory to my morning playlist" — and Kawa again is skipped.
         let added = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "add_to_playlist",
             serde_json::json!({ "playlist_id": id, "song_ids": [2, 1] }),
         );
@@ -889,122 +908,125 @@ mod integration {
 
         // A song still being made cannot go in, and nothing changes.
         let refused = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "add_to_playlist",
             serde_json::json!({ "playlist_id": id, "song_ids": [3] }),
         );
         assert!(refused["error"].as_str().unwrap().contains("no audio yet"));
 
-        let listed = tutor::run_tool_for_test(&conn, "list_playlists", serde_json::json!({}));
+        let listed = tutor::run_tool_for_test(&mut conn, "list_playlists", serde_json::json!({}));
         assert_eq!(listed[0]["songs"][1]["title"], "Kolory");
 
-        tutor::run_tool_for_test(&conn, "remove_from_playlist", serde_json::json!({ "playlist_id": id, "song_ids": [1] }));
-        tutor::run_tool_for_test(&conn, "rename_playlist", serde_json::json!({ "playlist_id": id, "name": "Rano" }));
-        let list = playlists::list(&conn).unwrap();
+        tutor::run_tool_for_test(&mut conn, "remove_from_playlist", serde_json::json!({ "playlist_id": id, "song_ids": [1] }));
+        tutor::run_tool_for_test(&mut conn, "rename_playlist", serde_json::json!({ "playlist_id": id, "name": "Rano" }));
+        let list = playlists::list(&mut conn).unwrap();
         assert_eq!((list[0].name.as_str(), list[0].entries.len()), ("Rano", 1));
 
-        let gone = tutor::run_tool_for_test(&conn, "delete_playlist", serde_json::json!({ "playlist_id": id }));
+        let gone = tutor::run_tool_for_test(&mut conn, "delete_playlist", serde_json::json!({ "playlist_id": id }));
         assert_eq!(gone["deleted"], "Rano");
-        assert!(playlists::list(&conn).unwrap().is_empty());
-        assert_eq!(songs::list_songs(&conn).unwrap().len(), 3, "the songs stay");
+        assert!(playlists::list(&mut conn).unwrap().is_empty());
+        assert_eq!(songs::list_songs(&mut conn).unwrap().len(), 3, "the songs stay");
     }
 
     #[test]
     fn tutor_conversations_keep_their_own_history() {
-        let conn = scratch_db("conversations");
+        let mut conn = scratch_db("conversations");
         // A message from before conversations existed is adopted, not lost.
-        conn.execute(
-            "INSERT INTO tutor_messages (role, content, created_at) VALUES ('user', 'old question', 5)",
-            [],
-        )
-        .unwrap();
+        diesel::insert_into(t::tutor_messages::table)
+            .values((
+                t::tutor_messages::role.eq("user"),
+                t::tutor_messages::content.eq("old question"),
+                t::tutor_messages::created_at.eq(5),
+            ))
+            .execute(&mut conn)
+            .unwrap();
         drop(conn);
-        let conn = scratch_db_keep("conversations");
-        let listed = tutor::list_conversations(&conn).unwrap();
+        let mut conn = scratch_db_keep("conversations");
+        let listed = tutor::list_conversations(&mut conn).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].title, "Earlier conversation");
-        assert_eq!(tutor::load_history(&conn, listed[0].id).unwrap().len(), 1);
+        assert_eq!(tutor::load_history(&mut conn, listed[0].id).unwrap().len(), 1);
 
-        let id = tutor::create_conversation(&conn, "How do numbers work?").unwrap();
-        assert_eq!(tutor::load_history(&conn, id).unwrap().len(), 0, "a new one starts empty");
-        assert_eq!(tutor::list_conversations(&conn).unwrap().len(), 2);
+        let id = tutor::create_conversation(&mut conn, "How do numbers work?").unwrap();
+        assert_eq!(tutor::load_history(&mut conn, id).unwrap().len(), 0, "a new one starts empty");
+        assert_eq!(tutor::list_conversations(&mut conn).unwrap().len(), 2);
     }
 
     #[test]
     fn a_song_gets_a_listening_block_that_goes_with_it() {
-        let conn = scratch_db("listening");
-        conn.execute_batch(
+        let mut conn = scratch_db("listening");
+        conn.batch_execute(
             r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
                VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop',
                        '[{"kind":"chorus","lines":[{"en":"A coffee, please","pl":"Poproszę kawę"}]}]',
                        '', 'V6', 'ready', 0);"#,
         )
         .unwrap();
-        let made = tutor::run_tool_for_test(&conn, "create_listening_block", serde_json::json!({ "song_id": 1, "complexity": "high" }));
+        let made = tutor::run_tool_for_test(&mut conn, "create_listening_block", serde_json::json!({ "song_id": 1, "complexity": "high" }));
         let id = made["_action"]["blockId"].as_i64().expect("made");
-        let block = blocks::load(&conn, id).unwrap();
+        let block = blocks::load(&mut conn, id).unwrap();
         assert_eq!((block.kind.as_str(), block.format.as_str(), block.song_id), ("study", "song", Some(1)));
-        assert!(blocks::detail(&conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
+        assert!(blocks::detail(&mut conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
         // One per song: asking again returns the same block.
-        assert_eq!(blocks::create_listening(&conn, 1, None, None, None, "tutor").unwrap().id, id);
+        assert_eq!(blocks::create_listening(&mut conn, 1, None, None, None, "tutor").unwrap().id, id);
         // A song without a course files it in "Listening"; it goes when the song goes.
         assert_eq!(block.topic_title.as_deref(), Some("Listening"));
 
         // A song written from a course's words files it in that course.
-        let food = db::require_topic_id(&conn, 3).unwrap();
-        conn.execute_batch(&format!(
+        let food = db::require_topic_id(&mut conn, 3).unwrap();
+        conn.batch_execute(&format!(
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, topic_id)
              VALUES (2, 'Obiad', 'Smacznego', 'Enjoy', 'pop', '[]', '', 'V6', 'ready', 0, {food});"
         ))
         .unwrap();
-        let made = tutor::run_tool_for_test(&conn, "create_listening_block", serde_json::json!({ "song_id": 2 }));
-        let filed = blocks::load(&conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap();
+        let made = tutor::run_tool_for_test(&mut conn, "create_listening_block", serde_json::json!({ "song_id": 2 }));
+        let filed = blocks::load(&mut conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap();
         assert_eq!(filed.course_ids, vec![food]);
         // Or in the course asked for.
-        conn.execute_batch(
+        conn.batch_execute(
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
              VALUES (3, 'Dom', 'Dom', 'Home', 'pop', '[]', '', 'V6', 'ready', 0);",
         )
         .unwrap();
-        let basics = db::require_topic_id(&conn, 1).unwrap();
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
         let made = tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "create_listening_block",
             serde_json::json!({ "song_id": 3, "course_id": basics }),
         );
-        assert_eq!(blocks::load(&conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap().course_ids, vec![basics]);
+        assert_eq!(blocks::load(&mut conn, made["_action"]["blockId"].as_i64().unwrap()).unwrap().course_ids, vec![basics]);
 
         // The tutor reads a song's lyrics and files a course-less one itself.
-        conn.execute_batch(
+        conn.batch_execute(
             r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
                VALUES (4, 'Pociąg', 'Gdzie jest dworzec?', 'Where is the station?', 'pop',
                        '[{"kind":"chorus","lines":[{"en":"Where is the station?","pl":"Gdzie jest dworzec?"}]}]',
                        '', 'V6', 'ready', 0);"#,
         )
         .unwrap();
-        let block = blocks::create_listening(&conn, 4, None, None, None, "you").unwrap();
+        let block = blocks::create_listening(&mut conn, 4, None, None, None, "you").unwrap();
         assert_eq!(block.topic_title.as_deref(), Some("Listening"));
-        let song = tutor::run_tool_for_test(&conn, "get_song", serde_json::json!({ "song_id": 4 }));
+        let song = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": 4 }));
         assert_eq!(song["lyrics"][0]["lines"][0]["pl"], "Gdzie jest dworzec?");
         assert_eq!(song["filed"]["listening_block_in"][0]["title"], "Listening");
         assert!(song["filed"]["written_from_course"].is_null());
-        let travel = db::require_topic_id(&conn, 5).unwrap();
+        let travel = db::require_topic_id(&mut conn, 5).unwrap();
         let listening = block.topic_id.unwrap();
         tutor::run_tool_for_test(
-            &conn,
+            &mut conn,
             "move_block",
             serde_json::json!({ "block_id": block.id, "from_course_id": listening, "to_course_id": travel }),
         );
-        let song = tutor::run_tool_for_test(&conn, "get_song", serde_json::json!({ "song_id": 4 }));
+        let song = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": 4 }));
         assert_eq!(song["filed"]["written_from_course"]["course_id"], travel, "the song now knows its course");
-        songs::delete_song(&conn, 1).unwrap();
-        assert!(blocks::load(&conn, id).is_err());
+        songs::delete_song(&mut conn, 1).unwrap();
+        assert!(blocks::load(&mut conn, id).is_err());
     }
 
     #[test]
     fn the_tutor_lists_and_deletes_songs() {
-        let conn = scratch_db("tutor-songs");
-        conn.execute_batch(
+        let mut conn = scratch_db("tutor-songs");
+        conn.batch_execute(
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
              VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0),
                     (2, 'Kolory', 'Niebo jest niebieskie', 'The sky is blue', 'pop', '[]', '', 'V6', 'failed', 0);
@@ -1012,27 +1034,27 @@ mod integration {
                  VALUES (10, 1, 0, 'a', '/nonexistent/a.mp3', 3);",
         )
         .unwrap();
-        let listed = tutor::run_tool_for_test(&conn, "list_songs", serde_json::json!({}));
+        let listed = tutor::run_tool_for_test(&mut conn, "list_songs", serde_json::json!({}));
         assert_eq!(listed.as_array().unwrap().len(), 2);
         let kawa = listed.as_array().unwrap().iter().find(|s| s["title"] == "Kawa").unwrap();
         assert_eq!(kawa["plays"], 3);
 
-        let deleted = tutor::run_tool_for_test(&conn, "delete_songs", serde_json::json!({ "song_ids": [2, 99] }));
+        let deleted = tutor::run_tool_for_test(&mut conn, "delete_songs", serde_json::json!({ "song_ids": [2, 99] }));
         assert_eq!(deleted["_action"]["kind"], "songsDeleted");
         assert_eq!(deleted["deleted"], serde_json::json!(["Kolory"]));
-        assert_eq!(songs::list_songs(&conn).unwrap().len(), 1);
+        assert_eq!(songs::list_songs(&mut conn).unwrap().len(), 1);
     }
 
     #[test]
     fn the_tutor_reports_progress_and_finds_vocabulary() {
-        let conn = scratch_db("tutor-read");
-        let progress = tutor::run_tool_for_test(&conn, "get_progress", serde_json::json!({}));
+        let mut conn = scratch_db("tutor-read");
+        let progress = tutor::run_tool_for_test(&mut conn, "get_progress", serde_json::json!({}));
         assert_eq!(progress["words_met"], 0);
-        let found = tutor::run_tool_for_test(&conn, "search_vocabulary", serde_json::json!({ "query": "dzień dobry" }));
+        let found = tutor::run_tool_for_test(&mut conn, "search_vocabulary", serde_json::json!({ "query": "dzień dobry" }));
         assert!(!found["words"].as_array().unwrap().is_empty());
-        let topics = tutor::run_tool_for_test(&conn, "list_courses", serde_json::json!({}));
+        let topics = tutor::run_tool_for_test(&mut conn, "list_courses", serde_json::json!({}));
         assert_eq!(topics.as_array().unwrap().len(), 11);
-        let unknown = tutor::run_tool_for_test(&conn, "fly_to_the_moon", serde_json::json!({}));
+        let unknown = tutor::run_tool_for_test(&mut conn, "fly_to_the_moon", serde_json::json!({}));
         assert!(unknown["error"].is_string());
     }
 
@@ -1044,8 +1066,9 @@ mod integration {
         let _ = std::fs::remove_file(&path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         {
-            let old = Connection::open(&path).unwrap();
-            old.execute_batch(
+            // An old schema, so raw SQL: these tables are not in crate::schema.
+            let mut old = Conn::establish(&path.to_string_lossy()).unwrap();
+            old.batch_execute(
                 "CREATE TABLE topics (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, ord INTEGER NOT NULL,
                      title_pl TEXT NOT NULL, title_en TEXT NOT NULL, title_da TEXT NOT NULL,
                      summary_en TEXT NOT NULL, summary_da TEXT NOT NULL);
@@ -1069,28 +1092,30 @@ mod integration {
             .unwrap();
         }
 
-        let conn = db::open(&path).expect("upgrade");
-        let (id, en): (i64, String) = conn
-            .query_row("SELECT id, en FROM words WHERE pl = 'cześć'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        let mut conn = db::open(&path).expect("upgrade");
+        let (id, en): (i64, String) = t::words::table
+            .filter(t::words::pl.eq("cześć"))
+            .select((t::words::id, t::words::en))
+            .first(&mut conn)
             .unwrap();
         assert_eq!(id, 7, "row ids survive, so review history does too");
         assert_eq!(en, "hi, bye");
-        assert_eq!(srs::load(&conn, "word", 7).unwrap().unwrap().reps, 2);
-        let columns: Vec<String> = conn
-            .prepare("SELECT name FROM pragma_table_info('words')")
-            .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
+        assert_eq!(srs::load(&mut conn, "word", 7).unwrap().unwrap().reps, 2);
+        #[derive(QueryableByName)]
+        struct Column {
+            #[diesel(sql_type = diesel::sql_types::Text)]
+            name: String,
+        }
+        let columns = diesel::sql_query("SELECT name FROM pragma_table_info('words')")
+            .load::<Column>(&mut conn)
             .unwrap();
-        assert!(!columns.contains(&"da".to_string()));
-        assert_eq!(db::get_setting(&conn, "source_language").unwrap(), None);
+        assert!(!columns.iter().any(|c| c.name == "da"));
+        assert_eq!(db::get_setting(&mut conn, "source_language").unwrap(), None);
         // The rest of the curriculum seeds on top, without duplicating.
-        let topics: i64 = conn.query_row("SELECT COUNT(*) FROM topics", [], |r| r.get(0)).unwrap();
+        let topics: i64 = t::topics::table.count().get_result(&mut conn).unwrap();
         assert_eq!(topics, 11);
-        let basics_words: i64 = conn
-            .query_row("SELECT COUNT(*) FROM words WHERE pl = 'cześć'", [], |r| r.get(0))
-            .unwrap();
+        let basics_words: i64 =
+            t::words::table.filter(t::words::pl.eq("cześć")).count().get_result(&mut conn).unwrap();
         assert_eq!(basics_words, 1);
 
         // Opening again is a no-op.

@@ -9,10 +9,14 @@
 //! dialogue, words in eights, sentences in fives. The starter courses a fresh
 //! install comes with and the ones the tutor makes are the same thing.
 
-use rusqlite::{Connection, OptionalExtension};
+use std::collections::HashSet;
+
+use diesel::dsl::max;
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::db;
+use crate::db::{self, Conn};
+use crate::schema::{blocks, conversation_lines, course_blocks, course_lines, course_sentences, course_words, sentences, songs, topics, words};
 use crate::text::clean;
 use crate::error::{Error, Result};
 
@@ -100,30 +104,39 @@ fn normalize_pos(pos: &str) -> String {
     code.to_string()
 }
 
-pub fn require_course(conn: &Connection, topic_id: i64) -> Result<String> {
-    conn.query_row("SELECT title_en FROM topics WHERE id = ?1", [topic_id], |r| r.get(0))
+pub fn require_course(conn: &mut Conn, topic_id: i64) -> Result<String> {
+    topics::table
+        .find(topic_id)
+        .select(topics::title_en)
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg(format!("There is no course with id {topic_id}.")))
 }
 
 /// The position after the last course.
-fn next_ord(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row("SELECT COALESCE(MAX(ord), 0) + 1 FROM topics", [], |r| r.get(0))?)
+fn next_ord(conn: &mut Conn) -> Result<i64> {
+    Ok(topics::table.select(max(topics::ord)).first::<Option<i64>>(conn)?.unwrap_or(0) + 1)
 }
 
-fn insert_topic(conn: &Connection, slug: Option<&str>, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
+fn insert_topic(conn: &mut Conn, slug: Option<&str>, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
     let ord = next_ord(conn)?;
     let now = db::now_secs();
     let slug = slug.map(str::to_string).unwrap_or_else(|| format!("course-{now}-{ord}"));
-    conn.execute(
-        "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en, created_at)
-         VALUES (?1, ?2, 'course', ?3, ?4, ?5, ?6)",
-        rusqlite::params![slug, ord, title_pl, title, clean(summary), now],
-    )?;
-    Ok(conn.last_insert_rowid())
+    Ok(diesel::insert_into(topics::table)
+        .values((
+            topics::slug.eq(slug),
+            topics::ord.eq(ord),
+            topics::kind.eq("course"),
+            topics::title_pl.eq(title_pl),
+            topics::title_en.eq(title),
+            topics::summary_en.eq(clean(summary)),
+            topics::created_at.eq(now),
+        ))
+        .returning(topics::id)
+        .get_result(conn)?)
 }
 
-/// What one request may add: a model asked for "some words" should not be
+/// What a request may add: a model asked for "some words" should not be
 /// able to fill a course with a thousand. (The starter content is not capped.)
 fn capped<T>(items: &[T], max: usize) -> &[T] {
     &items[..items.len().min(max)]
@@ -137,7 +150,7 @@ pub struct Items {
     pub dialogue: Vec<NewLine>,
 }
 
-pub fn create(conn: &Connection, input: NewCourse, origin: &str) -> Result<CourseSummary> {
+pub fn create(conn: &mut Conn, input: NewCourse, origin: &str) -> Result<CourseSummary> {
     let title = clean(&input.title);
     if title.is_empty() {
         return Err(Error::msg("A course needs a title."));
@@ -149,45 +162,43 @@ pub fn create(conn: &Connection, input: NewCourse, origin: &str) -> Result<Cours
         empty if empty.is_empty() => title.clone(),
         polish => polish,
     };
-    let tx = conn.unchecked_transaction()?;
-    let topic_id = insert_topic(&tx, None, &title, &title_pl, &input.summary)?;
-    let skipped = cut_into_drills(
-        &tx,
-        topic_id,
-        capped(&input.words, MAX_WORDS),
-        capped(&input.sentences, MAX_SENTENCES),
-        capped(&input.dialogue, MAX_DIALOGUE_LINES),
-        origin,
-    )?;
-    tx.commit()?;
+    let (topic_id, skipped) = conn.transaction::<_, Error, _>(|conn| {
+        let topic_id = insert_topic(conn, None, &title, &title_pl, &input.summary)?;
+        let skipped = cut_into_drills(
+            conn,
+            topic_id,
+            capped(&input.words, MAX_WORDS),
+            capped(&input.sentences, MAX_SENTENCES),
+            capped(&input.dialogue, MAX_DIALOGUE_LINES),
+            origin,
+        )?;
+        Ok((topic_id, skipped))
+    })?;
     summary(conn, topic_id, skipped)
 }
 
 /// The course with this slug, made (empty) if it does not exist yet. For the
 /// courses blocks are filed in when nobody chose one.
-pub fn ensure(conn: &Connection, slug: &str, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
-    if let Some(id) = conn
-        .query_row("SELECT id FROM topics WHERE slug = ?1", [slug], |r| r.get(0))
-        .optional()?
-    {
+pub fn ensure(conn: &mut Conn, slug: &str, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
+    if let Some(id) = topics::table.filter(topics::slug.eq(slug)).select(topics::id).first(conn).optional()? {
         return Ok(id);
     }
     insert_topic(conn, Some(slug), title, title_pl, summary)
 }
 
 /// Where a lesson goes when no course was chosen.
-pub fn lessons_course(conn: &Connection) -> Result<i64> {
+pub fn lessons_course(conn: &mut Conn) -> Result<i64> {
     ensure(conn, "lessons", "Lessons", "Lekcje", "Lessons on grammar, verbs and culture.")
 }
 
 /// Where listening blocks for songs go.
-pub fn listening_course(conn: &Connection) -> Result<i64> {
+pub fn listening_course(conn: &mut Conn) -> Result<i64> {
     ensure(conn, "listening", "Listening", "Słuchanie", "Listen to your songs and answer questions about them.")
 }
 
 /// Where the starter lessons are. Dated like the other starter courses, so
 /// it sorts with them.
-pub fn grammar_course(conn: &Connection) -> Result<i64> {
+pub fn grammar_course(conn: &mut Conn) -> Result<i64> {
     let id = ensure(
         conn,
         "grammar-essentials",
@@ -195,12 +206,12 @@ pub fn grammar_course(conn: &Connection) -> Result<i64> {
         "Podstawy gramatyki",
         "Być and mieć, verb patterns, gender, the cases, and when to say ty or Pan.",
     )?;
-    conn.execute("UPDATE topics SET created_at = 0 WHERE id = ?1", [id])?;
+    diesel::update(topics::table.find(id)).set(topics::created_at.eq(0)).execute(conn)?;
     Ok(id)
 }
 
 /// A course with nothing in it yet, for a drill the tutor fills itself.
-pub fn create_empty(conn: &Connection, title: &str, summary: &str) -> Result<i64> {
+pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<i64> {
     let title = clean(title);
     if title.is_empty() {
         return Err(Error::msg("A course needs a title."));
@@ -213,62 +224,67 @@ pub fn create_empty(conn: &Connection, title: &str, summary: &str) -> Result<i64
 // ---------------------------------------------------------------------------
 
 /// Lists a block in a course, at the end. Listing it again changes nothing.
-pub fn add_block(conn: &Connection, topic_id: i64, block_id: i64) -> Result<()> {
+pub fn add_block(conn: &mut Conn, topic_id: i64, block_id: i64) -> Result<()> {
     require_course(conn, topic_id)?;
-    conn.execute(
-        "INSERT OR IGNORE INTO course_blocks (topic_id, block_id, ord)
-         VALUES (?1, ?2, (SELECT COALESCE(MAX(ord), 0) + 1 FROM course_blocks WHERE topic_id = ?1))",
-        [topic_id, block_id],
-    )?;
+    let ord = course_blocks::table
+        .filter(course_blocks::topic_id.eq(topic_id))
+        .select(max(course_blocks::ord))
+        .first::<Option<i64>>(conn)?
+        .unwrap_or(0)
+        + 1;
+    diesel::insert_or_ignore_into(course_blocks::table)
+        .values((
+            course_blocks::topic_id.eq(topic_id),
+            course_blocks::block_id.eq(block_id),
+            course_blocks::ord.eq(ord),
+        ))
+        .execute(conn)?;
     // A listening block filed in a real course gives a song without one its
     // course, so the song is known to belong there from now on.
-    conn.execute(
-        "UPDATE songs SET topic_id = ?1
-         WHERE topic_id IS NULL AND id = (SELECT song_id FROM blocks WHERE id = ?2)
-           AND (SELECT slug FROM topics WHERE id = ?1) != 'listening'",
-        [topic_id, block_id],
-    )?;
+    let is_listening = topics::table.find(topic_id).select(topics::slug).first::<String>(conn)? == "listening";
+    let song: Option<i64> = blocks::table.find(block_id).select(blocks::song_id).first(conn).optional()?.flatten();
+    if let (Some(song), false) = (song, is_listening) {
+        diesel::update(songs::table.find(song).filter(songs::topic_id.is_null()))
+            .set(songs::topic_id.eq(topic_id))
+            .execute(conn)?;
+    }
     Ok(())
 }
 
 /// Takes a block out of a course. Out of its last course, the block is
 /// deleted with its words, sentences and history; returns true then.
-pub fn remove_block(conn: &Connection, topic_id: i64, block_id: i64) -> Result<bool> {
-    let removed = conn.execute(
-        "DELETE FROM course_blocks WHERE topic_id = ?1 AND block_id = ?2",
-        [topic_id, block_id],
-    )?;
+pub fn remove_block(conn: &mut Conn, topic_id: i64, block_id: i64) -> Result<bool> {
+    let removed = diesel::delete(course_blocks::table.find((topic_id, block_id))).execute(conn)?;
     if removed == 0 {
         return Err(Error::msg("That block is not in that course."));
     }
     delete_if_orphaned(conn, block_id)
 }
 
-fn delete_if_orphaned(conn: &Connection, block_id: i64) -> Result<bool> {
-    let listed: i64 =
-        conn.query_row("SELECT COUNT(*) FROM course_blocks WHERE block_id = ?1", [block_id], |r| r.get(0))?;
+fn delete_if_orphaned(conn: &mut Conn, block_id: i64) -> Result<bool> {
+    let listed: i64 = course_blocks::table.filter(course_blocks::block_id.eq(block_id)).count().get_result(conn)?;
     if listed == 0 {
-        conn.execute("DELETE FROM blocks WHERE id = ?1", [block_id])?;
+        diesel::delete(blocks::table.find(block_id)).execute(conn)?;
         return Ok(true);
     }
     Ok(false)
 }
 
 /// Moves a block from one course to another (its words go with it).
-pub fn move_block(conn: &Connection, block_id: i64, from: i64, to: i64) -> Result<()> {
+pub fn move_block(conn: &mut Conn, block_id: i64, from: i64, to: i64) -> Result<()> {
     if from == to {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction()?;
-    add_block(&tx, to, block_id)?;
-    remove_block(&tx, from, block_id)?;
-    tx.commit()?;
-    Ok(())
+    conn.transaction::<_, Error, _>(|conn| {
+        add_block(conn, to, block_id)?;
+        remove_block(conn, from, block_id)?;
+        Ok(())
+    })
 }
 
 /// Puts a course's blocks in this order. Blocks left out keep their relative
 /// order after the ones given.
-pub fn order_blocks(conn: &Connection, topic_id: i64, block_ids: &[i64]) -> Result<()> {
+pub fn order_blocks(conn: &mut Conn, topic_id: i64, block_ids: &[i64]) -> Result<()> {
     let current: Vec<i64> = crate::blocks::for_topic(conn, topic_id)?.iter().map(|b| b.id).collect();
     let mut order: Vec<i64> = Vec::new();
     for id in block_ids.iter().chain(current.iter()) {
@@ -277,10 +293,9 @@ pub fn order_blocks(conn: &Connection, topic_id: i64, block_ids: &[i64]) -> Resu
         }
     }
     for (ord, id) in order.iter().enumerate() {
-        conn.execute(
-            "UPDATE course_blocks SET ord = ?3 WHERE topic_id = ?1 AND block_id = ?2",
-            rusqlite::params![topic_id, id, ord as i64 + 1],
-        )?;
+        diesel::update(course_blocks::table.find((topic_id, id)))
+            .set(course_blocks::ord.eq(ord as i64 + 1))
+            .execute(conn)?;
     }
     Ok(())
 }
@@ -289,33 +304,50 @@ pub fn order_blocks(conn: &Connection, topic_id: i64, block_ids: &[i64]) -> Resu
 // Items
 // ---------------------------------------------------------------------------
 
-/// The Polish of every word or sentence a course's blocks own, lowercased.
-fn course_texts(conn: &Connection, topic_id: i64, table: &str) -> Result<std::collections::HashSet<String>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT x.pl FROM {table} x JOIN course_blocks c ON c.block_id = x.block_id WHERE c.topic_id = ?1"
-    ))?;
-    let rows = stmt
-        .query_map([topic_id], |r| r.get::<_, String>(0))?
-        .filter_map(|r| r.ok())
+/// The Polish of every word a course's blocks own, lowercased.
+fn course_words_known(conn: &mut Conn, topic_id: i64) -> Result<HashSet<String>> {
+    Ok(course_words::table
+        .filter(course_words::topic_id.eq(topic_id))
+        .select(course_words::pl)
+        .load::<String>(conn)?
+        .into_iter()
         .map(|pl| pl.to_lowercase())
-        .collect();
-    Ok(rows)
+        .collect())
+}
+
+/// The Polish of every sentence a course's blocks own, lowercased.
+fn course_sentences_known(conn: &mut Conn, topic_id: i64) -> Result<HashSet<String>> {
+    Ok(course_sentences::table
+        .filter(course_sentences::topic_id.eq(topic_id))
+        .select(course_sentences::pl)
+        .load::<String>(conn)?
+        .into_iter()
+        .map(|pl| pl.to_lowercase())
+        .collect())
 }
 
 /// Gives a course more to practise: new words and sentences are cut into new
 /// drills (eights and fives), dialogue lines join its conversation (or start
 /// one). Anything the course already teaches is skipped and counted.
 pub fn cut_into_drills(
-    conn: &Connection,
+    conn: &mut Conn,
     topic_id: i64,
     words: &[NewWord],
     sentences: &[NewSentence],
     dialogue: &[NewLine],
     origin: &str,
 ) -> Result<i64> {
-    let title_pl: String =
-        conn.query_row("SELECT title_pl FROM topics WHERE id = ?1", [topic_id], |r| r.get(0))?;
+    let title_pl: String = topics::table.find(topic_id).select(topics::title_pl).first(conn)?;
     let mut skipped = 0;
+    let drills_of = |conn: &mut Conn, format: &str| -> Result<Vec<i64>> {
+        Ok(course_blocks::table
+            .inner_join(blocks::table)
+            .filter(course_blocks::topic_id.eq(topic_id))
+            .filter(blocks::format.eq(format))
+            .order(course_blocks::ord)
+            .select(blocks::id)
+            .load(conn)?)
+    };
 
     let lines: Vec<NewLine> = dialogue
         .iter()
@@ -323,17 +355,9 @@ pub fn cut_into_drills(
         .cloned()
         .collect();
     if !lines.is_empty() {
-        let existing: Option<i64> = conn
-            .query_row(
-                "SELECT b.id FROM blocks b JOIN course_blocks c ON c.block_id = b.id
-                 WHERE c.topic_id = ?1 AND b.format = 'dialogue' ORDER BY c.ord LIMIT 1",
-                [topic_id],
-                |r| r.get(0),
-            )
-            .optional()?;
         let items = Items { dialogue: lines, ..Default::default() };
-        match existing {
-            Some(block) => {
+        match drills_of(conn, "dialogue")?.first() {
+            Some(&block) => {
                 insert_items(conn, block, &items)?;
             }
             None => {
@@ -353,16 +377,7 @@ pub fn cut_into_drills(
     }
 
     // Numbering continues after the drills of that kind the course has.
-    let drills = |format: &str| -> Result<i64> {
-        Ok(conn.query_row(
-            "SELECT COUNT(*) FROM blocks b JOIN course_blocks c ON c.block_id = b.id
-             WHERE c.topic_id = ?1 AND b.format = ?2",
-            rusqlite::params![topic_id, format],
-            |r| r.get(0),
-        )?)
-    };
-
-    let mut known = course_texts(conn, topic_id, "words")?;
+    let mut known = course_words_known(conn, topic_id)?;
     let fresh: Vec<NewWord> = words
         .iter()
         .filter(|w| !clean(&w.pl).is_empty() && !clean(&w.en).is_empty())
@@ -373,7 +388,7 @@ pub fn cut_into_drills(
         })
         .cloned()
         .collect();
-    let first = drills("words")?;
+    let first = drills_of(conn, "words")?.len() as i64;
     for (n, chunk) in fresh.chunks(crate::blocks::WORDS_PER_BLOCK).enumerate() {
         let preview: Vec<String> = chunk.iter().take(3).map(|w| clean(&w.pl)).collect();
         crate::blocks::create_drill(
@@ -389,7 +404,7 @@ pub fn cut_into_drills(
         )?;
     }
 
-    let mut known = course_texts(conn, topic_id, "sentences")?;
+    let mut known = course_sentences_known(conn, topic_id)?;
     let fresh: Vec<NewSentence> = sentences
         .iter()
         .filter(|s| !clean(&s.pl).is_empty() && !clean(&s.en).is_empty())
@@ -400,7 +415,7 @@ pub fn cut_into_drills(
         })
         .cloned()
         .collect();
-    let first = drills("sentences")?;
+    let first = drills_of(conn, "sentences")?.len() as i64;
     for (n, chunk) in fresh.chunks(crate::blocks::SENTENCES_PER_BLOCK).enumerate() {
         crate::blocks::create_drill(
             conn,
@@ -419,7 +434,7 @@ pub fn cut_into_drills(
 
 /// Adds words, sentences or dialogue lines to an existing course.
 pub fn extend(
-    conn: &Connection,
+    conn: &mut Conn,
     topic_id: i64,
     words: &[NewWord],
     sentences: &[NewSentence],
@@ -427,42 +442,43 @@ pub fn extend(
     origin: &str,
 ) -> Result<CourseSummary> {
     require_course(conn, topic_id)?;
-    let tx = conn.unchecked_transaction()?;
-    let skipped = cut_into_drills(
-        &tx,
-        topic_id,
-        capped(words, MAX_WORDS),
-        capped(sentences, MAX_SENTENCES),
-        capped(dialogue, MAX_DIALOGUE_LINES),
-        origin,
-    )?;
-    tx.commit()?;
+    let skipped = conn.transaction::<_, Error, _>(|conn| {
+        cut_into_drills(
+            conn,
+            topic_id,
+            capped(words, MAX_WORDS),
+            capped(sentences, MAX_SENTENCES),
+            capped(dialogue, MAX_DIALOGUE_LINES),
+            origin,
+        )
+    })?;
     summary(conn, topic_id, skipped)
 }
 
 /// Puts items into one block, after what it has. Items it already holds (by
 /// their Polish) are skipped; returns how many.
-pub fn insert_items(conn: &Connection, block_id: i64, items: &Items) -> Result<i64> {
-    let next = |table: &str| -> Result<i64> {
-        Ok(conn.query_row(
-            &format!("SELECT COALESCE(MAX(ord) + 1, 0) FROM {table} WHERE block_id = ?1"),
-            [block_id],
-            |r| r.get(0),
-        )?)
-    };
+pub fn insert_items(conn: &mut Conn, block_id: i64, items: &Items) -> Result<i64> {
     let mut skipped = 0;
 
-    let mut ord = next("words")?;
+    let mut ord = words::table
+        .filter(words::block_id.eq(block_id))
+        .select(max(words::ord))
+        .first::<Option<i64>>(conn)?
+        .map_or(0, |o| o + 1);
     for word in items.words.iter().take(MAX_WORDS) {
         let (pl, en) = (clean(&word.pl), clean(&word.en));
         if pl.is_empty() || en.is_empty() {
             continue;
         }
-        let added = conn.execute(
-            "INSERT INTO words (block_id, ord, pl, en, pos) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(block_id, pl) DO NOTHING",
-            rusqlite::params![block_id, ord, pl, en, normalize_pos(&word.pos)],
-        )?;
+        let added = diesel::insert_or_ignore_into(words::table)
+            .values((
+                words::block_id.eq(block_id),
+                words::ord.eq(ord),
+                words::pl.eq(pl),
+                words::en.eq(en),
+                words::pos.eq(normalize_pos(&word.pos)),
+            ))
+            .execute(conn)?;
         if added == 0 {
             skipped += 1;
         } else {
@@ -470,17 +486,24 @@ pub fn insert_items(conn: &Connection, block_id: i64, items: &Items) -> Result<i
         }
     }
 
-    let mut ord = next("sentences")?;
+    let mut ord = sentences::table
+        .filter(sentences::block_id.eq(block_id))
+        .select(max(sentences::ord))
+        .first::<Option<i64>>(conn)?
+        .map_or(0, |o| o + 1);
     for sentence in items.sentences.iter().take(MAX_SENTENCES) {
         let (pl, en) = (clean(&sentence.pl), clean(&sentence.en));
         if pl.is_empty() || en.is_empty() {
             continue;
         }
-        let added = conn.execute(
-            "INSERT INTO sentences (block_id, ord, pl, en) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(block_id, pl) DO NOTHING",
-            rusqlite::params![block_id, ord, pl, en],
-        )?;
+        let added = diesel::insert_or_ignore_into(sentences::table)
+            .values((
+                sentences::block_id.eq(block_id),
+                sentences::ord.eq(ord),
+                sentences::pl.eq(pl),
+                sentences::en.eq(en),
+            ))
+            .execute(conn)?;
         if added == 0 {
             skipped += 1;
         } else {
@@ -488,25 +511,27 @@ pub fn insert_items(conn: &Connection, block_id: i64, items: &Items) -> Result<i
         }
     }
 
-    let mut ord = next("conversation_lines")?;
+    let mut ord = conversation_lines::table
+        .filter(conversation_lines::block_id.eq(block_id))
+        .select(max(conversation_lines::ord))
+        .first::<Option<i64>>(conn)?
+        .map_or(0, |o| o + 1);
     for line in items.dialogue.iter().take(MAX_DIALOGUE_LINES) {
         let (speaker, pl, en) = (clean(&line.speaker), clean(&line.pl), clean(&line.en));
         if pl.is_empty() || en.is_empty() {
             continue;
         }
         let gender = if line.gender.trim().eq_ignore_ascii_case("m") { "m" } else { "f" };
-        conn.execute(
-            "INSERT INTO conversation_lines (block_id, ord, speaker, gender, pl, en)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                block_id,
-                ord,
-                if speaker.is_empty() { "?".to_string() } else { speaker },
-                gender,
-                pl,
-                en
-            ],
-        )?;
+        diesel::insert_into(conversation_lines::table)
+            .values((
+                conversation_lines::block_id.eq(block_id),
+                conversation_lines::ord.eq(ord),
+                conversation_lines::speaker.eq(if speaker.is_empty() { "?".to_string() } else { speaker }),
+                conversation_lines::gender.eq(gender),
+                conversation_lines::pl.eq(pl),
+                conversation_lines::en.eq(en),
+            ))
+            .execute(conn)?;
         ord += 1;
     }
     Ok(skipped)
@@ -516,81 +541,89 @@ pub fn insert_items(conn: &Connection, block_id: i64, items: &Items) -> Result<i
 /// blocks, along with their review history. A drill left with nothing to
 /// practise goes too.
 pub fn remove_items(
-    conn: &Connection,
+    conn: &mut Conn,
     topic_id: i64,
-    words: &[String],
-    sentences: &[String],
+    remove_words: &[String],
+    remove_sentences: &[String],
 ) -> Result<CourseSummary> {
     require_course(conn, topic_id)?;
-    let tx = conn.unchecked_transaction()?;
-    for (table, items) in [("words", words), ("sentences", sentences)] {
-        for pl in items {
-            tx.execute(
-                &format!(
-                    "DELETE FROM {table} WHERE pl = ?2 AND block_id IN
-                         (SELECT block_id FROM course_blocks WHERE topic_id = ?1)"
-                ),
-                rusqlite::params![topic_id, clean(pl)],
-            )?;
-        }
-    }
-    tx.execute(
-        "DELETE FROM blocks WHERE kind = 'drill'
-           AND id IN (SELECT block_id FROM course_blocks WHERE topic_id = ?1)
-           AND NOT EXISTS (SELECT 1 FROM words w WHERE w.block_id = blocks.id)
-           AND NOT EXISTS (SELECT 1 FROM sentences s WHERE s.block_id = blocks.id)
-           AND NOT EXISTS (SELECT 1 FROM conversation_lines l WHERE l.block_id = blocks.id)",
-        [topic_id],
-    )?;
-    tx.commit()?;
+    conn.transaction::<_, Error, _>(|conn| {
+        let listed: Vec<i64> =
+            course_blocks::table.filter(course_blocks::topic_id.eq(topic_id)).select(course_blocks::block_id).load(conn)?;
+        let words_out: Vec<String> = remove_words.iter().map(|pl| clean(pl)).collect();
+        let sentences_out: Vec<String> = remove_sentences.iter().map(|pl| clean(pl)).collect();
+        diesel::delete(words::table.filter(words::block_id.eq_any(&listed)).filter(words::pl.eq_any(&words_out)))
+            .execute(conn)?;
+        diesel::delete(
+            sentences::table.filter(sentences::block_id.eq_any(&listed)).filter(sentences::pl.eq_any(&sentences_out)),
+        )
+        .execute(conn)?;
+        // Drills left with nothing to practise.
+        let owners: HashSet<i64> = words::table
+            .select(words::block_id)
+            .filter(words::block_id.eq_any(&listed))
+            .load::<i64>(conn)?
+            .into_iter()
+            .chain(sentences::table.select(sentences::block_id).filter(sentences::block_id.eq_any(&listed)).load::<i64>(conn)?)
+            .chain(
+                conversation_lines::table
+                    .select(conversation_lines::block_id)
+                    .filter(conversation_lines::block_id.eq_any(&listed))
+                    .load::<i64>(conn)?,
+            )
+            .collect();
+        let empty: Vec<i64> = blocks::table
+            .filter(blocks::id.eq_any(&listed))
+            .filter(blocks::kind.eq("drill"))
+            .select(blocks::id)
+            .load::<i64>(conn)?
+            .into_iter()
+            .filter(|id| !owners.contains(id))
+            .collect();
+        diesel::delete(blocks::table.filter(blocks::id.eq_any(empty))).execute(conn)?;
+        Ok(())
+    })?;
     summary(conn, topic_id, 0)
 }
 
-pub fn rename(conn: &Connection, topic_id: i64, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<CourseSummary> {
+pub fn rename(conn: &mut Conn, topic_id: i64, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<CourseSummary> {
     require_course(conn, topic_id)?;
+    let course = topics::table.find(topic_id);
     if let Some(title) = title.map(clean).filter(|t| !t.is_empty()) {
-        conn.execute("UPDATE topics SET title_en = ?2 WHERE id = ?1", rusqlite::params![topic_id, title])?;
+        diesel::update(course).set(topics::title_en.eq(title)).execute(conn)?;
     }
     if let Some(title_pl) = title_pl.map(clean).filter(|t| !t.is_empty()) {
-        conn.execute("UPDATE topics SET title_pl = ?2 WHERE id = ?1", rusqlite::params![topic_id, title_pl])?;
+        diesel::update(course).set(topics::title_pl.eq(title_pl)).execute(conn)?;
     }
     if let Some(text) = summary_text {
-        conn.execute("UPDATE topics SET summary_en = ?2 WHERE id = ?1", rusqlite::params![topic_id, clean(text)])?;
+        diesel::update(course).set(topics::summary_en.eq(clean(text))).execute(conn)?;
     }
     summary(conn, topic_id, 0)
 }
 
 /// Deletes a course. Its blocks go with it — and their words and history —
 /// unless another course also lists them. Returns its title.
-pub fn delete(conn: &Connection, topic_id: i64) -> Result<String> {
+pub fn delete(conn: &mut Conn, topic_id: i64) -> Result<String> {
     let title = require_course(conn, topic_id)?;
-    let tx = conn.unchecked_transaction()?;
-    let blocks: Vec<i64> = crate::blocks::for_topic(&tx, topic_id)?.iter().map(|b| b.id).collect();
-    tx.execute("DELETE FROM topics WHERE id = ?1", [topic_id])?;
-    for block in blocks {
-        delete_if_orphaned(&tx, block)?;
-    }
-    tx.commit()?;
+    conn.transaction::<_, Error, _>(|conn| {
+        let blocks: Vec<i64> =
+            course_blocks::table.filter(course_blocks::topic_id.eq(topic_id)).select(course_blocks::block_id).load(conn)?;
+        diesel::delete(topics::table.find(topic_id)).execute(conn)?;
+        for block in blocks {
+            delete_if_orphaned(conn, block)?;
+        }
+        Ok(())
+    })?;
     Ok(title)
 }
 
-fn summary(conn: &Connection, topic_id: i64, skipped: i64) -> Result<CourseSummary> {
-    let one = |table: &str| -> Result<i64> {
-        Ok(conn.query_row(
-            &format!(
-                "SELECT COUNT(*) FROM {table} x JOIN course_blocks c ON c.block_id = x.block_id
-                 WHERE c.topic_id = ?1"
-            ),
-            [topic_id],
-            |r| r.get(0),
-        )?)
-    };
+fn summary(conn: &mut Conn, topic_id: i64, skipped: i64) -> Result<CourseSummary> {
     Ok(CourseSummary {
         topic_id,
-        title: conn.query_row("SELECT title_en FROM topics WHERE id = ?1", [topic_id], |r| r.get(0))?,
-        words: one("words")?,
-        sentences: one("sentences")?,
-        dialogue_lines: one("conversation_lines")?,
+        title: require_course(conn, topic_id)?,
+        words: course_words::table.filter(course_words::topic_id.eq(topic_id)).count().get_result(conn)?,
+        sentences: course_sentences::table.filter(course_sentences::topic_id.eq(topic_id)).count().get_result(conn)?,
+        dialogue_lines: course_lines::table.filter(course_lines::topic_id.eq(topic_id)).count().get_result(conn)?,
         skipped_duplicates: skipped,
     })
 }
@@ -608,7 +641,7 @@ pub mod commands {
     /// Deletes a course with all its blocks, words and practice history.
     #[tauri::command]
     pub async fn course_delete(db: State<'_, Db>, topic_id: i64) -> Result<()> {
-        super::delete(&db.lock(), topic_id).map(|_| ())
+        super::delete(&mut db.lock(), topic_id).map(|_| ())
     }
 
     /// Renames a course or changes its summary.
@@ -620,20 +653,20 @@ pub mod commands {
         title_pl: String,
         summary: String,
     ) -> Result<()> {
-        super::rename(&db.lock(), topic_id, Some(&title), Some(&title_pl), Some(&summary)).map(|_| ())
+        super::rename(&mut db.lock(), topic_id, Some(&title), Some(&title_pl), Some(&summary)).map(|_| ())
     }
 
     /// Lists a block in another course too.
     #[tauri::command]
     pub async fn block_add_to_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<()> {
-        super::add_block(&db.lock(), topic_id, block_id)
+        super::add_block(&mut db.lock(), topic_id, block_id)
     }
 
     /// Takes a block out of a course; true when that was its last course and
     /// the block was deleted.
     #[tauri::command]
     pub async fn block_remove_from_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<bool> {
-        super::remove_block(&db.lock(), topic_id, block_id)
+        super::remove_block(&mut db.lock(), topic_id, block_id)
     }
 }
 

@@ -15,13 +15,14 @@ use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::db::{self, Db};
+use crate::db::{self, Conn, Db};
+use crate::schema::{song_tracks, songs};
 use crate::error::{Error, Result};
 
 const SSDP_ADDR: &str = "239.255.255.250:1900";
@@ -561,13 +562,11 @@ async fn send_file(stream: &mut TcpStream, request: &Request, path: &str) -> Res
     Ok(())
 }
 
-fn track_files(conn: &Connection, track_id: i64) -> Result<Option<(String, Option<String>)>> {
-    Ok(conn
-        .query_row(
-            "SELECT audio_path, image_path FROM song_tracks WHERE id = ?1",
-            [track_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+fn track_files(conn: &mut Conn, track_id: i64) -> Result<Option<(String, Option<String>)>> {
+    Ok(song_tracks::table
+        .find(track_id)
+        .select((song_tracks::audio_path, song_tracks::image_path))
+        .first(conn)
         .optional()?)
 }
 
@@ -595,8 +594,9 @@ async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAd
             let track_id: i64 = file.split('.').next().unwrap_or("").parse().unwrap_or(-1);
             let files = {
                 let db = app.state::<Db>();
-                let conn = db.lock();
-                track_files(&conn, track_id)?
+                let mut guard = db.lock();
+                let conn = &mut *guard;
+                track_files(conn, track_id)?
             };
             let path = match (files, *kind) {
                 (Some((audio, _)), "media") => Some(audio),
@@ -702,16 +702,14 @@ pub fn play_mode(repeat: &str) -> &'static str {
     }
 }
 
-fn load_items(conn: &Connection, track_ids: &[i64]) -> Result<Vec<(CastItem, String)>> {
+fn load_items(conn: &mut Conn, track_ids: &[i64]) -> Result<Vec<(CastItem, String)>> {
     let mut items = Vec::new();
     for id in track_ids {
-        let row: Option<(String, String, String)> = conn
-            .query_row(
-                "SELECT s.title, s.chorus_pl, t.audio_path FROM song_tracks t
-                 JOIN songs s ON s.id = t.song_id WHERE t.id = ?1",
-                [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
+        let row: Option<(String, String, String)> = song_tracks::table
+            .inner_join(songs::table)
+            .filter(song_tracks::id.eq(id))
+            .select((songs::title, songs::chorus_pl, song_tracks::audio_path))
+            .first(conn)
             .optional()?;
         if let Some((title, chorus, path)) = row {
             items.push((CastItem { track_id: *id, title, artist: chorus }, path));
@@ -813,10 +811,12 @@ fn spawn_poller(app: AppHandle, generation: u64) {
                     };
                     if let Some(id) = count {
                         let db = app.state::<Db>();
-                        let _ = db.lock().execute(
-                            "UPDATE song_tracks SET play_count = play_count + 1, last_played_at = ?2 WHERE id = ?1",
-                            rusqlite::params![id, db::now_secs()],
-                        );
+                        let _ = diesel::update(song_tracks::table.find(id))
+                            .set((
+                                song_tracks::play_count.eq(song_tracks::play_count + 1),
+                                song_tracks::last_played_at.eq(db::now_secs()),
+                            ))
+                            .execute(&mut *db.lock());
                     }
                     let _ = app.emit("cast://state", Some(state));
                 }
@@ -947,8 +947,9 @@ pub async fn cast_start(
     repeat: String,
 ) -> Result<CastState> {
     let items = {
-        let conn = db.lock();
-        load_items(&conn, &track_ids)?
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        load_items(conn, &track_ids)?
     };
     if items.is_empty() {
         return Err(Error::msg("There are no downloaded songs to play."));

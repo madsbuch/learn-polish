@@ -11,10 +11,15 @@
 //! Passing a check-in pushes the next one further out; struggling brings it
 //! back sooner.
 
-use rusqlite::{Connection, OptionalExtension};
+use std::collections::HashMap;
+
+use diesel::dsl::count_star;
+use diesel::helper_types::{Asc, Desc};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::db;
+use crate::db::{self, Conn};
+use crate::schema::{blocks, checkins, course_blocks, sentences, songs, topics, words};
 use crate::text::clean;
 use crate::error::{Error, Result};
 
@@ -124,96 +129,149 @@ pub struct Overview {
     pub done_today: i64,
 }
 
-const SELECT: &str = "SELECT b.id, b.kind, b.format, b.title, b.summary, b.complexity,
-        (SELECT c.topic_id FROM course_blocks c WHERE c.block_id = b.id ORDER BY c.rowid LIMIT 1),
-        (SELECT t.title_en FROM course_blocks c JOIN topics t ON t.id = c.topic_id
-          WHERE c.block_id = b.id ORDER BY c.rowid LIMIT 1),
-        b.origin, b.period_days, b.interval_days, b.due_day, b.last_day,
-        b.last_result, b.reps,
-        (SELECT COUNT(*) FROM words w WHERE w.block_id = b.id)
-          + (SELECT COUNT(*) FROM sentences s WHERE s.block_id = b.id),
-        b.song_id,
-        (SELECT group_concat(c.topic_id) FROM course_blocks c WHERE c.block_id = b.id)
-     FROM blocks b";
-
-fn row(r: &rusqlite::Row) -> rusqlite::Result<Block> {
-    Ok(Block {
-        id: r.get(0)?,
-        kind: r.get(1)?,
-        format: r.get(2)?,
-        title: r.get(3)?,
-        summary: r.get(4)?,
-        complexity: r.get(5)?,
-        topic_id: r.get(6)?,
-        topic_title: r.get(7)?,
-        origin: r.get(8)?,
-        period_days: r.get(9)?,
-        interval_days: r.get(10)?,
-        due_day: r.get(11)?,
-        last_day: r.get(12)?,
-        last_result: r.get(13)?,
-        reps: r.get(14)?,
-        items: r.get(15)?,
-        song_id: r.get(16)?,
-        course_ids: r
-            .get::<_, Option<String>>(17)?
-            .unwrap_or_default()
-            .split(',')
-            .filter_map(|id| id.parse().ok())
-            .collect(),
-    })
+/// What a `blocks` row stores about a block itself.
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = blocks, check_for_backend(diesel::sqlite::Sqlite))]
+struct BlockRow {
+    id: i64,
+    kind: String,
+    format: String,
+    title: String,
+    summary: String,
+    complexity: String,
+    origin: String,
+    period_days: i64,
+    interval_days: i64,
+    due_day: Option<i64>,
+    last_day: Option<i64>,
+    last_result: Option<String>,
+    reps: i64,
+    song_id: Option<i64>,
 }
 
-fn query(conn: &Connection, filter: &str, params: impl rusqlite::Params) -> Result<Vec<Block>> {
-    let mut stmt = conn.prepare(&format!("{SELECT} {filter}"))?;
-    let rows = stmt.query_map(params, row)?.collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+/// A new `blocks` row.
+#[derive(Insertable, Default)]
+#[diesel(table_name = blocks)]
+struct NewBlock<'a> {
+    slug: Option<&'a str>,
+    kind: &'a str,
+    format: &'a str,
+    ord: i64,
+    title: &'a str,
+    summary: &'a str,
+    complexity: &'a str,
+    lesson: &'a str,
+    objectives: &'a str,
+    period_days: i64,
+    origin: &'a str,
+    created_at: i64,
+    song_id: Option<i64>,
 }
 
-pub fn load(conn: &Connection, id: i64) -> Result<Block> {
-    query(conn, "WHERE b.id = ?1", [id])?
+fn insert(conn: &mut Conn, block: NewBlock) -> Result<i64> {
+    Ok(diesel::insert_into(blocks::table).values(&block).returning(blocks::id).get_result(conn)?)
+}
+
+/// Completes block rows with what lives elsewhere: the courses that list
+/// them (the first one also by title) and how many items they own.
+fn assemble(conn: &mut Conn, rows: Vec<BlockRow>) -> Result<Vec<Block>> {
+    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+    let mut listed: HashMap<i64, Vec<(i64, String)>> = HashMap::new();
+    for (block, course, title) in course_blocks::table
+        .inner_join(topics::table)
+        .filter(course_blocks::block_id.eq_any(&ids))
+        .order(course_blocks::rowid)
+        .select((course_blocks::block_id, topics::id, topics::title_en))
+        .load::<(i64, i64, String)>(conn)?
+    {
+        listed.entry(block).or_default().push((course, title));
+    }
+    let mut items: HashMap<i64, i64> = HashMap::new();
+    for (block, n) in words::table
+        .filter(words::block_id.eq_any(&ids))
+        .group_by(words::block_id)
+        .select((words::block_id, count_star()))
+        .load::<(i64, i64)>(conn)?
         .into_iter()
-        .next()
-        .ok_or_else(|| Error::msg(format!("There is no block with id {id}.")))
+        .chain(
+            sentences::table
+                .filter(sentences::block_id.eq_any(&ids))
+                .group_by(sentences::block_id)
+                .select((sentences::block_id, count_star()))
+                .load::<(i64, i64)>(conn)?,
+        )
+    {
+        *items.entry(block).or_default() += n;
+    }
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let courses = listed.remove(&row.id).unwrap_or_default();
+            Block {
+                topic_id: courses.first().map(|c| c.0),
+                topic_title: courses.first().map(|c| c.1.clone()),
+                course_ids: courses.iter().map(|c| c.0).collect(),
+                items: items.get(&row.id).copied().unwrap_or(0),
+                id: row.id,
+                kind: row.kind,
+                format: row.format,
+                title: row.title,
+                summary: row.summary,
+                complexity: row.complexity,
+                origin: row.origin,
+                period_days: row.period_days,
+                interval_days: row.interval_days,
+                due_day: row.due_day,
+                last_day: row.last_day,
+                last_result: row.last_result,
+                reps: row.reps,
+                song_id: row.song_id,
+            }
+        })
+        .collect())
 }
 
-pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
+pub fn load(conn: &mut Conn, id: i64) -> Result<Block> {
+    let row = blocks::table
+        .find(id)
+        .select(BlockRow::as_select())
+        .first(conn)
+        .optional()?
+        .ok_or_else(|| Error::msg(format!("There is no block with id {id}.")))?;
+    Ok(assemble(conn, vec![row])?.remove(0))
+}
+
+pub fn detail(conn: &mut Conn, id: i64) -> Result<BlockDetail> {
     let block = load(conn, id)?;
-    let (lesson, objectives): (String, String) = conn.query_row(
-        "SELECT lesson, objectives FROM blocks WHERE id = ?1",
-        [id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    let pairs = |table: &str| -> Result<Vec<(String, String)>> {
-        let mut stmt =
-            conn.prepare(&format!("SELECT pl, en FROM {table} WHERE block_id = ?1 ORDER BY ord, id"))?;
-        let rows = stmt
-            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    };
-    let courses = {
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.title_en, t.title_pl FROM course_blocks c JOIN topics t ON t.id = c.topic_id
-             WHERE c.block_id = ?1 ORDER BY c.rowid",
-        )?;
-        let rows = stmt
-            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        rows
-    };
-    let last_feedback = conn
-        .query_row(
-            "SELECT feedback FROM checkins WHERE block_id = ?1 AND finished_at IS NOT NULL
-             ORDER BY id DESC LIMIT 1",
-            [id],
-            |r| r.get::<_, Option<String>>(0),
-        )
+    let (lesson, objectives): (String, String) =
+        blocks::table.find(id).select((blocks::lesson, blocks::objectives)).first(conn)?;
+    let words = words::table
+        .filter(words::block_id.eq(id))
+        .order((words::ord, words::id))
+        .select((words::pl, words::en))
+        .load(conn)?;
+    let sentences = sentences::table
+        .filter(sentences::block_id.eq(id))
+        .order((sentences::ord, sentences::id))
+        .select((sentences::pl, sentences::en))
+        .load(conn)?;
+    let courses = course_blocks::table
+        .inner_join(topics::table)
+        .filter(course_blocks::block_id.eq(id))
+        .order(course_blocks::rowid)
+        .select((topics::id, topics::title_en, topics::title_pl))
+        .load(conn)?;
+    let last_feedback = checkins::table
+        .filter(checkins::block_id.eq(id))
+        .filter(checkins::finished_at.is_not_null())
+        .order(checkins::id.desc())
+        .select(checkins::feedback)
+        .first::<Option<String>>(conn)
         .optional()?
         .flatten();
     Ok(BlockDetail {
-        words: pairs("words")?,
-        sentences: pairs("sentences")?,
+        words,
+        sentences,
         lines: crate::session::block_lines(conn, id)?,
         courses,
         lesson,
@@ -225,60 +283,63 @@ pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
 
 /// How courses are listed everywhere: the newest first (the starter courses
 /// are dated 0), then in their course order.
-pub const COURSE_ORDER: &str = "t.created_at DESC, t.ord, t.id";
+pub fn course_order() -> (Desc<topics::created_at>, Asc<topics::ord>, Asc<topics::id>) {
+    (topics::created_at.desc(), topics::ord.asc(), topics::id.asc())
+}
 
 /// A course's blocks, in the course's order.
-pub fn for_topic(conn: &Connection, topic_id: i64) -> Result<Vec<Block>> {
-    query(
-        conn,
-        "JOIN course_blocks cb ON cb.block_id = b.id WHERE cb.topic_id = ?1 ORDER BY cb.ord, b.id",
-        [topic_id],
-    )
+pub fn for_topic(conn: &mut Conn, topic_id: i64) -> Result<Vec<Block>> {
+    let rows = course_blocks::table
+        .inner_join(blocks::table)
+        .filter(course_blocks::topic_id.eq(topic_id))
+        .order((course_blocks::ord, blocks::id))
+        .select(BlockRow::as_select())
+        .load(conn)?;
+    assemble(conn, rows)
 }
 
 /// The home screen: blocks due now, then a few to start.
-pub fn overview(conn: &Connection) -> Result<Overview> {
+pub fn overview(conn: &mut Conn) -> Result<Overview> {
     let today = db::today(conn);
-    let due = query(
-        conn,
-        "WHERE b.due_day IS NOT NULL AND b.due_day <= ?1
-         ORDER BY b.due_day, CASE b.complexity WHEN 'low' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, b.id",
-        [today],
-    )?;
+    let rows = blocks::table.filter(blocks::due_day.le(today)).select(BlockRow::as_select()).load(conn)?;
+    let mut due = assemble(conn, rows)?;
+    let weight = |c: &str| match c {
+        "low" => 0,
+        "medium" => 1,
+        _ => 2,
+    };
+    due.sort_by_key(|b| (b.due_day, weight(&b.complexity), b.id));
 
     // The next couple of blocks from each of the first few courses with
     // something left to start, in the order the course list shows them: the
     // newest courses first (the tutor just made them for a reason).
-    let mut next = Vec::new();
-    let courses: Vec<i64> = {
-        let mut stmt = conn.prepare(&format!(
-            "SELECT t.id FROM topics t
-             WHERE EXISTS (SELECT 1 FROM course_blocks cb JOIN blocks b ON b.id = cb.block_id
-                           WHERE cb.topic_id = t.id AND b.due_day IS NULL)
-             ORDER BY {COURSE_ORDER} LIMIT 3"
-        ))?;
-        let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-        ids
-    };
-    for course in courses {
-        for block in query(
-            conn,
-            "JOIN course_blocks cb ON cb.block_id = b.id
-             WHERE cb.topic_id = ?1 AND b.due_day IS NULL ORDER BY cb.ord, b.id LIMIT 2",
-            [course],
-        )? {
+    let mut next: Vec<Block> = Vec::new();
+    let mut courses_used = 0;
+    for course in topics::table.order(course_order()).select(topics::id).load::<i64>(conn)? {
+        if courses_used == 3 {
+            break;
+        }
+        let rows = course_blocks::table
+            .inner_join(blocks::table)
+            .filter(course_blocks::topic_id.eq(course))
+            .filter(blocks::due_day.is_null())
+            .order((course_blocks::ord, blocks::id))
+            .limit(2)
+            .select(BlockRow::as_select())
+            .load(conn)?;
+        if rows.is_empty() {
+            continue;
+        }
+        courses_used += 1;
+        for block in assemble(conn, rows)? {
             // A block in two courses is offered once.
-            if !next.iter().any(|b: &Block| b.id == block.id) {
+            if !next.iter().any(|b| b.id == block.id) {
                 next.push(block);
             }
         }
     }
 
-    let done_today: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM blocks WHERE last_day = ?1",
-        [today],
-        |r| r.get(0),
-    )?;
+    let done_today = blocks::table.filter(blocks::last_day.eq(today)).count().get_result(conn)?;
     Ok(Overview { today, due, next, done_today })
 }
 
@@ -313,26 +374,29 @@ pub fn next_interval(result: &str, reps_before: i64, interval: i64, period: i64)
 }
 
 /// Records a check-in result and schedules the next one.
-pub fn record(conn: &Connection, block_id: i64, result: &str) -> Result<Block> {
+pub fn record(conn: &mut Conn, block_id: i64, result: &str) -> Result<Block> {
     if !["pass", "partial", "fail"].contains(&result) {
         return Err(Error::msg(format!("Unknown result '{result}'.")));
     }
     let block = load(conn, block_id)?;
     let today = db::today(conn);
     let interval = next_interval(result, block.reps, block.interval_days, block.period_days);
-    conn.execute(
-        "UPDATE blocks SET interval_days = ?2, due_day = ?3, last_day = ?4, last_result = ?5,
-             reps = reps + 1
-         WHERE id = ?1",
-        rusqlite::params![block_id, interval, today + interval, today, result],
-    )?;
+    diesel::update(blocks::table.find(block_id))
+        .set((
+            blocks::interval_days.eq(interval),
+            blocks::due_day.eq(today + interval),
+            blocks::last_day.eq(today),
+            blocks::last_result.eq(result),
+            blocks::reps.eq(blocks::reps + 1),
+        ))
+        .execute(conn)?;
     load(conn, block_id)
 }
 
 /// Makes a block due today (the learner or the tutor wants it now).
-pub fn due_now(conn: &Connection, block_id: i64) -> Result<Block> {
+pub fn due_now(conn: &mut Conn, block_id: i64) -> Result<Block> {
     let today = db::today(conn);
-    conn.execute("UPDATE blocks SET due_day = ?2 WHERE id = ?1", rusqlite::params![block_id, today])?;
+    diesel::update(blocks::table.find(block_id)).set(blocks::due_day.eq(today)).execute(conn)?;
     load(conn, block_id)
 }
 
@@ -365,7 +429,7 @@ pub struct NewStudy {
     pub topic_id: Option<i64>,
 }
 
-pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<Block> {
+pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Block> {
     let title = clean(&input.title);
     if title.is_empty() || input.lesson.trim().is_empty() {
         return Err(Error::msg("A study block needs a title and a lesson."));
@@ -387,23 +451,21 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
         }
         None => crate::courses::lessons_course(conn)?,
     };
-    conn.execute(
-        "INSERT INTO blocks (kind, format, ord, title, summary, complexity, lesson,
-             objectives, period_days, origin, created_at)
-         VALUES ('study', '', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params![
-            0,
-            title,
-            clean(&input.summary),
-            input.complexity,
-            input.lesson.trim(),
-            serde_json::to_string(&objectives)?,
-            period,
+    let id = insert(
+        conn,
+        NewBlock {
+            kind: "study",
+            title: &title,
+            summary: &clean(&input.summary),
+            complexity: &input.complexity,
+            lesson: input.lesson.trim(),
+            objectives: &serde_json::to_string(&objectives)?,
+            period_days: period,
             origin,
-            db::now_secs()
-        ],
+            created_at: db::now_secs(),
+            ..Default::default()
+        },
     )?;
-    let id = conn.last_insert_rowid();
     crate::courses::add_block(conn, topic_id, id)?;
     load(conn, id)
 }
@@ -413,21 +475,22 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
 /// It is filed in `course` if given, else in the course the song was written
 /// from, else in "Listening". Like any block, it can be moved or shared later.
 pub fn create_listening(
-    conn: &Connection,
+    conn: &mut Conn,
     song_id: i64,
     complexity: Option<&str>,
     focus: Option<&str>,
     course: Option<i64>,
     origin: &str,
 ) -> Result<Block> {
-    if let Some(id) = conn
-        .query_row("SELECT id FROM blocks WHERE song_id = ?1", [song_id], |r| r.get::<_, i64>(0))
-        .optional()?
+    if let Some(id) =
+        blocks::table.filter(blocks::song_id.eq(song_id)).select(blocks::id).first::<i64>(conn).optional()?
     {
         return load(conn, id);
     }
-    let title: String = conn
-        .query_row("SELECT title FROM songs WHERE id = ?1", [song_id], |r| r.get(0))
+    let (title, song_course): (String, Option<i64>) = songs::table
+        .find(song_id)
+        .select((songs::title, songs::topic_id))
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That song no longer exists."))?;
     let complexity = complexity.unwrap_or("medium");
@@ -438,13 +501,6 @@ pub fn create_listening(
         Some(focus) => format!("Listen to the song a couple of times. Pay attention to: {focus}"),
         None => "Listen to the song a couple of times, then check in. Try it without the lyrics first.".into(),
     };
-    let song_course: Option<i64> = conn
-        .query_row(
-            "SELECT t.id FROM songs s JOIN topics t ON t.id = s.topic_id WHERE s.id = ?1",
-            [song_id],
-            |r| r.get(0),
-        )
-        .optional()?;
     let topic_id = match course.or(song_course) {
         Some(id) => {
             crate::courses::require_course(conn, id)?;
@@ -452,24 +508,23 @@ pub fn create_listening(
         }
         None => crate::courses::listening_course(conn)?,
     };
-    conn.execute(
-        "INSERT INTO blocks (kind, format, ord, title, summary, complexity, lesson,
-             objectives, period_days, origin, created_at, song_id)
-         VALUES ('study', 'song', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        rusqlite::params![
-            0,
-            format!("Listen: {title}"),
-            "Listen to the song, then answer questions about what you heard.",
+    let id = insert(
+        conn,
+        NewBlock {
+            kind: "study",
+            format: "song",
+            title: &format!("Listen: {title}"),
+            summary: "Listen to the song, then answer questions about what you heard.",
             complexity,
-            lesson,
-            serde_json::to_string(&listening_objectives(complexity))?,
-            default_period("study", complexity),
+            lesson: &lesson,
+            objectives: &serde_json::to_string(&listening_objectives(complexity))?,
+            period_days: default_period("study", complexity),
             origin,
-            db::now_secs(),
-            song_id
-        ],
+            created_at: db::now_secs(),
+            song_id: Some(song_id),
+            ..Default::default()
+        },
     )?;
-    let id = conn.last_insert_rowid();
     crate::courses::add_block(conn, topic_id, id)?;
     load(conn, id)
 }
@@ -479,7 +534,7 @@ pub fn create_listening(
 /// the count of skipped items is returned with the block.
 #[allow(clippy::too_many_arguments)]
 pub fn create_drill(
-    conn: &Connection,
+    conn: &mut Conn,
     topic_id: i64,
     title: &str,
     summary: &str,
@@ -495,12 +550,21 @@ pub fn create_drill(
     check_complexity(complexity)?;
     crate::courses::require_course(conn, topic_id)?;
     let period = period_days.unwrap_or_else(|| default_period("drill", complexity)).clamp(1, 60);
-    conn.execute(
-        "INSERT INTO blocks (kind, format, title, summary, complexity, period_days, origin, created_at)
-         VALUES ('drill', ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![format, clean(title), clean(summary), complexity, period, origin, db::now_secs()],
+    let id = insert(
+        conn,
+        NewBlock {
+            kind: "drill",
+            format,
+            title: &clean(title),
+            summary: &clean(summary),
+            complexity,
+            objectives: "[]",
+            period_days: period,
+            origin,
+            created_at: db::now_secs(),
+            ..Default::default()
+        },
     )?;
-    let id = conn.last_insert_rowid();
     let skipped = crate::courses::insert_items(conn, id, items)?;
     crate::courses::add_block(conn, topic_id, id)?;
     Ok((load(conn, id)?, skipped))
@@ -522,42 +586,46 @@ pub struct BlockChanges {
     pub period_days: Option<i64>,
 }
 
-pub fn update(conn: &Connection, id: i64, changes: BlockChanges) -> Result<Block> {
+/// The columns an edit may change; `None` leaves one as it is.
+#[derive(AsChangeset, Default, PartialEq)]
+#[diesel(table_name = blocks)]
+struct BlockEdit {
+    period_days: Option<i64>,
+    title: Option<String>,
+    summary: Option<String>,
+    complexity: Option<String>,
+    lesson: Option<String>,
+    objectives: Option<String>,
+}
+
+pub fn update(conn: &mut Conn, id: i64, changes: BlockChanges) -> Result<Block> {
     load(conn, id)?;
-    if let Some(period) = changes.period_days {
-        conn.execute(
-            "UPDATE blocks SET period_days = ?2 WHERE id = ?1",
-            rusqlite::params![id, period.clamp(1, 60)],
-        )?;
+    if let Some(complexity) = &changes.complexity {
+        check_complexity(complexity)?;
     }
-    if let Some(title) = changes.title.map(|t| clean(&t)).filter(|t| !t.is_empty()) {
-        conn.execute("UPDATE blocks SET title = ?2 WHERE id = ?1", rusqlite::params![id, title])?;
-    }
-    if let Some(summary) = changes.summary {
-        conn.execute("UPDATE blocks SET summary = ?2 WHERE id = ?1", rusqlite::params![id, clean(&summary)])?;
-    }
-    if let Some(complexity) = changes.complexity {
-        check_complexity(&complexity)?;
-        conn.execute("UPDATE blocks SET complexity = ?2 WHERE id = ?1", rusqlite::params![id, complexity])?;
-    }
-    if let Some(lesson) = changes.lesson.filter(|l| !l.trim().is_empty()) {
-        conn.execute("UPDATE blocks SET lesson = ?2 WHERE id = ?1", rusqlite::params![id, lesson.trim()])?;
-    }
-    if let Some(objectives) = changes.objectives {
-        let objectives: Vec<String> = objectives.iter().map(|o| clean(o)).filter(|o| !o.is_empty()).collect();
-        conn.execute(
-            "UPDATE blocks SET objectives = ?2 WHERE id = ?1",
-            rusqlite::params![id, serde_json::to_string(&objectives)?],
-        )?;
+    let edit = BlockEdit {
+        period_days: changes.period_days.map(|p| p.clamp(1, 60)),
+        title: changes.title.map(|t| clean(&t)).filter(|t| !t.is_empty()),
+        summary: changes.summary.map(|s| clean(&s)),
+        complexity: changes.complexity,
+        lesson: changes.lesson.map(|l| l.trim().to_string()).filter(|l| !l.is_empty()),
+        objectives: changes
+            .objectives
+            .map(|list| list.iter().map(|o| clean(o)).filter(|o| !o.is_empty()).collect::<Vec<_>>())
+            .map(|list| serde_json::to_string(&list))
+            .transpose()?,
+    };
+    if edit != BlockEdit::default() {
+        diesel::update(blocks::table.find(id)).set(&edit).execute(conn)?;
     }
     load(conn, id)
 }
 
 /// Deletes a block everywhere, with its words, sentences, dialogue and
 /// check-in history.
-pub fn delete(conn: &Connection, id: i64) -> Result<String> {
+pub fn delete(conn: &mut Conn, id: i64) -> Result<String> {
     let block = load(conn, id)?;
-    conn.execute("DELETE FROM blocks WHERE id = ?1", [id])?;
+    diesel::delete(blocks::table.find(id)).execute(conn)?;
     Ok(block.title)
 }
 
@@ -620,29 +688,30 @@ pub fn parse_lesson(text: &str) -> Result<LessonFile> {
 
 /// Writes the starter lessons, on a fresh install (filed in a course by
 /// `db::unify_courses`).
-pub fn seed_lessons(conn: &Connection) -> Result<()> {
+pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
     for (ord, text) in crate::content::LESSONS.iter().enumerate() {
         let lesson = parse_lesson(text)?;
         let slug = format!("lesson/{}", lesson.slug);
-        conn.execute(
-            "INSERT INTO blocks (slug, kind, format, ord, title, summary, complexity, lesson,
-                 objectives, period_days, origin, created_at)
-             VALUES (?1, 'study', '', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'starter', ?9)
-             ON CONFLICT(slug) DO NOTHING",
-            rusqlite::params![
-                slug,
-                ord as i64,
-                lesson.title,
-                lesson.summary,
-                lesson.complexity,
-                lesson.body,
-                serde_json::to_string(&lesson.objectives)?,
-                lesson.period,
-                db::now_secs()
-            ],
-        )?;
-        if conn.changes() > 0 {
-            let block = conn.last_insert_rowid();
+        // Written once: a lesson already there (by its slug) is left alone.
+        let added: Option<i64> = diesel::insert_or_ignore_into(blocks::table)
+            .values(NewBlock {
+                slug: Some(&slug),
+                kind: "study",
+                ord: ord as i64,
+                title: &lesson.title,
+                summary: &lesson.summary,
+                complexity: &lesson.complexity,
+                lesson: &lesson.body,
+                objectives: &serde_json::to_string(&lesson.objectives)?,
+                period_days: lesson.period,
+                origin: "starter",
+                created_at: db::now_secs(),
+                ..Default::default()
+            })
+            .returning(blocks::id)
+            .get_result(conn)
+            .optional()?;
+        if let Some(block) = added {
             let grammar = crate::courses::grammar_course(conn)?;
             crate::courses::add_block(conn, grammar, block)?;
         }
@@ -662,24 +731,24 @@ pub mod commands {
 
     #[tauri::command]
     pub async fn blocks_overview(db: State<'_, Db>) -> Result<super::Overview> {
-        super::overview(&db.lock())
+        super::overview(&mut db.lock())
     }
 
     #[tauri::command]
     pub async fn blocks_for_topic(db: State<'_, Db>, topic_id: i64) -> Result<Vec<super::Block>> {
-        super::for_topic(&db.lock(), topic_id)
+        super::for_topic(&mut db.lock(), topic_id)
     }
 
     #[tauri::command]
     pub async fn block_detail(db: State<'_, Db>, block_id: i64) -> Result<super::BlockDetail> {
-        super::detail(&db.lock(), block_id)
+        super::detail(&mut db.lock(), block_id)
     }
 
     /// The learner changes how often a block checks in.
     #[tauri::command]
     pub async fn block_set_period(db: State<'_, Db>, block_id: i64, period_days: i64) -> Result<super::Block> {
         super::update(
-            &db.lock(),
+            &mut db.lock(),
             block_id,
             super::BlockChanges { period_days: Some(period_days), ..Default::default() },
         )
@@ -688,12 +757,12 @@ pub mod commands {
     /// The listening block for a song, made on first ask.
     #[tauri::command]
     pub async fn block_for_song(db: State<'_, Db>, song_id: i64) -> Result<super::Block> {
-        super::create_listening(&db.lock(), song_id, None, None, None, "you")
+        super::create_listening(&mut db.lock(), song_id, None, None, None, "you")
     }
 
     #[tauri::command]
     pub async fn block_delete(db: State<'_, Db>, block_id: i64) -> Result<()> {
-        super::delete(&db.lock(), block_id).map(|_| ())
+        super::delete(&mut db.lock(), block_id).map(|_| ())
     }
 }
 

@@ -7,13 +7,14 @@
 //! the examiner notices in a check-in reaches the tutor and the other way
 //! round. The learner can read, add and delete them in Settings → Memories.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::agent::{tool, Tool};
 
-use crate::db;
+use crate::db::{self, Conn};
+use crate::schema::memories;
 use crate::error::{Error, Result};
 
 pub const CATEGORIES: [&str; 5] = ["goal", "preference", "context", "strength", "struggle"];
@@ -25,7 +26,8 @@ const MAX_CHARS: usize = 400;
 /// Above this, the agents are told to merge or forget before adding more.
 const SOFT_LIMIT: i64 = 150;
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Queryable, Selectable)]
+#[diesel(table_name = memories)]
 #[serde(rename_all = "camelCase")]
 pub struct Memory {
     pub id: i64,
@@ -37,7 +39,7 @@ pub struct Memory {
     pub updated_at: i64,
 }
 
-pub fn enabled(conn: &Connection) -> bool {
+pub fn enabled(conn: &mut Conn) -> bool {
     db::get_setting(conn, "memories_enabled").ok().flatten().as_deref() != Some("0")
 }
 
@@ -63,67 +65,57 @@ fn clean_content(content: &str) -> Result<String> {
     Ok(content)
 }
 
-fn row(r: &rusqlite::Row) -> rusqlite::Result<Memory> {
-    Ok(Memory {
-        id: r.get(0)?,
-        content: r.get(1)?,
-        category: r.get(2)?,
-        source: r.get(3)?,
-        created_at: r.get(4)?,
-        updated_at: r.get(5)?,
-    })
+pub fn list(conn: &mut Conn) -> Result<Vec<Memory>> {
+    Ok(memories::table
+        .order((memories::updated_at.desc(), memories::id.desc()))
+        .select(Memory::as_select())
+        .load(conn)?)
 }
 
-const COLUMNS: &str = "id, content, category, source, created_at, updated_at";
-
-pub fn list(conn: &Connection) -> Result<Vec<Memory>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {COLUMNS} FROM memories ORDER BY updated_at DESC, id DESC"
-    ))?;
-    let rows = stmt.query_map([], row)?.collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
-}
-
-pub fn get(conn: &Connection, id: i64) -> Result<Memory> {
-    conn.query_row(&format!("SELECT {COLUMNS} FROM memories WHERE id = ?1"), [id], row)
+pub fn get(conn: &mut Conn, id: i64) -> Result<Memory> {
+    memories::table
+        .find(id)
+        .select(Memory::as_select())
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg(format!("There is no memory with id {id}.")))
 }
 
 /// Saves a memory. The same fact said again only refreshes the existing one.
-pub fn add(conn: &Connection, content: &str, category: &str, source: &str) -> Result<Memory> {
+pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Result<Memory> {
     let content = clean_content(content)?;
     let category = clean_category(category);
     let now = db::now_secs();
-    let existing: Option<i64> = conn
-        .query_row(
-            "SELECT id FROM memories WHERE lower(content) = lower(?1)",
-            [&content],
-            |r| r.get(0),
-        )
-        .optional()?;
+    let lowered = content.to_lowercase();
+    let existing = memories::table
+        .select((memories::id, memories::content))
+        .load::<(i64, String)>(conn)?
+        .into_iter()
+        .find(|(_, text)| text.to_lowercase() == lowered)
+        .map(|(id, _)| id);
     let id = match existing {
         Some(id) => {
-            conn.execute(
-                "UPDATE memories SET category = ?2, updated_at = ?3 WHERE id = ?1",
-                params![id, category, now],
-            )?;
+            diesel::update(memories::table.find(id))
+                .set((memories::category.eq(&category), memories::updated_at.eq(now)))
+                .execute(conn)?;
             id
         }
-        None => {
-            conn.execute(
-                "INSERT INTO memories (content, category, source, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?4)",
-                params![content, category, source, now],
-            )?;
-            conn.last_insert_rowid()
-        }
+        None => diesel::insert_into(memories::table)
+            .values((
+                memories::content.eq(&content),
+                memories::category.eq(&category),
+                memories::source.eq(source),
+                memories::created_at.eq(now),
+                memories::updated_at.eq(now),
+            ))
+            .returning(memories::id)
+            .get_result(conn)?,
     };
     get(conn, id)
 }
 
 pub fn update(
-    conn: &Connection,
+    conn: &mut Conn,
     id: i64,
     content: Option<&str>,
     category: Option<&str>,
@@ -134,26 +126,29 @@ pub fn update(
         None => current.content,
     };
     let category = category.map(clean_category).unwrap_or(current.category);
-    conn.execute(
-        "UPDATE memories SET content = ?2, category = ?3, updated_at = ?4 WHERE id = ?1",
-        params![id, content, category, db::now_secs()],
-    )?;
+    diesel::update(memories::table.find(id))
+        .set((
+            memories::content.eq(content),
+            memories::category.eq(category),
+            memories::updated_at.eq(db::now_secs()),
+        ))
+        .execute(conn)?;
     get(conn, id)
 }
 
-pub fn delete(conn: &Connection, id: i64) -> Result<Memory> {
+pub fn delete(conn: &mut Conn, id: i64) -> Result<Memory> {
     let memory = get(conn, id)?;
-    conn.execute("DELETE FROM memories WHERE id = ?1", [id])?;
+    diesel::delete(memories::table.find(id)).execute(conn)?;
     Ok(memory)
 }
 
-pub fn clear(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM memories", [])?;
+pub fn clear(conn: &mut Conn) -> Result<()> {
+    diesel::delete(memories::table).execute(conn)?;
     Ok(())
 }
 
 /// The memory section of an agent's system prompt.
-pub fn prompt_section(conn: &Connection) -> Result<String> {
+pub fn prompt_section(conn: &mut Conn) -> Result<String> {
     if !enabled(conn) {
         return Ok(String::new());
     }
@@ -291,14 +286,14 @@ pub struct ToolOutcome {
 }
 
 /// Runs a memory tool for `agent`. Errors go back to the model as text.
-pub fn run_tool(conn: &Connection, agent: &str, name: &str, arguments: &str) -> ToolOutcome {
+pub fn run_tool(conn: &mut Conn, agent: &str, name: &str, arguments: &str) -> ToolOutcome {
     match try_run(conn, agent, name, arguments) {
         Ok(outcome) => outcome,
         Err(error) => ToolOutcome { result: json!({ "error": error.to_string() }), label: None },
     }
 }
 
-fn try_run(conn: &Connection, agent: &str, name: &str, arguments: &str) -> Result<ToolOutcome> {
+fn try_run(conn: &mut Conn, agent: &str, name: &str, arguments: &str) -> Result<ToolOutcome> {
     if !enabled(conn) {
         return Err(Error::msg("The learner has switched memory off; nothing was saved."));
     }
@@ -336,7 +331,7 @@ fn try_run(conn: &Connection, agent: &str, name: &str, arguments: &str) -> Resul
 mod tests {
     use super::*;
 
-    fn scratch() -> Connection {
+    fn scratch() -> Conn {
         let path = std::env::temp_dir()
             .join("learn-polish-tests")
             .join(format!("memories-{}.db", std::process::id()));
@@ -346,9 +341,9 @@ mod tests {
 
     #[test]
     fn agents_save_revise_and_forget_memories() {
-        let conn = scratch();
+        let conn = &mut scratch();
         let out = run_tool(
-            &conn,
+            conn,
             "tutor",
             "remember",
             r#"{"content":"  Wants to order food in Kraków in May ","category":"goal"}"#,
@@ -357,33 +352,33 @@ mod tests {
         let id = out.result["saved"]["id"].as_i64().unwrap();
 
         // Saying it again refreshes rather than duplicating.
-        run_tool(&conn, "examiner", "remember", r#"{"content":"wants to order food in Kraków in May","category":"goal"}"#);
-        assert_eq!(list(&conn).unwrap().len(), 1);
+        run_tool(conn, "examiner", "remember", r#"{"content":"wants to order food in Kraków in May","category":"goal"}"#);
+        assert_eq!(list(conn).unwrap().len(), 1);
 
-        let struggle = add(&conn, "Mixes up instrumental and locative after z", "struggle", "examiner").unwrap();
-        assert_eq!(add(&conn, "x", "nonsense", "tutor").unwrap().category, "context");
+        let struggle = add(conn, "Mixes up instrumental and locative after z", "struggle", "examiner").unwrap();
+        assert_eq!(add(conn, "x", "nonsense", "tutor").unwrap().category, "context");
 
-        let prompt = prompt_section(&conn).unwrap();
+        let prompt = prompt_section(conn).unwrap();
         assert!(prompt.contains(&format!("[{id}] Wants to order food")), "{prompt}");
         assert!(prompt.contains("Struggles:"));
 
         let updated = run_tool(
-            &conn,
+            conn,
             "examiner",
             "update_memory",
             &format!(r#"{{"id":{},"content":"Now uses the instrumental after z correctly","category":"strength"}}"#, struggle.id),
         );
         assert_eq!(updated.result["updated"]["category"], "strength");
 
-        run_tool(&conn, "tutor", "forget_memory", &format!(r#"{{"id":{id}}}"#));
-        assert!(get(&conn, id).is_err());
-        let missing = run_tool(&conn, "tutor", "forget_memory", r#"{"id":9999}"#);
+        run_tool(conn, "tutor", "forget_memory", &format!(r#"{{"id":{id}}}"#));
+        assert!(get(conn, id).is_err());
+        let missing = run_tool(conn, "tutor", "forget_memory", r#"{"id":9999}"#);
         assert!(missing.result["error"].is_string());
 
         // Switched off: no prompt section, and nothing is saved.
-        db::set_setting(&conn, "memories_enabled", "0").unwrap();
-        assert!(prompt_section(&conn).unwrap().is_empty());
-        let off = run_tool(&conn, "tutor", "remember", r#"{"content":"y","category":"goal"}"#);
+        db::set_setting(conn, "memories_enabled", "0").unwrap();
+        assert!(prompt_section(conn).unwrap().is_empty());
+        let off = run_tool(conn, "tutor", "remember", r#"{"content":"y","category":"goal"}"#);
         assert!(off.result["error"].is_string() && off.label.is_none());
     }
 }
@@ -406,28 +401,30 @@ pub mod commands {
         pub memories: Vec<Memory>,
     }
 
-    fn overview(conn: &Connection) -> Result<MemoryOverview> {
+    fn overview(conn: &mut Conn) -> Result<MemoryOverview> {
         Ok(MemoryOverview { enabled: enabled(conn), memories: list(conn)? })
     }
 
     #[tauri::command]
     pub async fn memories_overview(db: State<'_, Db>) -> Result<MemoryOverview> {
-        overview(&db.lock())
+        overview(&mut db.lock())
     }
 
     #[tauri::command]
     pub async fn memories_set_enabled(db: State<'_, Db>, enabled: bool) -> Result<MemoryOverview> {
-        let conn = db.lock();
-        db::set_setting(&conn, "memories_enabled", if enabled { "1" } else { "0" })?;
-        overview(&conn)
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        db::set_setting(conn, "memories_enabled", if enabled { "1" } else { "0" })?;
+        overview(conn)
     }
 
     /// The learner tells the agents something directly.
     #[tauri::command]
     pub async fn memory_add(db: State<'_, Db>, content: String, category: String) -> Result<MemoryOverview> {
-        let conn = db.lock();
-        add(&conn, &content, &category, "you")?;
-        overview(&conn)
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        add(conn, &content, &category, "you")?;
+        overview(conn)
     }
 
     #[tauri::command]
@@ -437,22 +434,25 @@ pub mod commands {
         content: String,
         category: String,
     ) -> Result<MemoryOverview> {
-        let conn = db.lock();
-        update(&conn, id, Some(&content), Some(&category))?;
-        overview(&conn)
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        update(conn, id, Some(&content), Some(&category))?;
+        overview(conn)
     }
 
     #[tauri::command]
     pub async fn memory_delete(db: State<'_, Db>, id: i64) -> Result<MemoryOverview> {
-        let conn = db.lock();
-        delete(&conn, id)?;
-        overview(&conn)
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        delete(conn, id)?;
+        overview(conn)
     }
 
     #[tauri::command]
     pub async fn memories_clear(db: State<'_, Db>) -> Result<MemoryOverview> {
-        let conn = db.lock();
-        clear(&conn)?;
-        overview(&conn)
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        clear(conn)?;
+        overview(conn)
     }
 }

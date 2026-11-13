@@ -5,14 +5,17 @@
 //! (blocks, courses, practice, speech, songs, playlists, tutor, examiner,
 //! memories, costs, cast); this is what is left over.
 
-use rusqlite::Connection;
+use diesel::connection::SimpleConnection;
+use diesel::prelude::*;
+use diesel::sql_types::Text;
 use serde::Deserialize;
 use tauri::State;
 
 use crate::agent::{Agent, ToolFuture, ToolOutput};
 use crate::ai;
 use crate::costs;
-use crate::db::{self, Db};
+use crate::db::{self, Conn, Db};
+use crate::schema::{blocks, course_sentences, course_words, sentences, words};
 use crate::error::{Error, Result};
 use crate::models::*;
 use crate::songs;
@@ -22,7 +25,7 @@ use crate::stats;
 // Setup and settings
 // ---------------------------------------------------------------------------
 
-fn read_settings(conn: &Connection) -> Result<Settings> {
+fn read_settings(conn: &mut Conn) -> Result<Settings> {
     Ok(Settings {
         daily_goal: db::get_setting_i64(conn, "daily_goal", stats::DEFAULT_DAILY_GOAL),
         reminder_hour: db::get_setting_i64(conn, "reminder_hour", 19),
@@ -57,19 +60,21 @@ fn read_settings(conn: &Connection) -> Result<Settings> {
 /// boundary in the app depends on this value.
 #[tauri::command]
 pub async fn init_app(db: State<'_, Db>, tz_offset_minutes: i64) -> Result<Settings> {
-    let conn = db.lock();
-    db::set_setting(&conn, "tz_offset_minutes", &tz_offset_minutes.to_string())?;
-    if db::get_setting(&conn, "first_launch_day")?.is_none() {
-        let today = db::today(&conn);
-        db::set_setting(&conn, "first_launch_day", &today.to_string())?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    db::set_setting(conn, "tz_offset_minutes", &tz_offset_minutes.to_string())?;
+    if db::get_setting(conn, "first_launch_day")?.is_none() {
+        let today = db::today(conn);
+        db::set_setting(conn, "first_launch_day", &today.to_string())?;
     }
-    read_settings(&conn)
+    read_settings(conn)
 }
 
 #[tauri::command]
 pub async fn get_settings(db: State<'_, Db>) -> Result<Settings> {
-    let conn = db.lock();
-    read_settings(&conn)
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    read_settings(conn)
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,62 +98,63 @@ pub struct SettingsPatch {
 
 #[tauri::command]
 pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<Settings> {
-    let conn = db.lock();
+    let mut guard = db.lock();
+    let conn = &mut *guard;
     if let Some(theme) = patch.theme {
         if !matches!(theme.as_str(), "system" | "light" | "dark") {
             return Err(Error::msg(format!("Unknown theme '{theme}'.")));
         }
-        db::set_setting(&conn, "theme", &theme)?;
+        db::set_setting(conn, "theme", &theme)?;
     }
     if let Some(repeat) = patch.player_repeat {
         if !matches!(repeat.as_str(), "off" | "all" | "one") {
             return Err(Error::msg(format!("Unknown repeat mode '{repeat}'.")));
         }
-        db::set_setting(&conn, "player_repeat", &repeat)?;
+        db::set_setting(conn, "player_repeat", &repeat)?;
     }
     if let Some(goal) = patch.daily_goal {
-        db::set_setting(&conn, "daily_goal", &goal.clamp(10, 1000).to_string())?;
+        db::set_setting(conn, "daily_goal", &goal.clamp(10, 1000).to_string())?;
     }
     if let Some(hour) = patch.reminder_hour {
-        db::set_setting(&conn, "reminder_hour", &hour.clamp(0, 23).to_string())?;
+        db::set_setting(conn, "reminder_hour", &hour.clamp(0, 23).to_string())?;
     }
     if let Some(minute) = patch.reminder_minute {
-        db::set_setting(&conn, "reminder_minute", &minute.clamp(0, 59).to_string())?;
+        db::set_setting(conn, "reminder_minute", &minute.clamp(0, 59).to_string())?;
     }
     if let Some(enabled) = patch.reminders_enabled {
-        db::set_setting(&conn, "reminders_enabled", if enabled { "1" } else { "0" })?;
+        db::set_setting(conn, "reminders_enabled", if enabled { "1" } else { "0" })?;
     }
     if let Some(model) = patch.ai_model {
-        db::set_setting(&conn, "ai_model", model.trim())?;
+        db::set_setting(conn, "ai_model", model.trim())?;
     }
     if let Some(voice) = patch.tts_voice_female {
-        db::set_setting(&conn, "tts_voice_female", voice.trim())?;
+        db::set_setting(conn, "tts_voice_female", voice.trim())?;
     }
     if let Some(voice) = patch.tts_voice_male {
-        db::set_setting(&conn, "tts_voice_male", voice.trim())?;
+        db::set_setting(conn, "tts_voice_male", voice.trim())?;
     }
     if let Some(speed) = patch.tts_speed {
-        db::set_setting(&conn, "tts_speed", &speed.clamp(0.25, 2.0).to_string())?;
+        db::set_setting(conn, "tts_speed", &speed.clamp(0.25, 2.0).to_string())?;
     }
     if let Some(prefetch) = patch.tts_prefetch {
-        db::set_setting(&conn, "tts_prefetch", if prefetch { "1" } else { "0" })?;
+        db::set_setting(conn, "tts_prefetch", if prefetch { "1" } else { "0" })?;
     }
     if let Some(model) = patch.songwriter_model {
-        db::set_setting(&conn, "songwriter_model", model.trim())?;
+        db::set_setting(conn, "songwriter_model", model.trim())?;
     }
     if let Some(length) = patch.song_length {
         if !songs::SONG_LENGTHS.contains(&length.as_str()) {
             return Err(Error::msg(format!("Unknown song length '{length}'.")));
         }
-        db::set_setting(&conn, "song_length", &length)?;
+        db::set_setting(conn, "song_length", &length)?;
     }
     if let Some(model) = patch.suno_model {
         if !songs::SUNO_MODELS.contains(&model.as_str()) {
             return Err(Error::msg(format!("Unknown Suno model '{model}'.")));
         }
-        db::set_setting(&conn, "suno_model", &model)?;
+        db::set_setting(conn, "suno_model", &model)?;
     }
-    read_settings(&conn)
+    read_settings(conn)
 }
 
 // ---------------------------------------------------------------------------
@@ -157,146 +163,139 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
 
 #[tauri::command]
 pub async fn get_stats(db: State<'_, Db>) -> Result<Stats> {
-    let conn = db.lock();
-    stats::collect(&conn)
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    stats::collect(conn)
 }
 
 #[tauri::command]
 pub async fn get_topic_progress(db: State<'_, Db>) -> Result<Vec<TopicProgress>> {
-    let conn = db.lock();
-    stats::topic_progress(&conn)
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    stats::topic_progress(conn)
+}
+
+/// Words in one course, or in all of them, whose Polish or English contains
+/// `needle`, in course order. A word in a block two courses list is one word.
+fn matching_words(conn: &mut Conn, topic_id: Option<i64>, needle: &str) -> Result<Vec<Word>> {
+    let mut query = course_words::table
+        .inner_join(blocks::table)
+        .order((course_words::topic_id, course_words::ord))
+        .select((
+            course_words::id,
+            course_words::pl,
+            course_words::en,
+            course_words::pos,
+            course_words::block_id,
+            blocks::title,
+        ))
+        .into_boxed();
+    if let Some(id) = topic_id {
+        query = query.filter(course_words::topic_id.eq(id));
+    }
+    if !needle.is_empty() {
+        let pattern = format!("%{needle}%");
+        query = query.filter(course_words::pl.like(pattern.clone()).or(course_words::en.like(pattern)));
+    }
+    let mut seen = std::collections::HashSet::new();
+    Ok(query
+        .load::<(i64, String, String, String, i64, String)>(conn)?
+        .into_iter()
+        .filter(|row| seen.insert(row.0))
+        .map(|(id, pl, meaning, pos, block_id, block)| Word { id, pl, meaning, pos, block_id, block })
+        .collect())
+}
+
+/// The same for sentences.
+fn matching_sentences(conn: &mut Conn, topic_id: Option<i64>, needle: &str) -> Result<Vec<Sentence>> {
+    let mut query = course_sentences::table
+        .inner_join(blocks::table)
+        .order((course_sentences::topic_id, course_sentences::ord))
+        .select((
+            course_sentences::id,
+            course_sentences::pl,
+            course_sentences::en,
+            course_sentences::block_id,
+            blocks::title,
+        ))
+        .into_boxed();
+    if let Some(id) = topic_id {
+        query = query.filter(course_sentences::topic_id.eq(id));
+    }
+    if !needle.is_empty() {
+        let pattern = format!("%{needle}%");
+        query = query.filter(course_sentences::pl.like(pattern.clone()).or(course_sentences::en.like(pattern)));
+    }
+    let mut seen = std::collections::HashSet::new();
+    Ok(query
+        .load::<(i64, String, String, i64, String)>(conn)?
+        .into_iter()
+        .filter(|row| seen.insert(row.0))
+        .map(|(id, pl, meaning, block_id, block)| Sentence { id, pl, meaning, block_id, block })
+        .collect())
 }
 
 /// The query behind [`browse_words`], callable without Tauri (tests).
-pub fn browse_words_in(conn: &Connection, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
-    let meaning = "en";
-    let pattern = format!("%{}%", query.trim());
-    let sql = format!(
-        "SELECT id, pl, {meaning}, pos, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id)
-         FROM (SELECT * FROM course_words WHERE ?1 IS NULL OR topic_id = ?1 GROUP BY id)
-         WHERE ?2 = '%%' OR pl LIKE ?2 OR {meaning} LIKE ?2
-         ORDER BY topic_id, ord LIMIT ?3"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let words = stmt
-        .query_map(rusqlite::params![topic_id, pattern, limit.clamp(1, 500)], |r| {
-            Ok(Word {
-                id: r.get(0)?,
-                pl: r.get(1)?,
-                meaning: r.get(2)?,
-                pos: r.get(3)?,
-                block_id: r.get(4)?,
-                block: r.get(5)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+pub fn browse_words_in(conn: &mut Conn, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
+    let mut words = matching_words(conn, topic_id, query.trim())?;
+    words.truncate(limit.clamp(1, 500) as usize);
     Ok(words)
 }
 
 #[tauri::command]
 pub async fn browse_words(db: State<'_, Db>, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
-    browse_words_in(&db.lock(), topic_id, query, limit)
+    browse_words_in(&mut db.lock(), topic_id, query, limit)
 }
 
 /// One catalogue page: words and sentences matching a search, plus how many
 /// matched in total so the UI can say what it is not showing.
-/// The query behind [`browse_catalogue`], callable without Tauri (tests).
-pub fn browse_catalogue_in(conn: &Connection, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
-    let meaning = "en";
-    let needle = query.trim();
-    let pattern = format!("%{needle}%");
-    let limit = limit.clamp(1, 1000);
-
-    // One row per item, in one course or all of them (an item in a block
-    // that two courses list is still one item). `?2 = ''` short-circuits an
-    // empty search to "everything".
-    let source = |view: &str| {
-        format!("(SELECT * FROM {view} WHERE ?1 IS NULL OR topic_id = ?1 GROUP BY id)")
-    };
-    let filter = format!("(?2 = '' OR pl LIKE ?3 OR {meaning} LIKE ?3)");
-
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning}, pos, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
-        source("course_words")
-    ))?;
-    let words = stmt
-        .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
-            Ok(Word {
-                id: r.get(0)?,
-                pl: r.get(1)?,
-                meaning: r.get(2)?,
-                pos: r.get(3)?,
-                block_id: r.get(4)?,
-                block: r.get(5)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning}, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
-        source("course_sentences")
-    ))?;
-    let sentences = stmt
-        .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
-            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, block_id: r.get(3)?, block: r.get(4)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
-    let count = |table: &str| -> Result<i64> {
-        Ok(conn.query_row(
-            &format!("SELECT COUNT(*) FROM {} WHERE {filter}", source(table)),
-            rusqlite::params![topic_id, needle, pattern],
-            |r| r.get(0),
-        )?)
-    };
-
-    Ok(CataloguePage {
-        total_words: count("course_words")?,
-        total_sentences: count("course_sentences")?,
-        words,
-        sentences,
-    })
+pub fn browse_catalogue_in(conn: &mut Conn, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
+    let limit = limit.clamp(1, 1000) as usize;
+    let mut words = matching_words(conn, topic_id, query.trim())?;
+    let mut sentences = matching_sentences(conn, topic_id, query.trim())?;
+    let (total_words, total_sentences) = (words.len() as i64, sentences.len() as i64);
+    words.truncate(limit);
+    sentences.truncate(limit);
+    Ok(CataloguePage { words, sentences, total_words, total_sentences })
 }
 
 #[tauri::command]
 pub async fn browse_catalogue(db: State<'_, Db>, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
-    browse_catalogue_in(&db.lock(), topic_id, query, limit)
+    browse_catalogue_in(&mut db.lock(), topic_id, query, limit)
 }
 
-/// The query behind [`browse_sentences`], callable without Tauri (tests).
-pub fn browse_sentences_in(conn: &Connection, topic_id: i64) -> Result<Vec<Sentence>> {
-    let meaning = "en";
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning}, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM course_sentences WHERE topic_id = ?1 ORDER BY ord"
-    ))?;
-    let sentences = stmt
-        .query_map([topic_id], |r| {
-            Ok(Sentence { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, block_id: r.get(3)?, block: r.get(4)? })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(sentences)
+/// A course's sentences, in order.
+pub fn browse_sentences_in(conn: &mut Conn, topic_id: i64) -> Result<Vec<Sentence>> {
+    matching_sentences(conn, Some(topic_id), "")
 }
 
 #[tauri::command]
 pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Sentence>> {
-    browse_sentences_in(&db.lock(), topic_id)
+    browse_sentences_in(&mut db.lock(), topic_id)
 }
 
 #[tauri::command]
 pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
-    let conn = db.lock();
-    conn.execute_batch(
-        "DELETE FROM reviews;
-         DELETE FROM day_log;
-         DELETE FROM achievements;
-         DELETE FROM tutor_messages;
-         DELETE FROM tutor_conversations;
-         DELETE FROM checkins;
-         UPDATE blocks SET due_day = NULL, last_day = NULL, last_result = NULL, reps = 0, interval_days = 0;",
-    )?;
-    Ok(())
+    use crate::schema::{achievements, checkins, day_log, reviews, tutor_conversations, tutor_messages};
+    let mut guard = db.lock();
+    guard.transaction::<_, Error, _>(|conn| {
+        diesel::delete(reviews::table).execute(conn)?;
+        diesel::delete(day_log::table).execute(conn)?;
+        diesel::delete(achievements::table).execute(conn)?;
+        diesel::delete(tutor_messages::table).execute(conn)?;
+        diesel::delete(tutor_conversations::table).execute(conn)?;
+        diesel::delete(checkins::table).execute(conn)?;
+        diesel::update(blocks::table)
+            .set((
+                blocks::due_day.eq(None::<i64>),
+                blocks::last_day.eq(None::<i64>),
+                blocks::last_result.eq(None::<String>),
+                blocks::reps.eq(0),
+                blocks::interval_days.eq(0),
+            ))
+            .execute(conn)?;
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -305,38 +304,42 @@ pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
 
 #[tauri::command]
 pub async fn ai_set_key(db: State<'_, Db>, key: String) -> Result<Settings> {
-    let conn = db.lock();
+    let mut guard = db.lock();
+    let conn = &mut *guard;
     let key = key.trim();
     if key.is_empty() {
         return Err(Error::msg("The API key cannot be empty."));
     }
-    db::set_setting(&conn, "openrouter_api_key", key)?;
-    read_settings(&conn)
+    db::set_setting(conn, "openrouter_api_key", key)?;
+    read_settings(conn)
 }
 
 #[tauri::command]
 pub async fn ai_clear_key(db: State<'_, Db>) -> Result<Settings> {
-    let conn = db.lock();
-    conn.execute("DELETE FROM settings WHERE key = 'openrouter_api_key'", [])?;
-    read_settings(&conn)
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    db::delete_setting(conn, "openrouter_api_key")?;
+    read_settings(conn)
 }
 
 #[tauri::command]
 pub async fn kie_set_key(db: State<'_, Db>, key: String) -> Result<Settings> {
-    let conn = db.lock();
+    let mut guard = db.lock();
+    let conn = &mut *guard;
     let key = key.trim();
     if key.is_empty() {
         return Err(Error::msg("The API key cannot be empty."));
     }
-    db::set_setting(&conn, "kie_api_key", key)?;
-    read_settings(&conn)
+    db::set_setting(conn, "kie_api_key", key)?;
+    read_settings(conn)
 }
 
 #[tauri::command]
 pub async fn kie_clear_key(db: State<'_, Db>) -> Result<Settings> {
-    let conn = db.lock();
-    conn.execute("DELETE FROM settings WHERE key = 'kie_api_key'", [])?;
-    read_settings(&conn)
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    db::delete_setting(conn, "kie_api_key")?;
+    read_settings(conn)
 }
 
 #[tauri::command]
@@ -348,11 +351,12 @@ pub async fn ai_list_models() -> Result<Vec<AiModel>> {
 #[tauri::command]
 pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
     let (key, model) = {
-        let conn = db.lock();
-        (ai::api_key(&conn)?, ai::require_model(&conn)?)
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        (ai::api_key(conn)?, ai::require_model(conn)?)
     };
     let reply = ai::complete(&key, &model, &[ai::Wire::user("Reply with exactly: OK")]).await?;
-    let _ = costs::record(&db.lock(), costs::KEY_TEST, "openrouter", &model, reply.cost, "");
+    let _ = costs::record(&mut db.lock(), costs::KEY_TEST, "openrouter", &model, reply.cost, "");
     Ok(reply.text.trim().to_string())
 }
 
@@ -360,17 +364,13 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
 #[tauri::command]
 pub async fn ai_explain_stream( app: tauri::AppHandle, db: State<'_, Db>, item_kind: String, item_id: i64, stream_id: String, ) -> Result<String> {
     let messages = {
-        let conn = db.lock();
-        let table = match item_kind.as_str() {
-            "word" => "words",
-            "sentence" => "sentences",
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let (polish, gloss): (String, String) = match item_kind.as_str() {
+            "word" => words::table.find(item_id).select((words::pl, words::en)).first(conn)?,
+            "sentence" => sentences::table.find(item_id).select((sentences::pl, sentences::en)).first(conn)?,
             other => return Err(Error::msg(format!("cannot explain a '{other}'"))),
         };
-        let (polish, gloss): (String, String) = conn.query_row(
-            &format!("SELECT pl, en FROM {table} WHERE id = ?1"),
-            [item_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
         ai::explain_prompt(&polish, &gloss)
     };
     let agent = Agent {
@@ -431,22 +431,23 @@ pub async fn export_database( app: tauri::AppHandle, db: State<'_, Db>, include_
     let _ = std::fs::remove_file(&snapshot);
 
     let file_name = {
-        let conn = db.lock();
+        let mut guard = db.lock();
+        let conn = &mut *guard;
         // VACUUM INTO writes a compact, self-contained copy that includes
         // whatever is still in the write-ahead log.
-        conn.execute("VACUUM INTO ?1", [snapshot.to_string_lossy()])?;
-        let (y, m, d) = civil_date(db::today(&conn));
+        diesel::sql_query("VACUUM INTO ?")
+            .bind::<Text, _>(snapshot.to_string_lossy().to_string())
+            .execute(conn)?;
+        let (y, m, d) = civil_date(db::today(conn));
         format!("polski-{y:04}-{m:02}-{d:02}.sqlite")
     };
 
     if !include_keys {
-        let copy = rusqlite::Connection::open(&snapshot)?;
+        let mut copy = diesel::SqliteConnection::establish(&snapshot.to_string_lossy())?;
         // Overwrite freed pages too, so the keys are really gone from the file.
-        copy.pragma_update(None, "secure_delete", "ON")?;
-        copy.execute(
-            "DELETE FROM settings WHERE key IN ('openrouter_api_key', 'kie_api_key')",
-            [],
-        )?;
+        copy.batch_execute("PRAGMA secure_delete = ON")?;
+        db::delete_setting(&mut copy, "openrouter_api_key")?;
+        db::delete_setting(&mut copy, "kie_api_key")?;
     }
 
     let (sender, receiver) = tokio::sync::oneshot::channel();

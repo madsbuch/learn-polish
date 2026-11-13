@@ -3,17 +3,17 @@
 //! the API key never has to be handed to JavaScript.
 
 
-use rusqlite::Connection;
+
 use serde::{Deserialize, Serialize};
 
-use crate::db;
+use crate::db::{self, Conn};
 use crate::error::{Error, Result};
 use crate::models::AiModel;
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1";
 
 
-pub fn api_key(conn: &Connection) -> Result<String> {
+pub fn api_key(conn: &mut Conn) -> Result<String> {
     db::get_setting(conn, "openrouter_api_key")?
         .filter(|k| !k.trim().is_empty())
         .ok_or_else(|| {
@@ -23,7 +23,7 @@ pub fn api_key(conn: &Connection) -> Result<String> {
 
 /// The chosen chat model, or an empty string. Model ids go stale, so the app
 /// never ships one — the learner loads the live catalogue and picks.
-pub fn stored_model(conn: &Connection, key: &str) -> String {
+pub fn stored_model(conn: &mut Conn, key: &str) -> String {
     db::get_setting(conn, key)
         .ok()
         .flatten()
@@ -31,7 +31,7 @@ pub fn stored_model(conn: &Connection, key: &str) -> String {
         .unwrap_or_default()
 }
 
-pub fn require_model(conn: &Connection) -> Result<String> {
+pub fn require_model(conn: &mut Conn) -> Result<String> {
     let model = stored_model(conn, "ai_model");
     if model.is_empty() {
         return Err(Error::msg(
@@ -90,7 +90,7 @@ fn known_voice(name: &str, gender: &str) -> bool {
 
 /// The voice to read a line in. `gender` is "f" or "m"; anything else, and
 /// non-dialogue text, gets the female voice.
-pub fn voice_for(conn: &Connection, gender: &str) -> String {
+pub fn voice_for(conn: &mut Conn, gender: &str) -> String {
     let (key, fallback) = if gender == "m" {
         ("tts_voice_male", DEFAULT_MALE_VOICE)
     } else {

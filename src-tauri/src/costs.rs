@@ -6,10 +6,12 @@
 //! with a NULL cost and shown as a count. kie.ai reports the Suno credits a
 //! task used; those are converted at [`KIE_USD_PER_CREDIT`].
 
-use rusqlite::{params, Connection};
+use diesel::dsl::sum;
+use diesel::prelude::*;
 use serde::Serialize;
 
-use crate::db;
+use crate::db::{self, Conn};
+use crate::schema::ai_costs;
 use crate::error::Result;
 
 /// kie.ai sells credits at roughly $0.005 each.
@@ -27,7 +29,7 @@ pub const KEY_TEST: &str = "key test";
 /// Logs one request. A failure to log must never fail the feature, so callers
 /// ignore the result; it is returned for tests.
 pub fn record(
-    conn: &Connection,
+    conn: &mut Conn,
     feature: &str,
     provider: &str,
     model: &str,
@@ -39,7 +41,7 @@ pub fn record(
 
 /// [`record`], but a second entry with the same `reference` is ignored.
 pub fn record_once(
-    conn: &Connection,
+    conn: &mut Conn,
     feature: &str,
     provider: &str,
     model: &str,
@@ -47,20 +49,19 @@ pub fn record_once(
     detail: &str,
     reference: Option<&str>,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT OR IGNORE INTO ai_costs (day, feature, provider, model, cost_usd, detail, ref, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![
-            db::today(conn),
-            feature,
-            provider,
-            model,
-            cost_usd.filter(|c| c.is_finite() && *c >= 0.0),
-            detail,
-            reference,
-            db::now_secs()
-        ],
-    )?;
+    let day = db::today(conn);
+    diesel::insert_or_ignore_into(ai_costs::table)
+        .values((
+            ai_costs::day.eq(day),
+            ai_costs::feature.eq(feature),
+            ai_costs::provider.eq(provider),
+            ai_costs::model.eq(model),
+            ai_costs::cost_usd.eq(cost_usd.filter(|c| c.is_finite() && *c >= 0.0)),
+            ai_costs::detail.eq(detail),
+            ai_costs::reference.eq(reference),
+            ai_costs::created_at.eq(db::now_secs()),
+        ))
+        .execute(conn)?;
     Ok(())
 }
 
@@ -99,51 +100,60 @@ pub struct CostSummary {
 }
 
 /// Costs over the last `days` days (today included).
-pub fn summary(conn: &Connection, days: i64) -> Result<CostSummary> {
+pub fn summary(conn: &mut Conn, days: i64) -> Result<CostSummary> {
     let days = days.clamp(1, 3650);
     let today = db::today(conn);
     let from = today - days + 1;
 
-    let mut stmt = conn.prepare(
-        "SELECT day, feature, COALESCE(SUM(cost_usd), 0), COUNT(*),
-                SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END)
-         FROM ai_costs WHERE day >= ?1
-         GROUP BY day, feature
-         ORDER BY day DESC, 3 DESC, feature",
-    )?;
-    let rows = stmt.query_map([from], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            FeatureCost { feature: r.get(1)?, cost_usd: r.get(2)?, calls: r.get(3)?, unpriced: r.get(4)? },
-        ))
-    })?;
+    let rows: Vec<(i64, String, Option<f64>)> = ai_costs::table
+        .filter(ai_costs::day.ge(from))
+        .select((ai_costs::day, ai_costs::feature, ai_costs::cost_usd))
+        .load(conn)?;
 
+    // Per day, per feature: the cost, how many requests, how many unpriced.
     let mut per_day: Vec<DayCost> = Vec::new();
-    let mut features: Vec<FeatureCost> = Vec::new();
-    for row in rows {
-        let (day, cost) = row?;
-        match features.iter_mut().find(|f| f.feature == cost.feature) {
-            Some(total) => {
-                total.cost_usd += cost.cost_usd;
-                total.calls += cost.calls;
-                total.unpriced += cost.unpriced;
+    for (day, feature, cost) in rows {
+        let entry = match per_day.iter_mut().position(|d| d.day == day) {
+            Some(i) => &mut per_day[i],
+            None => {
+                per_day.push(DayCost { day, cost_usd: 0.0, calls: 0, features: Vec::new() });
+                per_day.last_mut().expect("just pushed")
             }
-            None => features.push(cost.clone()),
+        };
+        entry.cost_usd += cost.unwrap_or(0.0);
+        entry.calls += 1;
+        let line = match entry.features.iter_mut().position(|f| f.feature == feature) {
+            Some(i) => &mut entry.features[i],
+            None => {
+                entry.features.push(FeatureCost { feature, cost_usd: 0.0, calls: 0, unpriced: 0 });
+                entry.features.last_mut().expect("just pushed")
+            }
+        };
+        line.cost_usd += cost.unwrap_or(0.0);
+        line.calls += 1;
+        line.unpriced += i64::from(cost.is_none());
+    }
+    per_day.sort_by(|a, b| b.day.cmp(&a.day));
+    let mut features: Vec<FeatureCost> = Vec::new();
+    for day in &mut per_day {
+        day.features.sort_by(|a, b| b.cost_usd.total_cmp(&a.cost_usd).then(a.feature.cmp(&b.feature)));
+        for cost in &day.features {
+            match features.iter_mut().find(|f| f.feature == cost.feature) {
+                Some(total) => {
+                    total.cost_usd += cost.cost_usd;
+                    total.calls += cost.calls;
+                    total.unpriced += cost.unpriced;
+                }
+                None => features.push(cost.clone()),
+            }
         }
-        if per_day.last().map(|d| d.day) != Some(day) {
-            per_day.push(DayCost { day, cost_usd: 0.0, calls: 0, features: Vec::new() });
-        }
-        let entry = per_day.last_mut().expect("just pushed");
-        entry.cost_usd += cost.cost_usd;
-        entry.calls += cost.calls;
-        entry.features.push(cost);
     }
     features.sort_by(|a, b| b.cost_usd.total_cmp(&a.cost_usd).then(b.calls.cmp(&a.calls)));
 
     let total_usd = features.iter().map(|f| f.cost_usd).sum();
     let today_usd = per_day.iter().find(|d| d.day == today).map_or(0.0, |d| d.cost_usd);
     let all_time_usd: f64 =
-        conn.query_row("SELECT COALESCE(SUM(cost_usd), 0) FROM ai_costs", [], |r| r.get(0))?;
+        ai_costs::table.select(sum(ai_costs::cost_usd)).first::<Option<f64>>(conn)?.unwrap_or(0.0);
 
     Ok(CostSummary { today, days, today_usd, total_usd, all_time_usd, features, per_day })
 }
@@ -157,7 +167,7 @@ pub mod commands {
     /// What the AI features cost, per day and per feature, over the last `days`.
     #[tauri::command]
     pub async fn costs_summary(db: State<'_, Db>, days: i64) -> Result<super::CostSummary> {
-        super::summary(&db.lock(), days)
+        super::summary(&mut db.lock(), days)
     }
 }
 
@@ -171,27 +181,30 @@ mod tests {
             .join("learn-polish-tests")
             .join(format!("costs-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let conn = db::open(&path).unwrap();
-        record(&conn, TUTOR, "openrouter", "m", Some(0.01), "").unwrap();
-        record(&conn, TUTOR, "openrouter", "m", Some(0.02), "").unwrap();
-        record(&conn, SPEECH, "openrouter", "tts", None, "12 characters").unwrap();
-        record_once(&conn, SONGS, "kie.ai", "V5", Some(0.06), "12 credits", Some("kie:t1")).unwrap();
+        let conn = &mut db::open(&path).unwrap();
+        record(conn, TUTOR, "openrouter", "m", Some(0.01), "").unwrap();
+        record(conn, TUTOR, "openrouter", "m", Some(0.02), "").unwrap();
+        record(conn, SPEECH, "openrouter", "tts", None, "12 characters").unwrap();
+        record_once(conn, SONGS, "kie.ai", "V5", Some(0.06), "12 credits", Some("kie:t1")).unwrap();
         // Polled again after a failed download: not charged twice.
-        record_once(&conn, SONGS, "kie.ai", "V5", Some(0.06), "12 credits", Some("kie:t1")).unwrap();
-        let today = db::today(&conn);
-        conn.execute(
-            "INSERT INTO ai_costs (day, feature, provider, cost_usd, created_at) VALUES (?1, 'tutor', 'openrouter', 0.5, 0)",
-            [today - 3],
-        )
-        .unwrap();
-        // Outside a 7-day window, but counted all-time.
-        conn.execute(
-            "INSERT INTO ai_costs (day, feature, provider, cost_usd, created_at) VALUES (?1, 'tutor', 'openrouter', 1.0, 0)",
-            [today - 30],
-        )
-        .unwrap();
+        record_once(conn, SONGS, "kie.ai", "V5", Some(0.06), "12 credits", Some("kie:t1")).unwrap();
+        let today = db::today(conn);
+        let earlier = |day: i64, cost: f64| {
+            (
+                ai_costs::day.eq(day),
+                ai_costs::feature.eq(TUTOR),
+                ai_costs::provider.eq("openrouter"),
+                ai_costs::cost_usd.eq(Some(cost)),
+                ai_costs::created_at.eq(0),
+            )
+        };
+        // The second is outside a 7-day window, but counted all-time.
+        diesel::insert_into(ai_costs::table)
+            .values(&vec![earlier(today - 3, 0.5), earlier(today - 30, 1.0)])
+            .execute(conn)
+            .unwrap();
 
-        let s = summary(&conn, 7).unwrap();
+        let s = summary(conn, 7).unwrap();
         assert!((s.today_usd - 0.09).abs() < 1e-9);
         assert!((s.total_usd - 0.59).abs() < 1e-9);
         assert!((s.all_time_usd - 1.59).abs() < 1e-9);

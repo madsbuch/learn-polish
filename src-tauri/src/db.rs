@@ -1,38 +1,89 @@
+//! The database: one SQLite file, opened once, behind a mutex.
+//!
+//! Queries elsewhere go through Diesel against `crate::schema`, so they are
+//! checked at compile time. The raw SQL here is the schema itself and the
+//! one-off upgrades of older databases, whose tables no longer exist in the
+//! schema; what those upgrades read back is still typed (`legacy` rows).
+
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, OptionalExtension};
+use diesel::connection::SimpleConnection;
+use diesel::prelude::*;
+use diesel::sql_types::{BigInt, Text};
 
 use crate::content::{self, Conversation};
 use crate::error::{Error, Result};
+use crate::schema::{blocks, course_blocks, settings, topics, tutor_conversations, tutor_messages};
+
+/// The app's database connection.
+pub type Conn = SqliteConnection;
 
 /// Guards the single SQLite connection. Every command locks it briefly; there is
 /// no long-running work behind the lock.
-pub struct Db(pub Mutex<Connection>);
+pub struct Db(pub Mutex<Conn>);
 
 impl Db {
-    pub fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Conn> {
         // A poisoned lock means an earlier command panicked. The connection is
         // still usable, so recover rather than cascading the panic.
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
-pub fn open(path: &std::path::Path) -> Result<Connection> {
+pub fn open(path: &std::path::Path) -> Result<Conn> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let conn = Connection::open(path)?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
-    migrate(&conn)?;
-    seed(&conn)?;
+    let mut conn = SqliteConnection::establish(&path.to_string_lossy())?;
+    conn.batch_execute(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA foreign_keys = ON;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA busy_timeout = 5000;",
+    )?;
+    migrate(&mut conn)?;
+    seed(&mut conn)?;
     Ok(conn)
 }
 
-/// Bumped whenever the shape of the database changes in a way that
-/// `CREATE TABLE IF NOT EXISTS` cannot express. Stored in `PRAGMA user_version`.
+/// Rows read back by raw SQL (pragmas and old-schema upgrades).
+mod legacy {
+    use diesel::sql_types::{BigInt, Text};
+
+    #[derive(diesel::QueryableByName)]
+    pub struct Count {
+        #[diesel(sql_type = BigInt)]
+        pub n: i64,
+    }
+
+    #[derive(diesel::QueryableByName)]
+    pub struct Id {
+        #[diesel(sql_type = BigInt)]
+        pub id: i64,
+    }
+
+    #[derive(diesel::QueryableByName)]
+    pub struct Name {
+        #[diesel(sql_type = Text)]
+        pub name: String,
+    }
+
+    #[derive(diesel::QueryableByName)]
+    pub struct UserVersion {
+        #[diesel(sql_type = BigInt)]
+        pub user_version: i64,
+    }
+
+    #[derive(diesel::QueryableByName)]
+    pub struct Topic {
+        #[diesel(sql_type = BigInt)]
+        pub id: i64,
+        #[diesel(sql_type = Text)]
+        pub title_pl: String,
+    }
+}
+
 const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = r#"
@@ -223,7 +274,8 @@ CREATE TABLE IF NOT EXISTS tutor_messages (
     role       TEXT    NOT NULL,
     content    TEXT    NOT NULL,
     actions    TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    conversation_id INTEGER REFERENCES tutor_conversations(id) ON DELETE CASCADE
 );
 
 -- Learning songs. `sections` is the structured lyrics (JSON) the app shows;
@@ -241,7 +293,9 @@ CREATE TABLE IF NOT EXISTS songs (
     task_id      TEXT,
     status       TEXT    NOT NULL,          -- generating | ready | failed
     error        TEXT,
-    created_at   INTEGER NOT NULL
+    created_at   INTEGER NOT NULL,
+    -- The course whose words it uses, where its listening block goes.
+    topic_id     INTEGER REFERENCES topics(id) ON DELETE SET NULL
 );
 
 -- Suno sings every song twice. Each take is stored here, bytes and all, so
@@ -258,6 +312,9 @@ CREATE TABLE IF NOT EXISTS song_tracks (
     duration       REAL    NOT NULL DEFAULT 0,
     play_count     INTEGER NOT NULL DEFAULT 0,
     last_played_at INTEGER,
+    aligned_words  TEXT,                -- Suno's word timings (JSON)
+    audio_bytes    BLOB,
+    image_bytes    BLOB,
     UNIQUE (song_id, remote_id)
 );
 
@@ -306,18 +363,17 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 "#;
 
-fn migrate(conn: &Connection) -> Result<()> {
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+fn migrate(conn: &mut Conn) -> Result<()> {
+    let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;
     if version < 3 && table_exists(conn, "words")? {
         upgrade_to_english_only(conn)?;
     }
     if version < 4 && table_exists(conn, "words")? {
         upgrade_to_block_owned_items(conn)?;
     }
-    conn.execute_batch(SCHEMA)?;
+    conn.batch_execute(SCHEMA)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
-    // Suno's word timings per take (JSON), for lyrics that follow the music.
     add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
     add_column(conn, "song_tracks", "audio_bytes", "BLOB")?;
     add_column(conn, "song_tracks", "image_bytes", "BLOB")?;
@@ -328,63 +384,50 @@ fn migrate(conn: &Connection) -> Result<()> {
         "INTEGER REFERENCES tutor_conversations(id) ON DELETE CASCADE",
     )?;
     adopt_loose_tutor_messages(conn)?;
-    // The course a song draws its words from, where its listening block goes.
     add_column(conn, "songs", "topic_id", "INTEGER REFERENCES topics(id) ON DELETE SET NULL")?;
-    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }
 
 /// Messages from before conversations existed become one conversation, so
 /// nothing the learner talked about disappears.
-fn adopt_loose_tutor_messages(conn: &Connection) -> Result<()> {
-    let loose: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tutor_messages WHERE conversation_id IS NULL",
-        [],
-        |r| r.get(0),
-    )?;
-    if loose == 0 {
+fn adopt_loose_tutor_messages(conn: &mut Conn) -> Result<()> {
+    let loose = tutor_messages::table.filter(tutor_messages::conversation_id.is_null());
+    let times: Vec<i64> = loose.select(tutor_messages::created_at).load(conn)?;
+    let (Some(first), Some(last)) = (times.iter().min(), times.iter().max()) else {
         return Ok(());
-    }
-    let (first, last): (i64, i64) = conn.query_row(
-        "SELECT MIN(created_at), MAX(created_at) FROM tutor_messages WHERE conversation_id IS NULL",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    conn.execute(
-        "INSERT INTO tutor_conversations (title, created_at, updated_at) VALUES ('Earlier conversation', ?1, ?2)",
-        [first, last],
-    )?;
-    let id = conn.last_insert_rowid();
-    conn.execute(
-        "UPDATE tutor_messages SET conversation_id = ?1 WHERE conversation_id IS NULL",
-        [id],
-    )?;
+    };
+    let id: i64 = diesel::insert_into(tutor_conversations::table)
+        .values((
+            tutor_conversations::title.eq("Earlier conversation"),
+            tutor_conversations::created_at.eq(first),
+            tutor_conversations::updated_at.eq(last),
+        ))
+        .returning(tutor_conversations::id)
+        .get_result(conn)?;
+    diesel::update(loose).set(tutor_messages::conversation_id.eq(id)).execute(conn)?;
     Ok(())
 }
 
-fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
-    Ok(conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            [table],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some())
+fn table_exists(conn: &mut Conn, table: &str) -> Result<bool> {
+    let found = diesel::sql_query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .bind::<Text, _>(table)
+        .load::<legacy::Name>(conn)?;
+    Ok(!found.is_empty())
 }
 
 /// Databases from before version 3 carried a Danish column on every item and
 /// made each Polish headword globally unique. Both go: the app teaches Polish
 /// from English only, and programmes may repeat a course word. The tables are
 /// rebuilt with their row ids intact, so review history survives.
-fn upgrade_to_english_only(conn: &Connection) -> Result<()> {
+fn upgrade_to_english_only(conn: &mut Conn) -> Result<()> {
     // Very old installs predate the speaker gender.
     add_column(conn, "conversation_lines", "gender", "TEXT NOT NULL DEFAULT 'f'")?;
 
     // Foreign keys cannot be toggled inside a transaction, and must be off
     // while tables they point at are dropped and recreated.
-    conn.pragma_update(None, "foreign_keys", "OFF")?;
-    let result = conn.execute_batch(
+    conn.batch_execute("PRAGMA foreign_keys = OFF")?;
+    let result = conn.batch_execute(
         r#"
         BEGIN;
         CREATE TABLE topics_v3 (
@@ -451,9 +494,9 @@ fn upgrade_to_english_only(conn: &Connection) -> Result<()> {
         "#,
     );
     if result.is_err() {
-        let _ = conn.execute_batch("ROLLBACK");
+        let _ = conn.batch_execute("ROLLBACK");
     }
-    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.batch_execute("PRAGMA foreign_keys = ON")?;
     result?;
     Ok(())
 }
@@ -467,15 +510,14 @@ fn upgrade_to_english_only(conn: &Connection) -> Result<()> {
 /// own word drills also picked up) goes to the tutor's drill; an automatic
 /// drill left with nothing goes. Items no drill held — or every item, in a
 /// database from before blocks — are cut into new drills of their course.
-fn upgrade_to_block_owned_items(conn: &Connection) -> Result<()> {
-    conn.pragma_update(None, "foreign_keys", "OFF")?;
-    let result = (|| -> Result<()> {
-        let tx = conn.unchecked_transaction()?;
-        let had_blocks = table_exists(&tx, "blocks")?;
+fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
+    conn.batch_execute("PRAGMA foreign_keys = OFF")?;
+    let result = conn.transaction::<_, Error, _>(|tx| {
+        let had_blocks = table_exists(tx, "blocks")?;
         if had_blocks {
-            add_column(&tx, "blocks", "song_id", "INTEGER")?;
+            add_column(tx, "blocks", "song_id", "INTEGER")?;
         }
-        tx.execute_batch(
+        tx.batch_execute(
             r#"
             CREATE TABLE blocks_v4 (
                 id            INTEGER PRIMARY KEY,
@@ -520,7 +562,7 @@ fn upgrade_to_block_owned_items(conn: &Connection) -> Result<()> {
             "#,
         )?;
         if had_blocks {
-            tx.execute_batch(
+            tx.batch_execute(
                 r#"
                 INSERT INTO blocks_v4 (id, slug, kind, format, ord, title, summary, complexity, lesson,
                         objectives, period_days, interval_days, due_day, last_day, last_result, reps,
@@ -569,78 +611,85 @@ fn upgrade_to_block_owned_items(conn: &Connection) -> Result<()> {
         }
 
         // Whatever no drill held is cut into new drills of its course.
-        let topics: Vec<(i64, String)> = {
-            let mut stmt = tx.prepare("SELECT id, title_pl FROM topics ORDER BY ord")?;
-            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
-            rows
-        };
+        let topics = diesel::sql_query("SELECT id, title_pl FROM topics ORDER BY ord").load::<legacy::Topic>(tx)?;
         let now = now_secs();
-        let new_block = |tx: &Connection, topic: i64, title: &str, format: &str, complexity: &str| -> Result<i64> {
-            tx.execute(
+        let new_block = |tx: &mut Conn, topic: i64, title: &str, format: &str, complexity: &str| -> Result<i64> {
+            let id = diesel::sql_query(
                 "INSERT INTO blocks_v4 (kind, format, title, complexity, period_days, origin, created_at)
-                 VALUES ('drill', ?1, ?2, ?3, ?4, 'starter', ?5)",
-                rusqlite::params![format, title, complexity, crate::blocks::default_period("drill", complexity), now],
-            )?;
-            let id = tx.last_insert_rowid();
-            tx.execute(
+                 VALUES ('drill', ?, ?, ?, ?, 'starter', ?) RETURNING id",
+            )
+            .bind::<Text, _>(format)
+            .bind::<Text, _>(title)
+            .bind::<Text, _>(complexity)
+            .bind::<BigInt, _>(crate::blocks::default_period("drill", complexity))
+            .bind::<BigInt, _>(now)
+            .get_result::<legacy::Id>(tx)?
+            .id;
+            diesel::sql_query(
                 "INSERT INTO course_blocks (topic_id, block_id, ord)
                  VALUES (?1, ?2, (SELECT COALESCE(MAX(ord), 0) + 1 FROM course_blocks WHERE topic_id = ?1))",
-                [topic, id],
-            )?;
+            )
+            .bind::<BigInt, _>(topic)
+            .bind::<BigInt, _>(id)
+            .execute(tx)?;
             Ok(id)
         };
-        for (topic, title_pl) in topics {
-            let lines: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM conversation_lines WHERE topic_id = ?1
+        for topic in topics {
+            let lines = diesel::sql_query(
+                "SELECT COUNT(*) AS n FROM conversation_lines WHERE topic_id = ?
                    AND id NOT IN (SELECT id FROM conversation_lines_v4)",
-                [topic],
-                |r| r.get(0),
-            )?;
+            )
+            .bind::<BigInt, _>(topic.id)
+            .get_result::<legacy::Count>(tx)?
+            .n;
             if lines > 0 {
-                let block = new_block(&tx, topic, &format!("Conversation: {title_pl}"), "dialogue", "low")?;
-                tx.execute(
+                let block = new_block(tx, topic.id, &format!("Conversation: {}", topic.title_pl), "dialogue", "low")?;
+                diesel::sql_query(
                     "INSERT INTO conversation_lines_v4 (id, block_id, ord, speaker, gender, pl, en)
                      SELECT id, ?2, ord, speaker, gender, pl, en FROM conversation_lines
                      WHERE topic_id = ?1 AND id NOT IN (SELECT id FROM conversation_lines_v4)",
-                    [topic, block],
-                )?;
+                )
+                .bind::<BigInt, _>(topic.id)
+                .bind::<BigInt, _>(block)
+                .execute(tx)?;
             }
             for (table, title, format, complexity, size, columns) in [
                 ("words", "Words", "words", "low", crate::blocks::WORDS_PER_BLOCK, "pl, en, pos"),
                 ("sentences", "Sentences", "sentences", "medium", crate::blocks::SENTENCES_PER_BLOCK, "pl, en"),
             ] {
-                let loose: Vec<i64> = {
-                    let mut stmt = tx.prepare(&format!(
-                        "SELECT id FROM {table} WHERE topic_id = ?1
-                           AND id NOT IN (SELECT id FROM {table}_v4) ORDER BY ord, id"
-                    ))?;
-                    let ids = stmt.query_map([topic], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-                    ids
-                };
-                let taken: i64 = tx.query_row(
-                    &format!(
-                        "SELECT COUNT(*) FROM blocks_v4 b JOIN course_blocks c ON c.block_id = b.id
-                         WHERE c.topic_id = ?1 AND b.format = '{format}'"
-                    ),
-                    [topic],
-                    |r| r.get(0),
-                )?;
+                let loose: Vec<i64> = diesel::sql_query(format!(
+                    "SELECT id FROM {table} WHERE topic_id = ?
+                       AND id NOT IN (SELECT id FROM {table}_v4) ORDER BY ord, id"
+                ))
+                .bind::<BigInt, _>(topic.id)
+                .load::<legacy::Id>(tx)?
+                .into_iter()
+                .map(|row| row.id)
+                .collect();
+                let taken = diesel::sql_query(format!(
+                    "SELECT COUNT(*) AS n FROM blocks_v4 b JOIN course_blocks c ON c.block_id = b.id
+                     WHERE c.topic_id = ? AND b.format = '{format}'"
+                ))
+                .bind::<BigInt, _>(topic.id)
+                .get_result::<legacy::Count>(tx)?
+                .n;
                 for (n, chunk) in loose.chunks(size).enumerate() {
-                    let block = new_block(&tx, topic, &format!("{title} {}", taken + n as i64 + 1), format, complexity)?;
+                    let block = new_block(tx, topic.id, &format!("{title} {}", taken + n as i64 + 1), format, complexity)?;
                     for (ord, id) in chunk.iter().enumerate() {
-                        tx.execute(
-                            &format!(
-                                "INSERT OR IGNORE INTO {table}_v4 (id, block_id, ord, {columns})
-                                 SELECT id, ?2, ?3, {columns} FROM {table} WHERE id = ?1"
-                            ),
-                            rusqlite::params![id, block, ord as i64],
-                        )?;
+                        diesel::sql_query(format!(
+                            "INSERT OR IGNORE INTO {table}_v4 (id, block_id, ord, {columns})
+                             SELECT id, ?2, ?3, {columns} FROM {table} WHERE id = ?1"
+                        ))
+                        .bind::<BigInt, _>(id)
+                        .bind::<BigInt, _>(block)
+                        .bind::<BigInt, _>(ord as i64)
+                        .execute(tx)?;
                     }
                 }
             }
         }
 
-        tx.execute_batch(
+        tx.batch_execute(
             r#"
             DROP TABLE IF EXISTS block_items;
             DROP TABLE IF EXISTS blocks;
@@ -656,25 +705,19 @@ fn upgrade_to_block_owned_items(conn: &Connection) -> Result<()> {
             DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences);
             "#,
         )?;
-        tx.commit()?;
         Ok(())
-    })();
-    conn.pragma_update(None, "foreign_keys", "ON")?;
+    });
+    conn.batch_execute("PRAGMA foreign_keys = ON")?;
     result
 }
 
-fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
-    let exists = conn
-        .prepare(&format!("PRAGMA table_info({table})"))?
-        .query_map([], |r| r.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?
+fn add_column(conn: &mut Conn, table: &str, column: &str, definition: &str) -> Result<()> {
+    let exists = diesel::sql_query(format!("SELECT name FROM pragma_table_info('{table}')"))
+        .load::<legacy::Name>(conn)?
         .iter()
-        .any(|name| name == column);
+        .any(|row| row.name == column);
     if !exists {
-        conn.execute(
-            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-            [],
-        )?;
+        conn.batch_execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"))?;
     }
     Ok(())
 }
@@ -687,7 +730,7 @@ fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) ->
 /// converted to courses first, and the starter content is then written over
 /// them by its natural keys (it could not have been changed), which keeps row
 /// ids and so review history.
-fn seed(conn: &Connection) -> Result<()> {
+fn seed(conn: &mut Conn) -> Result<()> {
     if get_setting(conn, "starter_seeded")?.is_some() {
         return Ok(());
     }
@@ -696,15 +739,13 @@ fn seed(conn: &Connection) -> Result<()> {
     unify_courses(conn)?;
     // Settings of models the app no longer has: the content version (the
     // starter content is no longer re-seeded) and the old daily session's place.
-    conn.execute(
-        "DELETE FROM settings WHERE key IN ('content_version', 'lesson_index', 'focus_topic_id')",
-        [],
-    )?;
+    diesel::delete(settings::table.filter(settings::key.eq_any(["content_version", "lesson_index", "focus_topic_id"])))
+        .execute(conn)?;
     set_setting(conn, "starter_seeded", "1")?;
     Ok(())
 }
 
-fn seed_starter(conn: &Connection) -> Result<()> {
+fn seed_starter(conn: &mut Conn) -> Result<()> {
     for (index, topic) in content::TOPICS.iter().enumerate() {
         let convo: Conversation = serde_json::from_str(topic.conversation)?;
         if convo.slug != topic.slug {
@@ -714,10 +755,9 @@ fn seed_starter(conn: &Connection) -> Result<()> {
             )));
         }
         let topic_id = crate::courses::ensure(conn, topic.slug, &convo.title_en, &convo.title_pl, &convo.summary_en)?;
-        conn.execute(
-            "UPDATE topics SET ord = ?2, created_at = 0 WHERE id = ?1",
-            rusqlite::params![topic_id, index as i64 + 1],
-        )?;
+        diesel::update(topics::table.find(topic_id))
+            .set((topics::ord.eq(index as i64 + 1), topics::created_at.eq(0)))
+            .execute(conn)?;
         let words: Vec<crate::courses::NewWord> = content::parse_words(topic.words)
             .into_iter()
             .map(|w| crate::courses::NewWord { pl: w.pl.to_string(), en: w.en.to_string(), pos: w.pos.to_string() })
@@ -742,12 +782,13 @@ fn seed_starter(conn: &Connection) -> Result<()> {
             });
         }
         // A course that already has a conversation (an older install) keeps it.
-        let has_dialogue: bool = conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM blocks b JOIN course_blocks c ON c.block_id = b.id
-                            WHERE c.topic_id = ?1 AND b.format = 'dialogue')",
-            [topic_id],
-            |r| r.get(0),
-        )?;
+        let has_dialogue = course_blocks::table
+            .inner_join(blocks::table)
+            .filter(course_blocks::topic_id.eq(topic_id))
+            .filter(blocks::format.eq("dialogue"))
+            .count()
+            .get_result::<i64>(conn)?
+            > 0;
         crate::courses::cut_into_drills(
             conn,
             topic_id,
@@ -767,72 +808,80 @@ fn seed_starter(conn: &Connection) -> Result<()> {
 /// (programmes after the starter ones, in the order they were made). Blocks
 /// no course lists are filed: the starter lessons in "Grammar essentials",
 /// listening blocks in "Listening", the rest in "Lessons". Safe to run twice.
-pub fn unify_courses(conn: &Connection) -> Result<()> {
-    let tx = conn.unchecked_transaction()?;
+pub fn unify_courses(conn: &mut Conn) -> Result<()> {
+    conn.transaction::<_, Error, _>(|conn| {
+        // Starter courses keep their order; former programmes follow.
+        let mut all: Vec<(i64, String, i64, i64)> = topics::table
+            .select((topics::id, topics::kind, topics::ord, topics::created_at))
+            .load(conn)?;
+        all.sort_by_key(|(id, kind, ord, created)| (kind == "programme", *ord, *created, *id));
+        for (i, (id, ..)) in all.iter().enumerate() {
+            diesel::update(topics::table.find(id))
+                .set((topics::ord.eq(i as i64 + 1), topics::kind.eq("course")))
+                .execute(conn)?;
+        }
 
-    // Starter courses keep their order; former programmes follow.
-    let ids: Vec<i64> = {
-        let mut stmt = tx.prepare(
-            "SELECT id FROM topics ORDER BY kind = 'programme', ord, created_at, id",
-        )?;
-        let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-        ids
-    };
-    for (i, id) in ids.iter().enumerate() {
-        tx.execute(
-            "UPDATE topics SET ord = ?2, kind = 'course' WHERE id = ?1",
-            rusqlite::params![id, i as i64 + 1],
-        )?;
-    }
-
-    let loose = |filter: &str| -> Result<Vec<i64>> {
-        let mut stmt = tx.prepare(&format!(
-            "SELECT id FROM blocks WHERE id NOT IN (SELECT block_id FROM course_blocks) AND {filter}
-             ORDER BY ord, id"
-        ))?;
-        let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-        Ok(ids)
-    };
-    for (filter, course) in [
-        ("slug LIKE 'lesson/%'", crate::courses::grammar_course as fn(&Connection) -> Result<i64>),
-        ("song_id IS NOT NULL", crate::courses::listening_course),
-        ("1", crate::courses::lessons_course),
-    ] {
-        let blocks = loose(filter)?;
-        if !blocks.is_empty() {
-            let id = course(&tx)?;
-            for block in blocks {
-                crate::courses::add_block(&tx, id, block)?;
+        // Blocks no course lists: lessons, listening blocks, anything else.
+        let listed: std::collections::HashSet<i64> =
+            course_blocks::table.select(course_blocks::block_id).load::<i64>(conn)?.into_iter().collect();
+        let mut loose: Vec<(i64, Option<String>, Option<i64>, i64)> = blocks::table
+            .select((blocks::id, blocks::slug, blocks::song_id, blocks::ord))
+            .load::<(i64, Option<String>, Option<i64>, i64)>(conn)?
+            .into_iter()
+            .filter(|(id, ..)| !listed.contains(id))
+            .collect();
+        loose.sort_by_key(|(id, _, _, ord)| (*ord, *id));
+        let lesson = |slug: &Option<String>| slug.as_deref().is_some_and(|s| s.starts_with("lesson/"));
+        let groups: [(Vec<i64>, fn(&mut Conn) -> Result<i64>); 3] = [
+            (loose.iter().filter(|(_, slug, ..)| lesson(slug)).map(|b| b.0).collect(), crate::courses::grammar_course),
+            (
+                loose.iter().filter(|(_, slug, song, _)| !lesson(slug) && song.is_some()).map(|b| b.0).collect(),
+                crate::courses::listening_course,
+            ),
+            (
+                loose.iter().filter(|(_, slug, song, _)| !lesson(slug) && song.is_none()).map(|b| b.0).collect(),
+                crate::courses::lessons_course,
+            ),
+        ];
+        for (ids, course) in groups {
+            if !ids.is_empty() {
+                let id = course(conn)?;
+                for block in ids {
+                    crate::courses::add_block(conn, id, block)?;
+                }
             }
         }
-    }
-    tx.execute("UPDATE blocks SET origin = 'starter' WHERE origin IN ('course', 'builtin')", [])?;
-    tx.commit()?;
-    Ok(())
+        diesel::update(blocks::table.filter(blocks::origin.eq_any(["course", "builtin"])))
+            .set(blocks::origin.eq("starter"))
+            .execute(conn)?;
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 
-pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
-    Ok(conn
-        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
-            r.get(0)
-        })
-        .optional()?)
+pub fn get_setting(conn: &mut Conn, key: &str) -> Result<Option<String>> {
+    Ok(settings::table.find(key).select(settings::value).first(conn).optional()?)
 }
 
-pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [key, value],
-    )?;
+pub fn set_setting(conn: &mut Conn, key: &str, value: &str) -> Result<()> {
+    diesel::insert_into(settings::table)
+        .values((settings::key.eq(key), settings::value.eq(value)))
+        .on_conflict(settings::key)
+        .do_update()
+        .set(settings::value.eq(value))
+        .execute(conn)?;
     Ok(())
 }
 
-pub fn get_setting_i64(conn: &Connection, key: &str, fallback: i64) -> i64 {
+pub fn delete_setting(conn: &mut Conn, key: &str) -> Result<()> {
+    diesel::delete(settings::table.find(key)).execute(conn)?;
+    Ok(())
+}
+
+pub fn get_setting_i64(conn: &mut Conn, key: &str, fallback: i64) -> i64 {
     get_setting(conn, key)
         .ok()
         .flatten()
@@ -854,19 +903,51 @@ pub fn now_secs() -> i64 {
 /// Days since the epoch **in the learner's local time**. Determining the local
 /// offset inside a multi-threaded process is not portable, so the frontend
 /// reports it at startup and we store it; the fallback is UTC.
-pub fn today(conn: &Connection) -> i64 {
+pub fn today(conn: &mut Conn) -> i64 {
     let offset_minutes = get_setting_i64(conn, "tz_offset_minutes", 0);
     (now_secs() + offset_minutes * 60).div_euclid(86_400)
 }
 
 /// The id of the course topic at a position in the course (1-based).
 #[cfg(test)]
-pub fn require_topic_id(conn: &Connection, ord: i64) -> Result<i64> {
-    conn.query_row(
-        "SELECT id FROM topics WHERE ord = ?1",
-        [ord],
-        |r| r.get(0),
-    )
+pub fn require_topic_id(conn: &mut Conn, ord: i64) -> Result<i64> {
+    topics::table
+        .filter(topics::ord.eq(ord))
+        .select(topics::id)
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg(format!("no topic with position {ord}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `crate::schema` is what queries are checked against at compile time;
+    /// this checks it against the database the app actually creates. Every
+    /// table and view's full column list must be selectable as declared.
+    #[test]
+    fn schema_matches_the_database() {
+        let path = std::env::temp_dir()
+            .join("learn-polish-tests")
+            .join(format!("schema-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = &mut open(&path).unwrap();
+        macro_rules! check {
+            ($($table:ident),* $(,)?) => {$({
+                use crate::schema::$table;
+                let query = $table::table.select($table::all_columns);
+                let sql = diesel::debug_query::<diesel::sqlite::Sqlite, _>(&query).to_string();
+                let sql = sql.split(" -- binds").next().unwrap_or_default();
+                conn.batch_execute(sql)
+                    .unwrap_or_else(|e| panic!("schema.rs and the database disagree on {}: {e}", stringify!($table)));
+            })*};
+        }
+        check!(
+            topics, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
+            audio_cache, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
+            checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
+            playlist_tracks, ai_costs, memories,
+        );
+    }
 }

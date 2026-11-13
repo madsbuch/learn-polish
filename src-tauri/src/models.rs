@@ -1,6 +1,14 @@
+//! What commands return to the frontend. Some are read straight from the
+//! database: those derive Diesel's `Queryable` (by position) or `Selectable`
+//! (by column, checked against `crate::schema` at compile time).
+
+use diesel::prelude::*;
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
+use crate::schema::{conversation_lines, topics};
+
+#[derive(Debug, Clone, Serialize, Queryable, Selectable)]
+#[diesel(table_name = topics, check_for_backend(diesel::sqlite::Sqlite))]
 #[serde(rename_all = "camelCase")]
 pub struct Topic {
     pub id: i64,
@@ -11,7 +19,9 @@ pub struct Topic {
     pub kind: String,
     pub title_pl: String,
     /// The English title.
+    #[diesel(column_name = title_en)]
     pub title: String,
+    #[diesel(column_name = summary_en)]
     pub summary: String,
 }
 
@@ -37,7 +47,8 @@ pub struct Sentence {
     pub block: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Queryable, Selectable)]
+#[diesel(table_name = conversation_lines, check_for_backend(diesel::sqlite::Sqlite))]
 #[serde(rename_all = "camelCase")]
 pub struct DialogueLine {
     pub ord: i64,
@@ -45,6 +56,7 @@ pub struct DialogueLine {
     /// "f" or "m" — decides which voice reads the line.
     pub gender: String,
     pub pl: String,
+    #[diesel(column_name = en)]
     pub meaning: String,
 }
 

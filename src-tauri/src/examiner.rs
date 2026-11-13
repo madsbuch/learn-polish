@@ -5,7 +5,7 @@
 //! `finish_assessment` with a verdict. The verdict schedules the block's next
 //! check-in exactly as a drill score does.
 
-use rusqlite::{Connection, OptionalExtension};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
@@ -13,7 +13,8 @@ use tauri::State;
 use crate::agent::{tool, Agent, Tool, ToolOutput};
 use crate::ai::Wire;
 use crate::blocks;
-use crate::db::{self, Db};
+use crate::db::{self, Conn, Db};
+use crate::schema::{checkin_messages, checkins};
 use crate::error::{Error, Result};
 use crate::stats;
 
@@ -29,14 +30,13 @@ fn question_plan(complexity: &str) -> &'static str {
     }
 }
 
-pub(crate) fn system_prompt(conn: &Connection, block: &blocks::BlockDetail) -> Result<String> {
-    let previous: Option<String> = conn
-        .query_row(
-            "SELECT feedback FROM checkins WHERE block_id = ?1 AND finished_at IS NOT NULL
-             ORDER BY id DESC LIMIT 1",
-            [block.block.id],
-            |r| r.get::<_, Option<String>>(0),
-        )
+pub(crate) fn system_prompt(conn: &mut Conn, block: &blocks::BlockDetail) -> Result<String> {
+    let previous: Option<String> = checkins::table
+        .filter(checkins::block_id.eq(block.block.id))
+        .filter(checkins::finished_at.is_not_null())
+        .order(checkins::id.desc())
+        .select(checkins::feedback)
+        .first::<Option<String>>(conn)
         .optional()?
         .flatten();
     let song = match block.block.song_id {
@@ -109,7 +109,7 @@ The lesson the learner studied:
 
 /// What the agents remember, plus what the examiner in particular should
 /// save: what this check-in showed that will matter beyond this block.
-fn memory_section(conn: &Connection) -> Result<String> {
+fn memory_section(conn: &mut Conn) -> Result<String> {
     let section = crate::memories::prompt_section(conn)?;
     if section.is_empty() {
         return Ok(section);
@@ -173,31 +173,32 @@ pub struct CheckinTurn {
 /// Rounds per turn: memory calls, then the question or verdict.
 const MAX_ROUNDS: usize = 3;
 
-fn history(conn: &Connection, checkin_id: i64) -> Result<Vec<Wire>> {
-    let mut stmt =
-        conn.prepare("SELECT role, content FROM checkin_messages WHERE checkin_id = ?1 ORDER BY id")?;
-    let rows = stmt
-        .query_map([checkin_id], |r| {
-            let role: String = r.get(0)?;
-            let content: String = r.get(1)?;
-            Ok(if role == "user" { Wire::user(content) } else { Wire::assistant(content) })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+fn history(conn: &mut Conn, checkin_id: i64) -> Result<Vec<Wire>> {
+    Ok(checkin_messages::table
+        .filter(checkin_messages::checkin_id.eq(checkin_id))
+        .order(checkin_messages::id)
+        .select((checkin_messages::role, checkin_messages::content))
+        .load::<(String, String)>(conn)?
+        .into_iter()
+        .map(|(role, content)| if role == "user" { Wire::user(content) } else { Wire::assistant(content) })
+        .collect())
 }
 
-fn append(conn: &Connection, checkin_id: i64, role: &str, content: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO checkin_messages (checkin_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![checkin_id, role, content, db::now_secs()],
-    )?;
+fn append(conn: &mut Conn, checkin_id: i64, role: &str, content: &str) -> Result<()> {
+    diesel::insert_into(checkin_messages::table)
+        .values((
+            checkin_messages::checkin_id.eq(checkin_id),
+            checkin_messages::role.eq(role),
+            checkin_messages::content.eq(content),
+            checkin_messages::created_at.eq(db::now_secs()),
+        ))
+        .execute(conn)?;
     Ok(())
 }
 
 /// Records the verdict: schedules the block, awards XP and counts the day.
-pub fn record(conn: &Connection, checkin_id: i64, mut assessment: Assessment) -> Result<(Assessment, bool)> {
-    let block_id: i64 =
-        conn.query_row("SELECT block_id FROM checkins WHERE id = ?1", [checkin_id], |r| r.get(0))?;
+pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> Result<(Assessment, bool)> {
+    let block_id: i64 = checkins::table.find(checkin_id).select(checkins::block_id).first(conn)?;
     if !["pass", "partial", "fail"].contains(&assessment.result.as_str()) {
         assessment.result = "partial".into();
     }
@@ -211,10 +212,13 @@ pub fn record(conn: &Connection, checkin_id: i64, mut assessment: Assessment) ->
     if !assessment.to_review.is_empty() {
         feedback.push_str(&format!(" To review: {}.", assessment.to_review.join("; ")));
     }
-    conn.execute(
-        "UPDATE checkins SET finished_at = ?2, result = ?3, feedback = ?4 WHERE id = ?1",
-        rusqlite::params![checkin_id, db::now_secs(), assessment.result, feedback],
-    )?;
+    diesel::update(checkins::table.find(checkin_id))
+        .set((
+            checkins::finished_at.eq(db::now_secs()),
+            checkins::result.eq(&assessment.result),
+            checkins::feedback.eq(feedback),
+        ))
+        .execute(conn)?;
     Ok((assessment, first))
 }
 
@@ -226,21 +230,19 @@ async fn turn(
     stream_id: &str,
 ) -> Result<CheckinTurn> {
     let wire = {
-        let conn = db.lock();
-        let (block_id, finished): (i64, Option<i64>) = conn.query_row(
-            "SELECT block_id, finished_at FROM checkins WHERE id = ?1",
-            [checkin_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let (block_id, finished): (i64, Option<i64>) =
+            checkins::table.find(checkin_id).select((checkins::block_id, checkins::finished_at)).first(conn)?;
         if finished.is_some() {
             return Err(Error::msg("This check-in is already finished."));
         }
-        let detail = blocks::detail(&conn, block_id)?;
+        let detail = blocks::detail(conn, block_id)?;
         if let Some(text) = &user {
-            append(&conn, checkin_id, "user", text)?;
+            append(conn, checkin_id, "user", text)?;
         }
-        let mut wire = vec![Wire::system(system_prompt(&conn, &detail)?)];
-        let past = history(&conn, checkin_id)?;
+        let mut wire = vec![Wire::system(system_prompt(conn, &detail)?)];
+        let past = history(conn, checkin_id)?;
         if past.is_empty() {
             wire.push(Wire::user("I'm ready for the check-in."));
         }
@@ -280,13 +282,15 @@ async fn turn(
     let remembered = outcome.remembered;
     let verdict = outcome.extras.into_iter().next();
 
-    let conn = db.lock();
+    let mut guard = db.lock();
+
+    let conn = &mut *guard;
     if !reply.is_empty() {
-        append(&conn, checkin_id, "assistant", &reply)?;
+        append(conn, checkin_id, "assistant", &reply)?;
     }
     let (assessment, first) = match verdict {
         Some(parsed) => {
-            let (assessment, first) = record(&conn, checkin_id, parsed)?;
+            let (assessment, first) = record(conn, checkin_id, parsed)?;
             (Some(assessment), first)
         }
         None => (None, false),
@@ -306,16 +310,16 @@ pub async fn checkin_start(
     stream_id: String,
 ) -> Result<CheckinTurn> {
     let checkin_id = {
-        let conn = db.lock();
-        let block = blocks::load(&conn, block_id)?;
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let block = blocks::load(conn, block_id)?;
         if block.kind != "study" {
             return Err(Error::msg("Only study blocks have an interview."));
         }
-        conn.execute(
-            "INSERT INTO checkins (block_id, started_at) VALUES (?1, ?2)",
-            rusqlite::params![block_id, db::now_secs()],
-        )?;
-        conn.last_insert_rowid()
+        diesel::insert_into(checkins::table)
+            .values((checkins::block_id.eq(block_id), checkins::started_at.eq(db::now_secs())))
+            .returning(checkins::id)
+            .get_result::<i64>(conn)?
     };
     turn(&app, &db, checkin_id, None, &stream_id).await
 }

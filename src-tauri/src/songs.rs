@@ -9,12 +9,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ai;
-use crate::db::{self, Db};
+use crate::db::{self, Conn, Db};
+use crate::schema::{course_sentences, course_words, reviews, sentences, song_tracks, songs, topics, words};
 use crate::error::{Error, Result};
 
 const KIE_BASE_URL: &str = "https://api.kie.ai/api/v1";
@@ -337,55 +338,55 @@ pub(crate) struct SongContext {
     existing_choruses: Vec<String>,
 }
 
-pub(crate) fn gather_context(conn: &Connection, topic_id: Option<i64>) -> Result<SongContext> {
-    let strings = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Result<Vec<String>> {
-        let mut stmt = conn.prepare(sql)?;
-        let rows = stmt
-            .query_map(params, |r| r.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    };
+pub(crate) fn gather_context(conn: &mut Conn, topic_id: Option<i64>) -> Result<SongContext> {
+    let pair = |(pl, en): (String, String)| format!("{pl} = {en}");
     let topic = match topic_id {
-        Some(id) => conn
-            .query_row("SELECT title_en FROM topics WHERE id = ?1", [id], |r| r.get(0))
-            .optional()?,
+        Some(id) => topics::table.find(id).select(topics::title_en).first(conn).optional()?,
         None => None,
     };
+    let met = |kind: &'static str| reviews::kind.eq(kind);
     let (words, sentences) = match topic_id {
         Some(id) => (
-            strings(
-                "SELECT pl || ' = ' || en FROM course_words WHERE topic_id = ?1 ORDER BY ord LIMIT 40",
-                &[&id],
-            )?,
-            strings(
-                "SELECT pl || ' = ' || en FROM course_sentences WHERE topic_id = ?1 ORDER BY ord LIMIT 20",
-                &[&id],
-            )?,
+            course_words::table
+                .filter(course_words::topic_id.eq(id))
+                .order(course_words::ord)
+                .limit(40)
+                .select((course_words::pl, course_words::en))
+                .load(conn)?,
+            course_sentences::table
+                .filter(course_sentences::topic_id.eq(id))
+                .order(course_sentences::ord)
+                .limit(20)
+                .select((course_sentences::pl, course_sentences::en))
+                .load(conn)?,
         ),
         // Without a topic, sing what the learner has actually met.
         None => (
-            strings(
-                "SELECT w.pl || ' = ' || w.en FROM reviews r JOIN words w ON w.id = r.item_id
-                 WHERE r.kind = 'word' ORDER BY r.last_day DESC LIMIT 40",
-                &[],
-            )?,
-            strings(
-                "SELECT s.pl || ' = ' || s.en FROM reviews r JOIN sentences s ON s.id = r.item_id
-                 WHERE r.kind = 'sentence' ORDER BY r.last_day DESC LIMIT 20",
-                &[],
-            )?,
+            words::table
+                .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
+                .order(reviews::last_day.desc())
+                .limit(40)
+                .select((words::pl, words::en))
+                .load(conn)?,
+            sentences::table
+                .inner_join(reviews::table.on(reviews::item_id.eq(sentences::id).and(met("sentence"))))
+                .order(reviews::last_day.desc())
+                .limit(20)
+                .select((sentences::pl, sentences::en))
+                .load(conn)?,
         ),
     };
     Ok(SongContext {
         topic,
-        words,
-        sentences,
-        weak_words: strings(
-            "SELECT w.pl FROM reviews r JOIN words w ON w.id = r.item_id
-             WHERE r.kind = 'word' ORDER BY r.lapses DESC, r.ease ASC LIMIT 10",
-            &[],
-        )?,
-        existing_choruses: strings("SELECT chorus_pl FROM songs ORDER BY id DESC LIMIT 30", &[])?,
+        words: words.into_iter().map(pair).collect(),
+        sentences: sentences.into_iter().map(pair).collect(),
+        weak_words: words::table
+            .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
+            .order((reviews::lapses.desc(), reviews::ease.asc()))
+            .limit(10)
+            .select(words::pl)
+            .load(conn)?,
+        existing_choruses: songs::table.order(songs::id.desc()).limit(30).select(songs::chorus_pl).load(conn)?,
     })
 }
 
@@ -455,7 +456,7 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
 }
 
 /// The model that writes lyrics: its own setting, else the tutor's model.
-pub fn songwriter_model(conn: &Connection) -> Result<String> {
+pub fn songwriter_model(conn: &mut Conn) -> Result<String> {
     let model = ai::stored_model(conn, "songwriter_model");
     if !model.is_empty() {
         return Ok(model);
@@ -468,7 +469,7 @@ pub fn songwriter_model(conn: &Connection) -> Result<String> {
 pub const SONG_LENGTHS: &[&str] = &["short", "medium", "long"];
 pub const DEFAULT_SONG_LENGTH: &str = "long";
 
-pub fn song_length(conn: &Connection) -> String {
+pub fn song_length(conn: &mut Conn) -> String {
     let chosen = ai::stored_model(conn, "song_length");
     if SONG_LENGTHS.contains(&chosen.as_str()) {
         chosen
@@ -500,7 +501,7 @@ pub fn structure_for(length: &str) -> &'static str {
 /// Added to the style of long songs, so Suno arranges at full length.
 const LONG_STYLE: &str = "full-length song, instrumental break, long outro";
 
-pub fn suno_model(conn: &Connection) -> String {
+pub fn suno_model(conn: &mut Conn) -> String {
     let chosen = ai::stored_model(conn, "suno_model");
     if SUNO_MODELS.contains(&chosen.as_str()) {
         chosen
@@ -509,7 +510,7 @@ pub fn suno_model(conn: &Connection) -> String {
     }
 }
 
-pub fn kie_key(conn: &Connection) -> Result<String> {
+pub fn kie_key(conn: &mut Conn) -> Result<String> {
     db::get_setting(conn, "kie_api_key")?
         .filter(|k| !k.trim().is_empty())
         .ok_or_else(|| Error::msg("No kie.ai API key yet. Add one in Settings to make songs."))
@@ -864,26 +865,24 @@ async fn fetch_timestamps(key: &str, task_id: &str, audio_id: &str) -> Result<Ve
 async fn sync_track_lyrics(app: &AppHandle, track_id: i64) -> Result<()> {
     let (key, task_id, audio_id) = {
         let db = app.state::<Db>();
-        let conn = db.lock();
-        let row: Option<(Option<String>, String)> = conn
-            .query_row(
-                "SELECT s.task_id, t.remote_id FROM song_tracks t JOIN songs s ON s.id = t.song_id
-                 WHERE t.id = ?1",
-                [track_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let row: Option<(Option<String>, String)> = song_tracks::table
+            .inner_join(songs::table)
+            .filter(song_tracks::id.eq(track_id))
+            .select((songs::task_id, song_tracks::remote_id))
+            .first(conn)
             .optional()?;
         match row {
-            Some((Some(task_id), audio_id)) => (kie_key(&conn)?, task_id, audio_id),
+            Some((Some(task_id), audio_id)) => (kie_key(conn)?, task_id, audio_id),
             _ => return Err(Error::msg("This song has no Suno task to ask for timings.")),
         }
     };
     let words = fetch_timestamps(&key, &task_id, &audio_id).await?;
     let db = app.state::<Db>();
-    db.lock().execute(
-        "UPDATE song_tracks SET aligned_words = ?2 WHERE id = ?1",
-        rusqlite::params![track_id, serde_json::to_string(&words)?],
-    )?;
+    diesel::update(song_tracks::table.find(track_id))
+        .set(song_tracks::aligned_words.eq(serde_json::to_string(&words)?))
+        .execute(&mut *db.lock())?;
     Ok(())
 }
 
@@ -907,23 +906,19 @@ pub fn sync_media(app: &AppHandle) {
 fn sync_media_now(app: &AppHandle) -> Result<()> {
     let dir = songs_dir(app)?;
     let db = app.state::<Db>();
-    let rows: Vec<(i64, String, Option<String>, bool, bool)> = {
-        let conn = db.lock();
-        let mut stmt = conn.prepare(
-            "SELECT id, audio_path, image_path, audio_bytes IS NOT NULL, image_bytes IS NOT NULL
-             FROM song_tracks",
-        )?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
-            .collect::<rusqlite::Result<_>>()?;
-        rows
-    };
+    let rows: Vec<(i64, String, Option<String>, bool, bool)> = song_tracks::table
+        .select((
+            song_tracks::id,
+            song_tracks::audio_path,
+            song_tracks::image_path,
+            song_tracks::audio_bytes.is_not_null(),
+            song_tracks::image_bytes.is_not_null(),
+        ))
+        .load(&mut *db.lock())?;
 
     for (id, audio_path, image_path, has_audio, has_image) in rows {
-        for (column, path, stored) in [
-            ("audio", Some(audio_path), has_audio),
-            ("image", image_path, has_image),
-        ] {
+        let take = song_tracks::table.find(id);
+        for (is_audio, path, stored) in [(true, Some(audio_path), has_audio), (false, image_path, has_image)] {
             let Some(path) = path else { continue };
             let mut on_disk = PathBuf::from(&path);
             if stored && !on_disk.exists() {
@@ -932,22 +927,27 @@ fn sync_media_now(app: &AppHandle) -> Result<()> {
                 if let Some(name) = on_disk.file_name() {
                     on_disk = dir.join(name);
                 }
-                let bytes: Vec<u8> = db.lock().query_row(
-                    &format!("SELECT {column}_bytes FROM song_tracks WHERE id = ?1"),
-                    [id],
-                    |r| r.get(0),
-                )?;
-                std::fs::write(&on_disk, bytes)?;
-                db.lock().execute(
-                    &format!("UPDATE song_tracks SET {column}_path = ?2 WHERE id = ?1"),
-                    rusqlite::params![id, on_disk.to_string_lossy()],
-                )?;
+                let conn = &mut *db.lock();
+                let bytes: Option<Vec<u8>> = if is_audio {
+                    take.select(song_tracks::audio_bytes).first(conn)?
+                } else {
+                    take.select(song_tracks::image_bytes).first(conn)?
+                };
+                std::fs::write(&on_disk, bytes.unwrap_or_default())?;
+                let written = on_disk.to_string_lossy().to_string();
+                if is_audio {
+                    diesel::update(take).set(song_tracks::audio_path.eq(written)).execute(conn)?;
+                } else {
+                    diesel::update(take).set(song_tracks::image_path.eq(written)).execute(conn)?;
+                }
             } else if !stored && on_disk.exists() {
                 let bytes = std::fs::read(&on_disk)?;
-                db.lock().execute(
-                    &format!("UPDATE song_tracks SET {column}_bytes = ?2 WHERE id = ?1"),
-                    rusqlite::params![id, bytes],
-                )?;
+                let conn = &mut *db.lock();
+                if is_audio {
+                    diesel::update(take).set(song_tracks::audio_bytes.eq(bytes)).execute(conn)?;
+                } else {
+                    diesel::update(take).set(song_tracks::image_bytes.eq(bytes)).execute(conn)?;
+                }
             }
         }
     }
@@ -964,104 +964,118 @@ pub fn songs_dir(app: &AppHandle) -> Result<PathBuf> {
     Ok(dir)
 }
 
-fn load_tracks(conn: &Connection, song_id: i64, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, song_id, ord, audio_path, image_path, duration, play_count, aligned_words
-         FROM song_tracks WHERE song_id = ?1 ORDER BY ord",
-    )?;
-    let tracks = stmt
-        .query_map([song_id], |r| {
-            Ok(SongTrack {
-                id: r.get(0)?,
-                song_id: r.get(1)?,
-                ord: r.get(2)?,
-                audio_path: r.get(3)?,
-                image_path: r.get(4)?,
-                duration: r.get(5)?,
-                play_count: r.get(6)?,
-                lines: r
-                    .get::<_, Option<String>>(7)?
-                    .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
-                    .filter(|words| !words.is_empty())
-                    .map(|words| timed_lines(&words, sections)),
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(tracks)
+/// A take as stored, before its word timings are matched to the lyrics.
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = song_tracks, check_for_backend(diesel::sqlite::Sqlite))]
+struct TrackRow {
+    id: i64,
+    song_id: i64,
+    ord: i64,
+    audio_path: String,
+    image_path: Option<String>,
+    duration: f64,
+    play_count: i64,
+    aligned_words: Option<String>,
 }
 
-fn row_to_song(r: &rusqlite::Row) -> rusqlite::Result<Song> {
-    let sections: String = r.get(6)?;
+fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
+    Ok(song_tracks::table
+        .filter(song_tracks::song_id.eq(song_id))
+        .order(song_tracks::ord)
+        .select(TrackRow::as_select())
+        .load(conn)?
+        .into_iter()
+        .map(|row| SongTrack {
+            id: row.id,
+            song_id: row.song_id,
+            ord: row.ord,
+            audio_path: row.audio_path,
+            image_path: row.image_path,
+            duration: row.duration,
+            play_count: row.play_count,
+            lines: row
+                .aligned_words
+                .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
+                .filter(|words| !words.is_empty())
+                .map(|words| timed_lines(&words, sections)),
+        })
+        .collect())
+}
+
+/// A song as stored, before its lyrics are parsed and its takes loaded.
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = songs, check_for_backend(diesel::sqlite::Sqlite))]
+struct SongRow {
+    id: i64,
+    title: String,
+    chorus_pl: String,
+    chorus_en: String,
+    style: String,
+    vocal_gender: String,
+    sections: String,
+    status: String,
+    error: Option<String>,
+    created_at: i64,
+}
+
+fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
+    let sections: Vec<SongSection> = serde_json::from_str(&row.sections).unwrap_or_default();
     Ok(Song {
-        id: r.get(0)?,
-        title: r.get(1)?,
-        chorus_pl: r.get(2)?,
-        chorus_en: r.get(3)?,
-        style: r.get(4)?,
-        vocal_gender: r.get(5)?,
-        sections: serde_json::from_str(&sections).unwrap_or_default(),
-        status: r.get(7)?,
-        error: r.get(8)?,
-        created_at: r.get(9)?,
-        tracks: Vec::new(),
+        tracks: load_tracks(conn, row.id, &sections)?,
+        id: row.id,
+        title: row.title,
+        chorus_pl: row.chorus_pl,
+        chorus_en: row.chorus_en,
+        style: row.style,
+        vocal_gender: row.vocal_gender,
+        sections,
+        status: row.status,
+        error: row.error,
+        created_at: row.created_at,
     })
 }
 
-const SONG_COLUMNS: &str =
-    "id, title, chorus_pl, chorus_en, style, vocal_gender, sections, status, error, created_at";
-
-pub fn load_song(conn: &Connection, id: i64) -> Result<Song> {
-    let mut song = conn
-        .query_row(
-            &format!("SELECT {SONG_COLUMNS} FROM songs WHERE id = ?1"),
-            [id],
-            row_to_song,
-        )
+pub fn load_song(conn: &mut Conn, id: i64) -> Result<Song> {
+    let row = songs::table
+        .find(id)
+        .select(SongRow::as_select())
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That song no longer exists."))?;
-    song.tracks = load_tracks(conn, id, &song.sections)?;
-    Ok(song)
+    with_tracks(conn, row)
 }
 
-pub fn list_songs(conn: &Connection) -> Result<Vec<Song>> {
-    let mut stmt = conn.prepare(&format!("SELECT {SONG_COLUMNS} FROM songs ORDER BY id DESC"))?;
-    let mut songs = stmt
-        .query_map([], row_to_song)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-    for song in &mut songs {
-        song.tracks = load_tracks(conn, song.id, &song.sections)?;
-    }
-    Ok(songs)
+pub fn list_songs(conn: &mut Conn) -> Result<Vec<Song>> {
+    let rows = songs::table.order(songs::id.desc()).select(SongRow::as_select()).load(conn)?;
+    rows.into_iter().map(|row| with_tracks(conn, row)).collect()
 }
 
-pub fn insert_song(conn: &Connection, draft: &SongDraft, suno_model: &str) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO songs (title, chorus_pl, chorus_en, style, vocal_gender, sections, lyrics,
-                            suno_model, status, created_at, topic_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'generating', ?9,
-                 (SELECT id FROM topics WHERE id = ?10))",
-        rusqlite::params![
-            draft.title,
-            draft.chorus_pl,
-            draft.chorus_en,
-            draft.style,
-            draft.vocal_gender,
-            serde_json::to_string(&draft.sections)?,
-            render_lyrics(draft),
-            suno_model,
-            db::now_secs(),
-            draft.topic_id,
-        ],
-    )?;
-    Ok(conn.last_insert_rowid())
+pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Result<i64> {
+    // A course that no longer exists is simply not remembered.
+    let topic_id: Option<i64> = match draft.topic_id {
+        Some(id) => topics::table.find(id).select(topics::id).first(conn).optional()?,
+        None => None,
+    };
+    Ok(diesel::insert_into(songs::table)
+        .values((
+            songs::title.eq(&draft.title),
+            songs::chorus_pl.eq(&draft.chorus_pl),
+            songs::chorus_en.eq(&draft.chorus_en),
+            songs::style.eq(&draft.style),
+            songs::vocal_gender.eq(&draft.vocal_gender),
+            songs::sections.eq(serde_json::to_string(&draft.sections)?),
+            songs::lyrics.eq(render_lyrics(draft)),
+            songs::suno_model.eq(suno_model),
+            songs::status.eq("generating"),
+            songs::created_at.eq(db::now_secs()),
+            songs::topic_id.eq(topic_id),
+        ))
+        .returning(songs::id)
+        .get_result(conn)?)
 }
 
-fn set_status(conn: &Connection, id: i64, status: &str, error: Option<&str>) -> Result<()> {
-    conn.execute(
-        "UPDATE songs SET status = ?2, error = ?3 WHERE id = ?1",
-        rusqlite::params![id, status, error],
-    )?;
+fn set_status(conn: &mut Conn, id: i64, status: &str, error: Option<&str>) -> Result<()> {
+    diesel::update(songs::table.find(id)).set((songs::status.eq(status), songs::error.eq(error))).execute(conn)?;
     Ok(())
 }
 
@@ -1093,9 +1107,9 @@ pub fn spawn_generation(app: AppHandle, song_id: i64) {
     tauri::async_runtime::spawn(async move {
         if let Err(error) = generate(&app, song_id).await {
             let db = app.state::<Db>();
-            let conn = db.lock();
-            let _ = set_status(&conn, song_id, "failed", Some(&error.to_string()));
-            drop(conn);
+            let mut guard = db.lock();
+            let _ = set_status(&mut guard, song_id, "failed", Some(&error.to_string()));
+            drop(guard);
             notify(&app, song_id);
         }
     });
@@ -1104,13 +1118,12 @@ pub fn spawn_generation(app: AppHandle, song_id: i64) {
 async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
     let (key, task_id, model, draft) = {
         let db = app.state::<Db>();
-        let conn = db.lock();
-        let song = load_song(&conn, song_id)?;
-        let task_id: Option<String> =
-            conn.query_row("SELECT task_id FROM songs WHERE id = ?1", [song_id], |r| r.get(0))?;
-        let model: String =
-            conn.query_row("SELECT suno_model FROM songs WHERE id = ?1", [song_id], |r| r.get(0))?;
-        (kie_key(&conn)?, task_id, model, draft_of(&song))
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let song = load_song(conn, song_id)?;
+        let (task_id, model): (Option<String>, String) =
+            songs::table.find(song_id).select((songs::task_id, songs::suno_model)).first(conn)?;
+        (kie_key(conn)?, task_id, model, draft_of(&song))
     };
 
     let task_id = match task_id {
@@ -1118,10 +1131,7 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
         _ => {
             let id = create_task(&key, &model, &draft).await?;
             let db = app.state::<Db>();
-            db.lock().execute(
-                "UPDATE songs SET task_id = ?2 WHERE id = ?1",
-                rusqlite::params![song_id, id],
-            )?;
+            diesel::update(songs::table.find(song_id)).set(songs::task_id.eq(&id)).execute(&mut *db.lock())?;
             id
         }
     };
@@ -1133,7 +1143,7 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
                 // Logged once per task, however often a retry polls it again.
                 let db = app.state::<Db>();
                 let _ = crate::costs::record_once(
-                    &db.lock(),
+                    &mut db.lock(),
                     crate::costs::SONGS,
                     "kie.ai",
                     &model,
@@ -1146,7 +1156,9 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
             Ok((TaskState::Failed(reason), _)) => {
                 // The task is spent; a retry must start a new one.
                 let db = app.state::<Db>();
-                db.lock().execute("UPDATE songs SET task_id = NULL WHERE id = ?1", [song_id])?;
+                diesel::update(songs::table.find(song_id))
+                    .set(songs::task_id.eq(None::<String>))
+                    .execute(&mut *db.lock())?;
                 return Err(Error::msg(reason));
             }
             Ok((TaskState::Pending, _)) => {}
@@ -1181,39 +1193,42 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
             None => (None, None),
         };
         let db = app.state::<Db>();
-        db.lock().execute(
-            "INSERT INTO song_tracks
-                 (song_id, ord, remote_id, audio_path, image_path, duration, audio_bytes, image_bytes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-             ON CONFLICT(song_id, remote_id) DO UPDATE SET
-                 audio_path = excluded.audio_path, image_path = excluded.image_path,
-                 duration = excluded.duration, audio_bytes = excluded.audio_bytes,
-                 image_bytes = excluded.image_bytes",
-            rusqlite::params![
-                song_id,
-                ord as i64,
-                track.id,
-                audio.to_string_lossy(),
-                image.map(|p| p.to_string_lossy().to_string()),
-                track.duration,
-                audio_bytes,
-                image_bytes,
-            ],
-        )?;
+        let audio_path = audio.to_string_lossy().to_string();
+        let image_path = image.map(|p| p.to_string_lossy().to_string());
+        diesel::insert_into(song_tracks::table)
+            .values((
+                song_tracks::song_id.eq(song_id),
+                song_tracks::ord.eq(ord as i64),
+                song_tracks::remote_id.eq(&track.id),
+                song_tracks::audio_path.eq(&audio_path),
+                song_tracks::image_path.eq(&image_path),
+                song_tracks::duration.eq(track.duration),
+                song_tracks::audio_bytes.eq(&audio_bytes),
+                song_tracks::image_bytes.eq(&image_bytes),
+            ))
+            .on_conflict((song_tracks::song_id, song_tracks::remote_id))
+            .do_update()
+            .set((
+                song_tracks::audio_path.eq(&audio_path),
+                song_tracks::image_path.eq(&image_path),
+                song_tracks::duration.eq(track.duration),
+                song_tracks::audio_bytes.eq(&audio_bytes),
+                song_tracks::image_bytes.eq(&image_bytes),
+            ))
+            .execute(&mut *db.lock())?;
     }
 
     let db = app.state::<Db>();
-    set_status(&db.lock(), song_id, "ready", None)?;
+    set_status(&mut db.lock(), song_id, "ready", None)?;
     notify(app, song_id);
 
     // Word timings, so the lyrics can follow the music. A song without them
     // still plays, and playing it later tries again.
     let track_ids: Vec<i64> = {
         let db = app.state::<Db>();
-        let conn = db.lock();
-        let mut stmt = conn.prepare("SELECT id FROM song_tracks WHERE song_id = ?1")?;
-        let ids = stmt.query_map([song_id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-        ids
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        song_tracks::table.filter(song_tracks::song_id.eq(song_id)).select(song_tracks::id).load(conn)?
     };
     let mut synced = false;
     for id in track_ids {
@@ -1229,13 +1244,9 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
 pub fn resume_pending(app: &AppHandle) {
     let pending: Vec<i64> = {
         let db = app.state::<Db>();
-        let conn = db.lock();
-        conn.prepare("SELECT id FROM songs WHERE status = 'generating'")
-            .and_then(|mut stmt| {
-                stmt.query_map([], |r| r.get(0))?
-                    .collect::<rusqlite::Result<Vec<i64>>>()
-            })
-            .unwrap_or_default()
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        songs::table.filter(songs::status.eq("generating")).select(songs::id).load(conn).unwrap_or_default()
     };
     for id in pending {
         spawn_generation(app.clone(), id);
@@ -1248,7 +1259,7 @@ pub fn resume_pending(app: &AppHandle) {
 
 #[tauri::command]
 pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
-    list_songs(&db.lock())
+    list_songs(&mut db.lock())
 }
 
 /// Asks the songwriter for a draft, or a revision of one.
@@ -1260,16 +1271,17 @@ pub async fn song_draft(db: State<'_, Db>, request: DraftRequest) -> Result<Song
 /// The songwriter at work: used by the composer screen and by the tutor.
 pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (key, model, messages) = {
-        let conn = db.lock();
-        let context = gather_context(&conn, request.topic_id)?;
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let context = gather_context(conn, request.topic_id)?;
         let length = if SONG_LENGTHS.contains(&request.length.as_str()) {
             request.length.clone()
         } else {
-            song_length(&conn)
+            song_length(conn)
         };
         (
-            ai::api_key(&conn)?,
-            songwriter_model(&conn)?,
+            ai::api_key(conn)?,
+            songwriter_model(conn)?,
             (songwriter_messages(&request, &context, &length), length),
         )
     };
@@ -1277,7 +1289,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     // A long song needs room for its lyrics in the answer.
     let reply = ai::complete_with(&key, &model, &messages, 0.8, 5000).await?;
     let _ = crate::costs::record(
-        &db.lock(),
+        &mut db.lock(),
         crate::costs::SONGWRITER,
         "openrouter",
         &model,
@@ -1306,17 +1318,18 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
 #[tauri::command]
 pub async fn song_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft) -> Result<Song> {
     let id = start_song(&app, &db, draft)?;
-    load_song(&db.lock(), id)
+    load_song(&mut db.lock(), id)
 }
 
 /// Saves a finished draft and hands it to Suno in the background.
 pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
     let draft = normalize_draft(draft)?;
     let id = {
-        let conn = db.lock();
-        kie_key(&conn)?;
-        let model = suno_model(&conn);
-        insert_song(&conn, &draft, &model)?
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        kie_key(conn)?;
+        let model = suno_model(conn);
+        insert_song(conn, &draft, &model)?
     };
     spawn_generation(app.clone(), id);
     notify(app, id);
@@ -1326,42 +1339,42 @@ pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
 #[tauri::command]
 pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Result<Song> {
     {
-        let conn = db.lock();
-        kie_key(&conn)?;
-        set_status(&conn, song_id, "generating", None)?;
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        kie_key(conn)?;
+        set_status(conn, song_id, "generating", None)?;
     }
     spawn_generation(app, song_id);
-    load_song(&db.lock(), song_id)
+    load_song(&mut db.lock(), song_id)
 }
 
 #[tauri::command]
 pub async fn song_delete(db: State<'_, Db>, song_id: i64) -> Result<()> {
-    delete_song(&db.lock(), song_id)
+    delete_song(&mut db.lock(), song_id)
 }
 
 /// Deletes a song, its takes and their files. Its takes leave every playlist.
-pub fn delete_song(conn: &Connection, song_id: i64) -> Result<()> {
-    for track in load_tracks(&conn, song_id, &[])? {
+pub fn delete_song(conn: &mut Conn, song_id: i64) -> Result<()> {
+    for track in load_tracks(conn, song_id, &[])? {
         let _ = std::fs::remove_file(&track.audio_path);
         if let Some(image) = track.image_path {
             let _ = std::fs::remove_file(image);
         }
     }
-    conn.execute("DELETE FROM song_tracks WHERE song_id = ?1", [song_id])?;
-    conn.execute("DELETE FROM songs WHERE id = ?1", [song_id])?;
+    diesel::delete(song_tracks::table.filter(song_tracks::song_id.eq(song_id))).execute(conn)?;
+    diesel::delete(songs::table.find(song_id)).execute(conn)?;
     Ok(())
 }
 
 /// Removes one take, keeping the song and its other takes.
 #[tauri::command]
 pub async fn song_track_delete(db: State<'_, Db>, track_id: i64) -> Result<()> {
-    let conn = db.lock();
-    let paths: Option<(String, Option<String>)> = conn
-        .query_row(
-            "SELECT audio_path, image_path FROM song_tracks WHERE id = ?1",
-            [track_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    let paths: Option<(String, Option<String>)> = song_tracks::table
+        .find(track_id)
+        .select((song_tracks::audio_path, song_tracks::image_path))
+        .first(conn)
         .optional()?;
     if let Some((audio, image)) = paths {
         let _ = std::fs::remove_file(audio);
@@ -1369,16 +1382,15 @@ pub async fn song_track_delete(db: State<'_, Db>, track_id: i64) -> Result<()> {
             let _ = std::fs::remove_file(image);
         }
     }
-    conn.execute("DELETE FROM song_tracks WHERE id = ?1", [track_id])?;
+    diesel::delete(song_tracks::table.find(track_id)).execute(conn)?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn song_track_played(db: State<'_, Db>, track_id: i64) -> Result<()> {
-    db.lock().execute(
-        "UPDATE song_tracks SET play_count = play_count + 1, last_played_at = ?2 WHERE id = ?1",
-        rusqlite::params![track_id, db::now_secs()],
-    )?;
+    diesel::update(song_tracks::table.find(track_id))
+        .set((song_tracks::play_count.eq(song_tracks::play_count + 1), song_tracks::last_played_at.eq(db::now_secs())))
+        .execute(&mut *db.lock())?;
     Ok(())
 }
 
@@ -1391,25 +1403,25 @@ pub async fn song_track_lyrics(
     track_id: i64,
 ) -> Result<Option<Vec<TimedLine>>> {
     let (song_id, has_words) = {
-        let conn = db.lock();
-        conn.query_row(
-            "SELECT song_id, aligned_words IS NOT NULL FROM song_tracks WHERE id = ?1",
-            [track_id],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, bool>(1)?)),
-        )
-        .optional()?
-        .ok_or_else(|| Error::msg("That song no longer exists."))?
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        song_tracks::table
+            .find(track_id)
+            .select((song_tracks::song_id, song_tracks::aligned_words.is_not_null()))
+            .first::<(i64, bool)>(conn)
+            .optional()?
+            .ok_or_else(|| Error::msg("That song no longer exists."))?
     };
     if !has_words {
         sync_track_lyrics(&app, track_id).await?;
     }
-    let song = load_song(&db.lock(), song_id)?;
+    let song = load_song(&mut db.lock(), song_id)?;
     Ok(song.tracks.into_iter().find(|t| t.id == track_id).and_then(|t| t.lines))
 }
 
 #[tauri::command]
 pub async fn kie_credits(db: State<'_, Db>) -> Result<f64> {
-    let key = kie_key(&db.lock())?;
+    let key = kie_key(&mut db.lock())?;
     credits(&key).await
 }
 

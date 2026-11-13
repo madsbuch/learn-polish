@@ -2,11 +2,13 @@
 //! to a file the learner picks, or handed to another app through the phone's
 //! share sheet.
 
-use rusqlite::{Connection, OptionalExtension};
+use diesel::dsl::max;
+use diesel::prelude::*;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-use crate::db::{self, Db};
+use crate::db::{self, Conn, Db};
+use crate::schema::{playlist_tracks, playlists, song_tracks, songs};
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -33,63 +35,68 @@ fn clean_name(name: &str) -> Result<String> {
     Ok(name.chars().take(80).collect())
 }
 
-pub fn list(conn: &Connection) -> Result<Vec<Playlist>> {
-    let mut stmt = conn.prepare("SELECT id, name FROM playlists ORDER BY created_at DESC, id DESC")?;
-    let heads: Vec<(i64, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
+pub fn list(conn: &mut Conn) -> Result<Vec<Playlist>> {
+    let heads: Vec<(i64, String)> = playlists::table
+        .order((playlists::created_at.desc(), playlists::id.desc()))
+        .select((playlists::id, playlists::name))
+        .load(conn)?;
     heads.into_iter().map(|(id, name)| Ok(Playlist { entries: entries(conn, id)?, id, name })).collect()
 }
 
-fn entries(conn: &Connection, playlist_id: i64) -> Result<Vec<PlaylistEntry>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY ord, id",
-    )?;
-    let rows = stmt
-        .query_map([playlist_id], |r| Ok(PlaylistEntry { id: r.get(0)?, track_id: r.get(1)? }))?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(rows)
+fn entries(conn: &mut Conn, playlist_id: i64) -> Result<Vec<PlaylistEntry>> {
+    Ok(playlist_tracks::table
+        .filter(playlist_tracks::playlist_id.eq(playlist_id))
+        .order((playlist_tracks::ord, playlist_tracks::id))
+        .select((playlist_tracks::id, playlist_tracks::track_id))
+        .load::<(i64, i64)>(conn)?
+        .into_iter()
+        .map(|(id, track_id)| PlaylistEntry { id, track_id })
+        .collect())
 }
 
-fn load(conn: &Connection, playlist_id: i64) -> Result<Playlist> {
-    let name: String = conn
-        .query_row("SELECT name FROM playlists WHERE id = ?1", [playlist_id], |r| r.get(0))
+fn load(conn: &mut Conn, playlist_id: i64) -> Result<Playlist> {
+    let name: String = playlists::table
+        .find(playlist_id)
+        .select(playlists::name)
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That playlist no longer exists."))?;
     Ok(Playlist { id: playlist_id, name, entries: entries(conn, playlist_id)? })
 }
 
-pub fn create(conn: &Connection, name: &str, track_ids: &[i64]) -> Result<Playlist> {
-    conn.execute(
-        "INSERT INTO playlists (name, created_at) VALUES (?1, ?2)",
-        rusqlite::params![clean_name(name)?, db::now_secs()],
-    )?;
-    let id = conn.last_insert_rowid();
+pub fn create(conn: &mut Conn, name: &str, track_ids: &[i64]) -> Result<Playlist> {
+    let id: i64 = diesel::insert_into(playlists::table)
+        .values((playlists::name.eq(clean_name(name)?), playlists::created_at.eq(db::now_secs())))
+        .returning(playlists::id)
+        .get_result(conn)?;
     add(conn, id, track_ids)
 }
 
-pub fn add(conn: &Connection, playlist_id: i64, track_ids: &[i64]) -> Result<Playlist> {
+pub fn add(conn: &mut Conn, playlist_id: i64, track_ids: &[i64]) -> Result<Playlist> {
     load(conn, playlist_id)?;
-    let tx = conn.unchecked_transaction()?;
-    let mut ord: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(ord), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
-        [playlist_id],
-        |r| r.get(0),
-    )?;
-    for track_id in track_ids {
-        tx.execute(
-            "INSERT INTO playlist_tracks (playlist_id, track_id, ord) VALUES (?1, ?2, ?3)",
-            rusqlite::params![playlist_id, track_id, ord],
-        )?;
-        ord += 1;
-    }
-    tx.commit()?;
+    conn.transaction::<_, Error, _>(|conn| {
+        let mut ord = playlist_tracks::table
+            .filter(playlist_tracks::playlist_id.eq(playlist_id))
+            .select(max(playlist_tracks::ord))
+            .first::<Option<i64>>(conn)?
+            .map_or(0, |o| o + 1);
+        for track_id in track_ids {
+            diesel::insert_into(playlist_tracks::table)
+                .values((
+                    playlist_tracks::playlist_id.eq(playlist_id),
+                    playlist_tracks::track_id.eq(track_id),
+                    playlist_tracks::ord.eq(ord),
+                ))
+                .execute(conn)?;
+            ord += 1;
+        }
+        Ok(())
+    })?;
     load(conn, playlist_id)
 }
 
 /// Moves an entry `delta` places up (negative) or down, then renumbers.
-pub fn move_entry(conn: &Connection, playlist_id: i64, entry_id: i64, delta: i64) -> Result<Playlist> {
+pub fn move_entry(conn: &mut Conn, playlist_id: i64, entry_id: i64, delta: i64) -> Result<Playlist> {
     let mut list = entries(conn, playlist_id)?;
     let Some(from) = list.iter().position(|e| e.id == entry_id) else {
         return load(conn, playlist_id);
@@ -97,31 +104,37 @@ pub fn move_entry(conn: &Connection, playlist_id: i64, entry_id: i64, delta: i64
     let to = (from as i64 + delta).clamp(0, list.len() as i64 - 1) as usize;
     let entry = list.remove(from);
     list.insert(to, entry);
-    let tx = conn.unchecked_transaction()?;
-    for (ord, entry) in list.iter().enumerate() {
-        tx.execute(
-            "UPDATE playlist_tracks SET ord = ?2 WHERE id = ?1",
-            rusqlite::params![entry.id, ord as i64],
-        )?;
-    }
-    tx.commit()?;
+    conn.transaction::<_, Error, _>(|conn| {
+        for (ord, entry) in list.iter().enumerate() {
+            diesel::update(playlist_tracks::table.find(entry.id))
+                .set(playlist_tracks::ord.eq(ord as i64))
+                .execute(conn)?;
+        }
+        Ok(())
+    })?;
     load(conn, playlist_id)
 }
 
-pub fn rename(conn: &Connection, playlist_id: i64, name: &str) -> Result<Playlist> {
+pub fn rename(conn: &mut Conn, playlist_id: i64, name: &str) -> Result<Playlist> {
     load(conn, playlist_id)?;
-    conn.execute(
-        "UPDATE playlists SET name = ?2 WHERE id = ?1",
-        rusqlite::params![playlist_id, clean_name(name)?],
-    )?;
+    diesel::update(playlists::table.find(playlist_id)).set(playlists::name.eq(clean_name(name)?)).execute(conn)?;
     load(conn, playlist_id)
 }
 
 /// Deletes a playlist; its songs stay in the library. Returns its name.
-pub fn delete(conn: &Connection, playlist_id: i64) -> Result<String> {
+pub fn delete(conn: &mut Conn, playlist_id: i64) -> Result<String> {
     let name = load(conn, playlist_id)?.name;
-    conn.execute("DELETE FROM playlists WHERE id = ?1", [playlist_id])?;
+    diesel::delete(playlists::table.find(playlist_id)).execute(conn)?;
     Ok(name)
+}
+
+/// Takes one entry out of a playlist.
+pub fn remove_entry(conn: &mut Conn, playlist_id: i64, entry_id: i64) -> Result<Playlist> {
+    diesel::delete(
+        playlist_tracks::table.find(entry_id).filter(playlist_tracks::playlist_id.eq(playlist_id)),
+    )
+    .execute(conn)?;
+    load(conn, playlist_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -130,43 +143,46 @@ pub fn delete(conn: &Connection, playlist_id: i64) -> Result<String> {
 
 /// The take of a song a playlist gets when it is asked for by song: the one
 /// played most (the first, if none has been), as "play all" picks.
-pub fn preferred_track(conn: &Connection, song_id: i64) -> Result<i64> {
-    let title: String = conn
-        .query_row("SELECT title FROM songs WHERE id = ?1", [song_id], |r| r.get(0))
+pub fn preferred_track(conn: &mut Conn, song_id: i64) -> Result<i64> {
+    let title = song_title(conn, song_id)?;
+    song_tracks::table
+        .filter(song_tracks::song_id.eq(song_id))
+        .order((song_tracks::play_count.desc(), song_tracks::ord))
+        .select(song_tracks::id)
+        .first(conn)
         .optional()?
-        .ok_or_else(|| Error::msg(format!("There is no song with id {song_id}.")))?;
-    conn.query_row(
-        "SELECT id FROM song_tracks WHERE song_id = ?1 ORDER BY play_count DESC, ord LIMIT 1",
-        [song_id],
-        |r| r.get(0),
-    )
-    .optional()?
-    .ok_or_else(|| Error::msg(format!("“{title}” has no audio yet, so it cannot go in a playlist.")))
+        .ok_or_else(|| Error::msg(format!("“{title}” has no audio yet, so it cannot go in a playlist.")))
+}
+
+fn song_title(conn: &mut Conn, song_id: i64) -> Result<String> {
+    songs::table
+        .find(song_id)
+        .select(songs::title)
+        .first(conn)
+        .optional()?
+        .ok_or_else(|| Error::msg(format!("There is no song with id {song_id}.")))
 }
 
 /// Songs a playlist holds, in order: (entry id, song id, title, take number).
-pub fn songs_in(conn: &Connection, playlist_id: i64) -> Result<Vec<(i64, i64, String, i64)>> {
-    let mut stmt = conn.prepare(
-        "SELECT p.id, s.id, s.title, t.ord + 1 FROM playlist_tracks p
-         JOIN song_tracks t ON t.id = p.track_id JOIN songs s ON s.id = t.song_id
-         WHERE p.playlist_id = ?1 ORDER BY p.ord, p.id",
-    )?;
-    let rows = stmt
-        .query_map([playlist_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(rows)
+pub fn songs_in(conn: &mut Conn, playlist_id: i64) -> Result<Vec<(i64, i64, String, i64)>> {
+    Ok(playlist_tracks::table
+        .inner_join(song_tracks::table.inner_join(songs::table))
+        .filter(playlist_tracks::playlist_id.eq(playlist_id))
+        .order((playlist_tracks::ord, playlist_tracks::id))
+        .select((playlist_tracks::id, songs::id, songs::title, song_tracks::ord))
+        .load::<(i64, i64, String, i64)>(conn)?
+        .into_iter()
+        .map(|(entry, song, title, ord)| (entry, song, title, ord + 1))
+        .collect())
 }
 
 /// Adds songs (their preferred take) to the end of a playlist. A song the
 /// playlist already holds is skipped; returns the titles added and skipped.
-pub fn add_songs(conn: &Connection, playlist_id: i64, song_ids: &[i64]) -> Result<(Vec<String>, Vec<String>)> {
+pub fn add_songs(conn: &mut Conn, playlist_id: i64, song_ids: &[i64]) -> Result<(Vec<String>, Vec<String>)> {
     let present: Vec<i64> = songs_in(conn, playlist_id)?.iter().map(|(_, song, _, _)| *song).collect();
     let (mut added, mut skipped, mut tracks) = (Vec::new(), Vec::new(), Vec::new());
     for &song in song_ids {
-        let title: String = conn
-            .query_row("SELECT title FROM songs WHERE id = ?1", [song], |r| r.get(0))
-            .optional()?
-            .ok_or_else(|| Error::msg(format!("There is no song with id {song}.")))?;
+        let title = song_title(conn, song)?;
         if present.contains(&song) || added.contains(&title) {
             skipped.push(title);
             continue;
@@ -180,17 +196,15 @@ pub fn add_songs(conn: &Connection, playlist_id: i64, song_ids: &[i64]) -> Resul
 
 /// Takes every take of these songs out of a playlist. Returns how many
 /// entries went.
-pub fn remove_songs(conn: &Connection, playlist_id: i64, song_ids: &[i64]) -> Result<usize> {
+pub fn remove_songs(conn: &mut Conn, playlist_id: i64, song_ids: &[i64]) -> Result<usize> {
     load(conn, playlist_id)?;
-    let mut removed = 0;
-    for song in song_ids {
-        removed += conn.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?1
-               AND track_id IN (SELECT id FROM song_tracks WHERE song_id = ?2)",
-            [playlist_id, *song],
-        )?;
-    }
-    Ok(removed)
+    let takes = song_tracks::table.filter(song_tracks::song_id.eq_any(song_ids)).select(song_tracks::id);
+    Ok(diesel::delete(
+        playlist_tracks::table
+            .filter(playlist_tracks::playlist_id.eq(playlist_id))
+            .filter(playlist_tracks::track_id.eq_any(takes)),
+    )
+    .execute(conn)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -199,37 +213,32 @@ pub fn remove_songs(conn: &Connection, playlist_id: i64, song_ids: &[i64]) -> Re
 
 #[tauri::command]
 pub async fn playlists_list(db: State<'_, Db>) -> Result<Vec<Playlist>> {
-    list(&db.lock())
+    list(&mut db.lock())
 }
 
 #[tauri::command]
 pub async fn playlist_create(db: State<'_, Db>, name: String, track_ids: Vec<i64>) -> Result<Playlist> {
-    create(&db.lock(), &name, &track_ids)
+    create(&mut db.lock(), &name, &track_ids)
 }
 
 #[tauri::command]
 pub async fn playlist_rename(db: State<'_, Db>, playlist_id: i64, name: String) -> Result<Playlist> {
-    rename(&db.lock(), playlist_id, &name)
+    rename(&mut db.lock(), playlist_id, &name)
 }
 
 #[tauri::command]
 pub async fn playlist_delete(db: State<'_, Db>, playlist_id: i64) -> Result<()> {
-    delete(&db.lock(), playlist_id).map(|_| ())
+    delete(&mut db.lock(), playlist_id).map(|_| ())
 }
 
 #[tauri::command]
 pub async fn playlist_add(db: State<'_, Db>, playlist_id: i64, track_ids: Vec<i64>) -> Result<Playlist> {
-    add(&db.lock(), playlist_id, &track_ids)
+    add(&mut db.lock(), playlist_id, &track_ids)
 }
 
 #[tauri::command]
 pub async fn playlist_remove(db: State<'_, Db>, playlist_id: i64, entry_id: i64) -> Result<Playlist> {
-    let conn = db.lock();
-    conn.execute(
-        "DELETE FROM playlist_tracks WHERE id = ?1 AND playlist_id = ?2",
-        rusqlite::params![entry_id, playlist_id],
-    )?;
-    load(&conn, playlist_id)
+    remove_entry(&mut db.lock(), playlist_id, entry_id)
 }
 
 #[tauri::command]
@@ -239,7 +248,7 @@ pub async fn playlist_move(
     entry_id: i64,
     delta: i64,
 ) -> Result<Playlist> {
-    move_entry(&db.lock(), playlist_id, entry_id, delta)
+    move_entry(&mut db.lock(), playlist_id, entry_id, delta)
 }
 
 // ---------------------------------------------------------------------------
@@ -247,14 +256,12 @@ pub async fn playlist_move(
 // ---------------------------------------------------------------------------
 
 /// A take's bytes and a friendly file name, e.g. "Kawa (take 2).mp3".
-fn track_file(conn: &Connection, track_id: i64) -> Result<(String, Vec<u8>)> {
-    let (title, ord, path, bytes): (String, i64, String, Option<Vec<u8>>) = conn
-        .query_row(
-            "SELECT s.title, t.ord, t.audio_path, t.audio_bytes
-             FROM song_tracks t JOIN songs s ON s.id = t.song_id WHERE t.id = ?1",
-            [track_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
+fn track_file(conn: &mut Conn, track_id: i64) -> Result<(String, Vec<u8>)> {
+    let (title, ord, path, bytes): (String, i64, String, Option<Vec<u8>>) = song_tracks::table
+        .inner_join(songs::table)
+        .filter(song_tracks::id.eq(track_id))
+        .select((songs::title, song_tracks::ord, song_tracks::audio_path, song_tracks::audio_bytes))
+        .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That take no longer exists."))?;
     let bytes = match bytes {
@@ -287,7 +294,7 @@ pub async fn song_track_save(app: AppHandle, db: State<'_, Db>, track_id: i64) -
     use tauri_plugin_dialog::DialogExt;
     use tauri_plugin_fs::FsExt;
 
-    let (name, bytes) = track_file(&db.lock(), track_id)?;
+    let (name, bytes) = track_file(&mut db.lock(), track_id)?;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
@@ -316,7 +323,7 @@ pub async fn song_track_save(app: AppHandle, db: State<'_, Db>, track_id: i64) -
 /// path, for the share sheet to hand to another app.
 #[tauri::command]
 pub async fn song_track_share_file(app: AppHandle, db: State<'_, Db>, track_id: i64) -> Result<String> {
-    let (name, bytes) = track_file(&db.lock(), track_id)?;
+    let (name, bytes) = track_file(&mut db.lock(), track_id)?;
     let dir = app
         .path()
         .app_cache_dir()

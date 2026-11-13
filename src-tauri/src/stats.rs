@@ -1,9 +1,11 @@
 //! XP, levels, streaks and achievements — the parts that make the daily
 //! check-in worth showing up for.
 
-use rusqlite::Connection;
+use diesel::prelude::*;
+use diesel::upsert::excluded;
 
-use crate::db;
+use crate::db::{self, Conn};
+use crate::schema::{achievements, blocks, course_blocks, course_sentences, course_words, day_log, reviews, sentences, topics, words};
 use crate::error::Result;
 use crate::models::{Achievement, DayStat, Stats, TopicProgress};
 use crate::session;
@@ -60,45 +62,52 @@ pub fn xp_for_checkin(complexity: &str, result: &str) -> i64 {
     }
 }
 
-pub fn total_xp(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row("SELECT COALESCE(SUM(xp), 0) FROM day_log", [], |r| r.get(0))?)
+pub fn total_xp(conn: &mut Conn) -> Result<i64> {
+    Ok(day_log::table.select(day_log::xp).load::<i64>(conn)?.into_iter().sum())
 }
 
-pub fn record_answer(conn: &Connection, day: i64, xp: i64, correct: bool) -> Result<()> {
-    conn.execute(
-        "INSERT INTO day_log (day, xp, answered, correct) VALUES (?1, ?2, 1, ?3)
-         ON CONFLICT(day) DO UPDATE SET
-             xp = xp + excluded.xp,
-             answered = answered + 1,
-             correct = correct + excluded.correct",
-        rusqlite::params![day, xp, i64::from(correct)],
-    )?;
+pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Result<()> {
+    diesel::insert_into(day_log::table)
+        .values((
+            day_log::day.eq(day),
+            day_log::xp.eq(xp),
+            day_log::answered.eq(1),
+            day_log::correct.eq(i64::from(correct)),
+        ))
+        .on_conflict(day_log::day)
+        .do_update()
+        .set((
+            day_log::xp.eq(day_log::xp + excluded(day_log::xp)),
+            day_log::answered.eq(day_log::answered + 1),
+            day_log::correct.eq(day_log::correct + excluded(day_log::correct)),
+        ))
+        .execute(conn)?;
     Ok(())
 }
 
 /// Marks today as practised (any block counts toward the streak). Returns
 /// true the first time it is called on a day.
-pub fn mark_practised(conn: &Connection, day: i64) -> Result<bool> {
-    let already: i64 = conn
-        .query_row("SELECT completed FROM day_log WHERE day = ?1", [day], |r| r.get(0))
-        .unwrap_or(0);
-    if already == 1 {
+pub fn mark_practised(conn: &mut Conn, day: i64) -> Result<bool> {
+    let already: Option<i64> =
+        day_log::table.find(day).select(day_log::completed).first(conn).optional()?;
+    if already == Some(1) {
         return Ok(false);
     }
-    conn.execute(
-        "INSERT INTO day_log (day, completed) VALUES (?1, 1)
-         ON CONFLICT(day) DO UPDATE SET completed = 1",
-        [day],
-    )?;
+    diesel::insert_into(day_log::table)
+        .values((day_log::day.eq(day), day_log::completed.eq(1)))
+        .on_conflict(day_log::day)
+        .do_update()
+        .set(day_log::completed.eq(1))
+        .execute(conn)?;
     Ok(true)
 }
 
-pub fn streaks(conn: &Connection, today: i64) -> Result<(i64, i64)> {
-    let mut stmt =
-        conn.prepare("SELECT day FROM day_log WHERE completed = 1 ORDER BY day")?;
-    let days: Vec<i64> = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+pub fn streaks(conn: &mut Conn, today: i64) -> Result<(i64, i64)> {
+    let days: Vec<i64> = day_log::table
+        .filter(day_log::completed.eq(1))
+        .order(day_log::day)
+        .select(day_log::day)
+        .load(conn)?;
 
     let mut longest = 0;
     let mut run = 0;
@@ -142,66 +151,53 @@ struct Counts {
     due_today: i64,
 }
 
-fn counts(conn: &Connection, today: i64) -> Result<Counts> {
-    let one = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Result<i64> {
-        Ok(conn.query_row(sql, params, |r| r.get(0))?)
-    };
+fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
+    let dialogues = blocks::table.filter(blocks::format.eq("dialogue"));
     Ok(Counts {
-        words_total: one("SELECT COUNT(*) FROM words", &[])?,
-        words_seen: one("SELECT COUNT(*) FROM reviews WHERE kind = 'word'", &[])?,
-        words_mastered: one(
-            "SELECT COUNT(*) FROM reviews WHERE kind = 'word' AND reps >= ?1",
-            &[&MASTERY_REPS],
-        )?,
-        sentences_total: one("SELECT COUNT(*) FROM sentences", &[])?,
-        sentences_seen: one("SELECT COUNT(*) FROM reviews WHERE kind = 'sentence'", &[])?,
-        dialogues_total: one("SELECT COUNT(*) FROM blocks WHERE format = 'dialogue'", &[])?,
-        dialogues_seen: one("SELECT COUNT(*) FROM blocks WHERE format = 'dialogue' AND reps > 0", &[])?,
-        // What is due is now counted in blocks, not single words.
-        due_today: one(
-            "SELECT COUNT(*) FROM blocks WHERE due_day IS NOT NULL AND due_day <= ?1",
-            &[&today],
-        )?,
+        words_total: words::table.count().get_result(conn)?,
+        words_seen: reviews::table.filter(reviews::kind.eq("word")).count().get_result(conn)?,
+        words_mastered: reviews::table
+            .filter(reviews::kind.eq("word"))
+            .filter(reviews::reps.ge(MASTERY_REPS))
+            .count()
+            .get_result(conn)?,
+        sentences_total: sentences::table.count().get_result(conn)?,
+        sentences_seen: reviews::table.filter(reviews::kind.eq("sentence")).count().get_result(conn)?,
+        dialogues_total: dialogues.count().get_result(conn)?,
+        dialogues_seen: dialogues.filter(blocks::reps.gt(0)).count().get_result(conn)?,
+        // What is due is counted in blocks, not single words.
+        due_today: blocks::table.filter(blocks::due_day.le(today)).count().get_result(conn)?,
     })
 }
 
-pub fn collect(conn: &Connection) -> Result<Stats> {
+pub fn collect(conn: &mut Conn) -> Result<Stats> {
     let today = db::today(conn);
     let c = counts(conn, today)?;
     let total = total_xp(conn)?;
     let level = level_from_xp(total);
     let (current_streak, longest_streak) = streaks(conn, today)?;
 
-    let (day_xp, completed_today): (i64, bool) = conn
-        .query_row(
-            "SELECT xp, completed FROM day_log WHERE day = ?1",
-            [today],
-            |r| Ok((r.get(0)?, r.get::<_, i64>(1)? == 1)),
-        )
-        .unwrap_or((0, false));
-
-    let (answered, correct): (i64, i64) = conn.query_row(
-        "SELECT COALESCE(SUM(answered), 0), COALESCE(SUM(correct), 0) FROM day_log",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-
-    let mut stmt = conn.prepare(
-        "SELECT day, xp, answered, correct, completed FROM day_log
-         WHERE day > ?1 ORDER BY day",
-    )?;
-    let history = stmt
-        .query_map([today - HISTORY_DAYS], |r| {
-            Ok(DayStat {
-                day: r.get(0)?,
-                xp: r.get(1)?,
-                answered: r.get(2)?,
-                correct: r.get(3)?,
-                completed: r.get::<_, i64>(4)? == 1,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
+    let days: Vec<(i64, i64, i64, i64, i64)> = day_log::table
+        .order(day_log::day)
+        .select((day_log::day, day_log::xp, day_log::answered, day_log::correct, day_log::completed))
+        .load(conn)?;
+    let (day_xp, completed_today) = days
+        .iter()
+        .find(|d| d.0 == today)
+        .map_or((0, false), |d| (d.1, d.4 == 1));
+    let answered: i64 = days.iter().map(|d| d.2).sum();
+    let correct: i64 = days.iter().map(|d| d.3).sum();
+    let history = days
+        .iter()
+        .filter(|d| d.0 > today - HISTORY_DAYS)
+        .map(|&(day, xp, answered, correct, completed)| DayStat {
+            day,
+            xp,
+            answered,
+            correct,
+            completed: completed == 1,
+        })
+        .collect();
 
     let achievements = evaluate_achievements(conn, &c, total, level, longest_streak)?;
 
@@ -234,46 +230,34 @@ pub fn collect(conn: &Connection) -> Result<Stats> {
     })
 }
 
-pub fn topic_progress(conn: &Connection) -> Result<Vec<TopicProgress>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT t.id FROM topics t ORDER BY {}",
-        crate::blocks::COURSE_ORDER
-    ))?;
-    let ids: Vec<i64> = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-
+pub fn topic_progress(conn: &mut Conn) -> Result<Vec<TopicProgress>> {
+    let ids: Vec<i64> = topics::table.order(crate::blocks::course_order()).select(topics::id).load(conn)?;
+    let seen = |kind: &'static str| reviews::table.filter(reviews::kind.eq(kind)).select(reviews::item_id);
     ids.into_iter()
         .map(|id| {
             let topic = session::load_topic(conn, id)?;
-            let one = |sql: &str| -> Result<i64> {
-                Ok(conn.query_row(sql, [id], |r| r.get(0))?)
-            };
+            let course_words = course_words::table.filter(course_words::topic_id.eq(id));
+            let course_sentences = course_sentences::table.filter(course_sentences::topic_id.eq(id));
+            let listed = course_blocks::table.filter(course_blocks::topic_id.eq(id));
             Ok(TopicProgress {
                 topic,
-                total_words: one("SELECT COUNT(*) FROM course_words WHERE topic_id = ?1")?,
-                seen_words: one(
-                    "SELECT COUNT(*) FROM course_words w JOIN reviews r
-                     ON r.kind = 'word' AND r.item_id = w.id WHERE w.topic_id = ?1",
-                )?,
-                mastered_words: conn.query_row(
-                    "SELECT COUNT(*) FROM course_words w JOIN reviews r
-                     ON r.kind = 'word' AND r.item_id = w.id
-                     WHERE w.topic_id = ?1 AND r.reps >= ?2",
-                    rusqlite::params![id, MASTERY_REPS],
-                    |r| r.get(0),
-                )?,
-                total_sentences: one("SELECT COUNT(*) FROM course_sentences WHERE topic_id = ?1")?,
-                seen_sentences: one(
-                    "SELECT COUNT(*) FROM course_sentences s JOIN reviews r
-                     ON r.kind = 'sentence' AND r.item_id = s.id WHERE s.topic_id = ?1",
-                )?,
-                total_blocks: one("SELECT COUNT(*) FROM course_blocks WHERE topic_id = ?1")?,
-                started_blocks: one(
-                    "SELECT COUNT(*) FROM course_blocks c JOIN blocks b ON b.id = c.block_id
-                     WHERE c.topic_id = ?1 AND b.due_day IS NOT NULL",
-                )?,
+                total_words: course_words.count().get_result(conn)?,
+                seen_words: course_words.filter(course_words::id.eq_any(seen("word"))).count().get_result(conn)?,
+                mastered_words: course_words
+                    .filter(course_words::id.eq_any(seen("word").filter(reviews::reps.ge(MASTERY_REPS))))
+                    .count()
+                    .get_result(conn)?,
+                total_sentences: course_sentences.count().get_result(conn)?,
+                seen_sentences: course_sentences
+                    .filter(course_sentences::id.eq_any(seen("sentence")))
+                    .count()
+                    .get_result(conn)?,
+                total_blocks: listed.count().get_result(conn)?,
+                started_blocks: listed
+                    .inner_join(blocks::table)
+                    .filter(blocks::due_day.is_not_null())
+                    .count()
+                    .get_result(conn)?,
             })
         })
         .collect()
@@ -320,17 +304,14 @@ fn progress_value(def: &Definition, c: &Counts, xp: i64, level: i64, longest_str
 }
 
 fn evaluate_achievements(
-    conn: &Connection,
+    conn: &mut Conn,
     c: &Counts,
     xp: i64,
     level: i64,
     longest_streak: i64,
 ) -> Result<Vec<Achievement>> {
-    let mut stmt = conn.prepare("SELECT code FROM achievements")?;
-    let unlocked: std::collections::HashSet<String> = stmt
-        .query_map([], |r| r.get::<_, String>(0))?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
+    let unlocked: std::collections::HashSet<String> =
+        achievements::table.select(achievements::code).load::<String>(conn)?.into_iter().collect();
 
     let today = db::today(conn);
     let mut result = Vec::with_capacity(DEFINITIONS.len());
@@ -339,11 +320,13 @@ fn evaluate_achievements(
         let value = progress_value(def, c, xp, level, longest_streak);
         let earned = value >= def.target;
         if earned && !unlocked.contains(def.code) {
-            conn.execute(
-                "INSERT OR IGNORE INTO achievements (code, unlocked_day, unlocked_at)
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![def.code, today, db::now_secs()],
-            )?;
+            diesel::insert_or_ignore_into(achievements::table)
+                .values((
+                    achievements::code.eq(def.code),
+                    achievements::unlocked_day.eq(today),
+                    achievements::unlocked_at.eq(db::now_secs()),
+                ))
+                .execute(conn)?;
         }
         result.push(Achievement {
             code: def.code.to_string(),

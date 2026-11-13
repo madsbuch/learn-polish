@@ -1,10 +1,13 @@
 //! Builds the exercises of a drill block: a handful of words, sentences or a
 //! dialogue, practised in the block's format.
 
-use rand::seq::SliceRandom;
-use rusqlite::{Connection, OptionalExtension};
+use std::collections::HashSet;
 
-use crate::db;
+use diesel::prelude::*;
+use rand::seq::SliceRandom;
+
+use crate::db::{self, Conn};
+use crate::schema::{conversation_lines, course_blocks, course_lines, course_sentences, course_words, reviews, sentences, topics, words};
 use crate::error::Result;
 use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Topic};
 
@@ -31,54 +34,50 @@ struct SentenceRow {
     meaning: String,
 }
 
-pub fn load_topic(conn: &Connection, topic_id: i64) -> Result<Topic> {
-    conn.query_row(
-        "SELECT id, ord, slug, kind, title_pl, title_en, summary_en FROM topics WHERE id = ?1",
-        [topic_id],
-        |r| {
-            Ok(Topic {
-                id: r.get(0)?,
-                ord: r.get(1)?,
-                slug: r.get(2)?,
-                kind: r.get(3)?,
-                title_pl: r.get(4)?,
-                title: r.get(5)?,
-                summary: r.get(6)?,
-            })
-        },
-    )
-    .optional()?
-    .ok_or_else(|| crate::error::Error::msg(format!("There is no topic with id {topic_id}.")))
+pub fn load_topic(conn: &mut Conn, topic_id: i64) -> Result<Topic> {
+    topics::table
+        .find(topic_id)
+        .select(Topic::as_select())
+        .first(conn)
+        .optional()?
+        .ok_or_else(|| crate::error::Error::msg(format!("There is no topic with id {topic_id}.")))
 }
 
 /// A course's dialogue: the lines of its conversation drills, in order.
-pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLine>> {
-    lines(conn, "SELECT ord, speaker, gender, pl, en FROM course_lines WHERE topic_id = ?1 ORDER BY ord", topic_id)
+pub fn dialogue_lines(conn: &mut Conn, topic_id: i64) -> Result<Vec<DialogueLine>> {
+    Ok(course_lines::table
+        .filter(course_lines::topic_id.eq(topic_id))
+        .order(course_lines::ord)
+        .select((course_lines::ord, course_lines::speaker, course_lines::gender, course_lines::pl, course_lines::en))
+        .load(conn)?)
 }
 
 /// The dialogue one block owns.
-pub fn block_lines(conn: &Connection, block_id: i64) -> Result<Vec<DialogueLine>> {
-    lines(
-        conn,
-        "SELECT ord, speaker, gender, pl, en FROM conversation_lines WHERE block_id = ?1 ORDER BY ord, id",
-        block_id,
-    )
+pub fn block_lines(conn: &mut Conn, block_id: i64) -> Result<Vec<DialogueLine>> {
+    Ok(conversation_lines::table
+        .filter(conversation_lines::block_id.eq(block_id))
+        .order((conversation_lines::ord, conversation_lines::id))
+        .select(DialogueLine::as_select())
+        .load(conn)?)
 }
 
-fn lines(conn: &Connection, sql: &str, id: i64) -> Result<Vec<DialogueLine>> {
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt
-        .query_map([id], |r| {
-            Ok(DialogueLine {
-                ord: r.get(0)?,
-                speaker: r.get(1)?,
-                gender: r.get(2)?,
-                pl: r.get(3)?,
-                meaning: r.get(4)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+/// The kinds of item a learner has met (has a review row for), by id.
+fn met(conn: &mut Conn, kind: &str, ids: &[i64]) -> Result<std::collections::HashMap<i64, i64>> {
+    Ok(reviews::table
+        .filter(reviews::kind.eq(kind))
+        .filter(reviews::item_id.eq_any(ids))
+        .select((reviews::item_id, reviews::reps))
+        .load::<(i64, i64)>(conn)?
+        .into_iter()
+        .collect())
+}
+
+/// The courses a block is listed in.
+fn courses_of(conn: &mut Conn, block_id: i64) -> Result<Vec<i64>> {
+    Ok(course_blocks::table
+        .filter(course_blocks::block_id.eq(block_id))
+        .select(course_blocks::topic_id)
+        .load(conn)?)
 }
 
 fn word_intro(w: &WordRow) -> Exercise {
@@ -150,42 +149,41 @@ fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> E
     }
 }
 
-fn block_words(conn: &Connection, block_id: i64) -> Result<Vec<(WordRow, bool)>> {
-    let mut stmt = conn.prepare(
-        "SELECT w.id, w.pl, w.en, w.pos, COALESCE(r.reps, 0), r.item_id IS NULL
-         FROM words w
-         LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
-         WHERE w.block_id = ?1 ORDER BY w.ord, w.id",
-    )?;
-    let rows = stmt
-        .query_map([block_id], |r| {
-            Ok((
-                WordRow { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)?, pos: r.get(3)?, reps: r.get(4)? },
-                r.get::<_, bool>(5)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+fn block_words(conn: &mut Conn, block_id: i64) -> Result<Vec<(WordRow, bool)>> {
+    let rows: Vec<(i64, String, String, String)> = words::table
+        .filter(words::block_id.eq(block_id))
+        .order((words::ord, words::id))
+        .select((words::id, words::pl, words::en, words::pos))
+        .load(conn)?;
+    let reps = met(conn, "word", &rows.iter().map(|r| r.0).collect::<Vec<_>>())?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, pl, meaning, pos)| {
+            let seen = reps.get(&id).copied();
+            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0) }, seen.is_none())
+        })
+        .collect())
 }
 
-fn block_sentences(conn: &Connection, block_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
-    let mut stmt = conn.prepare(
-        "SELECT s.id, s.pl, s.en, r.item_id IS NULL
-         FROM sentences s
-         LEFT JOIN reviews r ON r.kind = 'sentence' AND r.item_id = s.id
-         WHERE s.block_id = ?1 ORDER BY s.ord, s.id",
-    )?;
-    let rows = stmt
-        .query_map([block_id], |r| {
-            Ok((SentenceRow { id: r.get(0)?, pl: r.get(1)?, meaning: r.get(2)? }, r.get::<_, bool>(3)?))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+fn block_sentences(conn: &mut Conn, block_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
+    let rows: Vec<(i64, String, String)> = sentences::table
+        .filter(sentences::block_id.eq(block_id))
+        .order((sentences::ord, sentences::id))
+        .select((sentences::id, sentences::pl, sentences::en))
+        .load(conn)?;
+    let seen = met(conn, "sentence", &rows.iter().map(|r| r.0).collect::<Vec<_>>())?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, pl, meaning)| {
+            let new = !seen.contains_key(&id);
+            (SentenceRow { id, pl, meaning }, new)
+        })
+        .collect())
 }
 
 /// The exercises of one drill block. Small on purpose: a low block is a
 /// minute or two of taps, never the whole topic at once.
-pub fn build_block(conn: &Connection, block_id: i64) -> Result<SessionPlan> {
+pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
     let block = crate::blocks::load(conn, block_id)?;
     if block.kind != "drill" {
         return Err(crate::error::Error::msg("Study blocks are checked by the examiner, not drilled."));
@@ -195,7 +193,7 @@ pub fn build_block(conn: &Connection, block_id: i64) -> Result<SessionPlan> {
         .ok_or_else(|| crate::error::Error::msg("This drill has no words to practise."))?;
     let topic = load_topic(conn, topic_id)?;
     let today = db::today(conn);
-    let pool = distractor_pool(conn, block_id, "en")?;
+    let pool = distractor_pool(conn, block_id)?;
     let rng = &mut rand::rng();
 
     let words = block_words(conn, block_id)?;
@@ -290,14 +288,13 @@ struct Distractors {
 }
 
 /// Decoys come from the words of every course the block is in.
-fn distractor_pool(conn: &Connection, block_id: i64, meaning: &str) -> Result<Distractors> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT DISTINCT pl, {meaning} FROM course_words
-         WHERE topic_id IN (SELECT topic_id FROM course_blocks WHERE block_id = ?1)"
-    ))?;
-    let rows = stmt
-        .query_map([block_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+fn distractor_pool(conn: &mut Conn, block_id: i64) -> Result<Distractors> {
+    let courses = courses_of(conn, block_id)?;
+    let rows: Vec<(String, String)> = course_words::table
+        .filter(course_words::topic_id.eq_any(courses))
+        .select((course_words::pl, course_words::en))
+        .distinct()
+        .load(conn)?;
     Ok(Distractors {
         polish: rows.iter().map(|(pl, _)| pl.clone()).collect(),
         meanings: rows.into_iter().map(|(_, m)| m).collect(),
@@ -506,30 +503,28 @@ fn make_gap(pl: &str, meaning: &str, topic_words: &std::collections::HashSet<Str
 /// A few of the topic's sentences with a word missing from each, and a word
 /// bank of the missing words plus two that do not belong.
 fn gap_fill(
-    conn: &Connection,
+    conn: &mut Conn,
     block_id: i64,
     session: &[&SentenceRow],
     // Only the given sentences, rather than topping up from the topic.
     only_session: bool,
     rng: &mut impl rand::Rng,
 ) -> Result<Option<Exercise>> {
-    let courses = "SELECT topic_id FROM course_blocks WHERE block_id = ?1";
-    let mut stmt = conn.prepare(&format!(
-        "SELECT DISTINCT pl, en FROM course_sentences WHERE topic_id IN ({courses})"
-    ))?;
-    let mut topic_sentences: Vec<(String, String)> = stmt
-        .query_map([block_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
-    let mut stmt =
-        conn.prepare(&format!("SELECT DISTINCT pl FROM course_words WHERE topic_id IN ({courses})"))?;
-    let topic_words: std::collections::HashSet<String> = stmt
-        .query_map([block_id], |r| r.get::<_, String>(0))?
-        .filter_map(|w| w.ok())
+    let courses = courses_of(conn, block_id)?;
+    let mut topic_sentences: Vec<(String, String)> = course_sentences::table
+        .filter(course_sentences::topic_id.eq_any(&courses))
+        .select((course_sentences::pl, course_sentences::en))
+        .distinct()
+        .load(conn)?;
+    let topic_words: HashSet<String> = course_words::table
+        .filter(course_words::topic_id.eq_any(&courses))
+        .select(course_words::pl)
+        .distinct()
+        .load::<String>(conn)?
+        .into_iter()
         .filter(|w| !w.contains(' '))
         .map(|w| w.to_lowercase())
         .collect();
-    drop(stmt);
 
     // Today's sentences first, then the rest of the topic in random order.
     topic_sentences.shuffle(rng);

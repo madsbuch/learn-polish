@@ -34,7 +34,10 @@ rand = "0.9"
 base64 = "0.22"
 
 # SQLite is compiled in (`bundled`) so Android/macOS do not depend on a system libsqlite3.
-rusqlite = { version = "0.37", features = ["bundled"] }
+# Typed SQL: queries are checked against src/schema.rs at compile time.
+diesel = { version = "2.4", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+# SQLite itself, compiled in (also for Android, which ships no usable one).
+libsqlite3-sys = { version = "0.35", features = ["bundled"] }
 
 # All outbound HTTP lives in Rust so the webview never issues cross-origin
 # requests — no CORS preflight, and the OpenRouter key never reaches JS.

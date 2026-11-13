@@ -3,7 +3,10 @@ use serde::{Serialize, Serializer};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("database error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    Database(#[from] diesel::result::Error),
+
+    #[error("could not open the database: {0}")]
+    Connection(#[from] diesel::ConnectionError),
 
     #[error("{0}")]
     Io(#[from] std::io::Error),

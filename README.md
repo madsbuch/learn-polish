@@ -369,7 +369,8 @@ belongs to the app as a whole.
 
 ```
 src-tauri/src/
-  db.rs          schema, migrations (old databases are rebuilt in place, ids kept), starter content
+  schema.rs      every table and view as Rust types (Diesel): queries are checked against it
+  db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), starter content
   courses.rs     courses: the folders blocks are listed in; cutting items into drills; moving blocks
   blocks.rs      blocks: what they own, their check-in schedule, the home screen's lists
   session.rs     a drill's exercises, by format
@@ -402,6 +403,16 @@ src/
 
 A few conventions keep it that way:
 
+- **Every query is typed.** Database access goes through
+  [Diesel](https://diesel.rs) against `src/schema.rs`, so a misspelt table or
+  column, or a value of the wrong type, does not compile. Rows are read into
+  `Selectable` structs or typed tuples; inserts and updates use typed column
+  assignments. Raw SQL is left only where nothing typed exists: creating the
+  schema, PRAGMAs, `VACUUM`, and upgrading old databases whose tables are no
+  longer in the schema (and what those read back is still a typed row).
+  `schema_matches_the_database` (db.rs) fails if `schema.rs` and the schema
+  the app creates drift apart; when adding a column, change both, and
+  `diesel print-schema` on a fresh database shows what it should be.
 - **Every AI feature goes through `agent::Agent`.** A new agent declares its
   tools with `agent::tool(name, status line, description, schema)` and says
   how to run a call; streaming, costs, memory and errors come with it.

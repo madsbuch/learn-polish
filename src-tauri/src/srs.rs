@@ -1,6 +1,9 @@
 //! An SM-2 style scheduler, trimmed to the four grades the UI can produce.
 
-use rusqlite::{Connection, OptionalExtension};
+use diesel::prelude::*;
+
+use crate::db::Conn;
+use crate::schema::reviews;
 
 use crate::error::Result;
 
@@ -15,7 +18,9 @@ const START_EASE: f64 = 2.5;
 /// Beyond this the interval stops being useful for a daily-practice app.
 const MAX_INTERVAL: i64 = 365;
 
-#[derive(Debug, Clone, Copy)]
+/// One item's review state: a `reviews` row without its key.
+#[derive(Debug, Clone, Copy, Queryable, Selectable, Insertable, AsChangeset)]
+#[diesel(table_name = reviews)]
 pub struct ReviewState {
     pub due_day: i64,
     pub interval: i64,
@@ -87,45 +92,21 @@ pub fn grade(state: ReviewState, grade: i64, today: i64) -> ReviewState {
     next
 }
 
-pub fn load(conn: &Connection, kind: &str, item_id: i64) -> Result<Option<ReviewState>> {
-    Ok(conn
-        .query_row(
-            "SELECT due_day, interval, ease, reps, lapses, last_day
-             FROM reviews WHERE kind = ?1 AND item_id = ?2",
-            rusqlite::params![kind, item_id],
-            |r| {
-                Ok(ReviewState {
-                    due_day: r.get(0)?,
-                    interval: r.get(1)?,
-                    ease: r.get(2)?,
-                    reps: r.get(3)?,
-                    lapses: r.get(4)?,
-                    last_day: r.get(5)?,
-                })
-            },
-        )
+pub fn load(conn: &mut Conn, kind: &str, item_id: i64) -> Result<Option<ReviewState>> {
+    Ok(reviews::table
+        .find((kind, item_id))
+        .select(ReviewState::as_select())
+        .first(conn)
         .optional()?)
 }
 
-pub fn save(conn: &Connection, kind: &str, item_id: i64, state: &ReviewState) -> Result<()> {
-    conn.execute(
-        "INSERT INTO reviews (kind, item_id, due_day, interval, ease, reps, lapses, last_day)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-         ON CONFLICT(kind, item_id) DO UPDATE SET
-             due_day = excluded.due_day, interval = excluded.interval,
-             ease = excluded.ease, reps = excluded.reps,
-             lapses = excluded.lapses, last_day = excluded.last_day",
-        rusqlite::params![
-            kind,
-            item_id,
-            state.due_day,
-            state.interval,
-            state.ease,
-            state.reps,
-            state.lapses,
-            state.last_day
-        ],
-    )?;
+pub fn save(conn: &mut Conn, kind: &str, item_id: i64, state: &ReviewState) -> Result<()> {
+    diesel::insert_into(reviews::table)
+        .values((reviews::kind.eq(kind), reviews::item_id.eq(item_id), state))
+        .on_conflict((reviews::kind, reviews::item_id))
+        .do_update()
+        .set(state)
+        .execute(conn)?;
     Ok(())
 }
 

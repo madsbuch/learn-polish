@@ -6,7 +6,9 @@
 //! tool runs here, in Rust, against the same SQLite database the rest of the
 //! app uses, so what the tutor makes is immediately practisable.
 
-use rusqlite::Connection;
+use std::collections::HashSet;
+
+use diesel::prelude::*;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::State;
@@ -14,7 +16,11 @@ use tauri::State;
 use crate::agent::{tool, Agent, Tool, ToolOutput};
 use crate::ai::Wire;
 use crate::blocks;
-use crate::db::{self, Db};
+use crate::db::{self, Conn, Db};
+use crate::schema::{
+    blocks as blocks_table, checkins, course_blocks, course_sentences, course_words, reviews, songs as songs_table, topics,
+    tutor_conversations, tutor_messages, words,
+};
 use crate::error::{Error, Result};
 use crate::models::{ChatMessage, Conversation, TutorAction};
 use crate::courses::{self, NewCourse, NewLine, NewSentence, NewWord};
@@ -120,7 +126,7 @@ Using tools:
 - After using a tool, say in one or two sentences what you did. Don't paste the whole word list \
   back unless asked.";
 
-pub(crate) fn system_prompt(conn: &Connection) -> Result<String> {
+pub(crate) fn system_prompt(conn: &mut Conn) -> Result<String> {
     let stats = stats::collect(conn)?;
     let overview = blocks::overview(conn)?;
     let line = |b: &blocks::Block| {
@@ -136,41 +142,58 @@ pub(crate) fn system_prompt(conn: &Connection) -> Result<String> {
     };
     let due: Vec<String> = overview.due.iter().take(15).map(line).collect();
 
-    let mut stmt = conn.prepare(
-        "SELECT id, title_en, title_pl,
-                (SELECT COUNT(*) FROM course_blocks c WHERE c.topic_id = t.id)
-         FROM topics t ORDER BY created_at DESC, ord, id LIMIT 60",
-    )?;
-    let courses: Vec<String> = stmt
-        .query_map([], |r| {
-            Ok(format!(
-                "  - id {}: {} ({}), {} blocks",
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?
-            ))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
+    let listed: Vec<i64> = course_blocks::table.select(course_blocks::topic_id).load(conn)?;
+    let courses: Vec<String> = topics::table
+        .order(crate::blocks::course_order())
+        .limit(60)
+        .select((topics::id, topics::title_en, topics::title_pl))
+        .load::<(i64, String, String)>(conn)?
+        .into_iter()
+        .map(|(id, title, title_pl)| {
+            let blocks = listed.iter().filter(|&&c| c == id).count();
+            format!("  - id {id}: {title} ({title_pl}), {blocks} blocks")
+        })
+        .collect();
 
-    let mut stmt = conn.prepare(
-        "SELECT b.id, b.title, b.complexity, b.reps, group_concat(t.title_en, ', ')
-         FROM blocks b JOIN course_blocks c ON c.block_id = b.id JOIN topics t ON t.id = c.topic_id
-         WHERE b.kind = 'study' GROUP BY b.id ORDER BY MIN(t.ord), MIN(c.ord)",
-    )?;
-    let lessons: Vec<String> = stmt
-        .query_map([], |r| {
-            Ok(format!(
-                "  - id {}: {} ({}, in {}{})",
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(4)?,
-                if r.get::<_, i64>(3)? > 0 { ", studied" } else { "" }
-            ))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
+    // Every lesson, with the courses that list it.
+    let mut lessons: Vec<(i64, String, String, i64, Vec<(i64, i64, String)>)> = Vec::new();
+    for (id, title, complexity, reps, course_ord, list_ord, course) in course_blocks::table
+        .inner_join(blocks_table::table)
+        .inner_join(topics::table)
+        .filter(blocks_table::kind.eq("study"))
+        .order((topics::ord, course_blocks::ord))
+        .select((
+            blocks_table::id,
+            blocks_table::title,
+            blocks_table::complexity,
+            blocks_table::reps,
+            topics::ord,
+            course_blocks::ord,
+            topics::title_en,
+        ))
+        .load::<(i64, String, String, i64, i64, i64, String)>(conn)?
+    {
+        match lessons.iter_mut().find(|l| l.0 == id) {
+            Some(lesson) => lesson.4.push((course_ord, list_ord, course)),
+            None => lessons.push((id, title, complexity, reps, vec![(course_ord, list_ord, course)])),
+        }
+    }
+    let lessons: Vec<String> = lessons
+        .into_iter()
+        .map(|(id, title, complexity, reps, courses)| {
+            let names: Vec<String> = courses.into_iter().map(|c| c.2).collect();
+            let studied = if reps > 0 { ", studied" } else { "" };
+            format!("  - id {id}: {title} ({complexity}, in {}{studied})", names.join(", "))
+        })
+        .collect();
+
+    let song_count: i64 = songs_table::table.count().get_result(conn)?;
+    let unsorted: i64 = course_blocks::table
+        .inner_join(topics::table)
+        .filter(topics::slug.eq("listening"))
+        .count()
+        .get_result(conn)?;
+    let playlists = playlists::list(conn)?;
 
     let none = || "  (none)".to_string();
     Ok(format!(
@@ -191,13 +214,8 @@ pub(crate) fn system_prompt(conn: &Connection) -> Result<String> {
         due = if due.is_empty() { none() } else { due.join("\n") },
         lessons = if lessons.is_empty() { none() } else { lessons.join("\n") },
         courses = if courses.is_empty() { none() } else { courses.join("\n") },
-        song_count = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| r.get::<_, i64>(0))?,
-        unsorted = match conn.query_row(
-            "SELECT COUNT(*) FROM course_blocks c JOIN topics t ON t.id = c.topic_id
-             WHERE t.slug = 'listening'",
-            [],
-            |r| r.get::<_, i64>(0),
-        )? {
+        song_count = song_count,
+        unsorted = match unsorted {
             0 => String::new(),
             n => format!(
                 "; {n} listening block{} still in \"Listening\" with no course — when it fits the \
@@ -206,7 +224,7 @@ pub(crate) fn system_prompt(conn: &Connection) -> Result<String> {
             ),
         },
         playlists = {
-            let list = playlists::list(conn)?;
+            let list = &playlists;
             if list.is_empty() {
                 "none yet".to_string()
             } else {
@@ -886,17 +904,18 @@ struct SongArg {
 }
 
 /// Which course a song was written from, and where its listening block is.
-fn song_placement(conn: &Connection, song_id: i64) -> Result<Value> {
-    let course: Option<(i64, String)> = conn
-        .query_row(
-            "SELECT t.id, t.title_en FROM songs s JOIN topics t ON t.id = s.topic_id WHERE s.id = ?1",
-            [song_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .ok();
-    let block: Option<i64> = conn
-        .query_row("SELECT id FROM blocks WHERE song_id = ?1", [song_id], |r| r.get(0))
-        .ok();
+fn song_placement(conn: &mut Conn, song_id: i64) -> Result<Value> {
+    let course: Option<(i64, String)> = songs_table::table
+        .inner_join(topics::table)
+        .filter(songs_table::id.eq(song_id))
+        .select((topics::id, topics::title_en))
+        .first(conn)
+        .optional()?;
+    let block: Option<i64> = blocks_table::table
+        .filter(blocks_table::song_id.eq(song_id))
+        .select(blocks_table::id)
+        .first(conn)
+        .optional()?;
     let block_courses: Vec<Value> = match block {
         Some(id) => blocks::detail(conn, id)?
             .courses
@@ -937,7 +956,7 @@ fn titles(list: &[String]) -> String {
     list.iter().map(|t| format!("“{t}”")).collect::<Vec<_>>().join(", ")
 }
 
-fn playlist_json(conn: &Connection, playlist: &playlists::Playlist) -> Result<Value> {
+fn playlist_json(conn: &mut Conn, playlist: &playlists::Playlist) -> Result<Value> {
     let songs: Vec<Value> = playlists::songs_in(conn, playlist.id)?
         .into_iter()
         .map(|(_, song, title, take)| json!({ "song_id": song, "title": title, "take": take }))
@@ -957,14 +976,14 @@ fn parse<T: serde::de::DeserializeOwned>(arguments: &str) -> Result<T> {
 
 /// Runs one tool call. Errors are returned to the model as text rather than
 /// failing the turn, so it can correct itself or explain.
-fn execute(conn: &Connection, name: &str, arguments: &str) -> Outcome {
+fn execute(conn: &mut Conn, name: &str, arguments: &str) -> Outcome {
     match run_tool(conn, name, arguments) {
         Ok(outcome) => outcome,
         Err(error) => Outcome::data(json!({ "error": error.to_string() })),
     }
 }
 
-fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
+fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
     match name {
         "create_course" => {
             let args: CreateArgs = parse(arguments)?;
@@ -1101,8 +1120,11 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                     args.topic_id.ok_or_else(|| Error::msg("Give a course_id."))?,
                 )?,
                 _ => {
-                    let mut stmt = conn.prepare("SELECT id FROM blocks WHERE kind = 'study' ORDER BY ord")?;
-                    let ids: Vec<i64> = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+                    let ids: Vec<i64> = blocks_table::table
+                        .filter(blocks_table::kind.eq("study"))
+                        .order((blocks_table::ord, blocks_table::id))
+                        .select(blocks_table::id)
+                        .load(conn)?;
                     ids.into_iter().map(|id| blocks::load(conn, id)).collect::<Result<_>>()?
                 }
             };
@@ -1365,7 +1387,7 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
     }
 }
 
-fn list_topics(conn: &Connection) -> Result<Value> {
+fn list_topics(conn: &mut Conn) -> Result<Value> {
     let topics = stats::topic_progress(conn)?
         .into_iter()
         .map(|p| {
@@ -1384,39 +1406,44 @@ fn list_topics(conn: &Connection) -> Result<Value> {
     Ok(Value::Array(topics))
 }
 
-fn topic_detail(conn: &Connection, topic_id: i64) -> Result<Value> {
+fn topic_detail(conn: &mut Conn, topic_id: i64) -> Result<Value> {
     let topic = session::load_topic(conn, topic_id)?;
-    let mut stmt = conn.prepare(
-        "SELECT w.pl, w.en, w.pos, r.reps, r.lapses, w.block_id FROM course_words w
-         LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
-         WHERE w.topic_id = ?1 ORDER BY w.ord",
-    )?;
-    let words: Vec<Value> = stmt
-        .query_map([topic_id], |r| {
-            Ok(json!({
-                "pl": r.get::<_, String>(0)?,
-                "en": r.get::<_, String>(1)?,
-                "pos": r.get::<_, String>(2)?,
-                "met": r.get::<_, Option<i64>>(3)?.is_some(),
-                "correct_reps": r.get::<_, Option<i64>>(3)?.unwrap_or(0),
-                "lapses": r.get::<_, Option<i64>>(4)?.unwrap_or(0),
-                "block_id": r.get::<_, i64>(5)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
-    let mut stmt =
-        conn.prepare("SELECT pl, en, block_id FROM course_sentences WHERE topic_id = ?1 ORDER BY ord")?;
-    let sentences: Vec<Value> = stmt
-        .query_map([topic_id], |r| {
-            Ok(json!({
-                "pl": r.get::<_, String>(0)?,
-                "en": r.get::<_, String>(1)?,
-                "block_id": r.get::<_, i64>(2)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
+    let rows: Vec<(i64, String, String, String, i64)> = course_words::table
+        .filter(course_words::topic_id.eq(topic_id))
+        .order(course_words::ord)
+        .select((course_words::id, course_words::pl, course_words::en, course_words::pos, course_words::block_id))
+        .load(conn)?;
+    let history: std::collections::HashMap<i64, (i64, i64)> = reviews::table
+        .filter(reviews::kind.eq("word"))
+        .filter(reviews::item_id.eq_any(rows.iter().map(|r| r.0).collect::<Vec<_>>()))
+        .select((reviews::item_id, reviews::reps, reviews::lapses))
+        .load::<(i64, i64, i64)>(conn)?
+        .into_iter()
+        .map(|(id, reps, lapses)| (id, (reps, lapses)))
+        .collect();
+    let words: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, pl, en, pos, block_id)| {
+            let seen = history.get(&id);
+            json!({
+                "pl": pl,
+                "en": en,
+                "pos": pos,
+                "met": seen.is_some(),
+                "correct_reps": seen.map_or(0, |s| s.0),
+                "lapses": seen.map_or(0, |s| s.1),
+                "block_id": block_id,
+            })
+        })
+        .collect();
+    let sentences: Vec<Value> = course_sentences::table
+        .filter(course_sentences::topic_id.eq(topic_id))
+        .order(course_sentences::ord)
+        .select((course_sentences::pl, course_sentences::en, course_sentences::block_id))
+        .load::<(String, String, i64)>(conn)?
+        .into_iter()
+        .map(|(pl, en, block_id)| json!({ "pl": pl, "en": en, "block_id": block_id }))
+        .collect();
     let dialogue: Vec<Value> = session::dialogue_lines(conn, topic_id)?
         .into_iter()
         .map(|l| json!({ "speaker": l.speaker, "pl": l.pl, "en": l.meaning }))
@@ -1434,61 +1461,66 @@ fn topic_detail(conn: &Connection, topic_id: i64) -> Result<Value> {
     }))
 }
 
-fn search(conn: &Connection, query: &str) -> Result<Value> {
+fn search(conn: &mut Conn, query: &str) -> Result<Value> {
     let pattern = format!("%{}%", query.trim());
-    let mut stmt = conn.prepare(
-        "SELECT w.pl, w.en, w.pos, t.title_en, t.id, r.reps, w.block_id FROM course_words w
-         JOIN topics t ON t.id = w.topic_id
-         LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
-         WHERE w.pl LIKE ?1 OR w.en LIKE ?1 GROUP BY w.id ORDER BY t.ord, w.ord LIMIT 40",
-    )?;
-    let words: Vec<Value> = stmt
-        .query_map([&pattern], |r| {
-            Ok(json!({
-                "pl": r.get::<_, String>(0)?,
-                "en": r.get::<_, String>(1)?,
-                "pos": r.get::<_, String>(2)?,
-                "topic": r.get::<_, String>(3)?,
-                "course_id": r.get::<_, i64>(4)?,
-                "met": r.get::<_, Option<i64>>(5)?.is_some(),
-                "block_id": r.get::<_, i64>(6)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
-    let mut stmt = conn.prepare(
-        "SELECT s.pl, s.en, t.title_en FROM course_sentences s JOIN topics t ON t.id = s.topic_id
-         WHERE s.pl LIKE ?1 OR s.en LIKE ?1 GROUP BY s.id LIMIT 15",
-    )?;
-    let sentences: Vec<Value> = stmt
-        .query_map([&pattern], |r| {
-            Ok(json!({
-                "pl": r.get::<_, String>(0)?,
-                "en": r.get::<_, String>(1)?,
-                "topic": r.get::<_, String>(2)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
+    let met: HashSet<i64> = reviews::table
+        .filter(reviews::kind.eq("word"))
+        .select(reviews::item_id)
+        .load::<i64>(conn)?
+        .into_iter()
+        .collect();
+    let mut seen = HashSet::new();
+    let words: Vec<Value> = course_words::table
+        .inner_join(topics::table)
+        .filter(course_words::pl.like(&pattern).or(course_words::en.like(&pattern)))
+        .order((topics::ord, course_words::ord))
+        .select((
+            course_words::id,
+            course_words::pl,
+            course_words::en,
+            course_words::pos,
+            topics::title_en,
+            topics::id,
+            course_words::block_id,
+        ))
+        .load::<(i64, String, String, String, String, i64, i64)>(conn)?
+        .into_iter()
+        // A word in a block two courses list is one word.
+        .filter(|row| seen.insert(row.0))
+        .take(40)
+        .map(|(id, pl, en, pos, topic, course_id, block_id)| {
+            json!({
+                "pl": pl, "en": en, "pos": pos, "topic": topic, "course_id": course_id,
+                "met": met.contains(&id), "block_id": block_id,
+            })
+        })
+        .collect();
+    let mut seen = HashSet::new();
+    let sentences: Vec<Value> = course_sentences::table
+        .inner_join(topics::table)
+        .filter(course_sentences::pl.like(&pattern).or(course_sentences::en.like(&pattern)))
+        .select((course_sentences::id, course_sentences::pl, course_sentences::en, topics::title_en))
+        .load::<(i64, String, String, String)>(conn)?
+        .into_iter()
+        .filter(|row| seen.insert(row.0))
+        .take(15)
+        .map(|(_, pl, en, topic)| json!({ "pl": pl, "en": en, "topic": topic }))
+        .collect();
     Ok(json!({ "words": words, "sentences": sentences }))
 }
 
-fn progress(conn: &Connection) -> Result<Value> {
+fn progress(conn: &mut Conn) -> Result<Value> {
     let s = stats::collect(conn)?;
-    let mut stmt = conn.prepare(
-        "SELECT w.pl, w.en, r.lapses, r.reps FROM reviews r JOIN words w ON w.id = r.item_id
-         WHERE r.kind = 'word' AND r.lapses > 0
-         ORDER BY r.lapses DESC, r.ease ASC LIMIT 15",
-    )?;
-    let hardest: Vec<Value> = stmt
-        .query_map([], |r| {
-            Ok(json!({
-                "pl": r.get::<_, String>(0)?,
-                "en": r.get::<_, String>(1)?,
-                "times_wrong": r.get::<_, i64>(2)?,
-                "correct_streak": r.get::<_, i64>(3)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
+    let hardest: Vec<Value> = words::table
+        .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(reviews::kind.eq("word"))))
+        .filter(reviews::lapses.gt(0))
+        .order((reviews::lapses.desc(), reviews::ease.asc()))
+        .limit(15)
+        .select((words::pl, words::en, reviews::lapses, reviews::reps))
+        .load::<(String, String, i64, i64)>(conn)?
+        .into_iter()
+        .map(|(pl, en, wrong, streak)| json!({ "pl": pl, "en": en, "times_wrong": wrong, "correct_streak": streak }))
+        .collect();
     let recent: Vec<Value> = s
         .history
         .iter()
@@ -1528,7 +1560,7 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
     let result: Result<Outcome> = async {
         let args: SongArgs = parse(arguments)?;
         // Fail before paying for lyrics if Suno cannot be reached anyway.
-        songs::kie_key(&db.lock())?;
+        songs::kie_key(&mut db.lock())?;
         let draft = songs::write_draft(
             db,
             songs::DraftRequest {
@@ -1547,7 +1579,7 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
         let listen = args.listening_block;
         let song_id = songs::start_song(app, db, draft)?;
         let block = if listen {
-            Some(blocks::create_listening(&db.lock(), song_id, None, None, args.topic_id, "tutor")?)
+            Some(blocks::create_listening(&mut db.lock(), song_id, None, None, args.topic_id, "tutor")?)
         } else {
             None
         };
@@ -1573,21 +1605,19 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
 
 /// The last study check-ins, with the examiner's notes, so the tutor can
 /// follow up on what the learner found hard.
-fn recent_checkins(conn: &Connection) -> Result<Value> {
-    let mut stmt = conn.prepare(
-        "SELECT b.id, b.title, c.result, c.feedback FROM checkins c JOIN blocks b ON b.id = c.block_id
-         WHERE c.finished_at IS NOT NULL ORDER BY c.finished_at DESC LIMIT 8",
-    )?;
-    let rows: Vec<Value> = stmt
-        .query_map([], |r| {
-            Ok(json!({
-                "block_id": r.get::<_, i64>(0)?,
-                "block": r.get::<_, String>(1)?,
-                "result": r.get::<_, Option<String>>(2)?,
-                "examiner_said": r.get::<_, Option<String>>(3)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
+fn recent_checkins(conn: &mut Conn) -> Result<Value> {
+    let rows: Vec<Value> = checkins::table
+        .inner_join(blocks_table::table)
+        .filter(checkins::finished_at.is_not_null())
+        .order(checkins::finished_at.desc())
+        .limit(8)
+        .select((blocks_table::id, blocks_table::title, checkins::result, checkins::feedback))
+        .load::<(i64, String, Option<String>, Option<String>)>(conn)?
+        .into_iter()
+        .map(|(id, title, result, feedback)| {
+            json!({ "block_id": id, "block": title, "result": result, "examiner_said": feedback })
+        })
+        .collect();
     Ok(Value::Array(rows))
 }
 
@@ -1599,39 +1629,37 @@ fn parse_actions(json: Option<String>) -> Vec<TutorAction> {
     json.and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
 }
 
-pub fn load_history(conn: &Connection, conversation_id: i64) -> Result<Vec<ChatMessage>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, role, content, actions FROM tutor_messages
-         WHERE conversation_id = ?1 ORDER BY id",
-    )?;
-    let messages = stmt
-        .query_map([conversation_id], |r| {
-            Ok(ChatMessage {
-                id: r.get(0)?,
-                conversation_id,
-                role: r.get(1)?,
-                content: r.get(2)?,
-                actions: parse_actions(r.get(3)?),
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(messages)
+pub fn load_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<ChatMessage>> {
+    Ok(tutor_messages::table
+        .filter(tutor_messages::conversation_id.eq(conversation_id))
+        .order(tutor_messages::id)
+        .select((tutor_messages::id, tutor_messages::role, tutor_messages::content, tutor_messages::actions))
+        .load::<(i64, String, String, Option<String>)>(conn)?
+        .into_iter()
+        .map(|(id, role, content, actions)| ChatMessage {
+            id,
+            conversation_id,
+            role,
+            content,
+            actions: parse_actions(actions),
+        })
+        .collect())
 }
 
 /// The recent conversation as the model should see it. What the tutor did in
 /// earlier turns is spelled out, so it knows the ids of what it made.
-fn recent_history(conn: &Connection, conversation_id: i64) -> Result<Vec<Wire>> {
-    let mut stmt = conn.prepare(
-        "SELECT role, content, actions FROM (
-             SELECT id, role, content, actions FROM tutor_messages
-             WHERE conversation_id = ?1 ORDER BY id DESC LIMIT ?2
-         ) ORDER BY id",
-    )?;
-    let history = stmt
-        .query_map(rusqlite::params![conversation_id, HISTORY_LIMIT], |r| {
-            let role: String = r.get(0)?;
-            let mut content: String = r.get(1)?;
-            let actions = parse_actions(r.get(2)?);
+fn recent_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<Wire>> {
+    let mut rows: Vec<(String, String, Option<String>)> = tutor_messages::table
+        .filter(tutor_messages::conversation_id.eq(conversation_id))
+        .order(tutor_messages::id.desc())
+        .limit(HISTORY_LIMIT)
+        .select((tutor_messages::role, tutor_messages::content, tutor_messages::actions))
+        .load(conn)?;
+    rows.reverse();
+    Ok(rows
+        .into_iter()
+        .map(|(role, mut content, actions)| {
+            let actions = parse_actions(actions);
             if !actions.is_empty() {
                 let notes: Vec<String> = actions
                     .iter()
@@ -1643,14 +1671,13 @@ fn recent_history(conn: &Connection, conversation_id: i64) -> Result<Vec<Wire>> 
                     .collect();
                 content.push_str(&format!("\n\n[Done in the app: {}]", notes.join("; ")));
             }
-            Ok(if role == "user" { Wire::user(content) } else { Wire::assistant(content) })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(history)
+            if role == "user" { Wire::user(content) } else { Wire::assistant(content) }
+        })
+        .collect())
 }
 
 fn append(
-    conn: &Connection,
+    conn: &mut Conn,
     conversation_id: i64,
     role: &str,
     content: &str,
@@ -1658,16 +1685,19 @@ fn append(
 ) -> Result<i64> {
     let actions = if actions.is_empty() { None } else { Some(serde_json::to_string(actions)?) };
     let now = db::now_secs();
-    conn.execute(
-        "INSERT INTO tutor_messages (conversation_id, role, content, actions, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![conversation_id, role, content, actions, now],
-    )?;
-    let id = conn.last_insert_rowid();
-    conn.execute(
-        "UPDATE tutor_conversations SET updated_at = ?2 WHERE id = ?1",
-        [conversation_id, now],
-    )?;
+    let id = diesel::insert_into(tutor_messages::table)
+        .values((
+            tutor_messages::conversation_id.eq(conversation_id),
+            tutor_messages::role.eq(role),
+            tutor_messages::content.eq(content),
+            tutor_messages::actions.eq(actions),
+            tutor_messages::created_at.eq(now),
+        ))
+        .returning(tutor_messages::id)
+        .get_result(conn)?;
+    diesel::update(tutor_conversations::table.find(conversation_id))
+        .set(tutor_conversations::updated_at.eq(now))
+        .execute(conn)?;
     Ok(id)
 }
 
@@ -1682,44 +1712,44 @@ pub fn title_from(message: &str) -> String {
     format!("{}…", at_word.trim_end_matches([',', '.', ';', ':']))
 }
 
-pub fn create_conversation(conn: &Connection, first_message: &str) -> Result<i64> {
+pub fn create_conversation(conn: &mut Conn, first_message: &str) -> Result<i64> {
     let now = db::now_secs();
-    conn.execute(
-        "INSERT INTO tutor_conversations (title, created_at, updated_at) VALUES (?1, ?2, ?2)",
-        rusqlite::params![title_from(first_message), now],
-    )?;
-    Ok(conn.last_insert_rowid())
+    Ok(diesel::insert_into(tutor_conversations::table)
+        .values((
+            tutor_conversations::title.eq(title_from(first_message)),
+            tutor_conversations::created_at.eq(now),
+            tutor_conversations::updated_at.eq(now),
+        ))
+        .returning(tutor_conversations::id)
+        .get_result(conn)?)
 }
 
-pub fn list_conversations(conn: &Connection) -> Result<Vec<Conversation>> {
-    let mut stmt = conn.prepare(
-        "SELECT c.id, c.title, c.updated_at,
-                (SELECT COUNT(*) FROM tutor_messages m WHERE m.conversation_id = c.id),
-                COALESCE((SELECT content FROM tutor_messages m WHERE m.conversation_id = c.id
-                          ORDER BY m.id DESC LIMIT 1), '')
-         FROM tutor_conversations c ORDER BY c.updated_at DESC, c.id DESC",
-    )?;
-    let rows = stmt
-        .query_map([], |r| {
-            let last: String = r.get(4)?;
+pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
+    let heads: Vec<(i64, String, i64)> = tutor_conversations::table
+        .order((tutor_conversations::updated_at.desc(), tutor_conversations::id.desc()))
+        .select((tutor_conversations::id, tutor_conversations::title, tutor_conversations::updated_at))
+        .load(conn)?;
+    heads
+        .into_iter()
+        .map(|(id, title, updated_at)| {
+            let of = tutor_messages::table.filter(tutor_messages::conversation_id.eq(id));
+            let messages = of.count().get_result(conn)?;
+            let last: String = of
+                .order(tutor_messages::id.desc())
+                .select(tutor_messages::content)
+                .first(conn)
+                .optional()?
+                .unwrap_or_default();
             Ok(Conversation {
-                id: r.get(0)?,
-                title: r.get(1)?,
-                updated_at: r.get(2)?,
-                messages: r.get(3)?,
+                id,
+                title,
+                updated_at,
+                messages,
                 // Markdown marks would show as stray symbols in a one-line preview.
-                preview: last
-                    .replace(['*', '_', '#', '`'], "")
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .chars()
-                    .take(120)
-                    .collect(),
+                preview: crate::text::clean(&last.replace(['*', '_', '#', '`'], "")).chars().take(120).collect(),
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1728,12 +1758,12 @@ pub fn list_conversations(conn: &Connection) -> Result<Vec<Conversation>> {
 
 #[tauri::command]
 pub async fn tutor_conversations(db: State<'_, Db>) -> Result<Vec<Conversation>> {
-    list_conversations(&db.lock())
+    list_conversations(&mut db.lock())
 }
 
 #[tauri::command]
 pub async fn tutor_history(db: State<'_, Db>, conversation_id: i64) -> Result<Vec<ChatMessage>> {
-    load_history(&db.lock(), conversation_id)
+    load_history(&mut db.lock(), conversation_id)
 }
 
 #[tauri::command]
@@ -1742,10 +1772,9 @@ pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String
     if title.is_empty() {
         return Err(Error::msg("A conversation needs a title."));
     }
-    db.lock().execute(
-        "UPDATE tutor_conversations SET title = ?2 WHERE id = ?1",
-        rusqlite::params![conversation_id, title],
-    )?;
+    diesel::update(tutor_conversations::table.find(conversation_id))
+        .set(tutor_conversations::title.eq(title))
+        .execute(&mut *db.lock())?;
     Ok(())
 }
 
@@ -1753,9 +1782,10 @@ pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String
 /// (courses, blocks, songs) stays.
 #[tauri::command]
 pub async fn tutor_delete(db: State<'_, Db>, conversation_id: i64) -> Result<()> {
-    let conn = db.lock();
-    conn.execute("DELETE FROM tutor_messages WHERE conversation_id = ?1", [conversation_id])?;
-    conn.execute("DELETE FROM tutor_conversations WHERE id = ?1", [conversation_id])?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    diesel::delete(tutor_messages::table.filter(tutor_messages::conversation_id.eq(conversation_id))).execute(conn)?;
+    diesel::delete(tutor_conversations::table.find(conversation_id)).execute(conn)?;
     Ok(())
 }
 
@@ -1777,10 +1807,11 @@ pub async fn tutor_send(
     }
     let db: &Db = &db;
     let wire = {
-        let conn = db.lock();
-        let mut wire = vec![Wire::system(system_prompt(&conn)?)];
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let mut wire = vec![Wire::system(system_prompt(conn)?)];
         if let Some(id) = conversation_id {
-            wire.extend(recent_history(&conn, id)?);
+            wire.extend(recent_history(conn, id)?);
         }
         wire.push(Wire::user(message.clone()));
         wire
@@ -1804,8 +1835,9 @@ pub async fn tutor_send(
                     // The network twice (songwriter, then Suno): not under the lock.
                     make_song(app_ref, db, &call.function.arguments).await
                 } else {
-                    let conn = db.lock();
-                    execute(&conn, &call.function.name, &call.function.arguments)
+                    let mut guard = db.lock();
+                    let conn = &mut *guard;
+                    execute(conn, &call.function.name, &call.function.arguments)
                 };
                 ToolOutput { result: done.result, extra: done.action, ends_turn: false }
             })
@@ -1833,13 +1865,14 @@ pub async fn tutor_send(
         reply = "Done.".into();
     }
     // The conversation is only created once there is a reply worth keeping.
-    let conn = db.lock();
+    let mut guard = db.lock();
+    let conn = &mut *guard;
     let conversation_id = match conversation_id {
         Some(id) => id,
-        None => create_conversation(&conn, &message)?,
+        None => create_conversation(conn, &message)?,
     };
-    append(&conn, conversation_id, "user", &message, &[])?;
-    let id = append(&conn, conversation_id, "assistant", &reply, &actions)?;
+    append(conn, conversation_id, "user", &message, &[])?;
+    let id = append(conn, conversation_id, "assistant", &reply, &actions)?;
     Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
 }
 
@@ -1871,7 +1904,7 @@ mod tests {
         assert!(!long.contains("locat…"), "cut at a word: {long}");
     }
 
-    pub(crate) fn run(conn: &Connection, name: &str, args: Value) -> Value {
+    pub(crate) fn run(conn: &mut Conn, name: &str, args: Value) -> Value {
         let outcome = execute(conn, name, &args.to_string());
         let mut result = outcome.result;
         if let Some(action) = outcome.action {
