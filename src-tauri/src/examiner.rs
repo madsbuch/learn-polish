@@ -29,7 +29,7 @@ fn question_plan(complexity: &str) -> &'static str {
     }
 }
 
-fn system_prompt(conn: &Connection, block: &blocks::BlockDetail) -> Result<String> {
+pub(crate) fn system_prompt(conn: &Connection, block: &blocks::BlockDetail) -> Result<String> {
     let previous: Option<String> = conn
         .query_row(
             "SELECT feedback FROM checkins WHERE block_id = ?1 AND finished_at IS NOT NULL

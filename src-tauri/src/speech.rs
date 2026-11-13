@@ -183,11 +183,7 @@ pub struct SpeechLine {
 /// Generates and stores audio for a batch of lines, reporting progress as it
 /// goes. Used to warm a topic's sentences ahead of practice.
 #[tauri::command]
-pub async fn cache_audio(
-    app: tauri::AppHandle,
-    db: State<'_, Db>,
-    lines: Vec<SpeechLine>,
-) -> Result<CacheProgress> {
+pub async fn cache_audio( app: tauri::AppHandle, db: State<'_, Db>, lines: Vec<SpeechLine>, ) -> Result<CacheProgress> {
     // Drop duplicates and anything already stored before spending a request.
     // A line spoken by two genders is two clips, so the pair is the key.
     let mut pending: Vec<(SpeechConfig, String)> = Vec::new();
@@ -252,9 +248,8 @@ pub async fn cache_audio(
 
 /// Every Polish line of a topic: its sentences, then its conversation with the
 /// gender each line should be read in.
-#[tauri::command]
-pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<SpeechLine>> {
-    let conn = db.lock();
+/// The query behind [`topic_audio_lines`], callable without Tauri (tests).
+pub fn topic_audio_lines_in(conn: &Connection, topic_id: i64) -> Result<Vec<SpeechLine>> {
     let mut stmt = conn.prepare(
         "SELECT pl, '' FROM course_sentences WHERE topic_id = ?1
          UNION ALL
@@ -269,8 +264,12 @@ pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<S
 }
 
 #[tauri::command]
-pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
-    let conn = db.lock();
+pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<SpeechLine>> {
+    topic_audio_lines_in(&db.lock(), topic_id)
+}
+
+/// The query behind [`audio_cache_stats`], callable without Tauri (tests).
+pub fn audio_cache_stats_in(conn: &Connection) -> Result<AudioCacheStats> {
     let (clips, bytes): (i64, i64) = conn.query_row(
         "SELECT COUNT(*), COALESCE(SUM(LENGTH(bytes)), 0) FROM audio_cache",
         [],
@@ -293,6 +292,11 @@ pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
         sentences_cached,
         sentences_total: conn.query_row("SELECT COUNT(*) FROM sentences", [], |r| r.get(0))?,
     })
+}
+
+#[tauri::command]
+pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
+    audio_cache_stats_in(&db.lock())
 }
 
 #[tauri::command]

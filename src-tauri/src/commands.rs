@@ -167,14 +167,8 @@ pub async fn get_topic_progress(db: State<'_, Db>) -> Result<Vec<TopicProgress>>
     stats::topic_progress(&conn)
 }
 
-#[tauri::command]
-pub async fn browse_words(
-    db: State<'_, Db>,
-    topic_id: Option<i64>,
-    query: String,
-    limit: i64,
-) -> Result<Vec<Word>> {
-    let conn = db.lock();
+/// The query behind [`browse_words`], callable without Tauri (tests).
+pub fn browse_words_in(conn: &Connection, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
     let meaning = "en";
     let pattern = format!("%{}%", query.trim());
     let sql = format!(
@@ -199,16 +193,15 @@ pub async fn browse_words(
     Ok(words)
 }
 
+#[tauri::command]
+pub async fn browse_words(db: State<'_, Db>, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
+    browse_words_in(&db.lock(), topic_id, query, limit)
+}
+
 /// One catalogue page: words and sentences matching a search, plus how many
 /// matched in total so the UI can say what it is not showing.
-#[tauri::command]
-pub async fn browse_catalogue(
-    db: State<'_, Db>,
-    topic_id: Option<i64>,
-    query: String,
-    limit: i64,
-) -> Result<CataloguePage> {
-    let conn = db.lock();
+/// The query behind [`browse_catalogue`], callable without Tauri (tests).
+pub fn browse_catalogue_in(conn: &Connection, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
     let meaning = "en";
     let needle = query.trim();
     let pattern = format!("%{needle}%");
@@ -268,8 +261,12 @@ pub async fn browse_catalogue(
 }
 
 #[tauri::command]
-pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Sentence>> {
-    let conn = db.lock();
+pub async fn browse_catalogue(db: State<'_, Db>, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
+    browse_catalogue_in(&db.lock(), topic_id, query, limit)
+}
+
+/// The query behind [`browse_sentences`], callable without Tauri (tests).
+pub fn browse_sentences_in(conn: &Connection, topic_id: i64) -> Result<Vec<Sentence>> {
     let meaning = "en";
     let mut stmt = conn.prepare(&format!(
         "SELECT id, pl, {meaning}, block_id, (SELECT b.title FROM blocks b WHERE b.id = block_id) FROM course_sentences WHERE topic_id = ?1 ORDER BY ord"
@@ -280,6 +277,11 @@ pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Se
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(sentences)
+}
+
+#[tauri::command]
+pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Sentence>> {
+    browse_sentences_in(&db.lock(), topic_id)
 }
 
 #[tauri::command]
@@ -356,13 +358,7 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
 
 /// Explains a word or sentence. Text arrives as `ai://stream` events.
 #[tauri::command]
-pub async fn ai_explain_stream(
-    app: tauri::AppHandle,
-    db: State<'_, Db>,
-    item_kind: String,
-    item_id: i64,
-    stream_id: String,
-) -> Result<String> {
+pub async fn ai_explain_stream( app: tauri::AppHandle, db: State<'_, Db>, item_kind: String, item_id: i64, stream_id: String, ) -> Result<String> {
     let messages = {
         let conn = db.lock();
         let table = match item_kind.as_str() {
@@ -421,11 +417,7 @@ fn civil_date(days: i64) -> (i64, i64, i64) {
 /// learner picks. API keys are left out unless asked for. Returns where it
 /// went, or `None` if the learner cancelled the dialog.
 #[tauri::command]
-pub async fn export_database(
-    app: tauri::AppHandle,
-    db: State<'_, Db>,
-    include_keys: bool,
-) -> Result<Option<String>> {
+pub async fn export_database( app: tauri::AppHandle, db: State<'_, Db>, include_keys: bool, ) -> Result<Option<String>> {
     use tauri::Manager;
     use tauri_plugin_dialog::DialogExt;
     use tauri_plugin_fs::FsExt;

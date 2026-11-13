@@ -120,7 +120,7 @@ Using tools:
 - After using a tool, say in one or two sentences what you did. Don't paste the whole word list \
   back unless asked.";
 
-fn system_prompt(conn: &Connection) -> Result<String> {
+pub(crate) fn system_prompt(conn: &Connection) -> Result<String> {
     let stats = stats::collect(conn)?;
     let overview = blocks::overview(conn)?;
     let line = |b: &blocks::Block| {
@@ -138,7 +138,7 @@ fn system_prompt(conn: &Connection) -> Result<String> {
 
     let mut stmt = conn.prepare(
         "SELECT id, title_en, title_pl,
-                (SELECT COUNT(*) FROM blocks b WHERE b.topic_id = t.id)
+                (SELECT COUNT(*) FROM course_blocks c WHERE c.topic_id = t.id)
          FROM topics t ORDER BY created_at DESC, ord, id LIMIT 60",
     )?;
     let courses: Vec<String> = stmt
@@ -155,8 +155,9 @@ fn system_prompt(conn: &Connection) -> Result<String> {
     drop(stmt);
 
     let mut stmt = conn.prepare(
-        "SELECT b.id, b.title, b.complexity, b.reps, t.title_en FROM blocks b JOIN topics t ON t.id = b.topic_id
-         WHERE b.kind = 'study' ORDER BY t.ord, b.ord",
+        "SELECT b.id, b.title, b.complexity, b.reps, group_concat(t.title_en, ', ')
+         FROM blocks b JOIN course_blocks c ON c.block_id = b.id JOIN topics t ON t.id = c.topic_id
+         WHERE b.kind = 'study' GROUP BY b.id ORDER BY MIN(t.ord), MIN(c.ord)",
     )?;
     let lessons: Vec<String> = stmt
         .query_map([], |r| {

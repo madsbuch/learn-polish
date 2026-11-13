@@ -329,7 +329,7 @@ Reply with ONLY a JSON object, no prose, in exactly this shape:
   ]
 }"#;
 
-struct SongContext {
+pub(crate) struct SongContext {
     topic: Option<String>,
     words: Vec<String>,
     sentences: Vec<String>,
@@ -337,7 +337,7 @@ struct SongContext {
     existing_choruses: Vec<String>,
 }
 
-fn gather_context(conn: &Connection, topic_id: Option<i64>) -> Result<SongContext> {
+pub(crate) fn gather_context(conn: &Connection, topic_id: Option<i64>) -> Result<SongContext> {
     let strings = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Result<Vec<String>> {
         let mut stmt = conn.prepare(sql)?;
         let rows = stmt

@@ -793,6 +793,66 @@ mod integration {
         assert!(playlists::create(&conn, "   ", &[]).is_err());
     }
 
+    /// Every query an agent prompt, a tutor tool or a screen runs, on a database
+    /// with a bit of everything in it — so a column renamed in the schema
+    /// fails here, not on the phone.
+    #[test]
+    fn every_read_path_runs_on_a_full_database() {
+        let conn = scratch_db("read-paths");
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        crate::memories::add(&conn, "Wants to order food in Kraków", "goal", "tutor").unwrap();
+        conn.execute_batch(&format!(
+            r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, topic_id)
+               VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop',
+                       '[{{"kind":"chorus","lines":[{{"en":"A coffee, please","pl":"Poproszę kawę"}}]}}]',
+                       '', 'V6', 'ready', 0, {basics}),
+                      (2, 'Dom', 'Dom', 'Home', 'pop', '[]', '', 'V6', 'ready', 0, NULL);"#
+        ))
+        .unwrap();
+        let filed = blocks::create_listening(&conn, 1, None, None, None, "tutor").unwrap();
+        let loose = blocks::create_listening(&conn, 2, None, None, None, "tutor").unwrap();
+        crate::playlists::create(&conn, "Rano", &[]).unwrap();
+        let lesson = starter_lesson(&conn);
+        let drill = blocks::for_topic(&conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
+
+        let prompt = tutor::system_prompt(&conn).unwrap();
+        assert!(prompt.contains("Pierwsze spotkanie") && prompt.contains("Wants to order food"));
+        assert!(prompt.contains("still in \"Listening\""), "unsorted songs are pointed out");
+        for block in [&lesson, &filed, &loose] {
+            let detail = blocks::detail(&conn, block.id).unwrap();
+            assert!(!examiner::system_prompt(&conn, &detail).unwrap().is_empty());
+        }
+
+        for (tool, args) in [
+            ("list_courses", serde_json::json!({})),
+            ("get_course", serde_json::json!({ "course_id": basics })),
+            ("list_blocks", serde_json::json!({ "which": "due" })),
+            ("list_blocks", serde_json::json!({ "which": "course", "course_id": basics })),
+            ("list_blocks", serde_json::json!({ "which": "study" })),
+            ("get_block", serde_json::json!({ "block_id": drill.id })),
+            ("get_progress", serde_json::json!({})),
+            ("search_vocabulary", serde_json::json!({ "query": "dzień" })),
+            ("list_songs", serde_json::json!({})),
+            ("get_song", serde_json::json!({ "song_id": 1 })),
+            ("list_playlists", serde_json::json!({})),
+        ] {
+            let result = tutor::run_tool_for_test(&conn, tool, args);
+            assert!(result.get("error").is_none(), "{tool}: {result}");
+        }
+
+        assert!(!commands::browse_words_in(&conn, Some(basics), String::new(), 50).unwrap().is_empty());
+        assert!(!commands::browse_words_in(&conn, None, "dzień".into(), 50).unwrap().is_empty());
+        assert!(commands::browse_catalogue_in(&conn, None, String::new(), 10).unwrap().total_words > 0);
+        assert!(!commands::browse_sentences_in(&conn, basics).unwrap().is_empty());
+        assert!(!speech::topic_audio_lines_in(&conn, basics).unwrap().is_empty());
+        speech::audio_cache_stats_in(&conn).unwrap();
+        stats::collect(&conn).unwrap();
+        assert!(stats::topic_progress(&conn).unwrap().iter().any(|p| p.total_blocks > 0));
+        blocks::overview(&conn).unwrap();
+        songs::gather_context(&conn, Some(basics)).unwrap();
+        session::build_block(&conn, drill.id).unwrap();
+    }
+
     #[test]
     fn the_tutor_manages_playlists_by_song() {
         let conn = scratch_db("tutor-playlists");
