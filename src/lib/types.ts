@@ -324,7 +324,8 @@ export interface TutorAction {
     | "blockDeleted"
     | "blockScheduled"
     | "blockSuggested"
-    | "memory";
+    | "memory"
+    | "playlistChanged";
   label: string;
   topicId: number | null;
   songId: number | null;

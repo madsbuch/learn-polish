@@ -19,6 +19,7 @@ use crate::models::{ChatMessage, Conversation, TutorAction, TutorStatus};
 use crate::courses::{self, NewCourse, NewLine, NewSentence, NewWord};
 use crate::session;
 use crate::songs;
+use crate::playlists;
 use crate::stats;
 
 /// How much of the conversation is replayed to the model.
@@ -103,6 +104,10 @@ Using tools:
   said or it fits). The app's songwriter writes the lyrics and Suno sings two takes in 2–4 \
   minutes; it costs the learner kie.ai credits, so make one song per request unless they ask \
   for more. Use list_songs to see what exists, e.g. before suggesting what to delete.
+- Playlists: the learner groups songs into playlists in the Music tab. list_playlists shows them \
+  with their songs; create_playlist, add_to_playlist, remove_from_playlist and rename_playlist \
+  change them, by song id (a song's most-played take goes in). Use list_songs to find song ids \
+  from titles. delete_playlist only after the learner confirmed; the songs themselves stay.
 - To grow an existing course (more words on food, a lesson on a grammar point it uses), add to it \
   with add_to_course or file the new block under it (course_id) rather than making a new course.
 - After using a tool, say in one or two sentences what you did. Don't paste the whole word list \
@@ -166,7 +171,8 @@ fn system_prompt(conn: &Connection) -> Result<String> {
          - Due now ({due_count}):\n{due}\n\
          - Study blocks:\n{lessons}\n\
          - Courses:\n{courses}\n\
-         - Songs: {song_count} in the Music tab{song_note}.",
+         - Songs: {song_count} in the Music tab{song_note}.\n\
+         - Playlists: {playlists}.",
         level = stats.level,
         xp = stats.total_xp,
         streak = stats.current_streak,
@@ -178,6 +184,17 @@ fn system_prompt(conn: &Connection) -> Result<String> {
         lessons = if lessons.is_empty() { none() } else { lessons.join("\n") },
         courses = if courses.is_empty() { none() } else { courses.join("\n") },
         song_count = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| r.get::<_, i64>(0))?,
+        playlists = {
+            let list = playlists::list(conn)?;
+            if list.is_empty() {
+                "none yet".to_string()
+            } else {
+                list.iter()
+                    .map(|p| format!("id {}: {} ({} songs)", p.id, p.name, p.entries.len()))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            }
+        },
         song_note = if songs::kie_key(conn).is_ok() {
             ""
         } else {
@@ -539,6 +556,65 @@ pub fn tool_definitions() -> Value {
                 "required": ["song_ids"]
             }),
         ),
+        function(
+            "list_playlists",
+            "The learner's playlists, each with its songs in order.",
+            json!({ "type": "object", "properties": {} }),
+        ),
+        function(
+            "create_playlist",
+            "Make a playlist, optionally with songs in it already.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "song_ids": { "type": "array", "items": { "type": "integer" } }
+                },
+                "required": ["name"]
+            }),
+        ),
+        function(
+            "add_to_playlist",
+            "Add songs to the end of a playlist. Songs already in it are skipped.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "playlist_id": { "type": "integer" },
+                    "song_ids": { "type": "array", "items": { "type": "integer" } }
+                },
+                "required": ["playlist_id", "song_ids"]
+            }),
+        ),
+        function(
+            "remove_from_playlist",
+            "Take songs out of a playlist. The songs stay in the library.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "playlist_id": { "type": "integer" },
+                    "song_ids": { "type": "array", "items": { "type": "integer" } }
+                },
+                "required": ["playlist_id", "song_ids"]
+            }),
+        ),
+        function(
+            "rename_playlist",
+            "Rename a playlist.",
+            json!({
+                "type": "object",
+                "properties": { "playlist_id": { "type": "integer" }, "name": { "type": "string" } },
+                "required": ["playlist_id", "name"]
+            }),
+        ),
+        function(
+            "delete_playlist",
+            "Delete a playlist (its songs stay in the library). Only after the learner confirmed.",
+            json!({
+                "type": "object",
+                "properties": { "playlist_id": { "type": "integer" } },
+                "required": ["playlist_id"]
+            }),
+        ),
     ])
 }
 
@@ -601,6 +677,9 @@ fn status_label(name: &str) -> &'static str {
         "make_song" => "Writing the song…",
         "list_songs" => "Looking at your songs…",
         "delete_songs" => "Deleting songs…",
+        "list_playlists" => "Looking at your playlists…",
+        "create_playlist" | "add_to_playlist" | "remove_from_playlist" | "rename_playlist"
+        | "delete_playlist" => "Updating your playlists…",
         "remember" | "update_memory" | "forget_memory" => "Remembering…",
         _ => "Working…",
     }
@@ -775,6 +854,34 @@ struct ListeningArgs {
 #[derive(Deserialize)]
 struct DeleteSongsArgs {
     song_ids: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+struct PlaylistArgs {
+    #[serde(default)]
+    playlist_id: Option<i64>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    song_ids: Vec<i64>,
+}
+
+impl PlaylistArgs {
+    fn id(&self) -> Result<i64> {
+        self.playlist_id.ok_or_else(|| Error::msg("Give a playlist_id (see list_playlists)."))
+    }
+}
+
+fn titles(list: &[String]) -> String {
+    list.iter().map(|t| format!("“{t}”")).collect::<Vec<_>>().join(", ")
+}
+
+fn playlist_json(conn: &Connection, playlist: &playlists::Playlist) -> Result<Value> {
+    let songs: Vec<Value> = playlists::songs_in(conn, playlist.id)?
+        .into_iter()
+        .map(|(_, song, title, take)| json!({ "song_id": song, "title": title, "take": take }))
+        .collect();
+    Ok(json!({ "playlist_id": playlist.id, "name": playlist.name, "songs": songs }))
 }
 
 #[derive(Deserialize)]
@@ -1059,6 +1166,83 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                 json!({ "changed": changed }),
                 "settingsChanged",
                 format!("Settings: {}", changed.join(", ")),
+                None,
+            ))
+        }
+        "list_playlists" => {
+            let list = playlists::list(conn)?
+                .iter()
+                .map(|p| playlist_json(conn, p))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Outcome::data(Value::Array(list)))
+        }
+        "create_playlist" => {
+            let args: PlaylistArgs = parse(arguments)?;
+            let name = args.name.clone().unwrap_or_default();
+            // Check the songs before making anything, so a bad id makes nothing.
+            for song in &args.song_ids {
+                playlists::preferred_track(conn, *song)?;
+            }
+            let playlist = playlists::create(conn, &name, &[])?;
+            let (added, _) = playlists::add_songs(conn, playlist.id, &args.song_ids)?;
+            let label = if added.is_empty() {
+                format!("Made the playlist “{}”", playlist.name)
+            } else {
+                format!("Made the playlist “{}” with {}", playlist.name, titles(&added))
+            };
+            let playlist = playlists::list(conn)?.into_iter().find(|p| p.id == playlist.id).unwrap_or(playlist);
+            Ok(Outcome::acted(playlist_json(conn, &playlist)?, "playlistChanged", label, None))
+        }
+        "add_to_playlist" => {
+            let args: PlaylistArgs = parse(arguments)?;
+            let id = args.id()?;
+            let (added, skipped) = playlists::add_songs(conn, id, &args.song_ids)?;
+            let playlist = playlists::list(conn)?
+                .into_iter()
+                .find(|p| p.id == id)
+                .ok_or_else(|| Error::msg("That playlist no longer exists."))?;
+            let mut label = if added.is_empty() {
+                format!("Nothing new for “{}”", playlist.name)
+            } else {
+                format!("Added {} to “{}”", titles(&added), playlist.name)
+            };
+            if !skipped.is_empty() {
+                label.push_str(&format!(" ({} already in it)", titles(&skipped)));
+            }
+            let mut result = playlist_json(conn, &playlist)?;
+            result["already_in_it"] = json!(skipped);
+            Ok(Outcome::acted(result, "playlistChanged", label, None))
+        }
+        "remove_from_playlist" => {
+            let args: PlaylistArgs = parse(arguments)?;
+            let id = args.id()?;
+            let removed = playlists::remove_songs(conn, id, &args.song_ids)?;
+            let playlist = playlists::list(conn)?
+                .into_iter()
+                .find(|p| p.id == id)
+                .ok_or_else(|| Error::msg("That playlist no longer exists."))?;
+            let mut result = playlist_json(conn, &playlist)?;
+            result["entries_removed"] = json!(removed);
+            Ok(Outcome::acted(
+                result,
+                "playlistChanged",
+                format!("Took {removed} song{} out of “{}”", if removed == 1 { "" } else { "s" }, playlist.name),
+                None,
+            ))
+        }
+        "rename_playlist" => {
+            let args: PlaylistArgs = parse(arguments)?;
+            let playlist = playlists::rename(conn, args.id()?, args.name.as_deref().unwrap_or_default())?;
+            let label = format!("Renamed the playlist to “{}”", playlist.name);
+            Ok(Outcome::acted(playlist_json(conn, &playlist)?, "playlistChanged", label, None))
+        }
+        "delete_playlist" => {
+            let args: PlaylistArgs = parse(arguments)?;
+            let name = playlists::delete(conn, args.id()?)?;
+            Ok(Outcome::acted(
+                json!({ "deleted": name }),
+                "playlistChanged",
+                format!("Deleted the playlist “{name}”"),
                 None,
             ))
         }

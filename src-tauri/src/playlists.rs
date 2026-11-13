@@ -108,6 +108,91 @@ pub fn move_entry(conn: &Connection, playlist_id: i64, entry_id: i64, delta: i64
     load(conn, playlist_id)
 }
 
+pub fn rename(conn: &Connection, playlist_id: i64, name: &str) -> Result<Playlist> {
+    load(conn, playlist_id)?;
+    conn.execute(
+        "UPDATE playlists SET name = ?2 WHERE id = ?1",
+        rusqlite::params![playlist_id, clean_name(name)?],
+    )?;
+    load(conn, playlist_id)
+}
+
+/// Deletes a playlist; its songs stay in the library. Returns its name.
+pub fn delete(conn: &Connection, playlist_id: i64) -> Result<String> {
+    let name = load(conn, playlist_id)?.name;
+    conn.execute("DELETE FROM playlists WHERE id = ?1", [playlist_id])?;
+    Ok(name)
+}
+
+// ---------------------------------------------------------------------------
+// By song, for the tutor
+// ---------------------------------------------------------------------------
+
+/// The take of a song a playlist gets when it is asked for by song: the one
+/// played most (the first, if none has been), as "play all" picks.
+pub fn preferred_track(conn: &Connection, song_id: i64) -> Result<i64> {
+    let title: String = conn
+        .query_row("SELECT title FROM songs WHERE id = ?1", [song_id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| Error::msg(format!("There is no song with id {song_id}.")))?;
+    conn.query_row(
+        "SELECT id FROM song_tracks WHERE song_id = ?1 ORDER BY play_count DESC, ord LIMIT 1",
+        [song_id],
+        |r| r.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| Error::msg(format!("“{title}” has no audio yet, so it cannot go in a playlist.")))
+}
+
+/// Songs a playlist holds, in order: (entry id, song id, title, take number).
+pub fn songs_in(conn: &Connection, playlist_id: i64) -> Result<Vec<(i64, i64, String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.id, s.id, s.title, t.ord + 1 FROM playlist_tracks p
+         JOIN song_tracks t ON t.id = p.track_id JOIN songs s ON s.id = t.song_id
+         WHERE p.playlist_id = ?1 ORDER BY p.ord, p.id",
+    )?;
+    let rows = stmt
+        .query_map([playlist_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Adds songs (their preferred take) to the end of a playlist. A song the
+/// playlist already holds is skipped; returns the titles added and skipped.
+pub fn add_songs(conn: &Connection, playlist_id: i64, song_ids: &[i64]) -> Result<(Vec<String>, Vec<String>)> {
+    let present: Vec<i64> = songs_in(conn, playlist_id)?.iter().map(|(_, song, _, _)| *song).collect();
+    let (mut added, mut skipped, mut tracks) = (Vec::new(), Vec::new(), Vec::new());
+    for &song in song_ids {
+        let title: String = conn
+            .query_row("SELECT title FROM songs WHERE id = ?1", [song], |r| r.get(0))
+            .optional()?
+            .ok_or_else(|| Error::msg(format!("There is no song with id {song}.")))?;
+        if present.contains(&song) || added.contains(&title) {
+            skipped.push(title);
+            continue;
+        }
+        tracks.push(preferred_track(conn, song)?);
+        added.push(title);
+    }
+    add(conn, playlist_id, &tracks)?;
+    Ok((added, skipped))
+}
+
+/// Takes every take of these songs out of a playlist. Returns how many
+/// entries went.
+pub fn remove_songs(conn: &Connection, playlist_id: i64, song_ids: &[i64]) -> Result<usize> {
+    load(conn, playlist_id)?;
+    let mut removed = 0;
+    for song in song_ids {
+        removed += conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1
+               AND track_id IN (SELECT id FROM song_tracks WHERE song_id = ?2)",
+            [playlist_id, *song],
+        )?;
+    }
+    Ok(removed)
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -124,18 +209,12 @@ pub async fn playlist_create(db: State<'_, Db>, name: String, track_ids: Vec<i64
 
 #[tauri::command]
 pub async fn playlist_rename(db: State<'_, Db>, playlist_id: i64, name: String) -> Result<Playlist> {
-    let conn = db.lock();
-    conn.execute(
-        "UPDATE playlists SET name = ?2 WHERE id = ?1",
-        rusqlite::params![playlist_id, clean_name(&name)?],
-    )?;
-    load(&conn, playlist_id)
+    rename(&db.lock(), playlist_id, &name)
 }
 
 #[tauri::command]
 pub async fn playlist_delete(db: State<'_, Db>, playlist_id: i64) -> Result<()> {
-    db.lock().execute("DELETE FROM playlists WHERE id = ?1", [playlist_id])?;
-    Ok(())
+    delete(&db.lock(), playlist_id).map(|_| ())
 }
 
 #[tauri::command]

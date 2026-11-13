@@ -452,6 +452,7 @@ function TutorInfo() {
         <li>Add to, edit or delete any course or block</li>
         <li>Look at your progress and the words you find hardest</li>
         <li>Make learning songs, and tidy up the ones you don't want</li>
+        <li>Make playlists and add songs to them, or take them out</li>
         <li>Explain grammar, words and phrases</li>
       </ul>
       <p>

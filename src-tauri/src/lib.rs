@@ -791,6 +791,62 @@ mod integration {
     }
 
     #[test]
+    fn the_tutor_manages_playlists_by_song() {
+        let conn = scratch_db("tutor-playlists");
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+             VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0),
+                    (2, 'Kolory', 'Niebo', 'Sky', 'pop', '[]', '', 'V6', 'ready', 0),
+                    (3, 'Na dworcu', 'x', 'x', 'pop', '[]', '', 'V6', 'generating', 0);
+             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path, play_count) VALUES
+                 (10, 1, 0, 'a', '/tmp/a.mp3', 1), (11, 1, 1, 'b', '/tmp/b.mp3', 5),
+                 (20, 2, 0, 'c', '/tmp/c.mp3', 0);",
+        )
+        .unwrap();
+
+        let made = tutor::run_tool_for_test(
+            &conn,
+            "create_playlist",
+            serde_json::json!({ "name": "Morning", "song_ids": [1] }),
+        );
+        assert_eq!(made["_action"]["kind"], "playlistChanged", "{made}");
+        let id = made["playlist_id"].as_i64().unwrap();
+        // The most-played take goes in.
+        assert_eq!(made["songs"][0]["take"], 2);
+        assert_eq!(playlists::list(&conn).unwrap()[0].entries[0].track_id, 11);
+
+        // "Add Kolory to my morning playlist" — and Kawa again is skipped.
+        let added = tutor::run_tool_for_test(
+            &conn,
+            "add_to_playlist",
+            serde_json::json!({ "playlist_id": id, "song_ids": [2, 1] }),
+        );
+        assert_eq!(added["songs"].as_array().unwrap().len(), 2, "{added}");
+        assert_eq!(added["already_in_it"], serde_json::json!(["Kawa"]));
+
+        // A song still being made cannot go in, and nothing changes.
+        let refused = tutor::run_tool_for_test(
+            &conn,
+            "add_to_playlist",
+            serde_json::json!({ "playlist_id": id, "song_ids": [3] }),
+        );
+        assert!(refused["error"].as_str().unwrap().contains("no audio yet"));
+
+        let listed = tutor::run_tool_for_test(&conn, "list_playlists", serde_json::json!({}));
+        assert_eq!(listed[0]["songs"][1]["title"], "Kolory");
+
+        tutor::run_tool_for_test(&conn, "remove_from_playlist", serde_json::json!({ "playlist_id": id, "song_ids": [1] }));
+        tutor::run_tool_for_test(&conn, "rename_playlist", serde_json::json!({ "playlist_id": id, "name": "Rano" }));
+        let list = playlists::list(&conn).unwrap();
+        assert_eq!((list[0].name.as_str(), list[0].entries.len()), ("Rano", 1));
+
+        let gone = tutor::run_tool_for_test(&conn, "delete_playlist", serde_json::json!({ "playlist_id": id }));
+        assert_eq!(gone["deleted"], "Rano");
+        assert!(playlists::list(&conn).unwrap().is_empty());
+        assert_eq!(songs::list_songs(&conn).unwrap().len(), 3, "the songs stay");
+    }
+
+    #[test]
     fn tutor_conversations_keep_their_own_history() {
         let conn = scratch_db("conversations");
         // A message from before conversations existed is adopted, not lost.

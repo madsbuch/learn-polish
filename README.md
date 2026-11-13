@@ -114,6 +114,7 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | `update_practice_settings` | Daily XP goal |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |
+| `list_playlists`, `create_playlist`, `add_to_playlist`, `remove_from_playlist`, `rename_playlist`, `delete_playlist` | Manages playlists by song (a song's most-played take goes in) |
 
 You can keep **several conversations**: the Tutor tab lists them, newest
 first, each titled after its first question, and each with its own history —
