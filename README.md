@@ -155,6 +155,10 @@ tab makes them to order:
   highlights the line being sung, with its English meaning under each Polish
   line; tap a line to jump there. Songs whose timings cannot be fetched (kie.ai
   keeps them for 14 days) show the full lyrics instead.
+- **The screen stays on** while the full-screen player is open and a song is
+  playing, so the lyrics can be followed hands-free (Android sets the
+  window's keep-screen-on flag; desktops use the browser's wake lock).
+  Pausing or closing the player lets the phone sleep again.
 - **Library and player are separate.** The Music tab is the library: songs
   and playlists, and a page per song with its takes and lyrics. Playing is
   the player's job: a bar above the tabs on every screen, which opens the

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CastPicker } from "../components/CastPicker";
 import { Cover } from "../components/Cover";
@@ -25,6 +25,7 @@ import {
   currentItem,
   cycleRepeat,
   formatTime,
+  keepScreenAwake,
   next,
   previous,
   seek,
@@ -54,6 +55,13 @@ export function Player({
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const exporter = useTrackExport((text, error = false) => setMessage({ text, error }));
+
+  // Following the lyrics means not touching the phone: keep the screen on
+  // while a song plays here. Pausing or closing the player lets it sleep.
+  useEffect(() => {
+    keepScreenAwake(player.playing);
+  }, [player.playing]);
+  useEffect(() => () => keepScreenAwake(false), []);
 
   if (!item) {
     return (

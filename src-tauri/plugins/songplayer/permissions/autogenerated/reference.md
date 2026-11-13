@@ -19,6 +19,7 @@ Everything the app's song player uses.
 - `allow-remote-stop`
 - `allow-multicast`
 - `allow-share-file`
+- `allow-keep-awake`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -53,6 +54,32 @@ Enables the get_state command without any pre-configured scope.
 <td>
 
 Denies the get_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`songplayer:allow-keep-awake`
+
+</td>
+<td>
+
+Enables the keep_awake command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`songplayer:deny-keep-awake`
+
+</td>
+<td>
+
+Denies the keep_awake command without any pre-configured scope.
 
 </td>
 </tr>

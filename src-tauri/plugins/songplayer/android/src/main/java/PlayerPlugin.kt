@@ -9,6 +9,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
+import android.view.WindowManager
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -72,6 +73,11 @@ class ShareArgs {
     lateinit var path: String
     var mime: String = "audio/mpeg"
     var title: String = ""
+}
+
+@InvokeArg
+class KeepAwakeArgs {
+    var enabled: Boolean = false
 }
 
 @InvokeArg
@@ -308,6 +314,24 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
             }
         } catch (e: Exception) {
             invoke.reject(e.message ?: "Could not share the file.")
+        }
+    }
+
+    /**
+     * Keeps the screen from going to standby while the learner reads the
+     * lyrics along. Only applies while the app is in front, so it can never
+     * drain the battery in the background.
+     */
+    @Command
+    fun keepAwake(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepAwakeArgs::class.java)
+        activity.runOnUiThread {
+            if (args.enabled) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            invoke.resolve()
         }
     }
 

@@ -311,6 +311,51 @@ export function skipTo(index: number) {
   } else webLoad(index, true);
 }
 
+// ------------------------------------------------------------ keep awake
+
+let wantAwake = false;
+let wakeLock: { release: () => Promise<void> } | null = null;
+
+async function requestWebWakeLock() {
+  const nav = navigator as Navigator & {
+    wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+  };
+  if (!nav.wakeLock || wakeLock) return;
+  try {
+    wakeLock = await nav.wakeLock.request("screen");
+  } catch {
+    /* not allowed right now (e.g. the page is hidden); retried on return */
+  }
+}
+
+// The browser drops a wake lock when the page is hidden; take it back.
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && wantAwake && !isAndroid) {
+      wakeLock = null;
+      void requestWebWakeLock();
+    }
+  });
+}
+
+/**
+ * Keeps the screen from going to standby, e.g. while the learner follows the
+ * lyrics. Android sets the window flag natively; desktops use the browser's
+ * wake lock. Only ever applies while the app is in front.
+ */
+export function keepScreenAwake(enabled: boolean) {
+  if (enabled === wantAwake) return;
+  wantAwake = enabled;
+  if (isAndroid) {
+    void native("keep_awake", { enabled });
+  } else if (enabled) {
+    void requestWebWakeLock();
+  } else {
+    void wakeLock?.release().catch(() => {});
+    wakeLock = null;
+  }
+}
+
 /** Phones can hand a song to another app; desktops save it instead. */
 export const canShare = isAndroid;
 
