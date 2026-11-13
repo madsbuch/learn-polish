@@ -163,6 +163,9 @@ jobs:
             --ks-key-alias "$alias" --key-pass "pass:$key_pass" \
             --out out/Polski-android-universal.apk aligned.apk
           "$tools/apksigner" verify --print-certs out/Polski-android-universal.apk
+          # apksigner also writes a v4 signature file for incremental installs;
+          # it is not needed to install the APK, so keep it out of the release.
+          rm -f out/*.idsig
           rm -f key.jks aligned.apk
 
       - uses: actions/upload-artifact@v4
