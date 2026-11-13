@@ -11,6 +11,7 @@ import { api, errorMessage } from "../lib/api";
 import {
   currentItem,
   formatTime,
+  libraryQueue,
   playQueue,
   syncLibrary,
   toggle,
@@ -38,12 +39,6 @@ function allTakes(songs: Song[]): QueueItem[] {
     .flatMap((song) => song.tracks.map((track) => ({ song, track })));
 }
 
-/** One take per song (the first), for "play all" and the song list. */
-function firstTakes(songs: Song[]): QueueItem[] {
-  return songs
-    .filter((song) => song.status === "ready" && song.tracks.length > 0)
-    .map((song) => ({ song, track: song.tracks[0] }));
-}
 
 export function Music({
   settings,
@@ -135,6 +130,7 @@ export function Music({
         {song ? (
           <SongPage
             song={song}
+            library={songs ?? []}
             onChanged={refresh}
             onDeleted={() => {
               back();
@@ -238,7 +234,12 @@ export function Music({
       </div>
 
       {tab === "songs" ? (
-        <SongList songs={songs} onOpen={(songId) => setView({ kind: "song", songId })} />
+        <SongList
+          songs={songs}
+          onOpen={(songId) => setView({ kind: "song", songId })}
+          onDeleted={refresh}
+          onError={setError}
+        />
       ) : (
         <PlaylistList
           playlists={playlists}
@@ -323,7 +324,22 @@ function TrackRow({
 
 // ------------------------------------------------------------------ songs
 
-function SongList({ songs, onOpen }: { songs: Song[] | null; onOpen: (songId: number) => void }) {
+function SongList({
+  songs,
+  onOpen,
+  onDeleted,
+  onError,
+}: {
+  songs: Song[] | null;
+  onOpen: (songId: number) => void;
+  onDeleted: () => void;
+  onError: (message: string) => void;
+}) {
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   if (songs === null) {
     return (
       <div className="center" style={{ padding: 30 }}>
@@ -336,15 +352,106 @@ function SongList({ songs, onOpen }: { songs: Song[] | null; onOpen: (songId: nu
       <div className="card center">
         <div style={{ fontSize: 40 }}>🎵</div>
         <h3 style={{ marginBottom: 0 }}>No songs yet</h3>
+        <p className="small faint">Make one with + New song, or ask the tutor.</p>
       </div>
     );
   }
-  const queue = firstTakes(songs);
+  const queue = libraryQueue(songs);
+
+  function pick(songId: number) {
+    setConfirming(false);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(songId)) next.delete(songId);
+      else next.add(songId);
+      return next;
+    });
+  }
+
+  function stopSelecting() {
+    setSelecting(false);
+    setSelected(new Set());
+    setConfirming(false);
+  }
+
+  async function deleteSelected() {
+    setDeleting(true);
+    try {
+      for (const songId of selected) await api.songDelete(songId);
+      stopSelecting();
+    } catch (cause) {
+      onError(errorMessage(cause));
+    } finally {
+      setDeleting(false);
+      onDeleted();
+    }
+  }
+
   return (
     <>
-      <PlayButtons queue={queue} />
+      {selecting ? (
+        <div className="row" style={{ gap: 8, marginBottom: 14 }}>
+          <button
+            className="btn ghost small"
+            onClick={() =>
+              setSelected(selected.size === songs.length ? new Set() : new Set(songs.map((s) => s.id)))
+            }
+          >
+            {selected.size === songs.length ? "Select none" : "Select all"}
+          </button>
+          <span className="grow small faint center">{selected.size} selected</span>
+          <button className="btn ghost small" onClick={stopSelecting}>
+            Done
+          </button>
+        </div>
+      ) : (
+        <div className="row" style={{ gap: 8, marginBottom: 14 }}>
+          {queue.length > 0 ? (
+            <>
+              <button className="btn primary small grow" onClick={() => playQueue(queue, 0)}>
+                <PlayerIcon.play size={16} /> Play
+              </button>
+              <button
+                className="btn ghost small grow"
+                onClick={() =>
+                  playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })
+                }
+              >
+                <PlayerIcon.shuffle /> Shuffle
+              </button>
+            </>
+          ) : (
+            <span className="grow" />
+          )}
+          <button className="btn ghost small" onClick={() => setSelecting(true)}>
+            Select
+          </button>
+        </div>
+      )}
+
       <div className="card flush">
         {songs.map((song) => {
+          if (selecting) {
+            const checked = selected.has(song.id);
+            return (
+              <button
+                key={song.id}
+                className="list-row"
+                data-current={checked}
+                onClick={() => pick(song.id)}
+                aria-pressed={checked}
+              >
+                <span className="check" data-checked={checked}>
+                  {checked ? "✓" : ""}
+                </span>
+                <Cover path={song.tracks[0]?.imagePath ?? null} size={44} />
+                <span className="grow" style={{ minWidth: 0 }}>
+                  <span className="pl ellipsis">{song.title}</span>
+                  <span className="tr ellipsis">„{song.chorusPl}”</span>
+                </span>
+              </button>
+            );
+          }
           const index = queue.findIndex((item) => item.song.id === song.id);
           if (index < 0) {
             // Still being made, or failed: no take to play yet.
@@ -377,17 +484,39 @@ function SongList({ songs, onOpen }: { songs: Song[] | null; onOpen: (songId: nu
           );
         })}
       </div>
+
+      {selecting && selected.size > 0 ? (
+        <div className="select-bar">
+          {confirming ? (
+            <>
+              <button className="btn danger grow" disabled={deleting} onClick={deleteSelected}>
+                {deleting ? <Spinner /> : `Yes, delete ${selected.size} song${selected.size === 1 ? "" : "s"}`}
+              </button>
+              <button className="btn ghost" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="btn danger grow" onClick={() => setConfirming(true)}>
+              Delete {selected.size} song{selected.size === 1 ? "" : "s"}
+            </button>
+          )}
+        </div>
+      ) : null}
     </>
   );
 }
 
 function SongPage({
   song,
+  library,
   onChanged,
   onDeleted,
   onMessage,
 }: {
   song: Song;
+  /** Every song, so a take plays on into the next song — not the other take. */
+  library: Song[];
   onChanged: () => void;
   onDeleted: () => void;
   onMessage: (message: string, isError?: boolean) => void;
@@ -446,12 +575,16 @@ function SongPage({
         <>
           <h3 style={{ margin: "4px 0 8px" }}>Takes</h3>
           <div className="card flush" style={{ marginBottom: 16 }}>
-            {takes.map((item, index) => (
+            {takes.map((item) => (
               <div key={item.track.id} className="take-block">
                 <TrackRow
                   item={item}
                   subtitle={`Take ${item.track.ord + 1} · ${formatTime(item.track.duration)} · played ${item.track.playCount}×`}
-                  onPlay={() => playQueue(takes, index)}
+                  onPlay={() => {
+                    const queue = libraryQueue(library, item.track);
+                    const start = queue.findIndex((entry) => entry.track.id === item.track.id);
+                    playQueue(start >= 0 ? queue : [item], Math.max(0, start));
+                  }}
                 />
                 <div className="row wrap take-actions">
                   <button className="chip" onClick={() => setAdding(item.track.id)}>

@@ -324,6 +324,10 @@ export default function App() {
           focusTopicId={settings.focusTopicId}
           onOpenSettings={() => setTab("settings")}
           onPractise={(topicId) => void startSession(topicId)}
+          onOpenSong={(songId) => {
+            setTab("music");
+            setMusicSong(songId);
+          }}
           onChanged={() => void reloadAll()}
         />
       ) : null}

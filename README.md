@@ -87,6 +87,7 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | `update_practice_settings` | Daily XP goal, new words per session |
 | `list_topics`, `get_topic`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `suggest_practice` | Puts a *Practise now* button under its reply |
+| `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |
 
 So *"Can you build me a programme for learning the colours?"* produces a
 programme you can start from a button under the reply. What the tutor did is
@@ -152,6 +153,15 @@ tab makes them to order:
 - **Save or share the MP3.** Every take can be saved wherever you choose
   (the system save dialog) or, on Android, handed to any app through the
   share sheet (a `FileProvider` in the songplayer plugin).
+- **One take per song in the queue.** Play and shuffle use each song's
+  favourite take (the one played most), and a take played from a song's page
+  plays on into the next song — never straight into the other take of the
+  same song.
+- **Clearing out** is quick: *Select* in the song list deletes many at once,
+  and the player can delete the song that is playing and move on.
+- **The tutor makes songs too.** Ask it for a song about anything; it briefs
+  the songwriter (`make_song`), Suno sings it in the background, and its reply
+  links to the song. It can also list and (after asking) delete songs.
 - **Built for repetition:** play, shuffle, repeat all / one, play counts, and
   the player bar keeps the music going while you practise.
 - **The phone's own player:** on Android, songs play through a native Media3

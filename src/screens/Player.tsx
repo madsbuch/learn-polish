@@ -6,6 +6,7 @@ import { FollowLyrics } from "../components/FollowLyrics";
 import { PlayerIcon } from "../components/icons";
 import { AddToPlaylist, useTrackExport } from "../components/TrackActions";
 import { Banner, Spinner } from "../components/ui";
+import { api, errorMessage } from "../lib/api";
 import {
   currentItem,
   cycleRepeat,
@@ -16,6 +17,7 @@ import {
   setCastVolume,
   skipTo,
   stopCasting,
+  syncLibrary,
   toggle,
   usePlayer,
 } from "../lib/player";
@@ -38,6 +40,8 @@ export function Player({
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const exporter = useTrackExport((text, error = false) => setMessage({ text, error }));
 
   if (!item) {
@@ -176,6 +180,39 @@ export function Player({
         <button className="chip" disabled={exporter.busy !== null} onClick={() => exporter.save(item)}>
           {exporter.busy === "save" ? <Spinner /> : "⬇ Save MP3"}
         </button>
+        {confirmDelete ? (
+          <>
+            <button
+              className="chip crimson"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                const songId = item.song.id;
+                // Move on first, so the music does not stop with the song.
+                if (player.queue.some((entry) => entry.song.id !== songId)) next();
+                try {
+                  await api.songDelete(songId);
+                  syncLibrary(await api.songsList());
+                  setMessage({ text: `Deleted “${item.song.title}”`, error: false });
+                } catch (cause) {
+                  setMessage({ text: errorMessage(cause), error: true });
+                } finally {
+                  setDeleting(false);
+                  setConfirmDelete(false);
+                }
+              }}
+            >
+              {deleting ? <Spinner /> : "Yes, delete this song"}
+            </button>
+            <button className="chip" onClick={() => setConfirmDelete(false)}>
+              Keep it
+            </button>
+          </>
+        ) : (
+          <button className="chip" onClick={() => setConfirmDelete(true)}>
+            🗑 Delete song
+          </button>
+        )}
       </div>
 
       <div className="segmented" style={{ marginBottom: 12 }}>

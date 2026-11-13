@@ -11,6 +11,7 @@ const STARTERS = [
   "Build me a programme for learning the colours",
   "What should I practise today?",
   "Make a programme from the words I keep getting wrong",
+  "Make me a song about ordering coffee",
   "When do I use “ty” and when “pan” or “pani”?",
 ];
 
@@ -22,6 +23,7 @@ export function Tutor({
   focusTopicId,
   onOpenSettings,
   onPractise,
+  onOpenSong,
   onChanged,
 }: {
   hasApiKey: boolean;
@@ -31,6 +33,8 @@ export function Tutor({
   onOpenSettings: () => void;
   /** Starts a practice session for a topic or programme. */
   onPractise: (topicId: number) => void;
+  /** Shows a song in the Music tab. */
+  onOpenSong: (songId: number) => void;
   /** The tutor changed something in the app; reload what the screens show. */
   onChanged: () => void;
 }) {
@@ -115,6 +119,7 @@ export function Tutor({
 
   function ActionRow({ action }: { action: TutorAction }) {
     const topicId = action.topicId;
+    const songId = action.songId;
     const practisable =
       topicId !== null &&
       (action.kind === "programmeCreated" ||
@@ -127,6 +132,13 @@ export function Tutor({
           <span aria-hidden>✓ </span>
           {action.label}
         </div>
+        {action.kind === "songStarted" && songId !== null ? (
+          <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
+            <button className="btn ghost small" onClick={() => onOpenSong(songId)}>
+              ♪ Open in Music
+            </button>
+          </div>
+        ) : null}
         {practisable ? (
           <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
             <button className="btn primary small" onClick={() => onPractise(topicId)}>
@@ -271,6 +283,7 @@ function TutorInfo() {
         <li>Add to, edit or delete your programmes</li>
         <li>Make a programme your daily check-in</li>
         <li>Look at your progress and the words you find hardest</li>
+        <li>Make learning songs, and tidy up the ones you don't want</li>
         <li>Explain grammar, words and phrases</li>
       </ul>
       <p>

@@ -17,6 +17,7 @@ use crate::error::{Error, Result};
 use crate::models::{ChatMessage, TutorAction, TutorStatus};
 use crate::programmes::{self, NewLine, NewProgramme, NewSentence, NewWord};
 use crate::session;
+use crate::songs;
 use crate::stats;
 
 /// How much of the conversation is replayed to the model.
@@ -62,7 +63,14 @@ Using tools:
 - Only set the programme as the daily focus if the learner asks for that (e.g. \"make it my \
   daily practice\"). Otherwise the reply already offers buttons to practise it or focus on it.
 - Call get_progress before commenting on how the learner is doing; never invent numbers.
-- delete_programme is permanent: only call it after the learner has clearly confirmed.
+- delete_programme and delete_songs are permanent: only call them after the learner has \
+  clearly confirmed (name what will be deleted and ask first).
+- Songs: the Music tab has learning songs — English lines answered by Polish ones, and a \
+  Polish chorus sentence that gets stuck in your head. When the learner asks for a song, call \
+  make_song with what it should be about (and a topic id, chorus sentence or style if they \
+  said or it fits). The app's songwriter writes the lyrics and Suno sings two takes in 2–4 \
+  minutes; it costs the learner kie.ai credits, so make one song per request unless they ask \
+  for more. Use list_songs to see what exists, e.g. before suggesting what to delete.
 - The built-in course topics cannot be edited; make a programme instead.
 - After using a tool, say in one or two sentences what you did. Don't paste the whole word list \
   back unless asked.";
@@ -93,6 +101,7 @@ fn system_prompt(conn: &Connection) -> Result<String> {
         "{RULES}\n\nThe learner right now:\n\
          - Today's check-in: {today_title} (topic id {today_id}){focus_note}{done}\n\
          - Level {level}, {xp} XP, streak {streak} days, {seen} of {total} words met, {due} items due.\n\
+         - Songs: {song_count} in the Music tab{song_note}.\n\
          - Their programmes:\n{programmes}",
         today_title = today.title,
         today_id = today.id,
@@ -104,6 +113,12 @@ fn system_prompt(conn: &Connection) -> Result<String> {
         seen = stats.words_seen,
         total = stats.words_total,
         due = stats.due_today,
+        song_count = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| r.get::<_, i64>(0))?,
+        song_note = if songs::kie_key(conn).is_ok() {
+            ""
+        } else {
+            "; making songs needs a kie.ai key in Settings, which is missing"
+        },
         programmes = if programmes.is_empty() {
             "  (none yet)".to_string()
         } else {
@@ -282,6 +297,36 @@ pub fn tool_definitions() -> Value {
             }),
         ),
         function(
+            "make_song",
+            "Have a learning song written and sung (takes 2–4 minutes, costs kie.ai credits). \
+             The songwriter writes the lyrics from this brief.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "about": { "type": "string", "description": "What the song is about, in English" },
+                    "topic_id": { "type": "integer", "description": "Take vocabulary from this topic or programme" },
+                    "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
+                    "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
+                    "vocal_gender": { "type": "string", "enum": ["f", "m", ""] }
+                },
+                "required": ["about"]
+            }),
+        ),
+        function(
+            "list_songs",
+            "The learner's songs: title, chorus, status, takes and how often each was played.",
+            json!({ "type": "object", "properties": {} }),
+        ),
+        function(
+            "delete_songs",
+            "Permanently delete songs (all their takes). Only after the learner confirmed.",
+            json!({
+                "type": "object",
+                "properties": { "song_ids": { "type": "array", "items": { "type": "integer" } } },
+                "required": ["song_ids"]
+            }),
+        ),
+        function(
             "suggest_practice",
             "Show the learner a button that starts a practice session for a topic or programme right now.",
             json!({
@@ -307,7 +352,13 @@ impl Outcome {
     fn acted(result: Value, kind: &str, label: String, topic_id: Option<i64>) -> Self {
         Outcome {
             result,
-            action: Some(TutorAction { kind: kind.into(), label, topic_id }),
+            action: Some(TutorAction { kind: kind.into(), label, topic_id, song_id: None }),
+        }
+    }
+    fn song(result: Value, kind: &str, label: String, song_id: Option<i64>) -> Self {
+        Outcome {
+            result,
+            action: Some(TutorAction { kind: kind.into(), label, topic_id: None, song_id }),
         }
     }
 }
@@ -323,6 +374,9 @@ fn status_label(name: &str) -> &'static str {
         "get_progress" => "Checking your progress…",
         "set_daily_focus" => "Changing your daily check-in…",
         "update_practice_settings" => "Updating your settings…",
+        "make_song" => "Writing the song…",
+        "list_songs" => "Looking at your songs…",
+        "delete_songs" => "Deleting songs…",
         _ => "Working…",
     }
 }
@@ -378,6 +432,24 @@ struct SettingsArgs {
     daily_goal: Option<i64>,
     #[serde(default)]
     new_words_per_day: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct SongArgs {
+    about: String,
+    #[serde(default)]
+    topic_id: Option<i64>,
+    #[serde(default)]
+    chorus_pl: String,
+    #[serde(default)]
+    style: String,
+    #[serde(default)]
+    vocal_gender: String,
+}
+
+#[derive(Deserialize)]
+struct DeleteSongsArgs {
+    song_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -511,6 +583,42 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
                 json!({ "changed": changed }),
                 "settingsChanged",
                 format!("Settings: {}", changed.join(", ")),
+                None,
+            ))
+        }
+        "list_songs" => {
+            let list: Vec<Value> = songs::list_songs(conn)?
+                .into_iter()
+                .map(|song| {
+                    json!({
+                        "song_id": song.id,
+                        "title": song.title,
+                        "chorus_pl": song.chorus_pl,
+                        "chorus_en": song.chorus_en,
+                        "status": song.status,
+                        "takes": song.tracks.len(),
+                        "plays": song.tracks.iter().map(|t| t.play_count).sum::<i64>(),
+                    })
+                })
+                .collect();
+            Ok(Outcome::data(Value::Array(list)))
+        }
+        "delete_songs" => {
+            let args: DeleteSongsArgs = parse(arguments)?;
+            let mut titles = Vec::new();
+            for id in args.song_ids {
+                if let Ok(song) = songs::load_song(conn, id) {
+                    songs::delete_song(conn, id)?;
+                    titles.push(song.title);
+                }
+            }
+            if titles.is_empty() {
+                return Err(Error::msg("None of those songs exist."));
+            }
+            Ok(Outcome::song(
+                json!({ "deleted": titles }),
+                "songsDeleted",
+                format!("Deleted {}", titles.iter().map(|t| format!("“{t}”")).collect::<Vec<_>>().join(", ")),
                 None,
             ))
         }
@@ -679,6 +787,39 @@ fn progress(conn: &Connection) -> Result<Value> {
     }))
 }
 
+/// make_song needs the network twice (the songwriter, then Suno), so unlike
+/// the other tools it cannot run under the database lock.
+async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = async {
+        let args: SongArgs = parse(arguments)?;
+        // Fail before paying for lyrics if Suno cannot be reached anyway.
+        songs::kie_key(&db.lock())?;
+        let draft = songs::write_draft(
+            db,
+            songs::DraftRequest {
+                brief: args.about,
+                topic_id: args.topic_id,
+                chorus_pl: args.chorus_pl,
+                style: args.style,
+                vocal_gender: args.vocal_gender,
+                ..Default::default()
+            },
+        )
+        .await?;
+        let title = draft.title.clone();
+        let chorus = format!("{} — {}", draft.chorus_pl, draft.chorus_en);
+        let song_id = songs::start_song(app, db, draft)?;
+        Ok(Outcome::song(
+            json!({ "song_id": song_id, "title": title, "chorus": chorus, "status": "Suno is singing it now; ready in 2–4 minutes" }),
+            "songStarted",
+            format!("Writing “{title}” — Suno is singing it now"),
+            Some(song_id),
+        ))
+    }
+    .await;
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
 // ---------------------------------------------------------------------------
 // History
 // ---------------------------------------------------------------------------
@@ -836,7 +977,9 @@ pub async fn tutor_send(
                         label: status_label(&call.function.name).into(),
                     },
                 );
-                let outcome = {
+                let outcome = if call.function.name == "make_song" {
+                    make_song(&app, &db, &call.function.arguments).await
+                } else {
                     let conn = db.lock();
                     execute(&conn, &call.function.name, &call.function.arguments)
                 };

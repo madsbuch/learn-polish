@@ -219,9 +219,12 @@ export interface TutorAction {
     | "focusSet"
     | "focusCleared"
     | "settingsChanged"
-    | "practiceSuggested";
+    | "practiceSuggested"
+    | "songStarted"
+    | "songsDeleted";
   label: string;
   topicId: number | null;
+  songId: number | null;
 }
 
 export interface ChatMessage {

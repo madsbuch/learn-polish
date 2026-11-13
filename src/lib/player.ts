@@ -428,6 +428,31 @@ export function syncLibrary(songs: Song[]) {
   set({ queue, index: current ? queue.findIndex((i) => i.track.id === current.track.id) : -1 });
 }
 
+/**
+ * The take of a song that plays from the library: the one played most (the
+ * learner's favourite, in practice), else the first. A song's other take is
+ * never queued after it — it is the same song again.
+ */
+export function preferredTake(song: Song): SongTrack | null {
+  let best: SongTrack | null = null;
+  for (const track of song.tracks) {
+    if (!best || track.playCount > best.playCount) best = track;
+  }
+  return best;
+}
+
+/** One take per finished song, in library order — what "play all" plays. */
+export function libraryQueue(songs: Song[], chosen?: SongTrack): QueueItem[] {
+  return songs
+    .filter((song) => song.status === "ready")
+    .map((song) => {
+      const track =
+        chosen && chosen.songId === song.id ? chosen : preferredTake(song);
+      return track ? { song, track } : null;
+    })
+    .filter((item): item is QueueItem => item !== null);
+}
+
 export function usePlayer(): PlayerState {
   return useSyncExternalStore(
     (listener) => {

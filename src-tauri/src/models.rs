@@ -210,12 +210,16 @@ pub struct ChatMessage {
 #[serde(rename_all = "camelCase")]
 pub struct TutorAction {
     /// programmeCreated | programmeUpdated | programmeDeleted | focusSet |
-    /// focusCleared | settingsChanged | practiceSuggested
+    /// focusCleared | settingsChanged | practiceSuggested | songStarted |
+    /// songsDeleted
     pub kind: String,
     /// One line for the learner, e.g. "Created “Colours” — 24 words".
     pub label: String,
     #[serde(default)]
     pub topic_id: Option<i64>,
+    /// Set when the action is about a song (one the tutor started making).
+    #[serde(default)]
+    pub song_id: Option<i64>,
 }
 
 /// The tutor is working: a tool is running. Emitted as `tutor://status`.

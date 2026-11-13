@@ -1201,6 +1201,11 @@ pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
 /// Asks the songwriter for a draft, or a revision of one.
 #[tauri::command]
 pub async fn song_draft(db: State<'_, Db>, request: DraftRequest) -> Result<SongDraft> {
+    write_draft(&db, request).await
+}
+
+/// The songwriter at work: used by the composer screen and by the tutor.
+pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (key, model, messages) = {
         let conn = db.lock();
         let context = gather_context(&conn, request.topic_id)?;
@@ -1228,6 +1233,12 @@ pub async fn song_draft(db: State<'_, Db>, request: DraftRequest) -> Result<Song
 /// `songs://changed` events.
 #[tauri::command]
 pub async fn song_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft) -> Result<Song> {
+    let id = start_song(&app, &db, draft)?;
+    load_song(&db.lock(), id)
+}
+
+/// Saves a finished draft and hands it to Suno in the background.
+pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
     let draft = normalize_draft(draft)?;
     let id = {
         let conn = db.lock();
@@ -1235,8 +1246,9 @@ pub async fn song_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft) ->
         let model = suno_model(&conn);
         insert_song(&conn, &draft, &model)?
     };
-    spawn_generation(app, id);
-    load_song(&db.lock(), id)
+    spawn_generation(app.clone(), id);
+    notify(app, id);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -1252,7 +1264,11 @@ pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Resu
 
 #[tauri::command]
 pub async fn song_delete(db: State<'_, Db>, song_id: i64) -> Result<()> {
-    let conn = db.lock();
+    delete_song(&db.lock(), song_id)
+}
+
+/// Deletes a song, its takes and their files. Its takes leave every playlist.
+pub fn delete_song(conn: &Connection, song_id: i64) -> Result<()> {
     for track in load_tracks(&conn, song_id, &[])? {
         let _ = std::fs::remove_file(&track.audio_path);
         if let Some(image) = track.image_path {

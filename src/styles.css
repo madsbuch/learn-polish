@@ -1217,6 +1217,36 @@ label.field > span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+}
+.check[data-checked="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+/* Bulk actions stay in reach at the bottom while songs are being picked. */
+.select-bar {
+  position: sticky;
+  bottom: 8px;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
 .take-block .track-row {
   border-bottom: none;
 }

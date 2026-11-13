@@ -463,6 +463,28 @@ mod integration {
     }
 
     #[test]
+    fn the_tutor_lists_and_deletes_songs() {
+        let conn = scratch_db("tutor-songs");
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+             VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0),
+                    (2, 'Kolory', 'Niebo jest niebieskie', 'The sky is blue', 'pop', '[]', '', 'V6', 'failed', 0);
+             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path, play_count)
+                 VALUES (10, 1, 0, 'a', '/nonexistent/a.mp3', 3);",
+        )
+        .unwrap();
+        let listed = tutor::run_tool_for_test(&conn, "list_songs", serde_json::json!({}));
+        assert_eq!(listed.as_array().unwrap().len(), 2);
+        let kawa = listed.as_array().unwrap().iter().find(|s| s["title"] == "Kawa").unwrap();
+        assert_eq!(kawa["plays"], 3);
+
+        let deleted = tutor::run_tool_for_test(&conn, "delete_songs", serde_json::json!({ "song_ids": [2, 99] }));
+        assert_eq!(deleted["_action"]["kind"], "songsDeleted");
+        assert_eq!(deleted["deleted"], serde_json::json!(["Kolory"]));
+        assert_eq!(songs::list_songs(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
     fn the_tutor_reports_progress_and_finds_vocabulary() {
         let conn = scratch_db("tutor-read");
         let progress = tutor::run_tool_for_test(&conn, "get_progress", serde_json::json!({}));
