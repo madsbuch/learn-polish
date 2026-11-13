@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
+import { GapFill, Memory } from "../components/SetExercises";
 import { Bar, Banner, SpeakButton, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { speakQuietly } from "../lib/speech";
@@ -32,6 +33,8 @@ export function Session({
   const [typed, setTyped] = useState("");
   const [built, setBuilt] = useState<number[]>([]);
   const [revealAll, setRevealAll] = useState(false);
+  const [gapsFilled, setGapsFilled] = useState<(number | null)[]>([]);
+  const [memoryTurns, setMemoryTurns] = useState<number | null>(null);
 
   // The explanation streams in, so it can be read while it is still arriving.
   const explanation = useAiStream();
@@ -49,6 +52,8 @@ export function Session({
     setPicked(null);
     setTyped("");
     setBuilt([]);
+    setGapsFilled([]);
+    setMemoryTurns(null);
     explanation.reset();
     setError(null);
     bodyRef.current?.scrollTo({ top: 0 });
@@ -79,17 +84,31 @@ export function Session({
       case "produce":
       case "dialogueGap":
         return picked ?? "";
+      case "gapFill":
+        return exercise.gaps
+          .map((_, i) => (gapsFilled[i] == null ? "" : exercise.options[gapsFilled[i]!]))
+          .join(" | ");
+      case "memory":
+        return memoryTurns === null ? "" : "done";
       default:
         return exercise.answer;
     }
-  }, [exercise, typed, built, picked]);
+  }, [exercise, typed, built, picked, gapsFilled, memoryTurns]);
 
   const canSubmit = exercise
-    ? exercise.kind === "intro" ||
-      exercise.kind === "sentenceIntro" ||
-      exercise.kind === "dialogueRead" ||
-      given.trim().length > 0
+    ? exercise.kind === "gapFill"
+      ? exercise.gaps.every((_, i) => gapsFilled[i] != null)
+      : exercise.kind === "intro" ||
+        exercise.kind === "sentenceIntro" ||
+        exercise.kind === "dialogueRead" ||
+        given.trim().length > 0
     : false;
+
+  // Finding the last pair is the answer; no separate Check tap needed.
+  useEffect(() => {
+    if (exercise?.kind === "memory" && memoryTurns !== null && phase === "answering") void check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoryTurns]);
 
   async function check() {
     if (!exercise || busy) return;
@@ -108,7 +127,7 @@ export function Session({
       setSessionXp((xp) => xp + answer.xpGained);
       if (answer.correct) setCorrectCount((n) => n + 1);
       setPhase("checked");
-      if (answer.correct && exercise.itemKind !== "dialogue") speakQuietly(exercise.pl);
+      if (answer.correct && exercise.pl && exercise.itemKind !== "dialogue") speakQuietly(exercise.pl);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -344,6 +363,25 @@ export function Session({
           </div>
         ) : null}
 
+        {exercise.kind === "gapFill" ? (
+          <div className="fade-in">
+            <div className="eyebrow">Fill the gaps</div>
+            <GapFill
+              exercise={exercise}
+              filled={gapsFilled}
+              onChange={setGapsFilled}
+              checked={isChecked}
+            />
+          </div>
+        ) : null}
+
+        {exercise.kind === "memory" ? (
+          <div className="fade-in">
+            <div className="eyebrow">Memory · find the pairs</div>
+            <Memory exercise={exercise} onComplete={setMemoryTurns} />
+          </div>
+        ) : null}
+
         {isChecked && result ? (
           <div className={`verdict pop ${result.correct ? "right" : "wrong"}`}>
             <b>
@@ -351,14 +389,23 @@ export function Session({
               {result.xpGained > 0 ? `  +${result.xpGained} XP` : ""}
             </b>
             {/* Always show both sides of the pair, whichever direction was asked. */}
-            {!result.correct || exercise.kind === "type" ? (
+            {exercise.kind === "memory" && memoryTurns !== null ? (
+              <div className="small">
+                All {exercise.pairs.length} pairs in {memoryTurns} turns
+                {memoryTurns <= exercise.pairs.length + 2 ? " — a sharp memory!" : "."}
+              </div>
+            ) : null}
+            {exercise.itemKind !== "set" && (!result.correct || exercise.kind === "type") ? (
               <div className="small selectable">
                 {exercise.itemKind === "dialogue"
                   ? exercise.answer
                   : `${exercise.pl} — ${exercise.meaning}`}
               </div>
             ) : null}
-            {exercise.itemKind !== "dialogue" && !explanation.text && !explanation.streaming ? (
+            {exercise.itemKind !== "dialogue" &&
+            exercise.itemKind !== "set" &&
+            !explanation.text &&
+            !explanation.streaming ? (
               <button className="btn ghost small" style={{ marginTop: 10 }} onClick={explain}>
                 ✨ Explain with AI
               </button>
@@ -389,13 +436,19 @@ export function Session({
             {busy ? <Spinner /> : index + 1 < total ? "Continue" : "Finish session"}
           </button>
         ) : (
-          <button className="btn primary block" disabled={!canSubmit || busy} onClick={check}>
+          <button
+            className="btn primary block"
+            disabled={!canSubmit || busy || exercise.kind === "memory"}
+            onClick={check}
+          >
             {busy ? (
               <Spinner />
             ) : exercise.kind === "dialogueRead" ||
               exercise.kind === "intro" ||
               exercise.kind === "sentenceIntro" ? (
               "Got it"
+            ) : exercise.kind === "memory" ? (
+              "Find every pair"
             ) : (
               "Check"
             )}

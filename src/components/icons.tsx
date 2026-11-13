@@ -143,4 +143,48 @@ export const PlayerIcon = {
       <path d="M4 4l5 5" />
     </Glyph>
   ),
+  addToPlaylist: () => (
+    <Glyph>
+      <path d="M3 6h12M3 12h12M3 18h7" />
+      <path d="M18 14v7M14.5 17.5h7" />
+    </Glyph>
+  ),
+  share: () => (
+    <Glyph>
+      <circle cx="18" cy="5" r="2.6" />
+      <circle cx="6" cy="12" r="2.6" />
+      <circle cx="18" cy="19" r="2.6" />
+      <path d="M8.3 10.8l7.4-4.4M8.3 13.2l7.4 4.4" />
+    </Glyph>
+  ),
+  download: () => (
+    <Glyph>
+      <path d="M12 3v12" />
+      <path d="M7 10.5l5 5 5-5" />
+      <path d="M4 20h16" />
+    </Glyph>
+  ),
+  trash: () => (
+    <Glyph>
+      <path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" />
+    </Glyph>
+  ),
 };
+
+/** The back arrow on full screens. */
+export function BackIcon() {
+  return (
+    <Glyph>
+      <path d="M15 5l-7 7 7 7" />
+    </Glyph>
+  );
+}
+
+/** Closes a screen that slid up, like the player. */
+export function DownIcon() {
+  return (
+    <Glyph>
+      <path d="M5 9l7 7 7-7" />
+    </Glyph>
+  );
+}

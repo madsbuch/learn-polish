@@ -6,13 +6,17 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::db;
 use crate::error::Result;
-use crate::models::{DialogueLine, Exercise, SessionPlan, Topic};
+use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Topic};
 
 const DEFAULT_NEW_WORDS: i64 = 12;
 const DEFAULT_NEW_SENTENCES: i64 = 3;
 const REVIEW_WORD_CAP: i64 = 20;
 const REVIEW_SENTENCE_CAP: i64 = 6;
 const DIALOGUE_GAPS: usize = 3;
+/// Cards in the memory game: this many Polish/English pairs.
+const MEMORY_PAIRS: usize = 6;
+/// Sentences in a fill-the-gaps exercise.
+const GAP_SENTENCES: usize = 4;
 /// Once an item has survived this many correct reps we stop showing multiple
 /// choice and make the learner produce it from memory.
 const TYPING_THRESHOLD: i64 = 3;
@@ -203,6 +207,8 @@ pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
             answer: w.meaning.clone(),
             options: vec![],
             tokens: vec![],
+            gaps: vec![],
+            pairs: vec![],
             pl: w.pl.clone(),
             meaning: w.meaning.clone(),
         }];
@@ -223,6 +229,8 @@ pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
                 answer: w.pl.clone(),
                 options: vec![],
                 tokens: vec![],
+                gaps: vec![],
+                pairs: vec![],
                 pl: w.pl.clone(),
                 meaning: w.meaning.clone(),
             }
@@ -250,6 +258,8 @@ pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
                 answer: s.meaning.clone(),
                 options: vec![],
                 tokens: vec![],
+                gaps: vec![],
+                pairs: vec![],
                 pl: s.pl.clone(),
                 meaning: s.meaning.clone(),
             },
@@ -277,6 +287,8 @@ pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
             answer: String::new(),
             options: vec![],
             tokens: vec![],
+            gaps: vec![],
+            pairs: vec![],
             pl: topic.title_pl.clone(),
             meaning: topic.summary.clone(),
         });
@@ -301,6 +313,14 @@ pub fn build_for(conn: &Connection, topic_id: i64) -> Result<SessionPlan> {
             break;
         }
     }
+
+    // Two formats that work on several items at once: memory cards over the
+    // words just met, then a handful of the topic's sentences with gaps.
+    let session_words: Vec<&WordRow> = new_words.iter().chain(review_words.iter()).collect();
+    exercises.extend(memory_game(&session_words, topic.id, rng));
+    let session_sentences: Vec<&SentenceRow> =
+        new_sentences.iter().chain(review_sentences.iter()).collect();
+    exercises.extend(gap_fill(conn, topic.id, &session_sentences, rng)?);
 
     exercises.extend(dialogue_gaps(&dialogue, topic.id, rng));
 
@@ -373,6 +393,8 @@ fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exerc
         answer: w.meaning.clone(),
         options: options(&w.meaning, &pool.meanings, rng),
         tokens: vec![],
+        gaps: vec![],
+        pairs: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -390,6 +412,8 @@ fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercis
         answer: w.pl.clone(),
         options: options(&w.pl, &pool.polish, rng),
         tokens: vec![],
+        gaps: vec![],
+        pairs: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -411,6 +435,8 @@ fn word_order(s: &SentenceRow) -> Exercise {
         tokens,
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
+        gaps: vec![],
+        pairs: vec![],
     }
 }
 
@@ -446,11 +472,175 @@ fn dialogue_gaps(
                 answer: line.pl.clone(),
                 options: options(&line.pl, &all_polish, rng),
                 tokens: vec![],
+                gaps: vec![],
+                pairs: vec![],
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
         })
         .collect()
+}
+
+/// The first of a gloss's alternatives: "hi, bye" becomes "hi", so a card stays short.
+fn short_gloss(meaning: &str) -> String {
+    meaning.split([',', ';']).next().unwrap_or(meaning).trim().to_string()
+}
+
+/// Face-down cards: find each Polish word's English partner.
+fn memory_game(words: &[&WordRow], topic_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+    let mut pool: Vec<&&WordRow> = words.iter().collect();
+    pool.shuffle(rng);
+    let mut pairs: Vec<Pair> = Vec::new();
+    for w in pool {
+        let en = short_gloss(&w.meaning);
+        // Two cards that read the same would make the game unwinnable.
+        if en.is_empty() || pairs.iter().any(|p| p.en.eq_ignore_ascii_case(&en) || p.pl == w.pl) {
+            continue;
+        }
+        pairs.push(Pair { pl: w.pl.clone(), en });
+        if pairs.len() == MEMORY_PAIRS {
+            break;
+        }
+    }
+    if pairs.len() < 4 {
+        return None;
+    }
+    Some(Exercise {
+        key: format!("t{topic_id}-memory"),
+        kind: "memory".into(),
+        item_kind: "set".into(),
+        item_id: topic_id,
+        is_new: false,
+        prompt: String::new(),
+        hint: String::new(),
+        answer: String::new(),
+        options: vec![],
+        tokens: vec![],
+        pl: String::new(),
+        meaning: String::new(),
+        gaps: vec![],
+        pairs,
+    })
+}
+
+/// Splits "Anna." into ("", "Anna", "."), so punctuation stays out of the gap.
+fn split_punctuation(token: &str) -> (&str, &str, &str) {
+    let start = token.find(|c: char| c.is_alphanumeric()).unwrap_or(token.len());
+    let end = token
+        .rfind(|c: char| c.is_alphanumeric())
+        .map(|i| i + token[i..].chars().next().map_or(1, char::len_utf8))
+        .unwrap_or(start);
+    (&token[..start], &token[start..end.max(start)], &token[end.max(start)..])
+}
+
+/// Takes the most useful word out of a sentence: one of the topic's own
+/// words if it has one, else its longest word.
+fn make_gap(pl: &str, meaning: &str, topic_words: &std::collections::HashSet<String>) -> Option<Gap> {
+    let tokens: Vec<&str> = pl.split_whitespace().collect();
+    if tokens.len() < 3 {
+        return None;
+    }
+    let candidates: Vec<(usize, &str)> = tokens
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (i, split_punctuation(t).1))
+        .filter(|(_, word)| word.chars().count() >= 3 && word.chars().all(char::is_alphabetic))
+        .collect();
+    let (index, _) = candidates
+        .iter()
+        .find(|(_, word)| topic_words.contains(&word.to_lowercase()))
+        .or_else(|| candidates.iter().max_by_key(|(_, word)| word.chars().count()))?;
+    let (prefix, word, suffix) = split_punctuation(tokens[*index]);
+    let mut before = tokens[..*index].join(" ");
+    if !before.is_empty() {
+        before.push(' ');
+    }
+    before.push_str(prefix);
+    let mut after = suffix.to_string();
+    if *index + 1 < tokens.len() {
+        after.push(' ');
+        after.push_str(&tokens[*index + 1..].join(" "));
+    }
+    Some(Gap { before, answer: word.to_string(), after, meaning: meaning.to_string() })
+}
+
+/// A few of the topic's sentences with a word missing from each, and a word
+/// bank of the missing words plus two that do not belong.
+fn gap_fill(
+    conn: &Connection,
+    topic_id: i64,
+    session: &[&SentenceRow],
+    rng: &mut impl rand::Rng,
+) -> Result<Option<Exercise>> {
+    let mut stmt = conn.prepare("SELECT pl, en FROM sentences WHERE topic_id = ?1 ORDER BY ord")?;
+    let mut topic_sentences: Vec<(String, String)> = stmt
+        .query_map([topic_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    drop(stmt);
+    let mut stmt = conn.prepare("SELECT pl FROM words WHERE topic_id = ?1")?;
+    let topic_words: std::collections::HashSet<String> = stmt
+        .query_map([topic_id], |r| r.get::<_, String>(0))?
+        .filter_map(|w| w.ok())
+        .filter(|w| !w.contains(' '))
+        .map(|w| w.to_lowercase())
+        .collect();
+    drop(stmt);
+
+    // Today's sentences first, then the rest of the topic in random order.
+    topic_sentences.shuffle(rng);
+    let mut ordered: Vec<(String, String)> =
+        session.iter().map(|s| (s.pl.clone(), s.meaning.clone())).collect();
+    for sentence in topic_sentences.iter() {
+        if !ordered.iter().any(|(pl, _)| pl == &sentence.0) {
+            ordered.push(sentence.clone());
+        }
+    }
+
+    let mut gaps: Vec<Gap> = Vec::new();
+    for (pl, en) in &ordered {
+        if let Some(gap) = make_gap(pl, en, &topic_words) {
+            if gaps.iter().any(|g| g.answer.eq_ignore_ascii_case(&gap.answer)) {
+                continue;
+            }
+            gaps.push(gap);
+            if gaps.len() == GAP_SENTENCES {
+                break;
+            }
+        }
+    }
+    if gaps.len() < 3 {
+        return Ok(None);
+    }
+
+    let mut decoys: Vec<String> = topic_sentences
+        .iter()
+        .flat_map(|(pl, _)| pl.split_whitespace().map(|t| split_punctuation(t).1.to_string()).collect::<Vec<_>>())
+        .filter(|w| w.chars().count() >= 3 && w.chars().all(char::is_alphabetic))
+        .filter(|w| !gaps.iter().any(|g| g.answer.eq_ignore_ascii_case(w)))
+        .collect();
+    decoys.sort();
+    decoys.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    decoys.shuffle(rng);
+    let mut bank: Vec<String> = gaps.iter().map(|g| g.answer.clone()).collect();
+    bank.extend(decoys.into_iter().take(2));
+    bank.shuffle(rng);
+
+    Ok(Some(Exercise {
+        key: format!("t{topic_id}-gaps"),
+        kind: "gapFill".into(),
+        item_kind: "set".into(),
+        item_id: topic_id,
+        is_new: false,
+        prompt: String::new(),
+        hint: String::new(),
+        answer: gaps.iter().map(|g| g.answer.as_str()).collect::<Vec<_>>().join(" | "),
+        options: bank,
+        tokens: vec![],
+        pl: String::new(),
+        meaning: String::new(),
+        gaps,
+        pairs: vec![],
+    }))
 }
 
 fn pretty_pos(code: &str) -> String {
@@ -469,7 +659,34 @@ fn pretty_pos(code: &str) -> String {
         "part" => "particle",
         "interj" => "interjection",
         "phr" => "phrase",
+        "n" => "noun",
         other => other,
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn punctuation_stays_outside_the_gap() {
+        assert_eq!(split_punctuation("Anna."), ("", "Anna", "."));
+        assert_eq!(split_punctuation("„Cześć,"), ("„", "Cześć", ","));
+        assert_eq!(split_punctuation("—"), ("—", "", ""));
+    }
+
+    #[test]
+    fn a_gap_prefers_a_topic_word() {
+        let words: std::collections::HashSet<String> = ["kawę".to_string()].into();
+        let gap = make_gap("Poproszę kawę z mlekiem.", "A coffee with milk, please.", &words).unwrap();
+        assert_eq!(gap.answer, "kawę");
+        assert_eq!(gap.before, "Poproszę ");
+        assert_eq!(gap.after, " z mlekiem.");
+        // Without a topic word, the longest word goes.
+        let gap = make_gap("Skąd pan pochodzi?", "Where are you from?", &Default::default()).unwrap();
+        assert_eq!(gap.answer, "pochodzi");
+        assert_eq!(gap.after, "?");
+        assert!(make_gap("Dzień dobry", "Hello", &Default::default()).is_none());
+    }
 }

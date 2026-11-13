@@ -66,9 +66,10 @@ pub struct Dialogue {
 #[serde(rename_all = "camelCase")]
 pub struct Exercise {
     pub key: String,
-    /// intro | recognise | produce | type | sentenceIntro | wordOrder | dialogueGap
+    /// intro | recognise | produce | type | sentenceIntro | wordOrder |
+    /// dialogueGap | gapFill | memory
     pub kind: String,
-    /// word | sentence | dialogue
+    /// word | sentence | dialogue | set (several items at once, not scheduled)
     pub item_kind: String,
     pub item_id: i64,
     pub is_new: bool,
@@ -84,6 +85,29 @@ pub struct Exercise {
     pub tokens: Vec<String>,
     pub pl: String,
     pub meaning: String,
+    /// Fill-the-gaps: the sentences, each with one word missing. The word
+    /// bank is `options`.
+    pub gaps: Vec<Gap>,
+    /// Memory cards: the Polish/English pairs to find.
+    pub pairs: Vec<Pair>,
+}
+
+/// One sentence with a word taken out of it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Gap {
+    pub before: String,
+    pub answer: String,
+    pub after: String,
+    /// The whole sentence in English.
+    pub meaning: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Pair {
+    pub pl: String,
+    pub en: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

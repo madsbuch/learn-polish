@@ -3,10 +3,9 @@ import { useState } from "react";
 import { CastPicker } from "../components/CastPicker";
 import { Cover } from "../components/Cover";
 import { FollowLyrics } from "../components/FollowLyrics";
-import { PlayerIcon } from "../components/icons";
+import { DownIcon, PlayerIcon } from "../components/icons";
 import { AddToPlaylist, useTrackExport } from "../components/TrackActions";
 import { Banner, Spinner } from "../components/ui";
-import { api, errorMessage } from "../lib/api";
 import {
   currentItem,
   cycleRepeat,
@@ -17,7 +16,6 @@ import {
   setCastVolume,
   skipTo,
   stopCasting,
-  syncLibrary,
   toggle,
   usePlayer,
 } from "../lib/player";
@@ -40,16 +38,14 @@ export function Player({
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const exporter = useTrackExport((text, error = false) => setMessage({ text, error }));
 
   if (!item) {
     return (
       <div className="scroll no-nav">
         <div className="row" style={{ marginBottom: 14 }}>
-          <button className="icon-btn" onClick={onClose} aria-label="Close the player">
-            ⌄
+          <button className="icon-btn bare" onClick={onClose} aria-label="Close the player">
+            <DownIcon />
           </button>
         </div>
         <p className="faint center">Nothing is playing.</p>
@@ -63,14 +59,14 @@ export function Player({
   return (
     <div className="scroll no-nav player-screen">
       <div className="row between" style={{ marginBottom: 10 }}>
-        <button className="icon-btn" onClick={onClose} aria-label="Close the player">
-          ⌄
+        <button className="icon-btn bare" onClick={onClose} aria-label="Close the player">
+          <DownIcon />
         </button>
         <span className="eyebrow" style={{ margin: 0 }}>
           {cast ? `Playing on ${cast.device.name}` : "Now playing"}
         </span>
         <button
-          className="icon-btn"
+          className="icon-btn bare"
           onClick={() => onOpenSong(item.song.id)}
           aria-label="Song details"
           title="Song details"
@@ -83,8 +79,8 @@ export function Player({
       {message ? <Banner kind={message.error ? "error" : "info"}>{message.text}</Banner> : null}
 
       <div className="hero now-playing">
-        <div className="center" style={{ marginBottom: 14 }}>
-          <Cover path={item.track.imagePath} size={200} />
+        <div className="player-cover">
+          <Cover path={item.track.imagePath} size={232} />
         </div>
         <div className="center">
           <div style={{ fontSize: 20, fontWeight: 760, lineHeight: 1.25 }}>{item.song.title}</div>
@@ -111,7 +107,7 @@ export function Player({
           <span>{formatTime(duration)}</span>
         </div>
 
-        <div className="row transport">
+        <div className="transport">
           <button
             className="icon-btn ghost-light"
             onClick={cycleRepeat}
@@ -168,51 +164,25 @@ export function Player({
         ) : null}
       </div>
 
-      <div className="row wrap take-actions" style={{ justifyContent: "center", marginBottom: 14 }}>
-        <button className="chip" onClick={() => setAdding(true)}>
-          + Playlist
+      <div className="player-actions">
+        <button onClick={() => setAdding(true)}>
+          <PlayerIcon.addToPlaylist />
+          <span>Playlist</span>
         </button>
         {exporter.canShare ? (
-          <button className="chip" disabled={exporter.busy !== null} onClick={() => exporter.share(item)}>
-            {exporter.busy === "share" ? <Spinner /> : "↗ Share"}
+          <button disabled={exporter.busy !== null} onClick={() => exporter.share(item)}>
+            {exporter.busy === "share" ? <Spinner /> : <PlayerIcon.share />}
+            <span>Share</span>
           </button>
         ) : null}
-        <button className="chip" disabled={exporter.busy !== null} onClick={() => exporter.save(item)}>
-          {exporter.busy === "save" ? <Spinner /> : "⬇ Save MP3"}
+        <button disabled={exporter.busy !== null} onClick={() => exporter.save(item)}>
+          {exporter.busy === "save" ? <Spinner /> : <PlayerIcon.download />}
+          <span>Save MP3</span>
         </button>
-        {confirmDelete ? (
-          <>
-            <button
-              className="chip crimson"
-              disabled={deleting}
-              onClick={async () => {
-                setDeleting(true);
-                const songId = item.song.id;
-                // Move on first, so the music does not stop with the song.
-                if (player.queue.some((entry) => entry.song.id !== songId)) next();
-                try {
-                  await api.songDelete(songId);
-                  syncLibrary(await api.songsList());
-                  setMessage({ text: `Deleted “${item.song.title}”`, error: false });
-                } catch (cause) {
-                  setMessage({ text: errorMessage(cause), error: true });
-                } finally {
-                  setDeleting(false);
-                  setConfirmDelete(false);
-                }
-              }}
-            >
-              {deleting ? <Spinner /> : "Yes, delete this song"}
-            </button>
-            <button className="chip" onClick={() => setConfirmDelete(false)}>
-              Keep it
-            </button>
-          </>
-        ) : (
-          <button className="chip" onClick={() => setConfirmDelete(true)}>
-            🗑 Delete song
-          </button>
-        )}
+        <button onClick={() => onOpenSong(item.song.id)}>
+          <span style={{ fontSize: 20, lineHeight: "22px" }}>⋯</span>
+          <span>Song</span>
+        </button>
       </div>
 
       <div className="segmented" style={{ marginBottom: 12 }}>

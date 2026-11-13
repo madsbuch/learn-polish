@@ -72,12 +72,14 @@ export type ExerciseKind =
   | "type"
   | "sentenceIntro"
   | "wordOrder"
-  | "dialogueGap";
+  | "dialogueGap"
+  | "gapFill"
+  | "memory";
 
 export interface Exercise {
   key: string;
   kind: ExerciseKind;
-  itemKind: "word" | "sentence" | "dialogue";
+  itemKind: "word" | "sentence" | "dialogue" | "set";
   itemId: number;
   isNew: boolean;
   prompt: string;
@@ -87,6 +89,22 @@ export interface Exercise {
   tokens: string[];
   pl: string;
   meaning: string;
+  /** Fill-the-gaps: sentences with one word missing; the bank is `options`. */
+  gaps: Gap[];
+  /** Memory cards: the Polish/English pairs to find. */
+  pairs: Pair[];
+}
+
+export interface Gap {
+  before: string;
+  answer: string;
+  after: string;
+  meaning: string;
+}
+
+export interface Pair {
+  pl: string;
+  en: string;
 }
 
 export interface SessionPlan {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { listen } from "@tauri-apps/api/event";
 
 import { Cover } from "../components/Cover";
-import { PlayerIcon } from "../components/icons";
+import { BackIcon, PlayerIcon } from "../components/icons";
 import { TitleWithInfo } from "../components/Info";
 import { Lyrics } from "../components/Lyrics";
 import { AddToPlaylist, useTrackExport } from "../components/TrackActions";
@@ -124,7 +124,7 @@ export function Music({
     const song = songs?.find((entry) => entry.id === view.songId);
     return (
       <div className="scroll">
-        <BackHeader title={song?.title ?? "Song"} onBack={back} />
+        <BackHeader title="Song" onBack={back} />
         {error ? <Banner kind="error">{error}</Banner> : null}
         {notice ? <Banner kind="info">{notice}</Banner> : null}
         {song ? (
@@ -201,7 +201,7 @@ export function Music({
           }
         />
         <button
-          className="btn primary small"
+          className="btn primary compact"
           onClick={() => setView({ kind: "compose" })}
           disabled={!ready}
         >
@@ -260,9 +260,9 @@ function BackHeader({ title, onBack, action }: { title: string; onBack: () => vo
   return (
     <div className="row" style={{ marginBottom: 14 }}>
       <button className="icon-btn" onClick={onBack} aria-label="Back to music">
-        ‹
+        <BackIcon />
       </button>
-      <h1 className="grow" style={{ marginBottom: 0, fontSize: 21 }}>
+      <h1 className="grow ellipsis" style={{ marginBottom: 0, fontSize: 20 }}>
         {title}
       </h1>
       {action}
@@ -274,11 +274,11 @@ function PlayButtons({ queue }: { queue: QueueItem[] }) {
   if (queue.length === 0) return null;
   return (
     <div className="row" style={{ gap: 8, marginBottom: 14 }}>
-      <button className="btn primary small grow" onClick={() => playQueue(queue, 0)}>
+      <button className="btn primary compact grow" onClick={() => playQueue(queue, 0)}>
         <PlayerIcon.play size={16} /> Play
       </button>
       <button
-        className="btn ghost small grow"
+        className="btn ghost compact grow"
         onClick={() => playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })}
       >
         <PlayerIcon.shuffle /> Shuffle
@@ -305,7 +305,7 @@ function TrackRow({
     <div className="track-row" data-current={current}>
       <button className="list-row grow" onClick={() => (current ? toggle() : onPlay())}>
         <span className="cover-wrap">
-          <Cover path={item.track.imagePath} size={44} />
+          <Cover path={item.track.imagePath} size={48} />
           {current ? (
             <span className="cover-badge">
               {player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
@@ -392,7 +392,7 @@ function SongList({
       {selecting ? (
         <div className="row" style={{ gap: 8, marginBottom: 14 }}>
           <button
-            className="btn ghost small"
+            className="btn ghost compact"
             onClick={() =>
               setSelected(selected.size === songs.length ? new Set() : new Set(songs.map((s) => s.id)))
             }
@@ -400,7 +400,7 @@ function SongList({
             {selected.size === songs.length ? "Select none" : "Select all"}
           </button>
           <span className="grow small faint center">{selected.size} selected</span>
-          <button className="btn ghost small" onClick={stopSelecting}>
+          <button className="btn ghost compact" onClick={stopSelecting}>
             Done
           </button>
         </div>
@@ -408,11 +408,11 @@ function SongList({
         <div className="row" style={{ gap: 8, marginBottom: 14 }}>
           {queue.length > 0 ? (
             <>
-              <button className="btn primary small grow" onClick={() => playQueue(queue, 0)}>
+              <button className="btn primary compact grow" onClick={() => playQueue(queue, 0)}>
                 <PlayerIcon.play size={16} /> Play
               </button>
               <button
-                className="btn ghost small grow"
+                className="btn ghost compact grow"
                 onClick={() =>
                   playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })
                 }
@@ -423,7 +423,7 @@ function SongList({
           ) : (
             <span className="grow" />
           )}
-          <button className="btn ghost small" onClick={() => setSelecting(true)}>
+          <button className="btn ghost compact" onClick={() => setSelecting(true)}>
             Select
           </button>
         </div>
@@ -444,7 +444,7 @@ function SongList({
                 <span className="check" data-checked={checked}>
                   {checked ? "✓" : ""}
                 </span>
-                <Cover path={song.tracks[0]?.imagePath ?? null} size={44} />
+                <Cover path={song.tracks[0]?.imagePath ?? null} size={48} />
                 <span className="grow" style={{ minWidth: 0 }}>
                   <span className="pl ellipsis">{song.title}</span>
                   <span className="tr ellipsis">„{song.chorusPl}”</span>
@@ -457,7 +457,7 @@ function SongList({
             // Still being made, or failed: no take to play yet.
             return (
               <button key={song.id} className="list-row" onClick={() => onOpen(song.id)}>
-                <Cover path={null} size={44} />
+                <Cover path={null} size={48} />
                 <span className="grow" style={{ minWidth: 0 }}>
                   <span className="pl ellipsis">{song.title}</span>
                   <span className="tr">
@@ -476,7 +476,7 @@ function SongList({
               subtitle={`„${song.chorusPl}” · ${formatTime(item.track.duration)}`}
               onPlay={() => playQueue(queue, index)}
               trailing={
-                <button className="icon-btn" onClick={() => onOpen(song.id)} aria-label={`More about ${song.title}`}>
+                <button className="icon-btn bare" onClick={() => onOpen(song.id)} aria-label={`More about ${song.title}`}>
                   ⋯
                 </button>
               }
@@ -522,9 +522,11 @@ function SongPage({
   onMessage: (message: string, isError?: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirm, setConfirm] = useState<"song" | number | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
   const exporter = useTrackExport(onMessage);
+  const player = usePlayer();
+  const playingId = currentItem(player)?.track.id ?? null;
   const takes: QueueItem[] = song.tracks.map((track) => ({ song, track }));
 
   async function act(action: () => Promise<unknown>, after: () => void = onChanged) {
@@ -536,30 +538,38 @@ function SongPage({
       onMessage(errorMessage(cause), true);
     } finally {
       setBusy(false);
+      setConfirm(null);
     }
+  }
+
+  function play(item: QueueItem) {
+    if (item.track.id === playingId) {
+      toggle();
+      return;
+    }
+    const queue = libraryQueue(library, item.track);
+    const start = queue.findIndex((entry) => entry.track.id === item.track.id);
+    playQueue(start >= 0 ? queue : [item], Math.max(0, start));
   }
 
   return (
     <>
-      <div className="row" style={{ alignItems: "flex-start", marginBottom: 14 }}>
-        <Cover path={song.tracks[0]?.imagePath ?? null} size={84} />
-        <div className="grow">
-          <div className="selectable" style={{ fontSize: 16, fontWeight: 700 }}>
-            „{song.chorusPl}”
-          </div>
+      <div className="song-hero">
+        <Cover path={song.tracks[0]?.imagePath ?? null} size={112} />
+        <div className="grow" style={{ minWidth: 0 }}>
+          <div className="song-hero-title">{song.title}</div>
+          <div className="selectable song-hero-chorus">„{song.chorusPl}”</div>
           <div className="small faint">{song.chorusEn}</div>
-          <div className="tiny faint" style={{ marginTop: 6 }}>
-            {song.style}
-          </div>
         </div>
       </div>
+      <p className="tiny faint song-style">{song.style}</p>
 
       {song.status === "failed" ? (
         <>
           {song.error ? <Banner kind="error">{song.error}</Banner> : null}
           <button
             className="btn primary block"
-            style={{ marginBottom: 14 }}
+            style={{ marginBottom: 16 }}
             disabled={busy}
             onClick={() => act(() => api.songRetry(song.id))}
           >
@@ -573,78 +583,116 @@ function SongPage({
 
       {takes.length > 0 ? (
         <>
-          <h3 style={{ margin: "4px 0 8px" }}>Takes</h3>
-          <div className="card flush" style={{ marginBottom: 16 }}>
-            {takes.map((item) => (
-              <div key={item.track.id} className="take-block">
-                <TrackRow
-                  item={item}
-                  subtitle={`Take ${item.track.ord + 1} · ${formatTime(item.track.duration)} · played ${item.track.playCount}×`}
-                  onPlay={() => {
-                    const queue = libraryQueue(library, item.track);
-                    const start = queue.findIndex((entry) => entry.track.id === item.track.id);
-                    playQueue(start >= 0 ? queue : [item], Math.max(0, start));
-                  }}
-                />
-                <div className="row wrap take-actions">
-                  <button className="chip" onClick={() => setAdding(item.track.id)}>
-                    + Playlist
+          <h3 className="section-title">Takes</h3>
+          <div className="card flush" style={{ marginBottom: 18 }}>
+            {takes.map((item) => {
+              const current = item.track.id === playingId;
+              return (
+                <div key={item.track.id} className="take-row" data-current={current}>
+                  <button
+                    className="take-play"
+                    onClick={() => play(item)}
+                    aria-label={current && player.playing ? "Pause" : `Play take ${item.track.ord + 1}`}
+                  >
+                    {current && player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
+                  </button>
+                  <button className="grow take-label" onClick={() => play(item)}>
+                    <span className="pl">Take {item.track.ord + 1}</span>
+                    <span className="tr">
+                      {formatTime(item.track.duration)} · played {item.track.playCount}×
+                    </span>
+                  </button>
+                  <button
+                    className="icon-btn bare"
+                    onClick={() => setAdding(item.track.id)}
+                    aria-label="Add to playlist"
+                    title="Add to playlist"
+                  >
+                    <PlayerIcon.addToPlaylist />
                   </button>
                   {exporter.canShare ? (
                     <button
-                      className="chip"
+                      className="icon-btn bare"
                       disabled={exporter.busy !== null}
                       onClick={() => exporter.share(item)}
+                      aria-label="Share"
+                      title="Share"
                     >
-                      {exporter.busy === "share" ? <Spinner /> : "↗ Share"}
+                      {exporter.busy === "share" ? <Spinner /> : <PlayerIcon.share />}
                     </button>
                   ) : null}
                   <button
-                    className="chip"
+                    className="icon-btn bare"
                     disabled={exporter.busy !== null}
                     onClick={() => exporter.save(item)}
+                    aria-label="Save MP3"
+                    title="Save MP3"
                   >
-                    {exporter.busy === "save" ? <Spinner /> : "⬇ Save MP3"}
+                    {exporter.busy === "save" ? <Spinner /> : <PlayerIcon.download />}
                   </button>
-                  {takes.length > 1 ? (
-                    <button
-                      className="chip"
-                      disabled={busy}
-                      onClick={() => act(() => api.songTrackDelete(item.track.id))}
-                    >
-                      Remove take
-                    </button>
-                  ) : null}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : null}
 
-      <h3 style={{ margin: "4px 0 8px" }}>Lyrics</h3>
-      <div style={{ marginBottom: 16 }}>
+      <h3 className="section-title">Lyrics</h3>
+      <div style={{ marginBottom: 22 }}>
         <Lyrics sections={song.sections} />
       </div>
 
-      {confirmDelete ? (
-        <div className="row">
-          <button
-            className="btn danger grow"
-            disabled={busy}
-            onClick={() => act(() => api.songDelete(song.id), onDeleted)}
-          >
-            Yes, delete the song
-          </button>
-          <button className="btn ghost" onClick={() => setConfirmDelete(false)}>
-            Cancel
-          </button>
+      <h3 className="section-title">Manage</h3>
+      <div className="card flush" style={{ marginBottom: 8 }}>
+        {takes.length > 1
+          ? takes.map((item) => (
+              <div key={item.track.id} className="manage-row">
+                <span className="grow small">Take {item.track.ord + 1}</span>
+                {confirm === item.track.id ? (
+                  <>
+                    <button className="btn ghost small" onClick={() => setConfirm(null)}>
+                      Keep
+                    </button>
+                    <button
+                      className="btn danger small"
+                      disabled={busy}
+                      onClick={() => act(() => api.songTrackDelete(item.track.id))}
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn ghost small" onClick={() => setConfirm(item.track.id)}>
+                    Remove take
+                  </button>
+                )}
+              </div>
+            ))
+          : null}
+        <div className="manage-row">
+          <span className="grow small">
+            {confirm === "song" ? "Delete the song and all its takes?" : "The whole song"}
+          </span>
+          {confirm === "song" ? (
+            <>
+              <button className="btn ghost small" onClick={() => setConfirm(null)}>
+                Keep
+              </button>
+              <button
+                className="btn danger small"
+                disabled={busy}
+                onClick={() => act(() => api.songDelete(song.id), onDeleted)}
+              >
+                {busy ? <Spinner /> : "Delete"}
+              </button>
+            </>
+          ) : (
+            <button className="btn danger small" onClick={() => setConfirm("song")}>
+              Delete song
+            </button>
+          )}
         </div>
-      ) : (
-        <button className="btn danger block" onClick={() => setConfirmDelete(true)}>
-          Delete song
-        </button>
-      )}
+      </div>
 
       {adding !== null ? (
         <AddToPlaylist trackId={adding} onClose={() => setAdding(null)} onDone={(text) => onMessage(text)} />

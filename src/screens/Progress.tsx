@@ -1,3 +1,4 @@
+import { BackIcon } from "../components/icons";
 import { TopicList } from "../components/TopicList";
 import { Bar, Stat } from "../components/ui";
 import type { Stats, TopicProgress } from "../lib/types";
@@ -32,7 +33,7 @@ export function Progress({
     <div className="scroll no-nav">
       <div className="row" style={{ marginBottom: 14 }}>
         <button className="icon-btn" onClick={onBack} aria-label="Back">
-          ‹
+          <BackIcon />
         </button>
         <div className="grow">
           <h1 style={{ marginBottom: 0, fontSize: 21 }}>Progress</h1>

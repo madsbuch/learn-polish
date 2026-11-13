@@ -162,9 +162,22 @@ mod integration {
             "the conversation is also drilled"
         );
 
+        // The formats that work on several items at once.
+        let memory = plan.exercises.iter().find(|e| e.kind == "memory").expect("memory cards");
+        assert!(memory.pairs.len() >= 4);
+        let gaps = plan.exercises.iter().find(|e| e.kind == "gapFill").expect("fill the gaps");
+        assert!(gaps.gaps.len() >= 3);
+        for gap in &gaps.gaps {
+            assert!(gaps.options.contains(&gap.answer), "the bank holds every answer");
+            let sentence = format!("{}{}{}", gap.before, gap.answer, gap.after);
+            assert!(!gap.answer.is_empty() && sentence.split_whitespace().count() >= 3, "{sentence}");
+        }
+        assert!(gaps.options.len() > gaps.gaps.len(), "the bank has decoys");
+
         // Every multiple-choice exercise offers its own answer.
         for exercise in &plan.exercises {
-            if !exercise.options.is_empty() {
+            // A gap bank holds several answers; it is checked below.
+            if !exercise.options.is_empty() && exercise.kind != "gapFill" {
                 assert!(
                     exercise.options.contains(&exercise.answer),
                     "{} lost its answer",

@@ -641,7 +641,7 @@ export function SettingsScreen({
         )}
       </div>
 
-      <p className="center tiny faint">Polski · 2000 words · 200 sentences · 10 conversations</p>
+      <p className="center tiny faint">Polski · learn Polish from English</p>
     </div>
   );
 }

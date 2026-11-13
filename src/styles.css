@@ -195,7 +195,7 @@ button:focus-visible {
 }
 
 .scroll.no-nav {
-  padding-bottom: calc(var(--safe-bottom) + 24px);
+  padding-bottom: calc(var(--safe-bottom) + 48px);
 }
 
 .nav {
@@ -205,8 +205,10 @@ button:focus-visible {
   right: 0;
   height: calc(var(--nav-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
+  /* One equal column per tab, however many tabs there are. */
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   padding-top: 6px;
   background: var(--nav-bg);
   backdrop-filter: saturate(1.4) blur(18px);
@@ -221,7 +223,7 @@ button:focus-visible {
   justify-content: center;
   gap: 3px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.01em;
   transition: color 0.15s;
@@ -229,7 +231,7 @@ button:focus-visible {
 .nav button .glyph {
   display: grid;
   place-items: center;
-  width: 46px;
+  width: 56px;
   height: 30px;
   border-radius: 999px;
   transition: background 0.18s, transform 0.18s;
@@ -422,6 +424,18 @@ p {
   padding: 9px 14px;
   font-size: 13px;
   border-radius: 11px;
+}
+/* Toolbar-sized: for rows of actions above lists. */
+.btn.compact {
+  padding: 8px 14px;
+  min-height: 38px;
+  font-size: 13.5px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+.btn.compact svg {
+  width: 17px;
+  height: 17px;
 }
 
 .icon-btn {
@@ -671,6 +685,112 @@ p {
 .token.used {
   opacity: 0.25;
   pointer-events: none;
+}
+
+/* ------------------------------------------------------------ fill the gaps */
+.gap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.gap-sentence {
+  margin: 0;
+  padding: 14px 16px;
+}
+.gap-line {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 2;
+  margin-bottom: 2px;
+}
+.gap-slot {
+  display: inline-block;
+  min-width: 72px;
+  padding: 0 10px;
+  margin: 0 2px;
+  border-radius: 9px;
+  border: 1.5px dashed var(--line);
+  line-height: 1.7;
+  font: inherit;
+  text-align: center;
+  vertical-align: baseline;
+}
+.gap-slot[data-state="active"] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+.gap-slot[data-state="filled"] {
+  border-style: solid;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+.gap-slot[data-state="right"] {
+  border-style: solid;
+  border-color: var(--ok);
+  background: rgba(34, 197, 94, 0.14);
+}
+.gap-slot[data-state="wrong"] {
+  border-style: solid;
+  border-color: var(--bad);
+  background: rgba(244, 63, 94, 0.12);
+  text-decoration: line-through;
+}
+.gap-correction {
+  color: var(--ok);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+/* ------------------------------------------------------------ memory cards */
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.memory-card {
+  aspect-ratio: 1 / 0.82;
+  border-radius: 14px;
+  padding: 8px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line);
+  transition: transform 0.15s, background 0.2s, border-color 0.2s;
+}
+.memory-card[data-lang="en"] {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.memory-card[data-state="down"] {
+  background: linear-gradient(135deg, var(--brand) 0%, #5b3ff0 100%);
+  border-color: transparent;
+}
+.memory-back {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 22px;
+  font-weight: 800;
+}
+.memory-card[data-state="open"] {
+  border-color: var(--brand);
+}
+.memory-card[data-state="miss"] {
+  border-color: var(--bad);
+  animation: shake 0.3s;
+}
+.memory-card[data-state="found"] {
+  border-color: var(--ok);
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--text);
+}
+@keyframes shake {
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
 }
 
 .answer-slot {
@@ -1150,10 +1270,27 @@ label.field > span {
   accent-color: #fff;
 }
 
+/* Five buttons spread across the card; none of them may shrink, or the
+   round ones turn into ovals on a narrow phone or with large text. */
 .transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 8px auto 0;
+  max-width: 330px;
+}
+.transport > * {
+  flex: none;
+}
+.player-cover {
+  display: flex;
   justify-content: center;
-  gap: 22px;
-  margin-top: 8px;
+  margin-bottom: 16px;
+}
+.player-cover .cover {
+  width: min(232px, 62vw) !important;
+  height: min(232px, 62vw) !important;
 }
 .play-btn {
   width: 58px;
@@ -1217,6 +1354,126 @@ label.field > span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* An icon button without its box, for the ends of list rows. */
+.icon-btn.bare {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+.icon-btn.bare svg {
+  width: 20px;
+  height: 20px;
+}
+
+.section-title {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------ song page */
+.song-hero {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.song-hero-title {
+  font-size: 21px;
+  font-weight: 780;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+.song-hero-chorus {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.song-style {
+  margin: 0 0 18px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.take-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.take-row:last-child {
+  border-bottom: none;
+}
+.take-row[data-current="true"] {
+  background: var(--brand-tint);
+}
+.take-play {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--brand);
+  color: #fff;
+}
+.take-label {
+  text-align: left;
+  min-width: 0;
+  padding: 2px 6px;
+}
+.take-label .pl {
+  display: block;
+  font-weight: 650;
+  font-size: 15px;
+}
+.take-label .tr {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.manage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.manage-row:last-child {
+  border-bottom: none;
+}
+
+/* ------------------------------------------------------------ player */
+.player-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+  margin: 2px 0 16px;
+}
+.player-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.player-actions button:active {
+  background: var(--tint);
+}
+
 .check {
   flex: none;
   width: 22px;
@@ -1247,23 +1504,6 @@ label.field > span {
   box-shadow: var(--shadow);
 }
 
-.take-block .track-row {
-  border-bottom: none;
-}
-.take-block + .take-block {
-  border-top: 1px solid var(--line-soft);
-}
-.take-actions {
-  gap: 6px;
-  padding: 0 16px 13px 72px;
-}
-.take-actions .chip {
-  cursor: pointer;
-  padding: 6px 11px;
-}
-.player-screen .take-actions {
-  padding: 0;
-}
 .icon-btn.small {
   width: 32px;
   height: 32px;
@@ -1273,34 +1513,13 @@ label.field > span {
   opacity: 0.35;
 }
 
-.song {
-  border-bottom: 1px solid var(--line-soft);
-}
-.song:last-child {
-  border-bottom: none;
-}
-.song .list-row {
-  border-bottom: none;
-}
-.song[data-current="true"] {
-  background: var(--brand-tint);
-}
-.takes {
-  gap: 6px;
-  padding: 0 16px 13px 76px;
-}
-.chip.take,
 .chip.preset {
   cursor: pointer;
   padding: 6px 11px;
 }
-.chip.take[data-active="true"],
 .chip.preset[data-active="true"] {
   background: var(--brand);
   color: #fff;
-}
-.song-detail {
-  padding: 2px 16px 16px;
 }
 
 .lyrics {

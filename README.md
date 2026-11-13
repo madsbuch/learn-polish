@@ -32,7 +32,11 @@ Each day the app serves one conversation plus everything attached to it:
 2. **Meet new words** from that conversation's topic, then recognise them.
 3. **Review whatever is due** from earlier days, mixed in.
 4. **Build sentences** from shuffled words.
-5. **Fill gaps in the conversation** you just read.
+5. **Memory cards** — turn the cards over two at a time and pair each Polish
+   word with its English meaning.
+6. **Fill the gaps** — a few of the topic's sentences, each missing a word,
+   filled from a word bank.
+7. **Fill gaps in the conversation** you just read.
 
 Finish it and the streak advances; tomorrow brings the next conversation. The
 ten conversations rotate, so the vocabulary keeps cycling while the spaced
@@ -276,7 +280,8 @@ src/                       React UI
   lib/api.ts               typed wrappers over the Tauri commands
   lib/useAiStream.ts       accumulates a streamed answer from Tauri events
   components/Markdown.tsx  markdown to React elements, no HTML in between
-  screens/Session.tsx      the practice flow (eight exercise shapes)
+  screens/Session.tsx      the practice flow (ten exercise shapes)
+  components/SetExercises.tsx  memory cards and fill-the-gaps
   screens/Exercises.tsx    the home tab: today's check-in, programmes, the course
   screens/Search.tsx       search every word and sentence
   screens/Music.tsx        the music library: songs, playlists, a song's page

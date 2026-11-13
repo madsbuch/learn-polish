@@ -39,6 +39,8 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
         "dialogueGap" => 10,
         "wordOrder" => 12,
         "type" => 14,
+        "memory" => 12,
+        "gapFill" => 16,
         _ => 5,
     };
     base + if is_new { 2 } else { 0 }

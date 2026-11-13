@@ -1,3 +1,4 @@
+import { BackIcon } from "../components/icons";
 import { useEffect, useMemo, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
@@ -86,7 +87,7 @@ export function TopicDetail({
     <div className="scroll no-nav">
       <div className="row" style={{ marginBottom: 14 }}>
         <button className="icon-btn" onClick={onBack} aria-label="Back">
-          ‹
+          <BackIcon />
         </button>
         <div className="grow">
           <h1 style={{ marginBottom: 0, fontSize: 21 }}>{progress.topic.titlePl}</h1>

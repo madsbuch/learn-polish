@@ -1,3 +1,4 @@
+import { BackIcon } from "../components/icons";
 import { useEffect, useState } from "react";
 
 import { Info } from "../components/Info";
@@ -82,7 +83,7 @@ export function SongComposer({
     <div className="scroll">
       <div className="row" style={{ marginBottom: 12 }}>
         <button className="icon-btn" onClick={onCancel} aria-label="Back to music">
-          ‹
+          <BackIcon />
         </button>
         <h1 className="grow" style={{ marginBottom: 0, fontSize: 22 }}>
           {draft ? "Your song" : "New song"}
