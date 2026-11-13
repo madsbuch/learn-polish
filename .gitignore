@@ -18,3 +18,8 @@ src-tauri/gen
 *.jks
 *.keystore
 key.properties
+
+# Gradle output of local Tauri plugins
+src-tauri/plugins/*/android/build/
+src-tauri/plugins/*/android/.gradle/
+src-tauri/plugins/*/android/.tauri/

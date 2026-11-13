@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capabilities for the main window.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "opener:default",
@@ -20,6 +22,7 @@
     "notification:allow-remove-active",
     "notification:allow-create-channel",
     "notification:allow-list-channels",
-    "notification:allow-register-action-types"
+    "notification:allow-register-action-types",
+    "songplayer:default"
   ]
 }

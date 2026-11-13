@@ -127,6 +127,13 @@ export const PlayerIcon = {
       <path d="M20 13v2a4 4 0 0 1-4 4H4" />
     </Glyph>
   ),
+  speaker: () => (
+    <Glyph>
+      <rect x="5" y="2.5" width="14" height="19" rx="2.5" />
+      <circle cx="12" cy="14.5" r="3.5" />
+      <circle cx="12" cy="7" r="1" />
+    </Glyph>
+  ),
   shuffle: () => (
     <Glyph>
       <path d="M16 3h5v5" />

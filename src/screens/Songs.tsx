@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import { CastPicker } from "../components/CastPicker";
 import { PlayerIcon } from "../components/icons";
 import { Banner, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
@@ -14,6 +15,8 @@ import {
   playQueue,
   previous,
   seek,
+  setCastVolume,
+  stopCasting,
   syncLibrary,
   toggle,
   usePlayer,
@@ -48,6 +51,7 @@ export function Songs({
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [openSong, setOpenSong] = useState<number | null>(null);
+  const [picking, setPicking] = useState(false);
   const player = usePlayer();
   const now = currentItem(player);
 
@@ -120,7 +124,9 @@ export function Songs({
         </Banner>
       ) : null}
 
-      {now ? <NowPlaying item={now} /> : null}
+      {player.error ? <Banner kind="error">{player.error}</Banner> : null}
+
+      {now ? <NowPlaying item={now} onPickSpeaker={() => setPicking(true)} /> : null}
 
       {queue.length > 0 ? (
         <div className="row" style={{ gap: 8, marginBottom: 14 }}>
@@ -135,6 +141,16 @@ export function Songs({
           >
             <PlayerIcon.shuffle /> Shuffle
           </button>
+          {!player.cast ? (
+            <button
+              className="btn ghost small"
+              onClick={() => setPicking(true)}
+              aria-label="Play on a speaker"
+              title="Play on a speaker"
+            >
+              <PlayerIcon.speaker />
+            </button>
+          ) : null}
           <button
             className="btn ghost small"
             onClick={cycleRepeat}
@@ -182,6 +198,8 @@ export function Songs({
           ))}
         </div>
       )}
+
+      {picking ? <CastPicker fallbackQueue={queue} onClose={() => setPicking(false)} /> : null}
     </div>
   );
 }
@@ -203,8 +221,9 @@ function Cover({ path, size }: { path: string | null; size: number }) {
   );
 }
 
-function NowPlaying({ item }: { item: QueueItem }) {
+function NowPlaying({ item, onPickSpeaker }: { item: QueueItem; onPickSpeaker: () => void }) {
   const player = usePlayer();
+  const cast = player.cast;
   const duration = player.duration || item.track.duration;
   return (
     <div className="hero now-playing">
@@ -212,7 +231,7 @@ function NowPlaying({ item }: { item: QueueItem }) {
         <Cover path={item.track.imagePath} size={72} />
         <div className="grow">
           <div className="eyebrow" style={{ marginBottom: 3 }}>
-            Now playing · take {item.track.ord + 1}
+            {cast ? `On ${cast.device.name}` : "Now playing"} · take {item.track.ord + 1}
           </div>
           <div style={{ fontSize: 18, fontWeight: 750, lineHeight: 1.25 }}>
             {item.song.title}
@@ -254,6 +273,36 @@ function NowPlaying({ item }: { item: QueueItem }) {
           <PlayerIcon.next />
         </button>
       </div>
+
+      {cast ? (
+        <div className="cast-bar">
+          <span aria-hidden="true">🔊</span>
+          {cast.detached ? (
+            <span className="grow small">{cast.device.name} is playing something else.</span>
+          ) : cast.volume >= 0 ? (
+            <input
+              className="grow"
+              type="range"
+              min={0}
+              max={100}
+              value={cast.volume}
+              onChange={(event) => setCastVolume(Number(event.target.value))}
+              aria-label={`Volume on ${cast.device.name}`}
+            />
+          ) : (
+            <span className="grow small">{cast.device.name}</span>
+          )}
+          <button className="cast-chip" onClick={() => void stopCasting()}>
+            Stop
+          </button>
+        </div>
+      ) : (
+        <div className="row" style={{ justifyContent: "center", marginTop: 12 }}>
+          <button className="cast-chip" onClick={onPickSpeaker}>
+            <PlayerIcon.speaker /> Play on a speaker
+          </button>
+        </div>
+      )}
     </div>
   );
 }

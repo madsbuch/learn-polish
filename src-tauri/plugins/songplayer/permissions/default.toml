@@ -1,0 +1,20 @@
+[default]
+description = "Everything the app's song player uses."
+permissions = [
+  "allow-set-queue",
+  "allow-play",
+  "allow-pause",
+  "allow-toggle",
+  "allow-next",
+  "allow-previous",
+  "allow-seek-to",
+  "allow-skip-to",
+  "allow-set-repeat",
+  "allow-stop",
+  "allow-get-state",
+  "allow-remote-start",
+  "allow-remote-stop",
+  "allow-multicast",
+  "allow-register-listener",
+  "allow-remove-listener",
+]

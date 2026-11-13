@@ -7,6 +7,8 @@ import type {
   AudioClip,
   CacheProgress,
   CataloguePage,
+  CastDevice,
+  CastState,
   ChatMessage,
   Dialogue,
   DraftRequest,
@@ -95,6 +97,14 @@ export const api = {
   songDelete: (songId: number) => invoke<void>("song_delete", { songId }),
   songTrackDelete: (trackId: number) => invoke<void>("song_track_delete", { trackId }),
   songTrackPlayed: (trackId: number) => invoke<void>("song_track_played", { trackId }),
+
+  castDiscover: (address?: string) => invoke<CastDevice[]>("cast_discover", { address }),
+  castStart: (device: CastDevice, trackIds: number[], index: number, repeat: string) =>
+    invoke<CastState>("cast_start", { device, trackIds, index, repeat }),
+  castCommand: (action: string, value?: number) => invoke<void>("cast_command", { action, value }),
+  castSetRepeat: (repeat: string) => invoke<void>("cast_set_repeat", { repeat }),
+  castState: () => invoke<CastState | null>("cast_state"),
+  castControlInfo: () => invoke<{ port: number; token: string }>("cast_control_info"),
 };
 
 /** Tauri rejects with a plain string built from our Error::Display impl. */

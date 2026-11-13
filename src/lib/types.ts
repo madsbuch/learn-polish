@@ -291,3 +291,34 @@ export interface DraftRequest {
   previous?: SongDraft;
   feedback?: string;
 }
+
+// ------------------------------------------------------------------ casting
+
+/** A Sonos room or group. */
+export interface CastDevice {
+  id: string;
+  name: string;
+  baseUrl: string;
+}
+
+export interface CastItem {
+  trackId: number;
+  title: string;
+  artist: string;
+}
+
+export interface CastState {
+  device: CastDevice;
+  items: CastItem[];
+  index: number;
+  trackId: number | null;
+  playing: boolean;
+  transport: string;
+  position: number;
+  duration: number;
+  /** 0–100, or -1 when the speaker did not say. */
+  volume: number;
+  repeat: string;
+  /** The speaker has moved on to something that is not ours. */
+  detached: boolean;
+}

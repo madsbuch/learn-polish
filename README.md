@@ -99,8 +99,19 @@ tab makes them to order:
   from disk, offline, for good.
 - **Built for repetition:** play all, shuffle, repeat all / one, play counts,
   and a mini player above the tab bar so the music keeps going while you
-  practise. Lock-screen controls use the Media Session API where the webview
-  supports it.
+  practise.
+- **The phone's own player:** on Android, songs play through a native Media3
+  service (`src-tauri/plugins/songplayer`), not the web view. That gives the
+  lock screen and notification controls, headphone and Bluetooth buttons, a
+  pause when headphones are unplugged, and playback with the screen off.
+- **Sonos:** *Play on a speaker* finds Sonos rooms and groups on the Wi-Fi
+  (or takes an IP address) and moves the queue there. No Sonos account is
+  involved: the app serves the downloaded songs over HTTP on the local
+  network and loads them into the speaker's queue over UPnP
+  (`src-tauri/src/cast.rs`), so Sonos handles next and repeat itself and the
+  songs show up in the Sonos app too. While a speaker plays, the phone's lock
+  screen, notification and volume keys control the speaker. The phone has to
+  stay on the same Wi-Fi, because the speaker streams each song from it.
 
 ## Hearing Polish
 

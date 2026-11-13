@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-multicast"
+description = "Enables the multicast command without any pre-configured scope."
+commands.allow = ["multicast"]
+
+[[permission]]
+identifier = "deny-multicast"
+description = "Denies the multicast command without any pre-configured scope."
+commands.deny = ["multicast"]

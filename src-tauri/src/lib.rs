@@ -1,4 +1,5 @@
 mod ai;
+mod cast;
 mod commands;
 mod content;
 mod db;
@@ -21,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_songplayer::init())
         .setup(|app| {
             let path = app
                 .path()
@@ -30,6 +32,7 @@ pub fn run() {
 
             let connection = db::open(&path).map_err(|e| e.to_string())?;
             app.manage(Db(Mutex::new(connection)));
+            app.manage(cast::CastSessions::default());
             songs::resume_pending(app.handle());
             Ok(())
         })
@@ -77,6 +80,12 @@ pub fn run() {
             songs::song_delete,
             songs::song_track_delete,
             songs::song_track_played,
+            cast::cast_discover,
+            cast::cast_start,
+            cast::cast_command,
+            cast::cast_set_repeat,
+            cast::cast_state,
+            cast::cast_control_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");

@@ -5,6 +5,7 @@ import { MiniPlayer } from "./components/MiniPlayer";
 import { Banner, Loading } from "./components/ui";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
+import { resumeCast } from "./lib/player";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
   SessionPlan,
@@ -68,6 +69,8 @@ export default function App() {
         const loaded = await api.init();
         if (cancelled) return;
         setSettings(loaded);
+        // A speaker may still be playing from before a reload.
+        resumeCast();
         await refresh();
         // Re-arm the reminder on every launch: the OS drops scheduled
         // notifications after a reboot or an app update.

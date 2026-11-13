@@ -22,7 +22,11 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
         )}
         <span className="grow" style={{ minWidth: 0 }}>
           <span className="mini-title">{item.song.title}</span>
-          <span className="mini-sub">„{item.song.chorusPl}”</span>
+          {player.cast ? (
+            <span className="mini-cast">🔊 On {player.cast.device.name}</span>
+          ) : (
+            <span className="mini-sub">„{item.song.chorusPl}”</span>
+          )}
         </span>
       </button>
       <button className="icon-btn" onClick={toggle} aria-label={player.playing ? "Pause" : "Play"}>

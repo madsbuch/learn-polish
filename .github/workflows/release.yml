@@ -177,7 +177,9 @@ jobs:
   publish:
     name: Publish latest
     needs: [check, android]
-    if: github.event_name != 'pull_request'
+    # Only main publishes. A manual run on another branch still builds the
+    # APK and keeps it as a workflow artefact, for testing before merging.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
