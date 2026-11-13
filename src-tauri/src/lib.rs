@@ -80,6 +80,7 @@ pub fn run() {
             songs::song_delete,
             songs::song_track_delete,
             songs::song_track_played,
+            songs::song_track_lyrics,
             cast::cast_discover,
             cast::cast_start,
             cast::cast_command,

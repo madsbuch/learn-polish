@@ -99,6 +99,34 @@ pub struct SongTrack {
     pub image_path: Option<String>,
     pub duration: f64,
     pub play_count: i64,
+    /// Lyrics timed to this take, when Suno's word timings are available.
+    pub lines: Option<Vec<TimedLine>>,
+}
+
+/// One sung line with when it is sung, for lyrics that follow the music.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimedLine {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+    /// "pl" or "en" when the line matches the song's lyrics, else "".
+    pub lang: String,
+    /// For a Polish line, its English meaning.
+    pub gloss: Option<String>,
+    /// Set on the first line of a section: "Verse 1", "Chorus".
+    pub section: Option<String>,
+}
+
+/// A sung word and its timing, as Suno aligns it. Stored compactly.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TimedWord {
+    #[serde(rename = "w")]
+    pub text: String,
+    #[serde(rename = "s")]
+    pub start: f64,
+    #[serde(rename = "e")]
+    pub end: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -644,6 +672,184 @@ fn extension(url: &str, fallback: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Timed lyrics
+// ---------------------------------------------------------------------------
+
+const TIMESTAMP_MODEL: &str = "ai-music-api/timeStamped-lyrics";
+
+/// Reads Suno's aligned words, in either the camelCase (direct answer) or
+/// snake_case (callback) spelling.
+pub fn parse_aligned_words(data: &serde_json::Value) -> Option<Vec<TimedWord>> {
+    let list = data
+        .pointer("/data/alignedWords")
+        .or_else(|| data.pointer("/data/aligned_words"))
+        .or_else(|| data.get("alignedWords"))
+        .or_else(|| data.get("aligned_words"))?
+        .as_array()?;
+    let number = |item: &serde_json::Value, a: &str, b: &str| {
+        item.get(a).or_else(|| item.get(b)).and_then(|v| v.as_f64()).unwrap_or(-1.0)
+    };
+    Some(
+        list.iter()
+            .filter_map(|item| {
+                Some(TimedWord {
+                    text: item.get("word")?.as_str()?.to_string(),
+                    start: number(item, "startS", "start_s"),
+                    end: number(item, "endS", "end_s"),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn normalized(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| {
+            if c.is_alphanumeric() {
+                c.to_lowercase().next()
+            } else if c.is_whitespace() {
+                Some(' ')
+            } else {
+                None
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Groups timed words into the lines they were sung as, and labels each with
+/// its language and meaning from the song's lyrics.
+pub fn timed_lines(words: &[TimedWord], sections: &[SongSection]) -> Vec<TimedLine> {
+    let mut polish: std::collections::HashMap<String, String> = Default::default();
+    let mut english: std::collections::HashSet<String> = Default::default();
+    for section in sections {
+        for line in &section.lines {
+            if !line.pl.is_empty() {
+                polish.insert(normalized(&line.pl), line.en.clone());
+            }
+            if !line.en.is_empty() {
+                english.insert(normalized(&line.en));
+            }
+        }
+    }
+
+    let mut lines: Vec<TimedLine> = Vec::new();
+    let mut text = String::new();
+    let mut start = -1.0_f64;
+    let mut end = -1.0_f64;
+    let mut section: Option<String> = None;
+    let mut pending_section: Option<String> = None;
+
+    let finish = |text: &mut String,
+                      start: &mut f64,
+                      end: &mut f64,
+                      section: &mut Option<String>,
+                      lines: &mut Vec<TimedLine>| {
+        let line = text.trim().to_string();
+        if !line.is_empty() && *start >= 0.0 {
+            let key = normalized(&line);
+            let (lang, gloss) = match polish.get(&key) {
+                Some(meaning) => ("pl", Some(meaning.clone()).filter(|m| !m.is_empty())),
+                None if english.contains(&key) => ("en", None),
+                None => ("", None),
+            };
+            lines.push(TimedLine {
+                start: *start,
+                end: end.max(*start),
+                text: line,
+                lang: lang.to_string(),
+                gloss,
+                section: section.take(),
+            });
+        }
+        text.clear();
+        *start = -1.0;
+        *end = -1.0;
+        *section = None;
+    };
+
+    for word in words {
+        for (i, segment) in word.text.split('\n').enumerate() {
+            if i > 0 {
+                finish(&mut text, &mut start, &mut end, &mut section, &mut lines);
+            }
+            let piece = segment.trim();
+            if piece.starts_with('[') && piece.ends_with(']') {
+                pending_section = Some(piece.trim_matches(['[', ']']).trim().to_string());
+                continue;
+            }
+            if piece.is_empty() {
+                continue;
+            }
+            if text.is_empty() {
+                section = pending_section.take();
+            } else {
+                text.push(' ');
+            }
+            text.push_str(piece);
+            if word.start >= 0.0 && start < 0.0 {
+                start = word.start;
+            }
+            if word.end >= 0.0 {
+                end = word.end;
+            }
+        }
+    }
+    finish(&mut text, &mut start, &mut end, &mut section, &mut lines);
+    lines
+}
+
+async fn fetch_timestamps(key: &str, task_id: &str, audio_id: &str) -> Result<Vec<TimedWord>> {
+    let data = kie_json(
+        client()
+            .post(format!("{KIE_BASE_URL}/jobs/createTask"))
+            .bearer_auth(key)
+            .json(&serde_json::json!({
+                "model": TIMESTAMP_MODEL,
+                "input": { "task_id": task_id, "audio_id": audio_id },
+            })),
+    )
+    .await?;
+    // The answer nests a second status inside `data`.
+    if let Some(code) = data.get("code").and_then(|c| c.as_i64()) {
+        if code != 200 {
+            let msg = data.get("msg").and_then(|m| m.as_str()).unwrap_or("no lyrics timing");
+            return Err(Error::msg(format!("kie.ai ({code}): {msg}")));
+        }
+    }
+    parse_aligned_words(&data).ok_or_else(|| Error::msg("kie.ai returned no lyrics timing."))
+}
+
+/// Fetches and stores one take's word timings.
+async fn sync_track_lyrics(app: &AppHandle, track_id: i64) -> Result<()> {
+    let (key, task_id, audio_id) = {
+        let db = app.state::<Db>();
+        let conn = db.lock();
+        let row: Option<(Option<String>, String)> = conn
+            .query_row(
+                "SELECT s.task_id, t.remote_id FROM song_tracks t JOIN songs s ON s.id = t.song_id
+                 WHERE t.id = ?1",
+                [track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        match row {
+            Some((Some(task_id), audio_id)) => (kie_key(&conn)?, task_id, audio_id),
+            _ => return Err(Error::msg("This song has no Suno task to ask for timings.")),
+        }
+    };
+    let words = fetch_timestamps(&key, &task_id, &audio_id).await?;
+    let db = app.state::<Db>();
+    db.lock().execute(
+        "UPDATE song_tracks SET aligned_words = ?2 WHERE id = ?1",
+        rusqlite::params![track_id, serde_json::to_string(&words)?],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
 
@@ -657,9 +863,9 @@ pub fn songs_dir(app: &AppHandle) -> Result<PathBuf> {
     Ok(dir)
 }
 
-fn load_tracks(conn: &Connection, song_id: i64) -> Result<Vec<SongTrack>> {
+fn load_tracks(conn: &Connection, song_id: i64, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
     let mut stmt = conn.prepare(
-        "SELECT id, song_id, ord, audio_path, image_path, duration, play_count
+        "SELECT id, song_id, ord, audio_path, image_path, duration, play_count, aligned_words
          FROM song_tracks WHERE song_id = ?1 ORDER BY ord",
     )?;
     let tracks = stmt
@@ -672,6 +878,11 @@ fn load_tracks(conn: &Connection, song_id: i64) -> Result<Vec<SongTrack>> {
                 image_path: r.get(4)?,
                 duration: r.get(5)?,
                 play_count: r.get(6)?,
+                lines: r
+                    .get::<_, Option<String>>(7)?
+                    .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
+                    .filter(|words| !words.is_empty())
+                    .map(|words| timed_lines(&words, sections)),
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -707,7 +918,7 @@ pub fn load_song(conn: &Connection, id: i64) -> Result<Song> {
         )
         .optional()?
         .ok_or_else(|| Error::msg("That song no longer exists."))?;
-    song.tracks = load_tracks(conn, id)?;
+    song.tracks = load_tracks(conn, id, &song.sections)?;
     Ok(song)
 }
 
@@ -718,7 +929,7 @@ pub fn list_songs(conn: &Connection) -> Result<Vec<Song>> {
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
     for song in &mut songs {
-        song.tracks = load_tracks(conn, song.id)?;
+        song.tracks = load_tracks(conn, song.id, &song.sections)?;
     }
     Ok(songs)
 }
@@ -869,6 +1080,23 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
     let db = app.state::<Db>();
     set_status(&db.lock(), song_id, "ready", None)?;
     notify(app, song_id);
+
+    // Word timings, so the lyrics can follow the music. A song without them
+    // still plays, and playing it later tries again.
+    let track_ids: Vec<i64> = {
+        let db = app.state::<Db>();
+        let conn = db.lock();
+        let mut stmt = conn.prepare("SELECT id FROM song_tracks WHERE song_id = ?1")?;
+        let ids = stmt.query_map([song_id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        ids
+    };
+    let mut synced = false;
+    for id in track_ids {
+        synced |= sync_track_lyrics(app, id).await.is_ok();
+    }
+    if synced {
+        notify(app, song_id);
+    }
     Ok(())
 }
 
@@ -953,7 +1181,7 @@ pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Resu
 #[tauri::command]
 pub async fn song_delete(db: State<'_, Db>, song_id: i64) -> Result<()> {
     let conn = db.lock();
-    for track in load_tracks(&conn, song_id)? {
+    for track in load_tracks(&conn, song_id, &[])? {
         let _ = std::fs::remove_file(&track.audio_path);
         if let Some(image) = track.image_path {
             let _ = std::fs::remove_file(image);
@@ -992,6 +1220,31 @@ pub async fn song_track_played(db: State<'_, Db>, track_id: i64) -> Result<()> {
         rusqlite::params![track_id, db::now_secs()],
     )?;
     Ok(())
+}
+
+/// Fetches a take's word timings if it has none yet, and returns its timed
+/// lines. kie.ai only keeps songs for 14 days, so older ones may have none.
+#[tauri::command]
+pub async fn song_track_lyrics(
+    app: AppHandle,
+    db: State<'_, Db>,
+    track_id: i64,
+) -> Result<Option<Vec<TimedLine>>> {
+    let (song_id, has_words) = {
+        let conn = db.lock();
+        conn.query_row(
+            "SELECT song_id, aligned_words IS NOT NULL FROM song_tracks WHERE id = ?1",
+            [track_id],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, bool>(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| Error::msg("That song no longer exists."))?
+    };
+    if !has_words {
+        sync_track_lyrics(&app, track_id).await?;
+    }
+    let song = load_song(&db.lock(), song_id)?;
+    Ok(song.tracks.into_iter().find(|t| t.id == track_id).and_then(|t| t.lines))
 }
 
 #[tauri::command]
@@ -1097,6 +1350,58 @@ mod tests {
         assert_eq!(
             parse_task(&serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" })),
             TaskState::Failed("lyrics rejected".into())
+        );
+    }
+
+    #[test]
+    fn suno_word_timings_are_read_in_both_spellings() {
+        // As documented: the answer nests a second status inside `data`.
+        let direct = serde_json::json!({
+            "code": 200, "msg": "success",
+            "data": { "alignedWords": [
+                { "word": "[Verse]\nWaggin'", "success": true, "startS": 1.36, "endS": 1.79, "palign": 0 }
+            ], "waveformData": [0, 1], "hootCer": 0.38, "isStreamed": false }
+        });
+        assert_eq!(
+            parse_aligned_words(&direct),
+            Some(vec![TimedWord { text: "[Verse]\nWaggin'".into(), start: 1.36, end: 1.79 }])
+        );
+        let callback = serde_json::json!({ "aligned_words": [{ "word": "Hej", "start_s": 2.0, "end_s": 2.5 }] });
+        assert_eq!(parse_aligned_words(&callback).unwrap()[0].start, 2.0);
+        assert_eq!(parse_aligned_words(&serde_json::json!({ "data": {} })), None);
+    }
+
+    fn word(text: &str, start: f64, end: f64) -> TimedWord {
+        TimedWord { text: text.into(), start, end }
+    }
+
+    #[test]
+    fn timed_words_become_lines_with_meanings() {
+        let words = vec![
+            word("[Verse 1]\nGood ", 1.0, 1.4),
+            word("morning\n", 1.4, 2.0),
+            word("Dzień ", 2.2, 2.6),
+            word("dobry!\n\n", 2.6, 3.1),
+            word("[Chorus]\nPoproszę ", 10.0, 10.5),
+            word("kawę ", 10.5, 11.0),
+            word("z ", 11.0, 11.1),
+            word("mlekiem\n", 11.1, 12.0),
+            word("Hmm", 13.0, 13.5),
+        ];
+        let lines = timed_lines(&words, &draft().sections);
+        let shape: Vec<(&str, &str, Option<&str>, Option<&str>, f64, f64)> = lines
+            .iter()
+            .map(|l| (l.text.as_str(), l.lang.as_str(), l.gloss.as_deref(), l.section.as_deref(), l.start, l.end))
+            .collect();
+        assert_eq!(
+            shape,
+            vec![
+                ("Good morning", "en", None, Some("Verse 1"), 1.0, 2.0),
+                ("Dzień dobry!", "pl", Some("Good morning"), None, 2.2, 3.1),
+                ("Poproszę kawę z mlekiem", "pl", Some("A coffee with milk, please"), Some("Chorus"), 10.0, 12.0),
+                // Ad-libs Suno adds are kept, just without a translation.
+                ("Hmm", "", None, None, 13.0, 13.5),
+            ]
         );
     }
 

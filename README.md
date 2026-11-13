@@ -97,6 +97,11 @@ tab makes them to order:
 - **Songs are kept.** kie.ai deletes generated files after 14 days, so both
   takes and their cover art are downloaded into the app's data folder and play
   from disk, offline, for good.
+- **Lyrics that follow the music:** when a song is ready the app asks
+  kie.ai for Suno's word timings and stores them with each take. The player
+  highlights the line being sung, with its English meaning under each Polish
+  line; tap a line to jump there. Songs whose timings cannot be fetched (kie.ai
+  keeps them for 14 days) show the full lyrics instead.
 - **Built for repetition:** play all, shuffle, repeat all / one, play counts,
   and a mini player above the tab bar so the music keeps going while you
   practise.

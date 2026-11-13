@@ -14,6 +14,7 @@ import type {
   DraftRequest,
   Song,
   SongDraft,
+  TimedLine,
   SpeechLine,
   Voice,
   Sentence,
@@ -97,6 +98,8 @@ export const api = {
   songDelete: (songId: number) => invoke<void>("song_delete", { songId }),
   songTrackDelete: (trackId: number) => invoke<void>("song_track_delete", { trackId }),
   songTrackPlayed: (trackId: number) => invoke<void>("song_track_played", { trackId }),
+  songTrackLyrics: (trackId: number) =>
+    invoke<TimedLine[] | null>("song_track_lyrics", { trackId }),
 
   castDiscover: (address?: string) => invoke<CastDevice[]>("cast_discover", { address }),
   castStart: (device: CastDevice, trackIds: number[], index: number, repeat: string) =>

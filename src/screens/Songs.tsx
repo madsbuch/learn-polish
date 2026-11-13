@@ -3,6 +3,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { CastPicker } from "../components/CastPicker";
+import { FollowLyrics } from "../components/FollowLyrics";
 import { PlayerIcon } from "../components/icons";
 import { Info, TitleWithInfo } from "../components/Info";
 import { Banner, Spinner } from "../components/ui";
@@ -140,6 +141,7 @@ export function Songs({
       {player.error ? <Banner kind="error">{player.error}</Banner> : null}
 
       {now ? <NowPlaying item={now} onPickSpeaker={() => setPicking(true)} /> : null}
+      {now ? <FollowLyrics item={now} /> : null}
 
       {queue.length > 0 ? (
         <div className="row" style={{ gap: 8, marginBottom: 14 }}>

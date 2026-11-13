@@ -170,6 +170,8 @@ fn migrate(conn: &Connection) -> Result<()> {
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
     add_column(conn, "conversation_lines", "gender", "TEXT NOT NULL DEFAULT 'f'")?;
+    // Suno's word timings per take (JSON), for lyrics that follow the music.
+    add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
     Ok(())
 }
 

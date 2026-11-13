@@ -38,6 +38,8 @@ export interface PlayerState {
   cast: CastState | null;
   /** The last playback problem, for the UI to show. */
   error: string | null;
+  /** performance.now() when `position` was last reported, to extrapolate. */
+  positionAt: number;
 }
 
 const REPEAT_KEY = "polski.repeat";
@@ -62,11 +64,13 @@ let state: PlayerState = {
   shuffle: false,
   cast: null,
   error: null,
+  positionAt: 0,
 };
 
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<PlayerState>) {
+  if (patch.position !== undefined) patch.positionAt = performance.now();
   state = { ...state, ...patch };
   listeners.forEach((listener) => listener());
 }
@@ -434,6 +438,17 @@ function updateMediaMetadata(item: QueueItem) {
   } catch {
     /* MediaMetadata missing in some webviews */
   }
+}
+
+/**
+ * The position right now. Native players and speakers report about once a
+ * second; between reports the song has moved on by the time elapsed.
+ */
+export function livePosition(player: PlayerState): number {
+  if (!player.playing) return player.position;
+  const elapsed = (performance.now() - player.positionAt) / 1000;
+  const estimate = player.position + Math.min(Math.max(elapsed, 0), 2);
+  return player.duration > 0 ? Math.min(estimate, player.duration) : estimate;
 }
 
 export function formatTime(seconds: number): string {

@@ -1390,3 +1390,72 @@ label.field > span {
   padding-left: 18px;
   margin: 0 0 10px;
 }
+
+/* ------------------------------------------------------------- follow lyrics */
+
+.follow-lyrics {
+  position: relative;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--card-shadow);
+  scroll-behavior: smooth;
+}
+.follow-eyebrow {
+  margin: 10px 0 4px;
+}
+.follow-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  margin: 0 -8px;
+  border-radius: 10px;
+  transition: background 0.25s, opacity 0.25s;
+}
+.follow-line .pl {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.follow-line .en {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.follow-line .gloss {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+.follow-line[data-state="past"],
+.follow-line[data-state="next"] {
+  opacity: 0.55;
+}
+.follow-line[data-state="current"] {
+  opacity: 1;
+  background: var(--brand-tint);
+}
+.follow-line[data-state="current"] .pl {
+  color: var(--brand-soft);
+}
+.follow-line[data-state="current"][data-lang="pl"] .pl {
+  color: var(--crimson-ink);
+}
+.follow-lyrics.static .follow-line {
+  padding: 3px 0;
+  margin: 0;
+}
+.follow-section {
+  margin-bottom: 12px;
+}
+.follow-tail {
+  height: 30vh;
+}

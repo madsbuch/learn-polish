@@ -272,6 +272,21 @@ export interface SongTrack {
   imagePath: string | null;
   duration: number;
   playCount: number;
+  /** Lyrics timed to this take, once Suno's word timings are known. */
+  lines: TimedLine[] | null;
+}
+
+/** One sung line and when it is sung. */
+export interface TimedLine {
+  start: number;
+  end: number;
+  text: string;
+  /** "pl", "en", or "" for ad-libs that are not in the lyrics. */
+  lang: string;
+  /** For a Polish line, its English meaning. */
+  gloss: string | null;
+  /** Set on the first line of a section, e.g. "Chorus". */
+  section: string | null;
 }
 
 export interface Song extends SongDraft {
