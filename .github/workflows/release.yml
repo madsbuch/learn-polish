@@ -105,6 +105,12 @@ jobs:
       - name: Generate the Android project
         run: bun tauri android init --ci
 
+      # `android init` fills the project with Tauri's default launcher icons.
+      # Replace them with ours (from `scripts/make-icon.mjs`), including the
+      # adaptive icon and its background colour, which the template lacks.
+      - name: Use the app's launcher icons
+        run: cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+
       # Phones only: 64-bit and 32-bit ARM. x86_64 was for emulators and cost a
       # third of the Rust compile time.
       - name: Build the release APK
