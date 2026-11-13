@@ -6,6 +6,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
+import { useBackHandler } from "../lib/back";
 import "./tokens.css";
 import "./base.css";
 import "./components.css";
@@ -146,6 +147,8 @@ export function Screen({
   children: ReactNode;
 }) {
   const pushed = Boolean(onBack || onClose);
+  // The system back button does what the screen's own ← or ⌄ does.
+  useBackHandler(pushed, onBack ?? onClose);
   const head = header ?? (
     <header className="screen-header" data-pushed={pushed}>
       {onBack ? <IconButton icon={<BackIcon />} label="Back" onClick={onBack} /> : null}
@@ -709,6 +712,8 @@ export function Sheet({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // Back closes the sheet, not the page under it.
+  useBackHandler(true, onClose);
   return (
     <div className="sheet-backdrop fade-in" onClick={onClose}>
       <div

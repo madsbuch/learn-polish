@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavIcon } from "./components/icons";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { Banner, Loading, Stack } from "./design";
+import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
 import { resumeCast, syncRepeatFromSettings } from "./lib/player";
@@ -75,6 +76,8 @@ export default function App() {
   /** A song the player asked the music tab to show. */
   const [musicSong, setMusicSong] = useState<number | null>(null);
   const clearMusicSong = useCallback(() => setMusicSong(null), []);
+  // Back on another tab goes to Exercises; back on Exercises leaves the app.
+  useBackHandler(overlay.kind === "none" && tab !== "exercises", () => setTab("exercises"));
 
   const refresh = useCallback(async () => {
     const [nextOverview, nextStats, nextTopics] = await Promise.all([

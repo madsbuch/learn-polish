@@ -389,6 +389,12 @@ src-tauri/
 
 Four tabs: **Exercises**, **Tutor**, **Music** and **Settings**.
 
+Android's back button walks back through the app — closing a sheet first,
+then the page you are on, then from another tab to Exercises — and only
+leaves the app from Exercises (`src/lib/back.ts`: every page with a ← or ⌄,
+and every sheet, adds a history entry that back pops). The player bar above
+the tabs can be swiped away to the right, which stops the music.
+
 Exercises is the home screen: today on top, what is due, what to start next,
 then your courses, each opening to its blocks, its dialogue, words and
 sentences, and *Rename* / *Delete course*. Two screens open from it rather than taking a tab:

@@ -642,6 +642,14 @@
   box-shadow: var(--shadow);
   overflow: hidden;
   z-index: var(--z-raised);
+  /* Swiped right to dismiss (MiniPlayer.tsx); vertical drags still scroll. */
+  transform: translateX(var(--swipe, 0px));
+  opacity: var(--swipe-fade, 1);
+  touch-action: pan-y;
+  transition: transform var(--duration) var(--ease-out), opacity var(--duration) var(--ease-out);
+}
+.mini-player[data-dragging="true"] {
+  transition: none;
 }
 .mini-open {
   flex: 1;

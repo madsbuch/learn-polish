@@ -20,6 +20,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
 import { useAiStream } from "../lib/useAiStream";
 import type { AnswerResult, BlockFinished, Exercise, SessionPlan } from "../lib/types";
@@ -38,6 +39,7 @@ export function Session({
   onFinished: (result: BlockFinished, sessionXp: number) => void;
   onQuit: () => void;
 }) {
+  useBackHandler(true, onQuit);
   const [index, setIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("answering");
   const [result, setResult] = useState<AnswerResult | null>(null);

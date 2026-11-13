@@ -13,6 +13,7 @@ import {
   StatGrid,
   Text,
 } from "../design";
+import { useBackHandler } from "../lib/back";
 import { dayToDate } from "../lib/blocks";
 import type { BlockResult, SessionResult } from "../lib/types";
 
@@ -34,6 +35,7 @@ export function SessionSummary({
   outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
   onDone: () => void;
 }) {
+  useBackHandler(true, onDone);
   const { stats, newlyUnlocked } = result;
   const goalMet = stats.dayXp >= stats.dailyGoal;
 
