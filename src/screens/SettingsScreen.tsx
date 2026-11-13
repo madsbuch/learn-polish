@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { CostCenter } from "../components/CostCenter";
-import { PlayerIcon } from "../components/icons";
+import { MemoryIcon, PlayerIcon } from "../components/icons";
 import {
   Banner,
   Button,
@@ -12,6 +12,7 @@ import {
   IconButton,
   Inline,
   List,
+  ListItem,
   Progress,
   Screen,
   Section,
@@ -47,10 +48,12 @@ export function SettingsScreen({
   settings,
   onSettings,
   onReset,
+  onOpenMemories,
 }: {
   settings: Settings;
   onSettings: (settings: Settings) => void;
   onReset: () => void;
+  onOpenMemories: () => void;
 }) {
   const [keyDraft, setKeyDraft] = useState("");
   const [kieDraft, setKieDraft] = useState("");
@@ -617,6 +620,17 @@ export function SettingsScreen({
             })
           }
         />
+      </Section>
+
+      <Section title="Memories">
+        <List>
+          <ListItem
+            leading={<MemoryIcon />}
+            title="What the agents remember"
+            subtitle="Goals, preferences and struggles the tutor and examiner noted"
+            onClick={onOpenMemories}
+          />
+        </List>
       </Section>
 
       <CostCenter />

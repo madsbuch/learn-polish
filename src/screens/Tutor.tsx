@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { CheckIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon, SendIcon } from "../components/icons";
+import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon, SendIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
 import {
   Banner,
@@ -51,6 +51,8 @@ type Shared = {
   onOpenSong: (songId: number) => void;
   /** The tutor changed something in the app; reload what the screens show. */
   onChanged: () => void;
+  /** Opens what the agents remember. */
+  onOpenMemories: () => void;
 };
 
 /**
@@ -178,6 +180,7 @@ function Chat({
   onOpenBlock,
   onOpenSong,
   onChanged,
+  onOpenMemories,
 }: Shared & {
   /** null for a conversation not yet started. */
   conversationId: number | null;
@@ -276,6 +279,13 @@ function Chat({
             {action.label}
           </Text>
         </Inline>
+        {action.kind === "memory" ? (
+          <Inline gap={2} wrap>
+            <Button size="sm" icon={<MemoryIcon />} onClick={onOpenMemories}>
+              Memories
+            </Button>
+          </Inline>
+        ) : null}
         {action.kind === "songStarted" && songId !== null ? (
           <Inline gap={2} wrap>
             <Button size="sm" icon={<NavIcon.songs />} onClick={() => onOpenSong(songId)}>

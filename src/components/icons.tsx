@@ -301,3 +301,13 @@ export function StudyIcon() {
     </Glyph>
   );
 }
+
+/** Long-term memory: what the agents remember about the learner. */
+export function MemoryIcon() {
+  return (
+    <Glyph>
+      <path d="M9.5 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5.2A3 3 0 0 0 7 17a2.5 2.5 0 0 0 5 .5V5.5A2 2 0 0 0 9.5 4z" />
+      <path d="M14.5 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5.2A3 3 0 0 1 17 17a2.5 2.5 0 0 1-5 .5" />
+    </Glyph>
+  );
+}

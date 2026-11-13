@@ -180,6 +180,8 @@ export interface CheckinTurn {
   reply: string;
   assessment: Assessment | null;
   firstCompletionToday: boolean;
+  /** What the examiner saved to or changed in memory this turn. */
+  remembered: string[];
 }
 
 export interface AnswerResult {
@@ -309,7 +311,8 @@ export interface TutorAction {
     | "blockUpdated"
     | "blockDeleted"
     | "blockScheduled"
-    | "blockSuggested";
+    | "blockSuggested"
+    | "memory";
   label: string;
   topicId: number | null;
   songId: number | null;
@@ -510,4 +513,22 @@ export interface CostSummary {
   features: FeatureCost[];
   /** Days with any AI use, newest first. */
   perDay: DayCost[];
+}
+
+export type MemoryCategory = "goal" | "preference" | "context" | "strength" | "struggle";
+
+/** One fact the agents remember about the learner. */
+export interface Memory {
+  id: number;
+  content: string;
+  category: MemoryCategory;
+  /** "tutor", "examiner" or "you". */
+  source: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoryOverview {
+  enabled: boolean;
+  memories: Memory[];
 }

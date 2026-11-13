@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { PlayerIcon, SendIcon } from "../components/icons";
+import { MemoryIcon, PlayerIcon, SendIcon } from "../components/icons";
 import { playSong, useSongItem } from "../components/SongToListen";
 import { Markdown } from "../components/Markdown";
 import {
@@ -32,7 +32,8 @@ const VERDICT = {
 } as const;
 
 interface Line {
-  role: "user" | "assistant";
+  /** "memory": something the examiner saved to long-term memory. */
+  role: "user" | "assistant" | "memory";
   content: string;
 }
 
@@ -94,7 +95,11 @@ export function CheckIn({
     try {
       const turn = await run(streamId);
       setCheckinId(turn.checkinId);
-      if (turn.reply) setLines((current) => [...current, { role: "assistant", content: turn.reply }]);
+      setLines((current) => [
+        ...current,
+        ...(turn.reply ? [{ role: "assistant" as const, content: turn.reply }] : []),
+        ...turn.remembered.map((content) => ({ role: "memory" as const, content })),
+      ]);
       if (turn.assessment) {
         setAssessment(turn.assessment);
         setFirst(turn.firstCompletionToday);
@@ -190,11 +195,24 @@ export function CheckIn({
       ) : null}
 
       <div className="chat">
-        {lines.map((line, i) => (
-          <div key={i} className="msg selectable" data-role={line.role}>
-            {line.role === "assistant" ? <Markdown text={line.content} /> : line.content}
-          </div>
-        ))}
+        {lines.map((line, i) =>
+          line.role === "memory" ? (
+            <div key={i} className="tutor-action">
+              <Inline gap={2} align="top">
+                <span className="tone-ok">
+                  <MemoryIcon />
+                </span>
+                <Text variant="small" tone="dim">
+                  {line.content}
+                </Text>
+              </Inline>
+            </div>
+          ) : (
+            <div key={i} className="msg selectable" data-role={line.role}>
+              {line.role === "assistant" ? <Markdown text={line.content} /> : line.content}
+            </div>
+          ),
+        )}
         {busy ? (
           <div className="msg" data-role="assistant">
             {live ? (

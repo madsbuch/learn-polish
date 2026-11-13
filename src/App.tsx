@@ -21,6 +21,7 @@ import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
+import { Memories } from "./screens/Memories";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { BlockPage } from "./screens/BlockPage";
@@ -52,6 +53,7 @@ type Overlay =
       outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
     }
   | { kind: "progress" }
+  | { kind: "memories"; back: Overlay }
   | { kind: "search" }
   | { kind: "player" }
   | {
@@ -329,6 +331,14 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "memories") {
+    return (
+      <div className="app">
+        <Memories onBack={() => setOverlay(overlay.back)} />
+      </div>
+    );
+  }
+
   if (overlay.kind === "progress") {
     return (
       <div className="app">
@@ -405,6 +415,7 @@ export default function App() {
             setMusicSong(songId);
           }}
           onChanged={() => void reloadAll()}
+          onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
         />
       ) : null}
 
@@ -413,6 +424,7 @@ export default function App() {
           settings={settings}
           onSettings={applySettings}
           onReset={() => void refresh()}
+          onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
         />
       ) : null}
 

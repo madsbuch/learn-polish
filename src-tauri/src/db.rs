@@ -271,6 +271,16 @@ CREATE TABLE IF NOT EXISTS ai_costs (
 );
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
+
+-- Long-term memory the agents share: one fact about the learner per row.
+CREATE TABLE IF NOT EXISTS memories (
+    id         INTEGER PRIMARY KEY,
+    content    TEXT NOT NULL,
+    category   TEXT NOT NULL DEFAULT 'context',
+    source     TEXT NOT NULL DEFAULT 'tutor',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 "#;
 
 fn migrate(conn: &Connection) -> Result<()> {

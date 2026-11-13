@@ -92,7 +92,7 @@ Objectives:
 
 The lesson the learner studied:
 {lesson}
-{listening}{previous}",
+{listening}{previous}{memory}",
         plan = question_plan(&block.block.complexity),
         title = block.block.title,
         complexity = block.block.complexity,
@@ -102,6 +102,23 @@ The lesson the learner studied:
         previous = previous
             .map(|feedback| format!("\nLast check-in's verdict, to follow up on: {feedback}"))
             .unwrap_or_default(),
+        memory = memory_section(conn)?,
+    ))
+}
+
+/// What the agents remember, plus what the examiner in particular should
+/// save: what this check-in showed that will matter beyond this block.
+fn memory_section(conn: &Connection) -> Result<String> {
+    let section = crate::memories::prompt_section(conn)?;
+    if section.is_empty() {
+        return Ok(section);
+    }
+    Ok(format!(
+        "{section}\n- As the examiner: use what you remember to aim questions at known weak spots \
+         that touch this block. When you finish, save — in the same message as \
+         finish_assessment — at most two memories about lasting patterns this check-in showed \
+         (a recurring mistake, something now mastered), not this block's score. Update a \
+         struggle that the learner has now clearly overcome."
     ))
 }
 
@@ -150,7 +167,12 @@ pub struct CheckinTurn {
     pub assessment: Option<Assessment>,
     /// True when the day's streak was earned by this check-in.
     pub first_completion_today: bool,
+    /// What the examiner saved to or changed in long-term memory this turn.
+    pub remembered: Vec<String>,
 }
+
+/// Rounds per turn: memory calls, then the question or verdict.
+const MAX_ROUNDS: usize = 3;
 
 fn history(conn: &Connection, checkin_id: i64) -> Result<Vec<Wire>> {
     let mut stmt =
@@ -204,7 +226,7 @@ async fn turn(
     user: Option<String>,
     stream_id: &str,
 ) -> Result<CheckinTurn> {
-    let (key, model, wire) = {
+    let (key, model, mut wire) = {
         let conn = db.lock();
         let (block_id, finished): (i64, Option<i64>) = conn.query_row(
             "SELECT block_id, finished_at FROM checkins WHERE id = ?1",
@@ -227,36 +249,82 @@ async fn turn(
         (ai::api_key(&conn)?, ai::require_model(&conn)?, wire)
     };
 
-    let emitter = app.clone();
-    let id = stream_id.to_string();
-    let tools = tools();
-    let result = ai::stream_turn(&key, &model, &wire, Some(&tools), |delta| {
-        crate::commands::stream_to_frontend(&emitter, &id, Some(delta), false, None);
-    })
-    .await;
+    let mut tools = tools();
+    if crate::memories::enabled(&db.lock()) {
+        if let Some(list) = tools.as_array_mut() {
+            list.extend(crate::memories::tool_definitions());
+        }
+    }
     let finished_stream = |error: Option<String>| {
         crate::commands::stream_to_frontend(app, stream_id, None, true, error);
     };
-    let turn = match result {
-        Ok(turn) => turn,
-        Err(error) => {
-            finished_stream(Some(error.to_string()));
-            return Err(error);
+
+    let mut reply = String::new();
+    let mut remembered: Vec<String> = Vec::new();
+    let mut verdict: Option<Assessment> = None;
+    // A turn is a question, a verdict, or both. Memory calls alone are not an
+    // answer, so after them the examiner gets another round to say something.
+    for round in 0..MAX_ROUNDS {
+        let emitter = app.clone();
+        let id = stream_id.to_string();
+        let mut separated = reply.is_empty();
+        let result = ai::stream_turn(&key, &model, &wire, Some(&tools), |delta| {
+            if !separated {
+                crate::commands::stream_to_frontend(&emitter, &id, Some("\n\n"), false, None);
+                separated = true;
+            }
+            crate::commands::stream_to_frontend(&emitter, &id, Some(delta), false, None);
+        })
+        .await;
+        let turn = match result {
+            Ok(turn) => turn,
+            Err(error) => {
+                finished_stream(Some(error.to_string()));
+                return Err(error);
+            }
+        };
+
+        let conn = db.lock();
+        let _ = crate::costs::record(&conn, crate::costs::EXAMINER, "openrouter", &model, turn.cost, "");
+        let text = turn.text.trim();
+        if !text.is_empty() {
+            if !reply.is_empty() {
+                reply.push_str("\n\n");
+            }
+            reply.push_str(text);
         }
-    };
+        let mut results = Vec::new();
+        for call in &turn.tool_calls {
+            if crate::memories::is_tool(&call.function.name) {
+                let outcome =
+                    crate::memories::run_tool(&conn, "examiner", &call.function.name, &call.function.arguments);
+                remembered.extend(outcome.label);
+                results.push(Wire::tool_result(&call.id, outcome.result.to_string()));
+            } else if call.function.name == "finish_assessment" {
+                let parsed: Assessment = serde_json::from_str(&call.function.arguments).map_err(|e| {
+                    Error::msg(format!("The examiner's verdict was unreadable: {e}"))
+                })?;
+                verdict = Some(parsed);
+                results.push(Wire::tool_result(&call.id, "{\"recorded\":true}"));
+            } else {
+                results.push(Wire::tool_result(&call.id, "{\"error\":\"unknown tool\"}"));
+            }
+        }
+        let answered = !reply.is_empty() || verdict.is_some();
+        if answered || turn.tool_calls.is_empty() || round + 1 == MAX_ROUNDS {
+            break;
+        }
+        wire.push(Wire::tool_request(&turn.text, turn.tool_calls.clone()));
+        wire.extend(results);
+    }
     finished_stream(None);
 
     let conn = db.lock();
-    let _ = crate::costs::record(&conn, crate::costs::EXAMINER, "openrouter", &model, turn.cost, "");
-    let reply = turn.text.trim().to_string();
     if !reply.is_empty() {
         append(&conn, checkin_id, "assistant", &reply)?;
     }
-    let call = turn.tool_calls.iter().find(|c| c.function.name == "finish_assessment");
-    let (assessment, first) = match call {
-        Some(call) => {
-            let parsed: Assessment = serde_json::from_str(&call.function.arguments)
-                .map_err(|e| Error::msg(format!("The examiner's verdict was unreadable: {e}")))?;
+    let (assessment, first) = match verdict {
+        Some(parsed) => {
             let (assessment, first) = record(&conn, checkin_id, parsed)?;
             (Some(assessment), first)
         }
@@ -265,7 +333,7 @@ async fn turn(
     if reply.is_empty() && assessment.is_none() {
         return Err(Error::msg("The examiner did not answer. Try again."));
     }
-    Ok(CheckinTurn { checkin_id, reply, assessment, first_completion_today: first })
+    Ok(CheckinTurn { checkin_id, reply, assessment, first_completion_today: first, remembered })
 }
 
 /// Starts a check-in on a study block; the examiner asks the first question.

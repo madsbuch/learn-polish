@@ -126,6 +126,22 @@ private SQLite database and is only ever read inside a command.
 default: press *Load models from OpenRouter* in Settings and pick one from the
 live catalogue. Until you do, the AI features stay off and say so.
 
+### Memory
+
+The tutor and the examiner share a long-term memory (`memories` table): short
+facts about the learner, each a goal, preference, context, strength or
+struggle. Both agents see every memory in their system prompt and have
+`remember`, `update_memory` and `forget_memory` tools, so what the examiner
+notices in a check-in reaches the tutor and the other way round. They are told
+to keep memories true — update a struggle once it is overcome rather than add
+a contradicting one — and to save lasting patterns, not scores the app already
+records. Whatever an agent saves shows up in the chat as a "Remembered: …"
+line.
+
+**Settings → Memories** lists them by kind; tap one to edit or forget it, add
+your own with **+**, forget everything, or switch memory off (the agents then
+neither read nor save memories).
+
 ## Songs (optional)
 
 Songs are one of the best ways to get Polish stuck in your head. The **Music**

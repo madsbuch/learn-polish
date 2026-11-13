@@ -7,6 +7,7 @@ mod costs;
 mod db;
 mod error;
 mod examiner;
+mod memories;
 mod models;
 mod playlists;
 mod programmes;
@@ -81,6 +82,12 @@ pub fn run() {
             commands::programme_delete,
             commands::export_database,
             commands::costs_summary,
+            memories::commands::memories_overview,
+            memories::commands::memories_set_enabled,
+            memories::commands::memory_add,
+            memories::commands::memory_update,
+            memories::commands::memory_delete,
+            memories::commands::memories_clear,
             commands::list_voices,
             commands::preview_voice,
             commands::speak,

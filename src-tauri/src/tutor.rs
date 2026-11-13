@@ -175,7 +175,7 @@ fn system_prompt(conn: &Connection) -> Result<String> {
         } else {
             "; making songs needs a kie.ai key in Settings, which is missing"
         },
-    ))
+    ) + &crate::memories::prompt_section(conn)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -547,6 +547,7 @@ fn status_label(name: &str) -> &'static str {
         "make_song" => "Writing the song…",
         "list_songs" => "Looking at your songs…",
         "delete_songs" => "Deleting songs…",
+        "remember" | "update_memory" | "forget_memory" => "Remembering…",
         _ => "Working…",
     }
 }
@@ -722,6 +723,13 @@ fn execute(conn: &Connection, name: &str, arguments: &str) -> Outcome {
 
 fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
     match name {
+        name if crate::memories::is_tool(name) => {
+            let outcome = crate::memories::run_tool(conn, "tutor", name, arguments);
+            Ok(match outcome.label {
+                Some(label) => Outcome::acted(outcome.result, "memory", label, None),
+                None => Outcome::data(outcome.result),
+            })
+        }
         "create_programme" => {
             let args: CreateArgs = parse(arguments)?;
             let created = programmes::create(conn, args.programme)?;
@@ -1424,7 +1432,12 @@ pub async fn tutor_send(
         (key, model, wire)
     };
 
-    let tools = tool_definitions();
+    let mut tools = tool_definitions();
+    if crate::memories::enabled(&db.lock()) {
+        if let Some(list) = tools.as_array_mut() {
+            list.extend(crate::memories::tool_definitions());
+        }
+    }
     let mut reply = String::new();
     let mut actions: Vec<TutorAction> = Vec::new();
 
@@ -1521,8 +1534,8 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_valid_definition() {
-        let tools = tool_definitions();
-        let tools = tools.as_array().unwrap();
+        let mut tools = tool_definitions().as_array().unwrap().clone();
+        tools.extend(crate::memories::tool_definitions());
         assert!(tools.len() >= 8);
         for tool in tools {
             assert_eq!(tool["type"], "function");

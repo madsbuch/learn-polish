@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  MemoryCategory,
+  MemoryOverview,
   CostSummary,
   AiModel,
   Block,
@@ -105,6 +107,16 @@ export const api = {
   /** Resolves to where the file went, or null if the dialog was cancelled. */
   exportDatabase: (includeKeys: boolean) =>
     invoke<string | null>("export_database", { includeKeys }),
+
+  memoriesOverview: () => invoke<MemoryOverview>("memories_overview"),
+  memoriesSetEnabled: (enabled: boolean) =>
+    invoke<MemoryOverview>("memories_set_enabled", { enabled }),
+  memoryAdd: (content: string, category: MemoryCategory) =>
+    invoke<MemoryOverview>("memory_add", { content, category }),
+  memoryUpdate: (id: number, content: string, category: MemoryCategory) =>
+    invoke<MemoryOverview>("memory_update", { id, content, category }),
+  memoryDelete: (id: number) => invoke<MemoryOverview>("memory_delete", { id }),
+  memoriesClear: () => invoke<MemoryOverview>("memories_clear"),
 
   costsSummary: (days: number) => invoke<CostSummary>("costs_summary", { days }),
 
