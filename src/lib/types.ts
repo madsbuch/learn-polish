@@ -135,8 +135,11 @@ export interface Block {
   title: string;
   summary: string;
   complexity: Complexity;
+  /** The first course it was listed in, for display. */
   topicId: number | null;
   topicTitle: string | null;
+  /** Every course that lists it. */
+  courseIds: number[];
   /** Who made it; informational — every block can be edited and deleted. */
   origin: "starter" | "tutor" | "you";
   periodDays: number;
@@ -157,6 +160,8 @@ export interface BlockDetail extends Block {
   words: [string, string][];
   sentences: [string, string][];
   lastFeedback: string | null;
+  /** The courses that list it: [id, English title, Polish title]. */
+  courses: [number, string, string][];
 }
 
 export interface BlockOverview {

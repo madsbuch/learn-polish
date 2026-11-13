@@ -55,10 +55,21 @@ period, each further pass doubles the gap (up to four months), a partial pass
 repeats the period, and a fail brings it back tomorrow. The period can be
 changed on the block's page.
 
-Every block lives in a **course**: a folder on one theme with its words,
-sentences and an optional dialogue, cut into drills automatically — the
-dialogue, words in eights, sentences in fives — plus any lessons and drills
-filed under it. The starter lessons (`src-tauri/content/lessons/`: być, mieć,
+Three levels:
+
+- A **course** is a folder on one theme. It lists blocks, in order.
+- A **block** is one thing you do, with its own check-in schedule. A drill
+  **owns** the words, sentences or dialogue lines it practises; a lesson owns
+  its text and objectives.
+- A **word** (or sentence) belongs to exactly one block, and a course reaches
+  its words only through its blocks.
+
+Giving a course words, sentences or a dialogue cuts them into drills — the
+dialogue, words in eights, sentences in fives — skipping anything the course
+already teaches. A block can be listed in **several courses** (one block, one
+schedule, shown in each); it can be moved between courses, and taking it out
+of its last course deletes it, with its words and their history. On a block's
+page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it. The starter lessons (`src-tauri/content/lessons/`: być, mieć,
 the three present-tense patterns, gender, the seven cases, ty vs. Pan/Pani)
 are in *Grammar essentials*; listening blocks for songs go in *Listening*, and
 a lesson the tutor writes without a better home goes in *Lessons*. The
@@ -99,6 +110,7 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | `create_study_block`, `create_drill_block`, `create_listening_block` | Writes a lesson with objectives, one drill in a chosen format, or a listening block for a song |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, starter ones included |
+| `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |
 | `update_practice_settings` | Daily XP goal |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `delete_songs` | Has a song written and sung; tidies up songs |

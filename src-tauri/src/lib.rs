@@ -80,6 +80,8 @@ pub fn run() {
             tutor::tutor_rename,
             tutor::tutor_delete,
             commands::course_delete,
+            commands::block_add_to_course,
+            commands::block_remove_from_course,
             commands::course_rename,
             commands::export_database,
             commands::costs_summary,
@@ -237,56 +239,124 @@ mod integration {
     }
 
     #[test]
-    fn an_older_install_becomes_plain_courses() {
-        let conn = scratch_db("unify");
-        let basics = db::require_topic_id(&conn, 1).unwrap();
-        // Put the database back in its old shape: a programme, loose lessons,
-        // old drill slugs and origins, and a content version instead of the
-        // starter flag.
-        conn.execute_batch(&format!(
-            "INSERT INTO topics (id, slug, ord, kind, title_pl, title_en, summary_en, created_at)
-                 VALUES (900, 'programme-1-1', 1, 'programme', 'Kolory', 'Colours', '', 50);
-             INSERT INTO words (topic_id, ord, pl, en, pos) VALUES (900, 0, 'czerwony', 'red', 'adj');
-             INSERT INTO blocks (slug, kind, format, topic_id, ord, title, complexity, period_days, origin, created_at)
-                 VALUES ('programme/900/words-1', 'drill', 'words', 900, 1, 'Words 1', 'low', 2, 'tutor', 50);
-             INSERT INTO blocks (kind, topic_id, ord, title, complexity, lesson, period_days, origin, created_at)
-                 VALUES ('study', NULL, 1, 'Iść', 'low', 'idę', 5, 'tutor', 60);
-             UPDATE blocks SET topic_id = NULL, origin = 'builtin' WHERE slug LIKE 'lesson/%';
-             UPDATE blocks SET slug = 'course/' || (SELECT slug FROM topics WHERE id = {basics})
-                                      || substr(slug, length('topic/{basics}') + 1),
-                               origin = 'course'
-                 WHERE topic_id = {basics};
-             UPDATE topics SET created_at = 0 WHERE slug = 'grammar-essentials';
-             DELETE FROM settings WHERE key = 'starter_seeded';
-             INSERT INTO settings (key, value) VALUES ('content_version', '4');"
-        ))
-        .unwrap();
-        let words_before = blocks::for_topic(&conn, basics).unwrap().len();
-        drop(conn);
+    fn a_version_3_database_moves_words_into_blocks() {
+        // The shape before words belonged to blocks: words, sentences and
+        // lines in topics, drills pointing at them, one topic per block.
+        let path = std::env::temp_dir()
+            .join("learn-polish-tests")
+            .join(format!("v3-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        {
+            let old = Connection::open(&path).unwrap();
+            old.execute_batch(
+                "CREATE TABLE topics (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, ord INTEGER NOT NULL,
+                     kind TEXT NOT NULL DEFAULT 'course', title_pl TEXT NOT NULL, title_en TEXT NOT NULL,
+                     summary_en TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0);
+                 CREATE TABLE words (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL, ord INTEGER NOT NULL,
+                     pl TEXT NOT NULL, en TEXT NOT NULL, pos TEXT NOT NULL, UNIQUE (topic_id, pl));
+                 CREATE TABLE sentences (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL, ord INTEGER NOT NULL,
+                     pl TEXT NOT NULL, en TEXT NOT NULL, UNIQUE (topic_id, pl));
+                 CREATE TABLE conversation_lines (id INTEGER PRIMARY KEY, topic_id INTEGER NOT NULL,
+                     ord INTEGER NOT NULL, speaker TEXT NOT NULL, gender TEXT NOT NULL DEFAULT 'f',
+                     pl TEXT NOT NULL, en TEXT NOT NULL);
+                 CREATE TABLE reviews (kind TEXT NOT NULL, item_id INTEGER NOT NULL, due_day INTEGER NOT NULL,
+                     interval INTEGER NOT NULL, ease REAL NOT NULL, reps INTEGER NOT NULL, lapses INTEGER NOT NULL,
+                     last_day INTEGER NOT NULL, PRIMARY KEY (kind, item_id));
+                 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 CREATE TABLE blocks (id INTEGER PRIMARY KEY, slug TEXT UNIQUE, kind TEXT NOT NULL,
+                     format TEXT NOT NULL DEFAULT '', topic_id INTEGER, ord INTEGER NOT NULL DEFAULT 0,
+                     title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', complexity TEXT NOT NULL,
+                     lesson TEXT NOT NULL DEFAULT '', objectives TEXT NOT NULL DEFAULT '[]',
+                     period_days INTEGER NOT NULL, interval_days INTEGER NOT NULL DEFAULT 0, due_day INTEGER,
+                     last_day INTEGER, last_result TEXT, reps INTEGER NOT NULL DEFAULT 0,
+                     origin TEXT NOT NULL DEFAULT 'course', created_at INTEGER NOT NULL, song_id INTEGER);
+                 CREATE TABLE block_items (block_id INTEGER NOT NULL, kind TEXT NOT NULL, item_id INTEGER NOT NULL,
+                     ord INTEGER NOT NULL, PRIMARY KEY (block_id, kind, item_id));
+                 CREATE TABLE checkins (id INTEGER PRIMARY KEY, block_id INTEGER NOT NULL, started_at INTEGER NOT NULL,
+                     finished_at INTEGER, result TEXT, feedback TEXT);
+                 CREATE TABLE checkin_messages (id INTEGER PRIMARY KEY, checkin_id INTEGER NOT NULL,
+                     role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL);
 
-        let conn = scratch_db_keep("unify");
-        let kinds: Vec<String> = conn
-            .prepare("SELECT DISTINCT kind FROM topics").unwrap()
-            .query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
-        assert_eq!(kinds, vec!["course"]);
-        let loose: i64 = conn.query_row("SELECT COUNT(*) FROM blocks WHERE topic_id IS NULL", [], |r| r.get(0)).unwrap();
-        assert_eq!(loose, 0, "every block is in a course");
+                 INSERT INTO topics VALUES (1, 'basics', 1, 'course', 'Pierwsze spotkanie', 'Meeting', '', 0),
+                                           (2, 'programme-1-1', 1, 'programme', 'Kolory', 'Colours', '', 50);
+                 INSERT INTO words VALUES (10, 1, 0, 'cześć', 'hi', 'interj'),
+                                          (20, 2, 0, 'czerwony', 'red', 'adj'),
+                                          (21, 2, 1, 'biały', 'white', 'adj'),
+                                          (22, 2, 2, 'czarny', 'black', 'adj');
+                 INSERT INTO sentences VALUES (30, 2, 0, 'Niebo jest niebieskie.', 'The sky is blue.');
+                 INSERT INTO conversation_lines VALUES (40, 1, 0, 'Anna', 'f', 'Dzień dobry!', 'Good morning!');
+                 INSERT INTO reviews VALUES ('word', 10, 100, 3, 2.5, 2, 0, 97), ('word', 20, 100, 3, 2.5, 4, 0, 97);
+                 -- A starter topic, cut into a dialogue and a word drill.
+                 INSERT INTO blocks (id, slug, kind, format, topic_id, ord, title, complexity, period_days, created_at, due_day, reps)
+                     VALUES (100, 'topic/1/dialogue', 'drill', 'dialogue', 1, 1, 'Conversation', 'low', 2, 0, NULL, 0),
+                            (101, 'topic/1/words-1', 'drill', 'words', 1, 2, 'Words 1', 'low', 2, 0, 105, 3);
+                 INSERT INTO block_items VALUES (101, 'word', 10, 0);
+                 -- A programme: the tutor's memory drill over two words, which the
+                 -- programme's own word drill also picked up (the duplicate).
+                 INSERT INTO blocks (id, slug, kind, format, topic_id, ord, title, complexity, period_days, origin, created_at)
+                     VALUES (200, NULL, 'drill', 'memory', 2, 1, 'Colours — memory', 'low', 2, 'tutor', 60),
+                            (201, 'topic/2/words-1', 'drill', 'words', 2, 2, 'Words 1', 'low', 2, 'tutor', 50),
+                            (202, 'topic/2/sentences-1', 'drill', 'sentences', 2, 3, 'Sentences 1', 'medium', 4, 'tutor', 50),
+                            (203, 'topic/2/words-2', 'drill', 'words', 2, 4, 'Words 2', 'low', 2, 'tutor', 50);
+                 INSERT INTO block_items VALUES (200, 'word', 20, 0), (200, 'word', 21, 1),
+                                                (201, 'word', 20, 0), (201, 'word', 21, 1), (201, 'word', 22, 2),
+                                                (202, 'sentence', 30, 0),
+                                                (203, 'word', 21, 0);
+                 -- A lesson with no topic, with a finished check-in.
+                 INSERT INTO blocks (id, slug, kind, format, topic_id, title, complexity, lesson, period_days, origin, created_at)
+                     VALUES (300, NULL, 'study', '', NULL, 'Iść', 'low', 'idę', 5, 'tutor', 70);
+                 INSERT INTO checkins VALUES (1, 300, 0, 1, 'pass', 'Good.');
+                 INSERT INTO settings VALUES ('content_version', '4');
+                 PRAGMA user_version = 3;",
+            )
+            .unwrap();
+        }
+
+        let conn = db::open(&path).expect("upgrade");
+        let owner = |table: &str, id: i64| -> i64 {
+            conn.query_row(&format!("SELECT block_id FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).unwrap()
+        };
+        // Ids — and so review history — survive.
+        assert_eq!(owner("words", 10), 101);
+        assert_eq!(srs::load(&conn, "word", 10).unwrap().unwrap().reps, 2);
+        assert_eq!(srs::load(&conn, "word", 20).unwrap().unwrap().reps, 4);
+        // A shared word goes to the tutor's drill, not the automatic one.
+        assert_eq!(owner("words", 20), 200);
+        assert_eq!(owner("words", 21), 200);
+        assert_eq!(owner("words", 22), 201);
+        assert_eq!(owner("sentences", 30), 202);
+        assert_eq!(owner("conversation_lines", 40), 100);
+        // An automatic drill left with nothing goes.
+        assert!(blocks::load(&conn, 203).is_err());
+        assert_eq!(blocks::load(&conn, 101).unwrap().due_day, Some(105), "schedules survive");
+
+        // Every block is listed in a course; programmes are courses now.
+        let unlisted: i64 = conn
+            .query_row("SELECT COUNT(*) FROM blocks WHERE id NOT IN (SELECT block_id FROM course_blocks)", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(unlisted, 0);
+        assert_eq!(blocks::load(&conn, 300).unwrap().topic_title.as_deref(), Some("Lessons"));
+        assert_eq!(blocks::detail(&conn, 300).unwrap().last_feedback.as_deref(), Some("Good."));
+        let kinds: i64 = conn.query_row("SELECT COUNT(*) FROM topics WHERE kind != 'course'", [], |r| r.get(0)).unwrap();
+        assert_eq!(kinds, 0);
+
+        // The starter content is filled in around what was there, without
+        // repeating a word the course already teaches.
+        let basics: i64 = conn.query_row("SELECT id FROM topics WHERE slug = 'basics'", [], |r| r.get(0)).unwrap();
+        let czesc: i64 = conn
+            .query_row("SELECT COUNT(*) FROM course_words WHERE topic_id = ?1 AND pl = 'cześć'", [basics], |r| r.get(0))
+            .unwrap();
+        assert_eq!(czesc, 1);
+        let dialogues = blocks::for_topic(&conn, basics).unwrap().iter().filter(|b| b.format == "dialogue").count();
+        assert_eq!(dialogues, 1, "the existing conversation is kept, not doubled");
         assert!(blocks::for_topic(&conn, grammar_course(&conn)).unwrap().len() >= 7);
-        let origins: i64 = conn
-            .query_row("SELECT COUNT(*) FROM blocks WHERE origin IN ('course', 'builtin')", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(origins, 0);
-        assert_eq!(db::get_setting(&conn, "content_version").unwrap(), None);
 
-        // Old drill slugs now match their course, so cutting again does not duplicate them.
-        crate::blocks::split_topic(&conn, basics, &crate::blocks::split_prefix(basics), "starter").unwrap();
-        assert_eq!(blocks::for_topic(&conn, basics).unwrap().len(), words_before);
-        crate::blocks::split_topic(&conn, 900, &crate::blocks::split_prefix(900), "tutor").unwrap();
-        assert_eq!(blocks::for_topic(&conn, 900).unwrap().len(), 1);
-        let lesson: String = conn
-            .query_row("SELECT t.title_en FROM blocks b JOIN topics t ON t.id = b.topic_id WHERE b.title = 'Iść'", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(lesson, "Lessons");
+        // A word taken out goes with its history.
+        crate::courses::remove_items(&conn, 2, &["czerwony".into()], &[]).unwrap();
+        assert!(srs::load(&conn, "word", 20).unwrap().is_none());
+        drop(conn);
+        db::open(&path).expect("a second open is a no-op");
     }
 
     #[test]
@@ -517,14 +587,20 @@ mod integration {
         assert_eq!(plan.topic.kind, "course");
         assert_eq!(plan.new_words, 4);
 
-        // Adding words re-cuts the drills without losing the existing ones.
-        tutor::run_tool_for_test(
+        // Adding words makes a new drill; the existing ones keep theirs, and a
+        // word the course already teaches is not added twice.
+        let added = tutor::run_tool_for_test(
             &conn,
             "add_to_course",
-            serde_json::json!({ "course_id": topic_id, "words": [{ "pl": "żółty", "en": "yellow", "pos": "adj" }] }),
+            serde_json::json!({ "course_id": topic_id, "words": [
+                { "pl": "żółty", "en": "yellow", "pos": "adj" },
+                { "pl": "czerwony", "en": "red", "pos": "adj" }
+            ] }),
         );
-        let words_block = blocks::load(&conn, list[1].id).unwrap();
-        assert_eq!(words_block.items, 5);
+        assert_eq!(added["updated"]["skipped_duplicates"], 1, "{added}");
+        assert_eq!(blocks::load(&conn, list[1].id).unwrap().items, 4);
+        let words_2 = blocks::for_topic(&conn, topic_id).unwrap().into_iter().last().unwrap();
+        assert_eq!((words_2.title.as_str(), words_2.items), ("Words 2", 1));
 
         // Starter courses are ordinary courses: they can be extended too.
         let course = db::require_topic_id(&conn, 1).unwrap();
@@ -541,6 +617,82 @@ mod integration {
         let deleted = tutor::run_tool_for_test(&conn, "delete_course", serde_json::json!({ "course_id": topic_id }));
         assert_eq!(deleted["deleted"], "Colours");
         assert!(blocks::for_topic(&conn, topic_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn blocks_move_and_are_shared_between_courses() {
+        let conn = scratch_db("membership");
+        let basics = db::require_topic_id(&conn, 1).unwrap();
+        let family = db::require_topic_id(&conn, 2).unwrap();
+        let block = blocks::for_topic(&conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
+        let words = blocks::detail(&conn, block.id).unwrap().words;
+
+        // Shared: one block, listed in both, with one schedule.
+        let shared = tutor::run_tool_for_test(
+            &conn,
+            "add_block_to_course",
+            serde_json::json!({ "block_id": block.id, "course_id": family }),
+        );
+        assert!(shared.get("error").is_none(), "{shared}");
+        assert!(blocks::for_topic(&conn, family).unwrap().iter().any(|b| b.id == block.id));
+        assert_eq!(blocks::load(&conn, block.id).unwrap().course_ids, vec![basics, family]);
+        blocks::record(&conn, block.id, "pass").unwrap();
+        assert!(blocks::for_topic(&conn, family).unwrap().iter().any(|b| b.id == block.id && b.reps == 1));
+        // The family course now reaches the block's words too.
+        let reach: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM course_words WHERE topic_id = ?1 AND block_id = ?2",
+                [family, block.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(reach as usize, words.len());
+
+        // Out of one course, it stays; out of the last, it goes with its words.
+        let out = tutor::run_tool_for_test(
+            &conn,
+            "remove_block_from_course",
+            serde_json::json!({ "block_id": block.id, "course_id": basics }),
+        );
+        assert_eq!(out["block_deleted"], false);
+        assert_eq!(blocks::load(&conn, block.id).unwrap().topic_id, Some(family));
+        let word_id: i64 = conn
+            .query_row("SELECT id FROM words WHERE block_id = ?1 LIMIT 1", [block.id], |r| r.get(0))
+            .unwrap();
+        let gone = tutor::run_tool_for_test(
+            &conn,
+            "remove_block_from_course",
+            serde_json::json!({ "block_id": block.id, "course_id": family }),
+        );
+        assert_eq!(gone["block_deleted"], true);
+        assert!(blocks::load(&conn, block.id).is_err());
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM words WHERE id = ?1", [word_id], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0, "its words went with it");
+
+        // Moving takes it out of one course and into another, at the end.
+        let lesson = starter_lesson(&conn);
+        let grammar = grammar_course(&conn);
+        tutor::run_tool_for_test(
+            &conn,
+            "move_block",
+            serde_json::json!({ "block_id": lesson.id, "from_course_id": grammar, "to_course_id": basics }),
+        );
+        assert_eq!(blocks::load(&conn, lesson.id).unwrap().course_ids, vec![basics]);
+        assert_eq!(blocks::for_topic(&conn, basics).unwrap().last().unwrap().id, lesson.id);
+
+        // Reordering puts it first.
+        tutor::run_tool_for_test(
+            &conn,
+            "order_course_blocks",
+            serde_json::json!({ "course_id": basics, "block_ids": [lesson.id] }),
+        );
+        assert_eq!(blocks::for_topic(&conn, basics).unwrap()[0].id, lesson.id);
+
+        // Deleting a course keeps blocks another course still lists.
+        let kept = blocks::for_topic(&conn, family).unwrap()[0].id;
+        crate::courses::add_block(&conn, basics, kept).unwrap();
+        crate::courses::delete(&conn, family).unwrap();
+        assert!(blocks::load(&conn, kept).is_ok());
     }
 
     #[test]

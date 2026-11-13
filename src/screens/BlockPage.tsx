@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { DrillIcon, NavIcon, PlayerIcon, StudyIcon } from "../components/icons";
+import { CloseIcon, DrillIcon, NavIcon, PlayerIcon, PlusIcon, StudyIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
 import { SongToListen } from "../components/SongToListen";
 import { SpeakButton } from "../components/ui";
@@ -12,12 +12,14 @@ import {
   Choice,
   ChoiceRow,
   ConfirmButton,
+  IconButton,
   Inline,
   List,
   ListItem,
   Screen,
   Section,
   SettingRow,
+  Sheet,
   Spinner,
   Stack,
   Text,
@@ -32,7 +34,7 @@ import {
   kindName,
   minutes,
 } from "../lib/blocks";
-import type { BlockDetail } from "../lib/types";
+import type { BlockDetail, TopicProgress } from "../lib/types";
 
 const RESULT_TEXT = { pass: "Passed", partial: "Partly there", fail: "Not yet" } as const;
 
@@ -57,10 +59,34 @@ export function BlockPage({
 }) {
   const [block, setBlock] = useState<BlockDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The course picker: add the block to one, or move it there. */
+  const [picking, setPicking] = useState<{ mode: "add" | "move"; courses: TopicProgress[] } | null>(null);
 
-  useEffect(() => {
+  const reload = () =>
     api.blockDetail(blockId).then(setBlock).catch((cause) => setError(errorMessage(cause)));
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blockId]);
+
+  async function openPicker(mode: "add" | "move") {
+    try {
+      setPicking({ mode, courses: await api.getTopicProgress() });
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }
+
+  async function changeCourses(action: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await action();
+      setPicking(null);
+      await reload();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }
 
   if (!block) {
     return (
@@ -214,11 +240,84 @@ export function BlockPage({
         </List>
       </Section>
 
+      <Section
+        title={block.courses.length === 1 ? "Course" : "Courses"}
+        info={
+          <p>
+            A block can be in several courses: it stays one block, with one schedule, shown in each.
+            Its words and sentences belong to the block and go wherever it goes. Taking it out of its
+            last course deletes it — use Delete block for that.
+          </p>
+        }
+      >
+        <Stack gap={2}>
+          <List>
+            {block.courses.map(([id, title, titlePl]) => (
+              <ListItem
+                key={id}
+                title={titlePl}
+                subtitle={title}
+                trailing={
+                  block.courses.length > 1 ? (
+                    <IconButton
+                      icon={<CloseIcon />}
+                      label={`Take it out of ${title}`}
+                      onClick={() => changeCourses(() => api.blockRemoveFromCourse(block.id, id))}
+                    />
+                  ) : undefined
+                }
+              />
+            ))}
+          </List>
+          <Inline gap={2}>
+            <div className="grow">
+              <Button block icon={<PlusIcon />} onClick={() => openPicker("add")}>
+                Also in…
+              </Button>
+            </div>
+            {block.courses.length === 1 ? (
+              <div className="grow">
+                <Button block onClick={() => openPicker("move")}>
+                  Move to…
+                </Button>
+              </div>
+            ) : null}
+          </Inline>
+        </Stack>
+      </Section>
+
+      {picking ? (
+        <Sheet
+          title={picking.mode === "add" ? "Also show it in" : "Move it to"}
+          onClose={() => setPicking(null)}
+        >
+          <List>
+            {picking.courses
+              .filter((entry) => !block.courses.some(([id]) => id === entry.topic.id))
+              .map((entry) => (
+                <ListItem
+                  key={entry.topic.id}
+                  title={entry.topic.titlePl}
+                  subtitle={entry.topic.title}
+                  onClick={() =>
+                    changeCourses(async () => {
+                      await api.blockAddToCourse(block.id, entry.topic.id);
+                      if (picking.mode === "move") {
+                        await api.blockRemoveFromCourse(block.id, block.courses[0][0]);
+                      }
+                    })
+                  }
+                />
+              ))}
+          </List>
+        </Sheet>
+      ) : null}
+
       <Section title="Manage">
         <ConfirmButton
           label="Delete block"
           confirmLabel="Delete"
-          question="Delete this block and its check-in history? Its words stay in the course."
+          question="Delete this block, its words and its check-in history, from every course it is in?"
           block
           onConfirm={async () => {
             try {

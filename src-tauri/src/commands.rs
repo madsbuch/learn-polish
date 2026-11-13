@@ -367,6 +367,19 @@ pub async fn block_delete(db: State<'_, Db>, block_id: i64) -> Result<()> {
     blocks::delete(&db.lock(), block_id).map(|_| ())
 }
 
+/// Lists a block in another course too.
+#[tauri::command]
+pub async fn block_add_to_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<()> {
+    courses::add_block(&db.lock(), topic_id, block_id)
+}
+
+/// Takes a block out of a course; true when that was its last course and
+/// the block was deleted.
+#[tauri::command]
+pub async fn block_remove_from_course(db: State<'_, Db>, block_id: i64, topic_id: i64) -> Result<bool> {
+    courses::remove_block(&db.lock(), topic_id, block_id)
+}
+
 /// Stats after a study check-in, for the summary screen.
 #[tauri::command]
 pub async fn checkin_summary(db: State<'_, Db>, first_completion_today: bool) -> Result<SessionResult> {
@@ -410,9 +423,9 @@ pub async fn browse_words(
     let meaning = "en";
     let pattern = format!("%{}%", query.trim());
     let sql = format!(
-        "SELECT id, pl, {meaning}, pos FROM words
-         WHERE (?1 IS NULL OR topic_id = ?1)
-           AND (?2 = '%%' OR pl LIKE ?2 OR {meaning} LIKE ?2)
+        "SELECT id, pl, {meaning}, pos
+         FROM (SELECT * FROM course_words WHERE ?1 IS NULL OR topic_id = ?1 GROUP BY id)
+         WHERE ?2 = '%%' OR pl LIKE ?2 OR {meaning} LIKE ?2
          ORDER BY topic_id, ord LIMIT ?3"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -439,13 +452,17 @@ pub async fn browse_catalogue(
     let pattern = format!("%{needle}%");
     let limit = limit.clamp(1, 1000);
 
-    // `?2 = ''` short-circuits an empty search to "everything".
-    let filter = format!(
-        "(?1 IS NULL OR topic_id = ?1) AND (?2 = '' OR pl LIKE ?3 OR {meaning} LIKE ?3)"
-    );
+    // One row per item, in one course or all of them (an item in a block
+    // that two courses list is still one item). `?2 = ''` short-circuits an
+    // empty search to "everything".
+    let source = |view: &str| {
+        format!("(SELECT * FROM {view} WHERE ?1 IS NULL OR topic_id = ?1 GROUP BY id)")
+    };
+    let filter = format!("(?2 = '' OR pl LIKE ?3 OR {meaning} LIKE ?3)");
 
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning}, pos FROM words WHERE {filter} ORDER BY topic_id, ord LIMIT ?4"
+        "SELECT id, pl, {meaning}, pos FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
+        source("course_words")
     ))?;
     let words = stmt
         .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
@@ -455,7 +472,8 @@ pub async fn browse_catalogue(
     drop(stmt);
 
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning} FROM sentences WHERE {filter} ORDER BY topic_id, ord LIMIT ?4"
+        "SELECT id, pl, {meaning} FROM {} WHERE {filter} ORDER BY topic_id, ord LIMIT ?4",
+        source("course_sentences")
     ))?;
     let sentences = stmt
         .query_map(rusqlite::params![topic_id, needle, pattern, limit], |r| {
@@ -466,15 +484,15 @@ pub async fn browse_catalogue(
 
     let count = |table: &str| -> Result<i64> {
         Ok(conn.query_row(
-            &format!("SELECT COUNT(*) FROM {table} WHERE {filter}"),
+            &format!("SELECT COUNT(*) FROM {} WHERE {filter}", source(table)),
             rusqlite::params![topic_id, needle, pattern],
             |r| r.get(0),
         )?)
     };
 
     Ok(CataloguePage {
-        total_words: count("words")?,
-        total_sentences: count("sentences")?,
+        total_words: count("course_words")?,
+        total_sentences: count("course_sentences")?,
         words,
         sentences,
     })
@@ -485,7 +503,7 @@ pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Se
     let conn = db.lock();
     let meaning = "en";
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, pl, {meaning} FROM sentences WHERE topic_id = ?1 ORDER BY ord"
+        "SELECT id, pl, {meaning} FROM course_sentences WHERE topic_id = ?1 ORDER BY ord"
     ))?;
     let sentences = stmt
         .query_map([topic_id], |r| {
@@ -809,9 +827,9 @@ pub async fn cache_audio(
 pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<SpeechLine>> {
     let conn = db.lock();
     let mut stmt = conn.prepare(
-        "SELECT pl, '' FROM sentences WHERE topic_id = ?1
+        "SELECT pl, '' FROM course_sentences WHERE topic_id = ?1
          UNION ALL
-         SELECT pl, gender FROM conversation_lines WHERE topic_id = ?1",
+         SELECT pl, gender FROM course_lines WHERE topic_id = ?1",
     )?;
     let lines = stmt
         .query_map([topic_id], |r| {

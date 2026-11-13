@@ -33,12 +33,11 @@ pub fn open(path: &std::path::Path) -> Result<Connection> {
 
 /// Bumped whenever the shape of the database changes in a way that
 /// `CREATE TABLE IF NOT EXISTS` cannot express. Stored in `PRAGMA user_version`.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = r#"
--- A topic is a course: a folder of blocks, with the words, sentences and
--- dialogue its drills practise. `kind` is always 'course' now (it once told
--- built-in topics from the learner's programmes).
+-- A topic is a course: a folder of blocks (see course_blocks). `kind` is
+-- always 'course' now (it once told built-in topics from programmes).
 CREATE TABLE IF NOT EXISTS topics (
     id         INTEGER PRIMARY KEY,
     slug       TEXT    NOT NULL UNIQUE,
@@ -50,39 +49,49 @@ CREATE TABLE IF NOT EXISTS topics (
     created_at INTEGER NOT NULL DEFAULT 0
 );
 
--- A headword is unique within a topic, not globally: a course on colours
--- may well repeat a word the course already teaches.
+-- Words, sentences and dialogue lines belong to a block — the drill that
+-- practises them — and go when it goes. A course reaches them through its
+-- blocks. A headword is unique within a block only: two courses may well
+-- teach the same word, each with its own history.
 CREATE TABLE IF NOT EXISTS words (
     id       INTEGER PRIMARY KEY,
-    topic_id INTEGER NOT NULL REFERENCES topics(id),
+    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
     pos      TEXT    NOT NULL,
-    UNIQUE (topic_id, pl)
+    UNIQUE (block_id, pl)
 );
-CREATE INDEX IF NOT EXISTS words_topic ON words(topic_id, ord);
+CREATE INDEX IF NOT EXISTS words_block ON words(block_id, ord);
 
 CREATE TABLE IF NOT EXISTS sentences (
     id       INTEGER PRIMARY KEY,
-    topic_id INTEGER NOT NULL REFERENCES topics(id),
+    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
-    UNIQUE (topic_id, pl)
+    UNIQUE (block_id, pl)
 );
-CREATE INDEX IF NOT EXISTS sentences_topic ON sentences(topic_id, ord);
+CREATE INDEX IF NOT EXISTS sentences_block ON sentences(block_id, ord);
 
 CREATE TABLE IF NOT EXISTS conversation_lines (
     id       INTEGER PRIMARY KEY,
-    topic_id INTEGER NOT NULL REFERENCES topics(id),
+    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
     speaker  TEXT    NOT NULL,
     gender   TEXT    NOT NULL DEFAULT 'f',
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL
 );
-CREATE INDEX IF NOT EXISTS conversation_topic ON conversation_lines(topic_id, ord);
+CREATE INDEX IF NOT EXISTS conversation_block ON conversation_lines(block_id, ord);
+
+-- A word or sentence that goes takes its review history with it.
+CREATE TRIGGER IF NOT EXISTS words_forget AFTER DELETE ON words BEGIN
+    DELETE FROM reviews WHERE kind = 'word' AND item_id = OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS sentences_forget AFTER DELETE ON sentences BEGIN
+    DELETE FROM reviews WHERE kind = 'sentence' AND item_id = OLD.id;
+END;
 
 -- Spaced repetition state, one row per item the learner has actually seen.
 CREATE TABLE IF NOT EXISTS reviews (
@@ -131,15 +140,15 @@ CREATE TABLE IF NOT EXISTS audio_cache (
     created_at INTEGER NOT NULL
 );
 
--- Blocks: the unit of learning (see blocks.rs). A drill practises the
--- words and sentences listed in block_items; a study block carries a lesson
--- and is checked by an examiner. Each has its own check-in schedule.
+-- Blocks: the unit of learning (see blocks.rs). A drill practises its own
+-- words, sentences or dialogue; a study block carries a lesson and is checked
+-- by an examiner. Each has its own check-in schedule, and is listed in one
+-- or more courses.
 CREATE TABLE IF NOT EXISTS blocks (
     id            INTEGER PRIMARY KEY,
-    slug          TEXT    UNIQUE,                -- split drills: topic/<id>/…; NULL for made ones
+    slug          TEXT    UNIQUE,                -- starter lessons: lesson/<slug>
     kind          TEXT    NOT NULL,              -- drill | study
-    format        TEXT    NOT NULL DEFAULT '',   -- drills: words | memory | typing | sentences | gaps | dialogue
-    topic_id      INTEGER REFERENCES topics(id) ON DELETE CASCADE,
+    format        TEXT    NOT NULL DEFAULT '',   -- drills: words | memory | typing | sentences | gaps | dialogue; 'song' for listening
     ord           INTEGER NOT NULL DEFAULT 0,
     title         TEXT    NOT NULL,
     summary       TEXT    NOT NULL DEFAULT '',
@@ -153,18 +162,32 @@ CREATE TABLE IF NOT EXISTS blocks (
     last_result   TEXT,                          -- pass | partial | fail
     reps          INTEGER NOT NULL DEFAULT 0,
     origin        TEXT    NOT NULL DEFAULT 'tutor', -- starter | tutor | you
-    created_at    INTEGER NOT NULL
+    created_at    INTEGER NOT NULL,
+    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE -- listening blocks
 );
-CREATE INDEX IF NOT EXISTS blocks_topic ON blocks(topic_id, ord);
 CREATE INDEX IF NOT EXISTS blocks_due ON blocks(due_day);
 
-CREATE TABLE IF NOT EXISTS block_items (
+-- Which courses list a block, in what order. A block may be in several; it is
+-- deleted when it is taken out of the last one (courses.rs).
+CREATE TABLE IF NOT EXISTS course_blocks (
+    topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
     block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
-    kind     TEXT    NOT NULL,                   -- word | sentence
-    item_id  INTEGER NOT NULL,
     ord      INTEGER NOT NULL,
-    PRIMARY KEY (block_id, kind, item_id)
+    PRIMARY KEY (topic_id, block_id)
 );
+CREATE INDEX IF NOT EXISTS course_blocks_block ON course_blocks(block_id);
+
+-- A course's words, sentences and dialogue: whatever its blocks own, in the
+-- course's block order. A block in two courses shows in both.
+CREATE VIEW IF NOT EXISTS course_words AS
+    SELECT c.topic_id, w.id, w.block_id, c.ord * 1000 + w.ord AS ord, w.pl, w.en, w.pos
+    FROM words w JOIN course_blocks c ON c.block_id = w.block_id;
+CREATE VIEW IF NOT EXISTS course_sentences AS
+    SELECT c.topic_id, s.id, s.block_id, c.ord * 1000 + s.ord AS ord, s.pl, s.en
+    FROM sentences s JOIN course_blocks c ON c.block_id = s.block_id;
+CREATE VIEW IF NOT EXISTS course_lines AS
+    SELECT c.topic_id, l.id, l.block_id, c.ord * 1000 + l.ord AS ord, l.speaker, l.gender, l.pl, l.en
+    FROM conversation_lines l JOIN course_blocks c ON c.block_id = l.block_id;
 
 -- A study block's check-in: an interview with the examiner, and its verdict.
 CREATE TABLE IF NOT EXISTS checkins (
@@ -288,6 +311,9 @@ fn migrate(conn: &Connection) -> Result<()> {
     if version < 3 && table_exists(conn, "words")? {
         upgrade_to_english_only(conn)?;
     }
+    if version < 4 && table_exists(conn, "words")? {
+        upgrade_to_block_owned_items(conn)?;
+    }
     conn.execute_batch(SCHEMA)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
@@ -302,8 +328,6 @@ fn migrate(conn: &Connection) -> Result<()> {
         "INTEGER REFERENCES tutor_conversations(id) ON DELETE CASCADE",
     )?;
     adopt_loose_tutor_messages(conn)?;
-    // Listening blocks belong to a song, and go when it goes.
-    add_column(conn, "blocks", "song_id", "INTEGER REFERENCES songs(id) ON DELETE CASCADE")?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     Ok(())
 }
@@ -432,6 +456,211 @@ fn upgrade_to_english_only(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Before version 4, words, sentences and dialogue lines belonged to a topic,
+/// drills pointed at some of them (block_items), and each block sat in one
+/// topic. Now each item belongs to one block and blocks are listed in
+/// courses. Row ids are kept, so review history survives.
+///
+/// A word two drills shared (a tutor-made drill over words that the topic's
+/// own word drills also picked up) goes to the tutor's drill; an automatic
+/// drill left with nothing goes. Items no drill held — or every item, in a
+/// database from before blocks — are cut into new drills of their course.
+fn upgrade_to_block_owned_items(conn: &Connection) -> Result<()> {
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let result = (|| -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        let had_blocks = table_exists(&tx, "blocks")?;
+        if had_blocks {
+            add_column(&tx, "blocks", "song_id", "INTEGER")?;
+        }
+        tx.execute_batch(
+            r#"
+            CREATE TABLE blocks_v4 (
+                id            INTEGER PRIMARY KEY,
+                slug          TEXT    UNIQUE,
+                kind          TEXT    NOT NULL,
+                format        TEXT    NOT NULL DEFAULT '',
+                ord           INTEGER NOT NULL DEFAULT 0,
+                title         TEXT    NOT NULL,
+                summary       TEXT    NOT NULL DEFAULT '',
+                complexity    TEXT    NOT NULL,
+                lesson        TEXT    NOT NULL DEFAULT '',
+                objectives    TEXT    NOT NULL DEFAULT '[]',
+                period_days   INTEGER NOT NULL,
+                interval_days INTEGER NOT NULL DEFAULT 0,
+                due_day       INTEGER,
+                last_day      INTEGER,
+                last_result   TEXT,
+                reps          INTEGER NOT NULL DEFAULT 0,
+                origin        TEXT    NOT NULL DEFAULT 'tutor',
+                created_at    INTEGER NOT NULL,
+                song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS course_blocks (
+                topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+                block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+                ord      INTEGER NOT NULL,
+                PRIMARY KEY (topic_id, block_id)
+            );
+            CREATE TABLE words_v4 (
+                id INTEGER PRIMARY KEY, block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+                ord INTEGER NOT NULL, pl TEXT NOT NULL, en TEXT NOT NULL, pos TEXT NOT NULL, UNIQUE (block_id, pl)
+            );
+            CREATE TABLE sentences_v4 (
+                id INTEGER PRIMARY KEY, block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+                ord INTEGER NOT NULL, pl TEXT NOT NULL, en TEXT NOT NULL, UNIQUE (block_id, pl)
+            );
+            CREATE TABLE conversation_lines_v4 (
+                id INTEGER PRIMARY KEY, block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+                ord INTEGER NOT NULL, speaker TEXT NOT NULL, gender TEXT NOT NULL DEFAULT 'f',
+                pl TEXT NOT NULL, en TEXT NOT NULL
+            );
+            "#,
+        )?;
+        if had_blocks {
+            tx.execute_batch(
+                r#"
+                INSERT INTO blocks_v4 (id, slug, kind, format, ord, title, summary, complexity, lesson,
+                        objectives, period_days, interval_days, due_day, last_day, last_result, reps,
+                        origin, created_at, song_id)
+                    SELECT id, slug, kind, format, ord, title, summary, complexity, lesson,
+                        objectives, period_days, interval_days, due_day, last_day, last_result, reps,
+                        origin, created_at, song_id FROM blocks;
+                INSERT OR IGNORE INTO course_blocks (topic_id, block_id, ord)
+                    SELECT topic_id, id, ord FROM blocks WHERE topic_id IS NOT NULL;
+
+                -- Each item goes to one drill that held it: a made one first.
+                INSERT OR IGNORE INTO words_v4 (id, block_id, ord, pl, en, pos)
+                    SELECT w.id, o.block_id, o.ord, w.pl, w.en, w.pos FROM words w
+                    JOIN (SELECT i.item_id, i.block_id, i.ord,
+                                 ROW_NUMBER() OVER (PARTITION BY i.item_id
+                                     ORDER BY b.slug IS NOT NULL, b.id) AS pick
+                          FROM block_items i JOIN blocks b ON b.id = i.block_id
+                          WHERE i.kind = 'word') o ON o.item_id = w.id AND o.pick = 1;
+                INSERT OR IGNORE INTO sentences_v4 (id, block_id, ord, pl, en)
+                    SELECT s.id, o.block_id, o.ord, s.pl, s.en FROM sentences s
+                    JOIN (SELECT i.item_id, i.block_id, i.ord,
+                                 ROW_NUMBER() OVER (PARTITION BY i.item_id
+                                     ORDER BY b.slug IS NOT NULL, b.id) AS pick
+                          FROM block_items i JOIN blocks b ON b.id = i.block_id
+                          WHERE i.kind = 'sentence') o ON o.item_id = s.id AND o.pick = 1;
+                -- A topic's dialogue goes to its dialogue drill.
+                INSERT INTO conversation_lines_v4 (id, block_id, ord, speaker, gender, pl, en)
+                    SELECT l.id, d.block_id, l.ord, l.speaker, l.gender, l.pl, l.en FROM conversation_lines l
+                    JOIN (SELECT topic_id, MIN(id) AS block_id FROM blocks
+                          WHERE format = 'dialogue' AND topic_id IS NOT NULL GROUP BY topic_id) d
+                      ON d.topic_id = l.topic_id;
+
+                -- Automatic drills left empty by the above go.
+                DELETE FROM blocks_v4 WHERE slug IS NOT NULL AND kind = 'drill'
+                    AND NOT EXISTS (SELECT 1 FROM words_v4 w WHERE w.block_id = blocks_v4.id)
+                    AND NOT EXISTS (SELECT 1 FROM sentences_v4 s WHERE s.block_id = blocks_v4.id)
+                    AND NOT EXISTS (SELECT 1 FROM conversation_lines_v4 l WHERE l.block_id = blocks_v4.id);
+                DELETE FROM course_blocks WHERE block_id NOT IN (SELECT id FROM blocks_v4);
+                DELETE FROM checkin_messages WHERE checkin_id IN
+                    (SELECT id FROM checkins WHERE block_id NOT IN (SELECT id FROM blocks_v4));
+                DELETE FROM checkins WHERE block_id NOT IN (SELECT id FROM blocks_v4);
+                -- Drill slugs were only for re-cutting topics, which no longer happens.
+                UPDATE blocks_v4 SET slug = NULL WHERE slug NOT LIKE 'lesson/%';
+                "#,
+            )?;
+        }
+
+        // Whatever no drill held is cut into new drills of its course.
+        let topics: Vec<(i64, String)> = {
+            let mut stmt = tx.prepare("SELECT id, title_pl FROM topics ORDER BY ord")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+            rows
+        };
+        let now = now_secs();
+        let new_block = |tx: &Connection, topic: i64, title: &str, format: &str, complexity: &str| -> Result<i64> {
+            tx.execute(
+                "INSERT INTO blocks_v4 (kind, format, title, complexity, period_days, origin, created_at)
+                 VALUES ('drill', ?1, ?2, ?3, ?4, 'starter', ?5)",
+                rusqlite::params![format, title, complexity, crate::blocks::default_period("drill", complexity), now],
+            )?;
+            let id = tx.last_insert_rowid();
+            tx.execute(
+                "INSERT INTO course_blocks (topic_id, block_id, ord)
+                 VALUES (?1, ?2, (SELECT COALESCE(MAX(ord), 0) + 1 FROM course_blocks WHERE topic_id = ?1))",
+                [topic, id],
+            )?;
+            Ok(id)
+        };
+        for (topic, title_pl) in topics {
+            let lines: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM conversation_lines WHERE topic_id = ?1
+                   AND id NOT IN (SELECT id FROM conversation_lines_v4)",
+                [topic],
+                |r| r.get(0),
+            )?;
+            if lines > 0 {
+                let block = new_block(&tx, topic, &format!("Conversation: {title_pl}"), "dialogue", "low")?;
+                tx.execute(
+                    "INSERT INTO conversation_lines_v4 (id, block_id, ord, speaker, gender, pl, en)
+                     SELECT id, ?2, ord, speaker, gender, pl, en FROM conversation_lines
+                     WHERE topic_id = ?1 AND id NOT IN (SELECT id FROM conversation_lines_v4)",
+                    [topic, block],
+                )?;
+            }
+            for (table, title, format, complexity, size, columns) in [
+                ("words", "Words", "words", "low", crate::blocks::WORDS_PER_BLOCK, "pl, en, pos"),
+                ("sentences", "Sentences", "sentences", "medium", crate::blocks::SENTENCES_PER_BLOCK, "pl, en"),
+            ] {
+                let loose: Vec<i64> = {
+                    let mut stmt = tx.prepare(&format!(
+                        "SELECT id FROM {table} WHERE topic_id = ?1
+                           AND id NOT IN (SELECT id FROM {table}_v4) ORDER BY ord, id"
+                    ))?;
+                    let ids = stmt.query_map([topic], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+                    ids
+                };
+                let taken: i64 = tx.query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM blocks_v4 b JOIN course_blocks c ON c.block_id = b.id
+                         WHERE c.topic_id = ?1 AND b.format = '{format}'"
+                    ),
+                    [topic],
+                    |r| r.get(0),
+                )?;
+                for (n, chunk) in loose.chunks(size).enumerate() {
+                    let block = new_block(&tx, topic, &format!("{title} {}", taken + n as i64 + 1), format, complexity)?;
+                    for (ord, id) in chunk.iter().enumerate() {
+                        tx.execute(
+                            &format!(
+                                "INSERT OR IGNORE INTO {table}_v4 (id, block_id, ord, {columns})
+                                 SELECT id, ?2, ?3, {columns} FROM {table} WHERE id = ?1"
+                            ),
+                            rusqlite::params![id, block, ord as i64],
+                        )?;
+                    }
+                }
+            }
+        }
+
+        tx.execute_batch(
+            r#"
+            DROP TABLE IF EXISTS block_items;
+            DROP TABLE IF EXISTS blocks;
+            DROP TABLE words;
+            DROP TABLE sentences;
+            DROP TABLE conversation_lines;
+            ALTER TABLE blocks_v4 RENAME TO blocks;
+            ALTER TABLE words_v4 RENAME TO words;
+            ALTER TABLE sentences_v4 RENAME TO sentences;
+            ALTER TABLE conversation_lines_v4 RENAME TO conversation_lines;
+            -- Review rows whose item did not survive.
+            DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words);
+            DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences);
+            "#,
+        )?;
+        tx.commit()?;
+        Ok(())
+    })();
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    result
+}
+
 fn add_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
     let exists = conn
         .prepare(&format!("PRAGMA table_info({table})"))?
@@ -477,61 +706,60 @@ fn seed_starter(conn: &Connection) -> Result<()> {
                 topic.slug, convo.slug
             )));
         }
+        let topic_id = crate::courses::ensure(conn, topic.slug, &convo.title_en, &convo.title_pl, &convo.summary_en)?;
         conn.execute(
-            "INSERT INTO topics (slug, ord, kind, title_pl, title_en, summary_en)
-             VALUES (?1, ?2, 'course', ?3, ?4, ?5)
-             ON CONFLICT(slug) DO UPDATE SET
-                 ord = excluded.ord, kind = 'course', title_pl = excluded.title_pl,
-                 title_en = excluded.title_en, summary_en = excluded.summary_en",
-            rusqlite::params![topic.slug, index as i64 + 1, convo.title_pl, convo.title_en, convo.summary_en],
+            "UPDATE topics SET ord = ?2, created_at = 0 WHERE id = ?1",
+            rusqlite::params![topic_id, index as i64 + 1],
         )?;
-        let topic_id: i64 =
-            conn.query_row("SELECT id FROM topics WHERE slug = ?1", [topic.slug], |r| r.get(0))?;
-
-        for (i, w) in content::parse_words(topic.words).iter().enumerate() {
-            conn.execute(
-                "INSERT INTO words (topic_id, ord, pl, en, pos) VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(topic_id, pl) DO UPDATE SET
-                     ord = excluded.ord, en = excluded.en, pos = excluded.pos",
-                rusqlite::params![topic_id, i as i64, w.pl, w.en, w.pos],
-            )?;
-        }
-        for (i, s) in content::parse_sentences(topic.sentences).iter().enumerate() {
-            conn.execute(
-                "INSERT INTO sentences (topic_id, ord, pl, en) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(topic_id, pl) DO UPDATE SET ord = excluded.ord, en = excluded.en",
-                rusqlite::params![topic_id, i as i64, s.pl, s.en],
-            )?;
-        }
-        // Conversation lines have no natural key, so they are replaced.
-        conn.execute("DELETE FROM conversation_lines WHERE topic_id = ?1", [topic_id])?;
-        for (i, line) in convo.lines.iter().enumerate() {
+        let words: Vec<crate::courses::NewWord> = content::parse_words(topic.words)
+            .into_iter()
+            .map(|w| crate::courses::NewWord { pl: w.pl.to_string(), en: w.en.to_string(), pos: w.pos.to_string() })
+            .collect();
+        let sentences: Vec<crate::courses::NewSentence> = content::parse_sentences(topic.sentences)
+            .into_iter()
+            .map(|s| crate::courses::NewSentence { pl: s.pl.to_string(), en: s.en.to_string() })
+            .collect();
+        let mut lines = Vec::new();
+        for line in &convo.lines {
             let gender = convo.speakers.get(&line.speaker).ok_or_else(|| {
                 Error::msg(format!(
                     "conversation '{}' has no gender for speaker '{}'",
                     topic.slug, line.speaker
                 ))
             })?;
-            conn.execute(
-                "INSERT INTO conversation_lines (topic_id, ord, speaker, gender, pl, en)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![topic_id, i as i64, line.speaker, gender, line.pl, line.en],
-            )?;
+            lines.push(crate::courses::NewLine {
+                speaker: line.speaker.clone(),
+                gender: gender.clone(),
+                pl: line.pl.clone(),
+                en: line.en.clone(),
+            });
         }
-        crate::blocks::split_topic(conn, topic_id, &crate::blocks::split_prefix(topic_id), "starter")?;
+        // A course that already has a conversation (an older install) keeps it.
+        let has_dialogue: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM blocks b JOIN course_blocks c ON c.block_id = b.id
+                            WHERE c.topic_id = ?1 AND b.format = 'dialogue')",
+            [topic_id],
+            |r| r.get(0),
+        )?;
+        crate::courses::cut_into_drills(
+            conn,
+            topic_id,
+            &words,
+            &sentences,
+            if has_dialogue { &[] } else { &lines },
+            "starter",
+        )?;
     }
     crate::blocks::seed_lessons(conn)?;
     Ok(())
 }
 
-/// One kind of folder: every topic is a course, every block is in one.
+/// One kind of folder: every topic is a course, every block is listed in one.
 ///
 /// Built-in topics and the learner's programmes both become plain courses
 /// (programmes after the starter ones, in the order they were made). Blocks
-/// without a topic are filed: the starter lessons in "Grammar essentials",
-/// listening blocks in "Listening", the tutor's lessons in "Lessons". Split
-/// drills get a slug prefix of their own course id, so cutting a course again
-/// later matches them. Safe to run twice.
+/// no course lists are filed: the starter lessons in "Grammar essentials",
+/// listening blocks in "Listening", the rest in "Lessons". Safe to run twice.
 pub fn unify_courses(conn: &Connection) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
 
@@ -550,49 +778,27 @@ pub fn unify_courses(conn: &Connection) -> Result<()> {
         )?;
     }
 
-    // Blocks without a course.
-    let loose = |filter: &str| -> Result<bool> {
-        Ok(tx.query_row(
-            &format!("SELECT EXISTS (SELECT 1 FROM blocks WHERE topic_id IS NULL AND {filter})"),
-            [],
-            |r| r.get(0),
-        )?)
+    let loose = |filter: &str| -> Result<Vec<i64>> {
+        let mut stmt = tx.prepare(&format!(
+            "SELECT id FROM blocks WHERE id NOT IN (SELECT block_id FROM course_blocks) AND {filter}
+             ORDER BY ord, id"
+        ))?;
+        let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(ids)
     };
-    if loose("slug LIKE 'lesson/%'")? {
-        let id = crate::courses::ensure(
-            &tx,
-            "grammar-essentials",
-            "Grammar essentials",
-            "Podstawy gramatyki",
-            "Być and mieć, verb patterns, gender, the cases, and when to say ty or Pan.",
-        )?;
-        // Dated like the other starter courses, so it sorts with them.
-        tx.execute("UPDATE topics SET created_at = 0 WHERE id = ?1", [id])?;
-        tx.execute(
-            "UPDATE blocks SET topic_id = ?1 WHERE topic_id IS NULL AND slug LIKE 'lesson/%'",
-            [id],
-        )?;
+    for (filter, course) in [
+        ("slug LIKE 'lesson/%'", crate::courses::grammar_course as fn(&Connection) -> Result<i64>),
+        ("song_id IS NOT NULL", crate::courses::listening_course),
+        ("1", crate::courses::lessons_course),
+    ] {
+        let blocks = loose(filter)?;
+        if !blocks.is_empty() {
+            let id = course(&tx)?;
+            for block in blocks {
+                crate::courses::add_block(&tx, id, block)?;
+            }
+        }
     }
-    if loose("song_id IS NOT NULL")? {
-        let id = crate::courses::listening_course(&tx)?;
-        tx.execute("UPDATE blocks SET topic_id = ?1 WHERE topic_id IS NULL AND song_id IS NOT NULL", [id])?;
-    }
-    if loose("1")? {
-        let id = crate::courses::lessons_course(&tx)?;
-        tx.execute("UPDATE blocks SET topic_id = ?1 WHERE topic_id IS NULL", [id])?;
-    }
-
-    // Split drills: "course/<slug>/…" and "programme/<id>/…" become "topic/<id>/…".
-    tx.execute(
-        "UPDATE blocks SET slug = 'topic/' || topic_id || substr(slug, instr(substr(slug, 8), '/') + 7)
-         WHERE slug LIKE 'course/%/%'",
-        [],
-    )?;
-    tx.execute(
-        "UPDATE blocks SET slug = 'topic/' || topic_id || substr(slug, instr(substr(slug, 11), '/') + 10)
-         WHERE slug LIKE 'programme/%/%'",
-        [],
-    )?;
     tx.execute("UPDATE blocks SET origin = 'starter' WHERE origin IN ('course', 'builtin')", [])?;
     tx.commit()?;
     Ok(())

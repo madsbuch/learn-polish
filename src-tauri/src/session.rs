@@ -51,13 +51,24 @@ pub fn load_topic(conn: &Connection, topic_id: i64) -> Result<Topic> {
     .ok_or_else(|| crate::error::Error::msg(format!("There is no topic with id {topic_id}.")))
 }
 
+/// A course's dialogue: the lines of its conversation drills, in order.
 pub fn dialogue_lines(conn: &Connection, topic_id: i64) -> Result<Vec<DialogueLine>> {
-    let mut stmt = conn.prepare(
-        "SELECT ord, speaker, gender, pl, en FROM conversation_lines
-         WHERE topic_id = ?1 ORDER BY ord",
-    )?;
+    lines(conn, "SELECT ord, speaker, gender, pl, en FROM course_lines WHERE topic_id = ?1 ORDER BY ord", topic_id)
+}
+
+/// The dialogue one block owns.
+pub fn block_lines(conn: &Connection, block_id: i64) -> Result<Vec<DialogueLine>> {
+    lines(
+        conn,
+        "SELECT ord, speaker, gender, pl, en FROM conversation_lines WHERE block_id = ?1 ORDER BY ord, id",
+        block_id,
+    )
+}
+
+fn lines(conn: &Connection, sql: &str, id: i64) -> Result<Vec<DialogueLine>> {
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt
-        .query_map([topic_id], |r| {
+        .query_map([id], |r| {
             Ok(DialogueLine {
                 ord: r.get(0)?,
                 speaker: r.get(1)?,
@@ -142,9 +153,9 @@ fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> E
 fn block_words(conn: &Connection, block_id: i64) -> Result<Vec<(WordRow, bool)>> {
     let mut stmt = conn.prepare(
         "SELECT w.id, w.pl, w.en, w.pos, COALESCE(r.reps, 0), r.item_id IS NULL
-         FROM block_items i JOIN words w ON w.id = i.item_id
+         FROM words w
          LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
-         WHERE i.block_id = ?1 AND i.kind = 'word' ORDER BY i.ord",
+         WHERE w.block_id = ?1 ORDER BY w.ord, w.id",
     )?;
     let rows = stmt
         .query_map([block_id], |r| {
@@ -160,9 +171,9 @@ fn block_words(conn: &Connection, block_id: i64) -> Result<Vec<(WordRow, bool)>>
 fn block_sentences(conn: &Connection, block_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.pl, s.en, r.item_id IS NULL
-         FROM block_items i JOIN sentences s ON s.id = i.item_id
+         FROM sentences s
          LEFT JOIN reviews r ON r.kind = 'sentence' AND r.item_id = s.id
-         WHERE i.block_id = ?1 AND i.kind = 'sentence' ORDER BY i.ord",
+         WHERE s.block_id = ?1 ORDER BY s.ord, s.id",
     )?;
     let rows = stmt
         .query_map([block_id], |r| {
@@ -184,7 +195,7 @@ pub fn build_block(conn: &Connection, block_id: i64) -> Result<SessionPlan> {
         .ok_or_else(|| crate::error::Error::msg("This drill has no words to practise."))?;
     let topic = load_topic(conn, topic_id)?;
     let today = db::today(conn);
-    let pool = distractor_pool(conn, topic_id, "en")?;
+    let pool = distractor_pool(conn, block_id, "en")?;
     let rng = &mut rand::rng();
 
     let words = block_words(conn, block_id)?;
@@ -229,17 +240,17 @@ pub fn build_block(conn: &Connection, block_id: i64) -> Result<SessionPlan> {
             }
             let rows: Vec<&SentenceRow> = sentences.iter().map(|(s, _)| s).collect();
             for chunk in rows.chunks(GAP_SENTENCES) {
-                exercises.extend(gap_fill(conn, topic_id, chunk, true, rng)?);
+                exercises.extend(gap_fill(conn, block_id, chunk, true, rng)?);
             }
         }
         "dialogue" => {
-            dialogue = dialogue_lines(conn, topic_id)?;
+            dialogue = block_lines(conn, block_id)?;
             if !dialogue.is_empty() {
                 exercises.push(Exercise {
-                    key: format!("d{topic_id}-read"),
+                    key: format!("d{block_id}-read"),
                     kind: "dialogueRead".into(),
                     item_kind: "dialogue".into(),
-                    item_id: topic_id,
+                    item_id: block_id,
                     is_new: true,
                     prompt: topic.title.clone(),
                     hint: topic.summary.clone(),
@@ -252,7 +263,7 @@ pub fn build_block(conn: &Connection, block_id: i64) -> Result<SessionPlan> {
                     meaning: topic.summary.clone(),
                 });
             }
-            exercises.extend(dialogue_gaps(&dialogue, topic_id, rng));
+            exercises.extend(dialogue_gaps(&dialogue, block_id, rng));
         }
         other => return Err(crate::error::Error::msg(format!("Unknown drill format '{other}'."))),
     }
@@ -278,12 +289,14 @@ struct Distractors {
     polish: Vec<String>,
 }
 
-fn distractor_pool(conn: &Connection, topic_id: i64, meaning: &str) -> Result<Distractors> {
+/// Decoys come from the words of every course the block is in.
+fn distractor_pool(conn: &Connection, block_id: i64, meaning: &str) -> Result<Distractors> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT pl, {meaning} FROM words WHERE topic_id = ?1"
+        "SELECT DISTINCT pl, {meaning} FROM course_words
+         WHERE topic_id IN (SELECT topic_id FROM course_blocks WHERE block_id = ?1)"
     ))?;
     let rows = stmt
-        .query_map([topic_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .query_map([block_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(Distractors {
         polish: rows.iter().map(|(pl, _)| pl.clone()).collect(),
@@ -369,7 +382,7 @@ fn word_order(s: &SentenceRow) -> Exercise {
 /// Blanks out a few lines of the conversation and asks which one belongs.
 fn dialogue_gaps(
     dialogue: &[DialogueLine],
-    topic_id: i64,
+    block_id: i64,
     rng: &mut impl rand::Rng,
 ) -> Vec<Exercise> {
     if dialogue.len() < 5 {
@@ -388,10 +401,10 @@ fn dialogue_gaps(
             let line = &dialogue[i];
             let previous = &dialogue[i - 1];
             Exercise {
-                key: format!("d{topic_id}-gap{i}"),
+                key: format!("d{block_id}-gap{i}"),
                 kind: "dialogueGap".into(),
                 item_kind: "dialogue".into(),
-                item_id: topic_id,
+                item_id: block_id,
                 is_new: false,
                 prompt: previous.pl.clone(),
                 hint: format!("{} — {}", previous.speaker, line.speaker),
@@ -494,20 +507,24 @@ fn make_gap(pl: &str, meaning: &str, topic_words: &std::collections::HashSet<Str
 /// bank of the missing words plus two that do not belong.
 fn gap_fill(
     conn: &Connection,
-    topic_id: i64,
+    block_id: i64,
     session: &[&SentenceRow],
     // Only the given sentences, rather than topping up from the topic.
     only_session: bool,
     rng: &mut impl rand::Rng,
 ) -> Result<Option<Exercise>> {
-    let mut stmt = conn.prepare("SELECT pl, en FROM sentences WHERE topic_id = ?1 ORDER BY ord")?;
+    let courses = "SELECT topic_id FROM course_blocks WHERE block_id = ?1";
+    let mut stmt = conn.prepare(&format!(
+        "SELECT DISTINCT pl, en FROM course_sentences WHERE topic_id IN ({courses})"
+    ))?;
     let mut topic_sentences: Vec<(String, String)> = stmt
-        .query_map([topic_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map([block_id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     drop(stmt);
-    let mut stmt = conn.prepare("SELECT pl FROM words WHERE topic_id = ?1")?;
+    let mut stmt =
+        conn.prepare(&format!("SELECT DISTINCT pl FROM course_words WHERE topic_id IN ({courses})"))?;
     let topic_words: std::collections::HashSet<String> = stmt
-        .query_map([topic_id], |r| r.get::<_, String>(0))?
+        .query_map([block_id], |r| r.get::<_, String>(0))?
         .filter_map(|w| w.ok())
         .filter(|w| !w.contains(' '))
         .map(|w| w.to_lowercase())
@@ -554,10 +571,10 @@ fn gap_fill(
     bank.shuffle(rng);
 
     Ok(Some(Exercise {
-        key: format!("t{topic_id}-gaps"),
+        key: format!("t{block_id}-gaps"),
         kind: "gapFill".into(),
         item_kind: "set".into(),
-        item_id: topic_id,
+        item_id: block_id,
         is_new: false,
         prompt: String::new(),
         hint: String::new(),

@@ -252,25 +252,28 @@ pub fn topic_progress(conn: &Connection) -> Result<Vec<TopicProgress>> {
             };
             Ok(TopicProgress {
                 topic,
-                total_words: one("SELECT COUNT(*) FROM words WHERE topic_id = ?1")?,
+                total_words: one("SELECT COUNT(*) FROM course_words WHERE topic_id = ?1")?,
                 seen_words: one(
-                    "SELECT COUNT(*) FROM words w JOIN reviews r
+                    "SELECT COUNT(*) FROM course_words w JOIN reviews r
                      ON r.kind = 'word' AND r.item_id = w.id WHERE w.topic_id = ?1",
                 )?,
                 mastered_words: conn.query_row(
-                    "SELECT COUNT(*) FROM words w JOIN reviews r
+                    "SELECT COUNT(*) FROM course_words w JOIN reviews r
                      ON r.kind = 'word' AND r.item_id = w.id
                      WHERE w.topic_id = ?1 AND r.reps >= ?2",
                     rusqlite::params![id, MASTERY_REPS],
                     |r| r.get(0),
                 )?,
-                total_sentences: one("SELECT COUNT(*) FROM sentences WHERE topic_id = ?1")?,
+                total_sentences: one("SELECT COUNT(*) FROM course_sentences WHERE topic_id = ?1")?,
                 seen_sentences: one(
-                    "SELECT COUNT(*) FROM sentences s JOIN reviews r
+                    "SELECT COUNT(*) FROM course_sentences s JOIN reviews r
                      ON r.kind = 'sentence' AND r.item_id = s.id WHERE s.topic_id = ?1",
                 )?,
-                total_blocks: one("SELECT COUNT(*) FROM blocks WHERE topic_id = ?1")?,
-                started_blocks: one("SELECT COUNT(*) FROM blocks WHERE topic_id = ?1 AND due_day IS NOT NULL")?,
+                total_blocks: one("SELECT COUNT(*) FROM course_blocks WHERE topic_id = ?1")?,
+                started_blocks: one(
+                    "SELECT COUNT(*) FROM course_blocks c JOIN blocks b ON b.id = c.block_id
+                     WHERE c.topic_id = ?1 AND b.due_day IS NOT NULL",
+                )?,
             })
         })
         .collect()

@@ -6,7 +6,7 @@
 //! tool runs here, in Rust, against the same SQLite database the rest of the
 //! app uses, so what the tutor makes is immediately practisable.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{Emitter, State};
@@ -65,9 +65,12 @@ What the app does — learning happens in blocks:
 - Every block has a check-in period (days). Passing pushes the next check-in further out; \
   partial repeats the period; failing brings it back tomorrow. Defaults: drills 2/4/7 days, \
   study blocks 5/7/10 days for low/medium/high.
-- Every block lives in a course: a folder with a theme, its words, sentences and an optional \
-  dialogue (cut into drills automatically: the dialogue, words in eights, sentences in fives) \
-  plus any lessons and drills filed under it. The app started with a set of courses (greetings, \
+- Three levels: a course lists blocks; a drill block owns the words, sentences or dialogue \
+  it practises (a course has words only through its drills). Giving a course words, sentences \
+  or a dialogue cuts them into drills: the dialogue, words in eights, sentences in fives. A \
+  block can be listed in several courses (one block, one schedule); taking it out of its last \
+  course deletes it with its words. Use move_block, add_block_to_course, \
+  remove_block_from_course and order_course_blocks to rearrange. The app started with a set of courses (greetings, \
   food, numbers… and Grammar essentials); they are ordinary courses — you can add to, edit or \
   delete any course or block. Lessons with no better home go in \"Lessons\", listening blocks in \
   \"Listening\".
@@ -429,6 +432,49 @@ pub fn tool_definitions() -> Value {
             }),
         ),
         function(
+            "add_block_to_course",
+            "List a block in another course too. It stays one block — one schedule, one history — shown in each course.",
+            json!({
+                "type": "object",
+                "properties": { "block_id": { "type": "integer" }, "course_id": { "type": "integer" } },
+                "required": ["block_id", "course_id"]
+            }),
+        ),
+        function(
+            "remove_block_from_course",
+            "Take a block out of a course. If no other course lists it, the block is deleted with its words, sentences and history — only after the learner confirmed that.",
+            json!({
+                "type": "object",
+                "properties": { "block_id": { "type": "integer" }, "course_id": { "type": "integer" } },
+                "required": ["block_id", "course_id"]
+            }),
+        ),
+        function(
+            "move_block",
+            "Move a block from one course to another; its words and history go with it.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "block_id": { "type": "integer" },
+                    "from_course_id": { "type": "integer" },
+                    "to_course_id": { "type": "integer" }
+                },
+                "required": ["block_id", "from_course_id", "to_course_id"]
+            }),
+        ),
+        function(
+            "order_course_blocks",
+            "Put a course's blocks in an order (block ids, first to last). Blocks left out keep their order after these.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "course_id": { "type": "integer" },
+                    "block_ids": { "type": "array", "items": { "type": "integer" } }
+                },
+                "required": ["course_id", "block_ids"]
+            }),
+        ),
+        function(
             "schedule_block",
             "Make a block due now, so it shows at the top of the learner's list.",
             json!({
@@ -548,6 +594,9 @@ fn status_label(name: &str) -> &'static str {
         "list_blocks" | "get_block" => "Looking at your blocks…",
         "update_block" | "schedule_block" => "Updating the block…",
         "delete_block" => "Deleting the block…",
+        "add_block_to_course" | "remove_block_from_course" | "move_block" | "order_course_blocks" => {
+            "Rearranging your courses…"
+        }
         "update_practice_settings" => "Updating your settings…",
         "make_song" => "Writing the song…",
         "list_songs" => "Looking at your songs…",
@@ -609,6 +658,26 @@ struct BlockArg {
 }
 
 #[derive(Deserialize)]
+struct MembershipArgs {
+    block_id: i64,
+    course_id: i64,
+}
+
+#[derive(Deserialize)]
+struct MoveArgs {
+    block_id: i64,
+    from_course_id: i64,
+    to_course_id: i64,
+}
+
+#[derive(Deserialize)]
+struct OrderArgs {
+    course_id: i64,
+    #[serde(default)]
+    block_ids: Vec<i64>,
+}
+
+#[derive(Deserialize)]
 struct StudyArgs {
     #[serde(flatten)]
     study: blocks::NewStudy,
@@ -661,7 +730,7 @@ fn block_json(block: &blocks::Block) -> Value {
         "title": block.title,
         "summary": block.summary,
         "complexity": block.complexity,
-        "course_id": block.topic_id,
+        "course_ids": block.course_ids,
         "course": block.topic_title,
         "items": block.items,
         "period_days": block.period_days,
@@ -738,7 +807,7 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
         }
         "create_course" => {
             let args: CreateArgs = parse(arguments)?;
-            let created = courses::create(conn, args.course)?;
+            let created = courses::create(conn, args.course, "tutor")?;
             let mut label = format!(
                 "Created “{}” — {} words, {} sentences",
                 created.title, created.words, created.sentences
@@ -758,7 +827,7 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
         "add_to_course" => {
             let args: ExtendArgs = parse(arguments)?;
             let updated =
-                courses::extend(conn, args.topic_id, &args.words, &args.sentences, &args.dialogue)?;
+                courses::extend(conn, args.topic_id, &args.words, &args.sentences, &args.dialogue, "tutor")?;
             Ok(Outcome::acted(
                 json!({ "updated": updated }),
                 "courseUpdated",
@@ -822,47 +891,24 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
             if args.words.is_empty() && args.sentences.is_empty() {
                 return Err(Error::msg("A drill needs words or sentences."));
             }
-            // The items go straight into this one block: the course does not
-            // also cut them into its own word and sentence drills.
+            // The block owns its words; it is not cut into the course's own drills.
             let topic_id = match args.course_id {
                 Some(id) => id,
                 None => courses::create_empty(conn, &args.title, &args.summary)?,
             };
-            courses::add_items(conn, topic_id, &args.words, &args.sentences)?;
-            let pick = |table: &str, texts: Vec<String>| -> Result<Vec<i64>> {
-                let mut ids = Vec::new();
-                for text in texts {
-                    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-                    if let Some(id) = conn
-                        .query_row(
-                            &format!("SELECT id FROM {table} WHERE topic_id = ?1 AND pl = ?2"),
-                            rusqlite::params![topic_id, text],
-                            |r| r.get::<_, i64>(0),
-                        )
-                        .optional()?
-                    {
-                        ids.push(id);
-                    }
-                }
-                Ok(ids)
-            };
-            let word_ids = pick("words", args.words.iter().map(|w| w.pl.clone()).collect())?;
-            let sentence_ids = pick("sentences", args.sentences.iter().map(|s| s.pl.clone()).collect())?;
-            let block = blocks::create_drill(
+            let (block, skipped) = blocks::create_drill(
                 conn,
                 topic_id,
                 &args.title,
                 &args.summary,
                 &args.format,
                 &args.complexity,
-                &word_ids,
-                &sentence_ids,
+                &courses::Items { words: args.words, sentences: args.sentences, dialogue: vec![] },
                 args.period_days,
                 "tutor",
-                None,
             )?;
             Ok(Outcome::block(
-                json!({ "created": block_json(&block), "course_id": topic_id }),
+                json!({ "created": block_json(&block), "course_id": topic_id, "skipped_duplicates": skipped }),
                 "blockCreated",
                 format!("Made “{}” — {} drill, {} items", block.title, complexity_label(&block.complexity), block.items),
                 block.id,
@@ -926,6 +972,57 @@ fn run_tool(conn: &Connection, name: &str, arguments: &str) -> Result<Outcome> {
             let args: BlockArg = parse(arguments)?;
             let title = blocks::delete(conn, args.block_id)?;
             Ok(Outcome::acted(json!({ "deleted": title }), "blockDeleted", format!("Deleted “{title}”"), None))
+        }
+        "add_block_to_course" => {
+            let args: MembershipArgs = parse(arguments)?;
+            courses::add_block(conn, args.course_id, args.block_id)?;
+            let block = blocks::load(conn, args.block_id)?;
+            let course = courses::require_course(conn, args.course_id)?;
+            Ok(Outcome::acted(
+                json!({ "block": block_json(&block) }),
+                "courseUpdated",
+                format!("“{}” is now also in “{course}”", block.title),
+                Some(args.course_id),
+            ))
+        }
+        "remove_block_from_course" => {
+            let args: MembershipArgs = parse(arguments)?;
+            let title = blocks::load(conn, args.block_id)?.title;
+            let course = courses::require_course(conn, args.course_id)?;
+            let deleted = courses::remove_block(conn, args.course_id, args.block_id)?;
+            Ok(Outcome::acted(
+                json!({ "removed": title, "block_deleted": deleted }),
+                if deleted { "blockDeleted" } else { "courseUpdated" },
+                if deleted {
+                    format!("Deleted “{title}” (it was only in “{course}”)")
+                } else {
+                    format!("Took “{title}” out of “{course}”")
+                },
+                if deleted { None } else { Some(args.course_id) },
+            ))
+        }
+        "move_block" => {
+            let args: MoveArgs = parse(arguments)?;
+            courses::move_block(conn, args.block_id, args.from_course_id, args.to_course_id)?;
+            let block = blocks::load(conn, args.block_id)?;
+            let course = courses::require_course(conn, args.to_course_id)?;
+            Ok(Outcome::acted(
+                json!({ "block": block_json(&block) }),
+                "courseUpdated",
+                format!("Moved “{}” to “{course}”", block.title),
+                Some(args.to_course_id),
+            ))
+        }
+        "order_course_blocks" => {
+            let args: OrderArgs = parse(arguments)?;
+            courses::order_blocks(conn, args.course_id, &args.block_ids)?;
+            let course = courses::require_course(conn, args.course_id)?;
+            Ok(Outcome::acted(
+                json!({ "order": blocks::for_topic(conn, args.course_id)?.iter().map(|b| b.id).collect::<Vec<_>>() }),
+                "courseUpdated",
+                format!("Reordered “{course}”"),
+                Some(args.course_id),
+            ))
         }
         "schedule_block" => {
             let args: BlockArg = parse(arguments)?;
@@ -1027,7 +1124,7 @@ fn list_topics(conn: &Connection) -> Result<Value> {
 fn topic_detail(conn: &Connection, topic_id: i64) -> Result<Value> {
     let topic = session::load_topic(conn, topic_id)?;
     let mut stmt = conn.prepare(
-        "SELECT w.pl, w.en, w.pos, r.reps, r.lapses FROM words w
+        "SELECT w.pl, w.en, w.pos, r.reps, r.lapses, w.block_id FROM course_words w
          LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
          WHERE w.topic_id = ?1 ORDER BY w.ord",
     )?;
@@ -1040,14 +1137,20 @@ fn topic_detail(conn: &Connection, topic_id: i64) -> Result<Value> {
                 "met": r.get::<_, Option<i64>>(3)?.is_some(),
                 "correct_reps": r.get::<_, Option<i64>>(3)?.unwrap_or(0),
                 "lapses": r.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                "block_id": r.get::<_, i64>(5)?,
             }))
         })?
         .collect::<rusqlite::Result<_>>()?;
     drop(stmt);
-    let mut stmt = conn.prepare("SELECT pl, en FROM sentences WHERE topic_id = ?1 ORDER BY ord")?;
+    let mut stmt =
+        conn.prepare("SELECT pl, en, block_id FROM course_sentences WHERE topic_id = ?1 ORDER BY ord")?;
     let sentences: Vec<Value> = stmt
         .query_map([topic_id], |r| {
-            Ok(json!({ "pl": r.get::<_, String>(0)?, "en": r.get::<_, String>(1)? }))
+            Ok(json!({
+                "pl": r.get::<_, String>(0)?,
+                "en": r.get::<_, String>(1)?,
+                "block_id": r.get::<_, i64>(2)?,
+            }))
         })?
         .collect::<rusqlite::Result<_>>()?;
     drop(stmt);
@@ -1055,25 +1158,26 @@ fn topic_detail(conn: &Connection, topic_id: i64) -> Result<Value> {
         .into_iter()
         .map(|l| json!({ "speaker": l.speaker, "pl": l.pl, "en": l.meaning }))
         .collect();
+    let blocks: Vec<Value> = blocks::for_topic(conn, topic_id)?.iter().map(block_json).collect();
     Ok(json!({
         "course_id": topic.id,
-        "kind": topic.kind,
         "title": topic.title,
         "title_pl": topic.title_pl,
         "summary": topic.summary,
         "words": words,
         "sentences": sentences,
         "dialogue": dialogue,
+        "blocks": blocks,
     }))
 }
 
 fn search(conn: &Connection, query: &str) -> Result<Value> {
     let pattern = format!("%{}%", query.trim());
     let mut stmt = conn.prepare(
-        "SELECT w.pl, w.en, w.pos, t.title_en, t.id, r.reps FROM words w
+        "SELECT w.pl, w.en, w.pos, t.title_en, t.id, r.reps, w.block_id FROM course_words w
          JOIN topics t ON t.id = w.topic_id
          LEFT JOIN reviews r ON r.kind = 'word' AND r.item_id = w.id
-         WHERE w.pl LIKE ?1 OR w.en LIKE ?1 ORDER BY t.kind, t.ord, w.ord LIMIT 40",
+         WHERE w.pl LIKE ?1 OR w.en LIKE ?1 GROUP BY w.id ORDER BY t.ord, w.ord LIMIT 40",
     )?;
     let words: Vec<Value> = stmt
         .query_map([&pattern], |r| {
@@ -1084,13 +1188,14 @@ fn search(conn: &Connection, query: &str) -> Result<Value> {
                 "topic": r.get::<_, String>(3)?,
                 "course_id": r.get::<_, i64>(4)?,
                 "met": r.get::<_, Option<i64>>(5)?.is_some(),
+                "block_id": r.get::<_, i64>(6)?,
             }))
         })?
         .collect::<rusqlite::Result<_>>()?;
     drop(stmt);
     let mut stmt = conn.prepare(
-        "SELECT s.pl, s.en, t.title_en FROM sentences s JOIN topics t ON t.id = s.topic_id
-         WHERE s.pl LIKE ?1 OR s.en LIKE ?1 LIMIT 15",
+        "SELECT s.pl, s.en, t.title_en FROM course_sentences s JOIN topics t ON t.id = s.topic_id
+         WHERE s.pl LIKE ?1 OR s.en LIKE ?1 GROUP BY s.id LIMIT 15",
     )?;
     let sentences: Vec<Value> = stmt
         .query_map([&pattern], |r| {

@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 use crate::db;
 use crate::error::{Error, Result};
 
-/// Words per course word drill: enough to be worth it, small enough to finish
-/// in a minute or two.
-const WORDS_PER_BLOCK: usize = 8;
-const SENTENCES_PER_BLOCK: usize = 5;
+/// Words per word drill when a course's words are cut into drills: enough to
+/// be worth it, small enough to finish in a minute or two.
+pub const WORDS_PER_BLOCK: usize = 8;
+pub const SENTENCES_PER_BLOCK: usize = 5;
 /// Longest gap between check-ins, however often a block was passed.
 const MAX_INTERVAL: i64 = 120;
 
@@ -69,11 +69,13 @@ pub struct Block {
     pub summary: String,
     /// "low" | "medium" | "high"
     pub complexity: String,
-    /// The course it is filed under. Every block has one; the column is only
-    /// nullable because of how the table was first created.
+    /// The first course it was listed in, for display. None only for a block
+    /// that is about to go.
     pub topic_id: Option<i64>,
-    /// The course's title, for display.
+    /// That course's title.
     pub topic_title: Option<String>,
+    /// Every course that lists it.
+    pub course_ids: Vec<i64>,
     /// Who made it: "starter" (came with the app) | "tutor" | "you".
     /// Informational only — every block can be edited and deleted.
     pub origin: String,
@@ -104,6 +106,8 @@ pub struct BlockDetail {
     pub sentences: Vec<(String, String)>,
     /// The last check-in's feedback, if any.
     pub last_feedback: Option<String>,
+    /// The courses that list it: (id, English title, Polish title).
+    pub courses: Vec<(i64, String, String)>,
 }
 
 /// What the home screen shows: what is due, and what to start next.
@@ -117,11 +121,17 @@ pub struct Overview {
     pub done_today: i64,
 }
 
-const SELECT: &str = "SELECT b.id, b.kind, b.format, b.title, b.summary, b.complexity, b.topic_id,
-        t.title_en, b.origin, b.period_days, b.interval_days, b.due_day, b.last_day,
+const SELECT: &str = "SELECT b.id, b.kind, b.format, b.title, b.summary, b.complexity,
+        (SELECT c.topic_id FROM course_blocks c WHERE c.block_id = b.id ORDER BY c.rowid LIMIT 1),
+        (SELECT t.title_en FROM course_blocks c JOIN topics t ON t.id = c.topic_id
+          WHERE c.block_id = b.id ORDER BY c.rowid LIMIT 1),
+        b.origin, b.period_days, b.interval_days, b.due_day, b.last_day,
         b.last_result, b.reps,
-        (SELECT COUNT(*) FROM block_items i WHERE i.block_id = b.id), b.song_id
-     FROM blocks b LEFT JOIN topics t ON t.id = b.topic_id";
+        (SELECT COUNT(*) FROM words w WHERE w.block_id = b.id)
+          + (SELECT COUNT(*) FROM sentences s WHERE s.block_id = b.id),
+        b.song_id,
+        (SELECT group_concat(c.topic_id) FROM course_blocks c WHERE c.block_id = b.id)
+     FROM blocks b";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Block> {
     Ok(Block {
@@ -142,6 +152,12 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Block> {
         reps: r.get(14)?,
         items: r.get(15)?,
         song_id: r.get(16)?,
+        course_ids: r
+            .get::<_, Option<String>>(17)?
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|id| id.parse().ok())
+            .collect(),
     })
 }
 
@@ -165,15 +181,23 @@ pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
         [id],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    let pairs = |kind: &str, table: &str| -> Result<Vec<(String, String)>> {
-        let mut stmt = conn.prepare(&format!(
-            "SELECT x.pl, x.en FROM block_items i JOIN {table} x ON x.id = i.item_id
-             WHERE i.block_id = ?1 AND i.kind = ?2 ORDER BY i.ord"
-        ))?;
+    let pairs = |table: &str| -> Result<Vec<(String, String)>> {
+        let mut stmt =
+            conn.prepare(&format!("SELECT pl, en FROM {table} WHERE block_id = ?1 ORDER BY ord, id"))?;
         let rows = stmt
-            .query_map(rusqlite::params![id, kind], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    };
+    let courses = {
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.title_en, t.title_pl FROM course_blocks c JOIN topics t ON t.id = c.topic_id
+             WHERE c.block_id = ?1 ORDER BY c.rowid",
+        )?;
+        let rows = stmt
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
     };
     let last_feedback = conn
         .query_row(
@@ -185,8 +209,9 @@ pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
         .optional()?
         .flatten();
     Ok(BlockDetail {
-        words: pairs("word", "words")?,
-        sentences: pairs("sentence", "sentences")?,
+        words: pairs("words")?,
+        sentences: pairs("sentences")?,
+        courses,
         lesson,
         objectives: serde_json::from_str(&objectives).unwrap_or_default(),
         last_feedback,
@@ -198,8 +223,13 @@ pub fn detail(conn: &Connection, id: i64) -> Result<BlockDetail> {
 /// are dated 0), then in their course order.
 pub const COURSE_ORDER: &str = "t.created_at DESC, t.ord, t.id";
 
+/// A course's blocks, in the course's order.
 pub fn for_topic(conn: &Connection, topic_id: i64) -> Result<Vec<Block>> {
-    query(conn, "WHERE b.topic_id = ?1 ORDER BY b.ord, b.id", [topic_id])
+    query(
+        conn,
+        "JOIN course_blocks cb ON cb.block_id = b.id WHERE cb.topic_id = ?1 ORDER BY cb.ord, b.id",
+        [topic_id],
+    )
 }
 
 /// The home screen: blocks due now, then a few to start.
@@ -219,18 +249,25 @@ pub fn overview(conn: &Connection) -> Result<Overview> {
     let courses: Vec<i64> = {
         let mut stmt = conn.prepare(&format!(
             "SELECT t.id FROM topics t
-             WHERE EXISTS (SELECT 1 FROM blocks b WHERE b.topic_id = t.id AND b.due_day IS NULL)
+             WHERE EXISTS (SELECT 1 FROM course_blocks cb JOIN blocks b ON b.id = cb.block_id
+                           WHERE cb.topic_id = t.id AND b.due_day IS NULL)
              ORDER BY {COURSE_ORDER} LIMIT 3"
         ))?;
         let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
         ids
     };
     for course in courses {
-        next.extend(query(
+        for block in query(
             conn,
-            "WHERE b.topic_id = ?1 AND b.due_day IS NULL ORDER BY b.ord, b.id LIMIT 2",
+            "JOIN course_blocks cb ON cb.block_id = b.id
+             WHERE cb.topic_id = ?1 AND b.due_day IS NULL ORDER BY cb.ord, b.id LIMIT 2",
             [course],
-        )?);
+        )? {
+            // A block in two courses is offered once.
+            if !next.iter().any(|b: &Block| b.id == block.id) {
+                next.push(block);
+            }
+        }
     }
 
     let done_today: i64 = conn.query_row(
@@ -350,14 +387,12 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
         }
         None => crate::courses::lessons_course(conn)?,
     };
-    let ord = next_ord(conn, Some(topic_id))?;
     conn.execute(
-        "INSERT INTO blocks (kind, format, topic_id, ord, title, summary, complexity, lesson,
+        "INSERT INTO blocks (kind, format, ord, title, summary, complexity, lesson,
              objectives, period_days, origin, created_at)
-         VALUES ('study', '', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         VALUES ('study', '', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![
-            topic_id,
-            ord,
+            0,
             title,
             clean(&input.summary),
             input.complexity,
@@ -368,7 +403,9 @@ pub fn create_study(conn: &Connection, input: NewStudy, origin: &str) -> Result<
             db::now_secs()
         ],
     )?;
-    load(conn, conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    crate::courses::add_block(conn, topic_id, id)?;
+    load(conn, id)
 }
 
 /// A listening block: listen to a song, then the examiner asks about it.
@@ -399,13 +436,12 @@ pub fn create_listening(
         None => "Listen to the song a couple of times, then check in. Try it without the lyrics first.".into(),
     };
     let topic_id = crate::courses::listening_course(conn)?;
-    let ord = next_ord(conn, Some(topic_id))?;
     conn.execute(
-        "INSERT INTO blocks (kind, format, topic_id, ord, title, summary, complexity, lesson,
+        "INSERT INTO blocks (kind, format, ord, title, summary, complexity, lesson,
              objectives, period_days, origin, created_at, song_id)
-         VALUES ('study', 'song', ?11, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         VALUES ('study', 'song', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
-            ord,
+            0,
             format!("Listen: {title}"),
             "Listen to the song, then answer questions about what you heard.",
             complexity,
@@ -414,22 +450,17 @@ pub fn create_listening(
             default_period("study", complexity),
             origin,
             db::now_secs(),
-            song_id,
-            topic_id
+            song_id
         ],
     )?;
-    load(conn, conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    crate::courses::add_block(conn, topic_id, id)?;
+    load(conn, id)
 }
 
-fn next_ord(conn: &Connection, topic_id: Option<i64>) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COALESCE(MAX(ord), 0) + 1 FROM blocks WHERE topic_id IS ?1",
-        [topic_id],
-        |r| r.get(0),
-    )?)
-}
-
-/// A drill over words and sentences that already exist in a topic.
+/// A drill that owns the words, sentences or dialogue lines it practises,
+/// listed in a course. Items it already holds (by their Polish) are skipped;
+/// the count of skipped items is returned with the block.
 #[allow(clippy::too_many_arguments)]
 pub fn create_drill(
     conn: &Connection,
@@ -438,64 +469,25 @@ pub fn create_drill(
     summary: &str,
     format: &str,
     complexity: &str,
-    word_ids: &[i64],
-    sentence_ids: &[i64],
+    items: &crate::courses::Items,
     period_days: Option<i64>,
     origin: &str,
-    slug: Option<&str>,
-) -> Result<Block> {
+) -> Result<(Block, i64)> {
     if !FORMATS.contains(&format) {
         return Err(Error::msg(format!("Unknown drill format '{format}'.")));
     }
     check_complexity(complexity)?;
+    crate::courses::require_course(conn, topic_id)?;
     let period = period_days.unwrap_or_else(|| default_period("drill", complexity)).clamp(1, 60);
-    let existing: Option<i64> = match slug {
-        Some(slug) => conn
-            .query_row("SELECT id FROM blocks WHERE slug = ?1", [slug], |r| r.get(0))
-            .optional()?,
-        None => None,
-    };
-    let id = match existing {
-        // Seeding again refreshes the block but keeps its schedule.
-        Some(id) => {
-            conn.execute(
-                "UPDATE blocks SET title = ?2, summary = ?3, format = ?4, complexity = ?5 WHERE id = ?1",
-                rusqlite::params![id, clean(title), clean(summary), format, complexity],
-            )?;
-            id
-        }
-        None => {
-            let ord = next_ord(conn, Some(topic_id))?;
-            conn.execute(
-                "INSERT INTO blocks (slug, kind, format, topic_id, ord, title, summary, complexity,
-                     period_days, origin, created_at)
-                 VALUES (?1, 'drill', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                rusqlite::params![
-                    slug,
-                    format,
-                    topic_id,
-                    ord,
-                    clean(title),
-                    clean(summary),
-                    complexity,
-                    period,
-                    origin,
-                    db::now_secs()
-                ],
-            )?;
-            conn.last_insert_rowid()
-        }
-    };
-    conn.execute("DELETE FROM block_items WHERE block_id = ?1", [id])?;
-    for (kind, ids) in [("word", word_ids), ("sentence", sentence_ids)] {
-        for (ord, item) in ids.iter().enumerate() {
-            conn.execute(
-                "INSERT OR IGNORE INTO block_items (block_id, kind, item_id, ord) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![id, kind, item, ord as i64],
-            )?;
-        }
-    }
-    load(conn, id)
+    conn.execute(
+        "INSERT INTO blocks (kind, format, title, summary, complexity, period_days, origin, created_at)
+         VALUES ('drill', ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![format, clean(title), clean(summary), complexity, period, origin, db::now_secs()],
+    )?;
+    let id = conn.last_insert_rowid();
+    let skipped = crate::courses::insert_items(conn, id, items)?;
+    crate::courses::add_block(conn, topic_id, id)?;
+    Ok((load(conn, id)?, skipped))
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -545,116 +537,12 @@ pub fn update(conn: &Connection, id: i64, changes: BlockChanges) -> Result<Block
     load(conn, id)
 }
 
-/// Deletes a block with its check-in history. Its words and sentences stay
-/// in the course.
+/// Deletes a block everywhere, with its words, sentences, dialogue and
+/// check-in history.
 pub fn delete(conn: &Connection, id: i64) -> Result<String> {
     let block = load(conn, id)?;
     conn.execute("DELETE FROM blocks WHERE id = ?1", [id])?;
     Ok(block.title)
-}
-
-// ---------------------------------------------------------------------------
-// Splitting topics into blocks
-// ---------------------------------------------------------------------------
-
-fn ids(conn: &Connection, sql: &str, topic_id: i64) -> Result<Vec<(i64, String)>> {
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt
-        .query_map([topic_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
-}
-
-/// The slug prefix of the drills a course is cut into.
-pub fn split_prefix(topic_id: i64) -> String {
-    format!("topic/{topic_id}")
-}
-
-/// Cuts a topic into small drills: its dialogue, its words in eights, and its
-/// sentences in fives. Safe to run again: blocks are matched on their slug,
-/// so schedules survive and only the item lists are refreshed.
-pub fn split_topic(conn: &Connection, topic_id: i64, prefix: &str, origin: &str) -> Result<usize> {
-    let mut made = 0;
-    let mut slugs: Vec<String> = Vec::new();
-    let lines: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM conversation_lines WHERE topic_id = ?1",
-        [topic_id],
-        |r| r.get(0),
-    )?;
-    if lines > 0 {
-        let title_pl: String =
-            conn.query_row("SELECT title_pl FROM topics WHERE id = ?1", [topic_id], |r| r.get(0))?;
-        create_drill(
-            conn,
-            topic_id,
-            &format!("Conversation: {title_pl}"),
-            "Read a short dialogue, then fill in its missing lines.",
-            "dialogue",
-            "low",
-            &[],
-            &[],
-            None,
-            origin,
-            Some(&format!("{prefix}/dialogue")),
-        )?;
-        slugs.push(format!("{prefix}/dialogue"));
-        made += 1;
-    }
-
-    let words = ids(conn, "SELECT id, pl FROM words WHERE topic_id = ?1 ORDER BY ord", topic_id)?;
-    for (n, chunk) in words.chunks(WORDS_PER_BLOCK).enumerate() {
-        let preview: Vec<&str> = chunk.iter().take(3).map(|(_, pl)| pl.as_str()).collect();
-        create_drill(
-            conn,
-            topic_id,
-            &format!("Words {}", n + 1),
-            &format!("{}, …", preview.join(", ")),
-            "words",
-            "low",
-            &chunk.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
-            &[],
-            None,
-            origin,
-            Some(&format!("{prefix}/words-{}", n + 1)),
-        )?;
-        slugs.push(format!("{prefix}/words-{}", n + 1));
-        made += 1;
-    }
-
-    let sentences = ids(conn, "SELECT id, pl FROM sentences WHERE topic_id = ?1 ORDER BY ord", topic_id)?;
-    for (n, chunk) in sentences.chunks(SENTENCES_PER_BLOCK).enumerate() {
-        create_drill(
-            conn,
-            topic_id,
-            &format!("Sentences {}", n + 1),
-            &chunk.first().map(|(_, pl)| pl.clone()).unwrap_or_default(),
-            "sentences",
-            "medium",
-            &[],
-            &chunk.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
-            None,
-            origin,
-            Some(&format!("{prefix}/sentences-{}", n + 1)),
-        )?;
-        slugs.push(format!("{prefix}/sentences-{}", n + 1));
-        made += 1;
-    }
-
-    // A topic that shrank leaves split blocks behind; they go.
-    let mut stmt = conn.prepare("SELECT id, slug FROM blocks WHERE topic_id = ?1 AND slug LIKE ?2")?;
-    let stale: Vec<i64> = stmt
-        .query_map(rusqlite::params![topic_id, format!("{prefix}/%")], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-        })?
-        .filter_map(|row| row.ok())
-        .filter(|(_, slug)| !slugs.contains(slug))
-        .map(|(id, _)| id)
-        .collect();
-    drop(stmt);
-    for id in stale {
-        conn.execute("DELETE FROM blocks WHERE id = ?1", [id])?;
-    }
-    Ok(made)
 }
 
 // ---------------------------------------------------------------------------
@@ -721,13 +609,10 @@ pub fn seed_lessons(conn: &Connection) -> Result<()> {
         let lesson = parse_lesson(text)?;
         let slug = format!("lesson/{}", lesson.slug);
         conn.execute(
-            "INSERT INTO blocks (slug, kind, format, topic_id, ord, title, summary, complexity, lesson,
+            "INSERT INTO blocks (slug, kind, format, ord, title, summary, complexity, lesson,
                  objectives, period_days, origin, created_at)
-             VALUES (?1, 'study', '', NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'starter', ?9)
-             ON CONFLICT(slug) DO UPDATE SET
-                 ord = excluded.ord, title = excluded.title, summary = excluded.summary,
-                 complexity = excluded.complexity, lesson = excluded.lesson,
-                 objectives = excluded.objectives",
+             VALUES (?1, 'study', '', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'starter', ?9)
+             ON CONFLICT(slug) DO NOTHING",
             rusqlite::params![
                 slug,
                 ord as i64,
@@ -740,6 +625,11 @@ pub fn seed_lessons(conn: &Connection) -> Result<()> {
                 db::now_secs()
             ],
         )?;
+        if conn.changes() > 0 {
+            let block = conn.last_insert_rowid();
+            let grammar = crate::courses::grammar_course(conn)?;
+            crate::courses::add_block(conn, grammar, block)?;
+        }
     }
     Ok(())
 }

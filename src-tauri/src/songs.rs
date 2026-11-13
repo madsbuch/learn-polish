@@ -365,11 +365,11 @@ fn gather_context(conn: &Connection, topic_id: Option<i64>) -> Result<SongContex
     let (words, sentences) = match topic_id {
         Some(id) => (
             strings(
-                "SELECT pl || ' = ' || en FROM words WHERE topic_id = ?1 ORDER BY ord LIMIT 40",
+                "SELECT pl || ' = ' || en FROM course_words WHERE topic_id = ?1 ORDER BY ord LIMIT 40",
                 &[&id],
             )?,
             strings(
-                "SELECT pl || ' = ' || en FROM sentences WHERE topic_id = ?1 ORDER BY ord LIMIT 20",
+                "SELECT pl || ' = ' || en FROM course_sentences WHERE topic_id = ?1 ORDER BY ord LIMIT 20",
                 &[&id],
             )?,
         ),

@@ -68,6 +68,11 @@ export const api = {
     invoke<Block>("block_set_period", { blockId, periodDays }),
   blockDueNow: (blockId: number) => invoke<Block>("block_due_now", { blockId }),
   blockDelete: (blockId: number) => invoke<void>("block_delete", { blockId }),
+  blockAddToCourse: (blockId: number, topicId: number) =>
+    invoke<void>("block_add_to_course", { blockId, topicId }),
+  /** True when it was the block's last course, so the block was deleted. */
+  blockRemoveFromCourse: (blockId: number, topicId: number) =>
+    invoke<boolean>("block_remove_from_course", { blockId, topicId }),
   /** The listening block for a song, made on first ask. */
   blockForSong: (songId: number) => invoke<Block>("block_for_song", { songId }),
   checkinStart: (blockId: number, streamId: string) =>
