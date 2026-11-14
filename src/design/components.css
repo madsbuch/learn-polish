@@ -911,3 +911,53 @@ button.badge:active {
 .info-body li {
   margin-bottom: var(--space-1);
 }
+
+/* A screen with a picture behind its top (Screen's `backdrop`). The picture
+   fades into the page colour at its foot and under the status bar, and the
+   title sits on the faded part, where it stays readable. */
+.screen[data-backdrop="true"] {
+  position: relative;
+  isolation: isolate;
+}
+.screen-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--safe-top) + 360px);
+  z-index: -1;
+  transform-origin: 50% 0;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+.screen-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.screen-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg) 55%, transparent) 0,
+    transparent calc(var(--safe-top) + 72px),
+    transparent 30%,
+    color-mix(in srgb, var(--bg) 78%, transparent) 60%,
+    var(--bg) 86%
+  );
+}
+.screen[data-backdrop="true"] > .screen-header {
+  margin-top: 168px;
+}
+/* Back stays at the top, easy to see on any picture. */
+.screen[data-backdrop="true"] > .screen-header > .icon-button:first-child {
+  position: absolute;
+  top: calc(var(--safe-top) + var(--space-4));
+  left: var(--gutter);
+  margin-left: 0;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(8px);
+}

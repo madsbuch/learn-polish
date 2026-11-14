@@ -3,7 +3,7 @@
  * else: they never set a font size, a colour or a spacing by hand. The rules
  * are in DESIGN.md; `scripts/check-design.mjs` enforces the mechanical ones.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
 import { useBackHandler } from "../lib/back";
@@ -125,8 +125,14 @@ export function Screen({
   header,
   nav = true,
   footer,
+  backdrop,
   children,
 }: {
+  /**
+   * A picture behind the top of the page (an image URL), fading into the
+   * background; it drifts and fades as the page scrolls. Not with `footer`.
+   */
+  backdrop?: string | null;
   title?: ReactNode;
   subtitle?: ReactNode;
   /** An explanation behind an ⓘ next to the title. */
@@ -171,7 +177,8 @@ export function Screen({
   );
   if (!footer) {
     return (
-      <div className="screen" data-nav={nav}>
+      <div className="screen" data-nav={nav} data-backdrop={Boolean(backdrop)}>
+        {backdrop ? <Backdrop src={backdrop} /> : null}
         {head}
         <div className="screen-body">{children}</div>
       </div>
@@ -189,6 +196,42 @@ export function Screen({
         {footer}
       </div>
     </>
+  );
+}
+
+/**
+ * The picture behind a screen's top. It follows the scroll at a fraction of
+ * the speed and fades out, so the page seems to slide over it.
+ */
+function Backdrop({ src }: { src: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const layer = ref.current;
+    const scroller = layer?.parentElement;
+    if (!layer || !scroller) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const y = scroller.scrollTop;
+      // Pulled down past the top: it grows a little instead of leaving a gap.
+      const stretch = y < 0 ? 1 + -y / 400 : 1;
+      layer.style.transform = `translate3d(0, ${Math.max(0, y) * 0.55}px, 0) scale(${stretch})`;
+      layer.style.opacity = String(Math.max(0, 1 - Math.max(0, y) / 320));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+  return (
+    <div ref={ref} className="screen-backdrop" aria-hidden="true">
+      <img src={src} alt="" />
+    </div>
   );
 }
 

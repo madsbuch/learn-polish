@@ -118,11 +118,15 @@ export function TopicDetail({
   const shown = tabs.some((t) => t.value === tab) ? tab : "blocks";
 
   return (
-    <Screen title={names.titlePl} subtitle={names.title} onBack={onBack} nav={false}>
+    <Screen
+      title={names.titlePl}
+      subtitle={names.title}
+      onBack={onBack}
+      nav={false}
+      backdrop={picture ? convertFileSrc(picture) : null}
+    >
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {picture ? (
-        <img className="course-picture" src={convertFileSrc(picture)} alt="" />
-      ) : (
+      {picture ? null : (
         <Button block icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
           {drawing ? "Drawing a picture…" : "Make a picture for this course"}
         </Button>

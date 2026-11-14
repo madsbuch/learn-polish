@@ -26,7 +26,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPDATA/songs/**"
+          "$APPDATA/songs/**",
+          "$APPDATA/pictures/**"
         ]
       }
     }
