@@ -123,6 +123,7 @@ pub fn run() {
             speech::course_audio,
             speech::delete_unused_audio,
             speech::respeak,
+            speech::prefetch_audio,
             commands::kie_set_key,
             commands::kie_clear_key,
             songs::kie_credits,

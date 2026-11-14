@@ -161,9 +161,10 @@ export default function App() {
   }, [settings?.hasApiKey]);
 
   /**
-   * Warms the audio cache for a session about to start, so every 🔊 tap and
-   * every auto-played card is instant instead of waiting on a round trip.
-   * Deliberately fire-and-forget: practice must never block on audio.
+   * Downloads the audio a session is about to use, so every 🔊 tap and every
+   * auto-played card is instant. The backend does it in the background — in
+   * the order the lines will be heard, a few at a time, carrying on with the
+   * screen off — and practice never waits for it.
    */
   const prefetchAudio = useCallback(
     (session: SessionPlan) => {
@@ -181,7 +182,7 @@ export default function App() {
         const key = `${line.gender}\u0001${line.text}`;
         return seen.has(key) ? false : (seen.add(key), true);
       });
-      void api.cacheAudio(unique).catch(() => {
+      void api.prefetchAudio(unique).catch(() => {
         /* the 🔊 buttons report per-line failures */
       });
     },

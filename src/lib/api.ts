@@ -147,6 +147,8 @@ export const api = {
   speak: (text: string, gender?: string) => invoke<AudioClip>("speak", { text, gender }),
   /** `force` makes stored lines again too, replacing their clips. */
   cacheAudio: (lines: SpeechLine[], force = false) => invoke<CacheProgress>("cache_audio", { lines, force }),
+  /** Downloads a session's audio in the background; returns at once. */
+  prefetchAudio: (lines: SpeechLine[]) => invoke<void>("prefetch_audio", { lines }),
   /** Makes one line's audio again, replacing the stored clip. */
   respeak: (text: string, gender: string) => invoke<AudioClip>("respeak", { text, gender }),
   audioOverview: () => invoke<AudioOverview>("audio_overview"),

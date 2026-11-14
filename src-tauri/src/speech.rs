@@ -144,6 +144,42 @@ fn speech_config(conn: &mut Conn, gender: &str) -> Result<SpeechConfig> {
     })
 }
 
+/// One lock per clip being made, so two asks for the same line — a 🔊 tap
+/// while the background download is on it — make it once, not twice.
+fn clip_lock(key: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>> =
+        std::sync::OnceLock::new();
+    let mut locks = LOCKS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(key).and_then(|weak| weak.upgrade()) {
+        return lock;
+    }
+    let lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+    locks.insert(key.to_string(), std::sync::Arc::downgrade(&lock));
+    lock
+}
+
+/// A line's clip in the voice its gender gets: the stored one, or made now
+/// and stored (`force` makes it again even when stored). Returns its type,
+/// bytes, and whether it was already stored.
+async fn clip(db: &Db, text: &str, gender: &str, force: bool) -> Result<(String, Vec<u8>, bool)> {
+    let config = speech_config(&mut db.lock(), gender)?;
+    let key = audio_key(&config.model, &config.voice, text);
+    let lock = clip_lock(&key);
+    let _making = lock.lock().await;
+    if !force {
+        if let Some((mime, bytes)) = cached_clip(&mut db.lock(), &key)? {
+            return Ok((mime, bytes, true));
+        }
+    }
+    let (mime, bytes) = ai::synthesize(&config.key, &config.model, &config.voice, text, config.speed).await?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    record_speech(conn, &config.model, text);
+    store_clip(conn, &key, &config.model, &config.voice, text, &mime, &bytes)?;
+    Ok((mime, bytes, false))
+}
+
 /// Speaks a line of Polish, generating it only the first time.
 #[tauri::command]
 pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<AudioClip> {
@@ -151,45 +187,8 @@ pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> R
     if text.is_empty() {
         return Err(Error::msg("Nothing to say."));
     }
-    let gender = gender.unwrap_or_default();
-
-    let (config, cached) = {
-        let mut guard = db.lock();
-        let conn = &mut *guard;
-        let config = speech_config(conn, &gender)?;
-        let hit = cached_clip(conn, &audio_key(&config.model, &config.voice, &text))?;
-        (config, hit)
-    };
-
-    if let Some((mime, bytes)) = cached {
-        return Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: true });
-    }
-
-    let (mime, bytes) = ai::synthesize(
-        &config.key,
-        &config.model,
-        &config.voice,
-        &text,
-        config.speed,
-    )
-    .await?;
-
-    {
-        let mut guard = db.lock();
-        let conn = &mut *guard;
-        record_speech(conn, &config.model, &text);
-        store_clip(
-            conn,
-            &audio_key(&config.model, &config.voice, &text),
-            &config.model,
-            &config.voice,
-            &text,
-            &mime,
-            &bytes,
-        )?;
-    }
-
-    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
+    let (mime, bytes, cached) = clip(&db, &text, &gender.unwrap_or_default(), false).await?;
+    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached })
 }
 
 /// Makes a line's audio again, replacing the stored clip — for one that came
@@ -200,12 +199,7 @@ pub async fn respeak(db: State<'_, Db>, text: String, gender: Option<String>) ->
     if text.is_empty() {
         return Err(Error::msg("Nothing to say."));
     }
-    let config = speech_config(&mut db.lock(), &gender.unwrap_or_default())?;
-    let (mime, bytes) = ai::synthesize(&config.key, &config.model, &config.voice, &text, config.speed).await?;
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    record_speech(conn, &config.model, &text);
-    store_clip(conn, &audio_key(&config.model, &config.voice, &text), &config.model, &config.voice, &text, &mime, &bytes)?;
+    let (mime, bytes, _) = clip(&db, &text, &gender.unwrap_or_default(), true).await?;
     Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
 }
 
@@ -218,7 +212,7 @@ pub struct SpeechLine {
 }
 
 /// Generates and stores audio for a batch of lines, reporting progress as it
-/// goes. Used to warm a topic's sentences ahead of practice.
+/// goes (`tts://progress`). Used to download a course's audio ahead of time.
 #[tauri::command]
 pub async fn cache_audio(
     app: tauri::AppHandle,
@@ -227,69 +221,72 @@ pub async fn cache_audio(
     // Make them again even when stored (to replace clips that came out wrong).
     force: Option<bool>,
 ) -> Result<CacheProgress> {
-    let force = force.unwrap_or(false);
-    // Drop duplicates and anything already stored before spending a request.
-    // A line spoken by two genders is two clips, so the pair is the key.
-    let mut pending: Vec<(SpeechConfig, String)> = Vec::new();
+    let _busy = crate::work::begin(&app, "Downloading audio…");
+    Ok(fill(&app, &db, lines, force.unwrap_or(false)).await)
+}
+
+/// Downloads the audio a practice session is about to use, in the
+/// background, and returns at once. Lines come in the order they will be
+/// heard, so the first ones are ready first; it carries on with the screen
+/// off.
+#[tauri::command]
+pub async fn prefetch_audio(app: tauri::AppHandle, lines: Vec<SpeechLine>) -> Result<()> {
+    let busy = crate::work::begin(&app, "Downloading the lesson's audio…");
+    let app_ref = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _busy = busy;
+        use tauri::Manager;
+        let db = app_ref.state::<Db>();
+        fill(&app_ref, &db, lines, false).await;
+    });
+    Ok(())
+}
+
+/// Makes every missing clip among `lines`, a few at a time, in order.
+async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>, force: bool) -> CacheProgress {
+    use futures_util::StreamExt;
+    // Drop duplicates and, unless forced, anything already stored before
+    // spending a request. A line in two voices is two clips.
     let mut seen = std::collections::HashSet::new();
-    {
+    let pending: Vec<SpeechLine> = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        for line in lines {
-            let text = line.text.trim().to_string();
-            if text.is_empty() || !seen.insert((text.clone(), line.gender.clone())) {
-                continue;
-            }
-            let config = speech_config(conn, &line.gender)?;
-            let key = audio_key(&config.model, &config.voice, &text);
-            if force || cached_clip(conn, &key)?.is_none() {
-                pending.push((config, text));
-            }
-        }
-    }
-
+        lines
+            .into_iter()
+            .map(|line| SpeechLine { text: line.text.trim().to_string(), gender: line.gender })
+            .filter(|line| !line.text.is_empty() && seen.insert((line.text.clone(), line.gender.clone())))
+            .filter(|line| {
+                force
+                    || speech_config(conn, &line.gender)
+                        .map(|c| cached_clip(conn, &audio_key(&c.model, &c.voice, &line.text)).ok().flatten().is_none())
+                        .unwrap_or(false)
+            })
+            .collect()
+    };
     let total = pending.len() as i64;
-    let mut done = 0;
-    let mut failed = 0;
-    let mut first_error: Option<String> = None;
-
-    for (config, line) in pending {
-        match ai::synthesize(&config.key, &config.model, &config.voice, &line, config.speed).await {
-            Ok((mime, bytes)) => {
-                let mut guard = db.lock();
-                let conn = &mut *guard;
-                record_speech(conn, &config.model, &line);
-                let key = audio_key(&config.model, &config.voice, &line);
-                store_clip(conn, &key, &config.model, &config.voice, &line, &mime, &bytes)?;
-                done += 1;
-            }
+    let (mut done, mut failed, mut first_error) = (0, 0, None::<String>);
+    // Three at a time: much faster than one by one, gentle on the API.
+    let mut results = futures_util::stream::iter(pending)
+        .map(|line| async move { clip(db, &line.text, &line.gender, force).await })
+        .buffered(3);
+    while let Some(result) = results.next().await {
+        match result {
+            Ok(_) => done += 1,
             Err(error) => {
                 failed += 1;
-                if first_error.is_none() {
-                    first_error = Some(error.to_string());
-                }
-                // A bad key or model fails on every line; stop rather than
-                // hammering the API two hundred times.
+                first_error.get_or_insert_with(|| error.to_string());
+                // A bad key or model fails every line; stop rather than
+                // hammering the API a hundred times.
                 if failed >= 3 {
                     break;
                 }
             }
         }
-        let _ = app.emit(
-            "tts://progress",
-            CacheProgress { done, total, failed, finished: false, error: None },
-        );
+        let _ = app.emit("tts://progress", CacheProgress { done, total, failed, finished: false, error: None });
     }
-
-    let progress = CacheProgress {
-        done,
-        total,
-        failed,
-        finished: true,
-        error: first_error,
-    };
+    let progress = CacheProgress { done, total, failed, finished: true, error: first_error };
     let _ = app.emit("tts://progress", progress.clone());
-    Ok(progress)
+    progress
 }
 
 /// Every Polish line of a topic: its words, its sentences, then its
@@ -541,6 +538,19 @@ fn record_speech(conn: &mut Conn, model: &str, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asks_for_the_same_clip_share_one_lock() {
+        let a = clip_lock("m\u{1}Kore\u{1}Cześć");
+        let b = clip_lock("m\u{1}Kore\u{1}Cześć");
+        let other = clip_lock("m\u{1}Puck\u{1}Cześć");
+        assert!(std::sync::Arc::ptr_eq(&a, &b), "a 🔊 tap waits for the download already making it");
+        assert!(!std::sync::Arc::ptr_eq(&a, &other));
+        drop((a, b));
+        // Once nobody holds it, the next ask starts afresh.
+        let c = clip_lock("m\u{1}Kore\u{1}Cześć");
+        assert_eq!(std::sync::Arc::strong_count(&c), 1);
+    }
 
     #[test]
     fn cache_keys_separate_voices_and_models() {
