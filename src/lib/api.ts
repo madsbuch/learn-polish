@@ -14,6 +14,7 @@ import type {
   AudioCacheStats,
   AudioItem,
   ArticleView,
+  FactCheck,
   WikiSource,
   TutorStarted,
   AudioOverview,
@@ -128,6 +129,8 @@ export const api = {
   /** A source's article, in its own language or in Polish. */
   sourceArticle: (sourceId: number, polish: boolean) => invoke<ArticleView>("source_article", { sourceId, polish }),
   sourceRemove: (sourceId: number) => invoke<void>("source_remove", { sourceId }),
+  /** Checks a block's lesson against its sources now. */
+  factCheckBlock: (blockId: number) => invoke<FactCheck>("fact_check_block", { blockId }),
   /** Draws a new picture for a course; returns its file id. */
   coursePicture: (topicId: number) => invoke<number>("course_picture", { topicId }),
   coursePictureDelete: (topicId: number) => invoke<void>("course_picture_delete", { topicId }),

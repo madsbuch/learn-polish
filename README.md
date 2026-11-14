@@ -104,6 +104,23 @@ are introduced on a card, then drilled with multiple choice; once an item has
 survived a few correct reps you have to type it from memory. Typing is forgiving
 about diacritics and case — `czesc` counts as `cześć`.
 
+### Wikipedia sources
+
+A study block — culture especially: a city, a custom, a bit of history — can
+be built on Wikipedia articles (`src-tauri/src/wiki.rs`). The tutor searches
+and reads Wikipedia, writes the lesson from the article and attaches it to
+the block (new blocks or existing ones). The block page lists its sources;
+each opens in the app's reader — stored, so offline — with a switch to the
+Polish article when Polish Wikipedia has one, and the credit the licence
+(CC BY-SA 4.0) asks for. The examiner keeps its questions to what the
+lesson and its sources say.
+
+Every three months the lesson is checked again: at start, each source's
+current revision is compared with the stored one (cheap); an article that
+changed is fetched again, and an AI corrects only what the lesson now gets
+wrong — a figure, a name, an officeholder — noting what changed on the
+block page. Check now does it on demand. Wikipedia needs no key.
+
 ### Gamification
 
 It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
@@ -141,6 +158,7 @@ button to ask again.
 |---|---|
 | `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), lessons on the grammar it uses, sentence drills, and a writing block last |
 | `create_study_block`, `create_drill_block`, `create_listening_block`, `create_writing_block` | Writes a lesson with objectives, one drill in a chosen format, a listening block for a song, or a writing situation with goals |
+| `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study blocks (new or existing) |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, starter ones included |
 | `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |

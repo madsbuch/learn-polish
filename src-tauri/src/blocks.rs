@@ -119,6 +119,10 @@ pub struct BlockDetail {
     pub courses: Vec<(i64, String, String)>,
     /// A conversation drill's dialogue.
     pub lines: Vec<crate::models::DialogueLine>,
+    /// What the last check against the block's sources changed, if anything.
+    pub fact_note: Option<String>,
+    /// When the lesson was last checked against its sources.
+    pub fact_checked_at: Option<i64>,
 }
 
 /// What the home screen shows: what is due, and what to start next.
@@ -246,8 +250,10 @@ pub fn load(conn: &mut Conn, id: i64) -> Result<Block> {
 
 pub fn detail(conn: &mut Conn, id: i64) -> Result<BlockDetail> {
     let block = load(conn, id)?;
-    let (lesson, objectives): (String, String) =
-        blocks::table.find(id).select((blocks::lesson, blocks::objectives)).first(conn)?;
+    let (lesson, objectives, fact_note, fact_checked_at): (String, String, Option<String>, Option<i64>) = blocks::table
+        .find(id)
+        .select((blocks::lesson, blocks::objectives, blocks::fact_note, blocks::fact_checked_at))
+        .first(conn)?;
     let words = words::table
         .filter(words::block_id.eq(id))
         .order((words::ord, words::id))
@@ -280,6 +286,8 @@ pub fn detail(conn: &mut Conn, id: i64) -> Result<BlockDetail> {
         lesson,
         objectives: serde_json::from_str(&objectives).unwrap_or_default(),
         last_feedback,
+        fact_note,
+        fact_checked_at,
         block,
     })
 }

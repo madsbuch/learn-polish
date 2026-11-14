@@ -23,6 +23,7 @@ const FEATURES: Record<string, string> = {
   examiner: "Check-ins",
   "writing partner": "Writing partner",
   pictures: "Course pictures",
+  "fact check": "Fact checks",
   songwriter: "Song lyrics",
   songs: "Song audio",
   explain: "Explanations",

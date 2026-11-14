@@ -22,6 +22,7 @@ pub const TUTOR: &str = "tutor";
 pub const EXAMINER: &str = "examiner";
 pub const PARTNER: &str = "writing partner";
 pub const PICTURES: &str = "pictures";
+pub const FACT_CHECK: &str = "fact check";
 pub const SONGWRITER: &str = "songwriter";
 pub const SONGS: &str = "songs";
 pub const EXPLAIN: &str = "explain";

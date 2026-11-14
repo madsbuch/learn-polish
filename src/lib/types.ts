@@ -166,6 +166,10 @@ export interface BlockDetail extends Block {
   courses: [number, string, string][];
   /** A conversation drill's dialogue. */
   lines: DialogueLine[];
+  /** What the last check against the block's Wikipedia sources changed. */
+  factNote: string | null;
+  /** When the lesson was last checked against its sources (seconds). */
+  factCheckedAt: number | null;
 }
 
 export interface BlockOverview {
@@ -462,6 +466,14 @@ export interface ArticleView {
   url: string;
   /** Markdown. */
   content: string;
+}
+
+/** The outcome of checking a lesson against its sources. */
+export interface FactCheck {
+  blockId: number;
+  title: string;
+  updated: boolean;
+  note: string | null;
 }
 
 export interface CacheProgress {

@@ -62,6 +62,8 @@ pub fn run() {
             app.manage(cast::CastSessions::default());
             songs::resume_pending(app.handle());
             files::sync_to_disk(app.handle());
+            // Lessons built on Wikipedia, checked against it every three months.
+            wiki::check_due_in_background(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -98,6 +100,7 @@ pub fn run() {
             wiki::block_sources,
             wiki::source_article,
             wiki::source_remove,
+            wiki::fact_check_block,
             pictures::course_picture_delete,
             tutor::app_visibility,
             tutor::tutor_conversations,
@@ -965,6 +968,18 @@ mod integration {
         let detail = blocks::detail(&mut conn, study.id).unwrap();
         let prompt = examiner::system_prompt(&mut conn, &detail).unwrap();
         assert!(prompt.contains("Capital until 1596") && prompt.contains("learner's language"), "{prompt}");
+
+        // Due for a fact check once three months have passed.
+        let now = db::now_secs();
+        assert!(wiki::blocks_due(&mut conn, now).unwrap().is_empty());
+        diesel::update(t::wiki_sources::table)
+            .set(t::wiki_sources::checked_at.eq(now - 91 * 86_400))
+            .execute(&mut conn)
+            .unwrap();
+        assert_eq!(wiki::blocks_due(&mut conn, now).unwrap(), vec![study.id]);
+        // Fetched again without a picture, the source keeps its old one.
+        let again = wiki::store(&mut conn, study.id, &article, Some(&polish), None).unwrap();
+        assert!(again.image_file_id.is_some());
 
         // Removed by the tutor, or with its block.
         tutor::run_tool_for_test(&mut conn, "remove_source", serde_json::json!({ "source_id": source.id }));

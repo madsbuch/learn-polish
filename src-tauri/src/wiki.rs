@@ -282,6 +282,8 @@ pub fn store(
         .select((wiki_sources::id, wiki_sources::image_file_id))
         .first(conn)
         .optional()?;
+    // Fetched again without a picture (a fact check): the old one stays.
+    let image = image.or(existing.and_then(|(_, old)| old));
     let values = (
         wiki_sources::title.eq(&article.title),
         wiki_sources::url.eq(&article.url),
@@ -387,6 +389,169 @@ fn clip(text: &str, limit: usize) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Fact checks
+// ---------------------------------------------------------------------------
+
+/// The outcome of checking a lesson against its sources.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactCheck {
+    pub block_id: i64,
+    pub title: String,
+    /// The lesson was out of date and has been corrected.
+    pub updated: bool,
+    /// What changed, when it did.
+    pub note: Option<String>,
+}
+
+/// Blocks whose sources have not been compared with Wikipedia for three months.
+pub fn blocks_due(conn: &mut Conn, now: i64) -> Result<Vec<i64>> {
+    let mut ids: Vec<i64> = wiki_sources::table
+        .filter(wiki_sources::checked_at.lt(now - CHECK_EVERY_DAYS * 86_400))
+        .select(wiki_sources::block_id)
+        .load(conn)?;
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+/// At startup: checks every block that is due, in the background, and says
+/// when a lesson was corrected (`facts://updated`).
+pub fn check_due_in_background(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let due = blocks_due(&mut app.state::<Db>().lock(), db::now_secs()).unwrap_or_default();
+    if due.is_empty() {
+        return;
+    }
+    let busy = crate::work::begin(app, "Checking lessons against Wikipedia…");
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _busy = busy;
+        let db = app.state::<Db>();
+        for block_id in due {
+            match fact_check(&db, block_id, false).await {
+                Ok(check) if check.updated => {
+                    let _ = app.emit("facts://updated", check);
+                }
+                Ok(_) => {}
+                Err(error) => eprintln!("fact check of block {block_id}: {error}"),
+            }
+        }
+    });
+}
+
+/// Compares a block's sources with Wikipedia now. Articles that changed are
+/// fetched again; if any did (or `force`), an AI reads the lesson against
+/// them and corrects what is out of date — nothing else — noting what
+/// changed. Unchanged articles cost nothing.
+pub async fn fact_check(db: &Db, block_id: i64, force: bool) -> Result<FactCheck> {
+    let (title, sources): (String, Vec<(i64, String, String, i64)>) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let title = blocks::table.find(block_id).select(blocks::title).first(conn)?;
+        let sources = wiki_sources::table
+            .filter(wiki_sources::block_id.eq(block_id))
+            .select((wiki_sources::id, wiki_sources::lang, wiki_sources::title, wiki_sources::revid))
+            .load(conn)?;
+        (title, sources)
+    };
+    let mut changed = false;
+    for (id, lang, article_title, revid) in &sources {
+        let now = db::now_secs();
+        if current_revision(lang, article_title).await? == *revid {
+            diesel::update(wiki_sources::table.find(id))
+                .set(wiki_sources::checked_at.eq(now))
+                .execute(&mut *db.lock())?;
+            continue;
+        }
+        changed = true;
+        let article = fetch(lang, article_title).await?;
+        let polish = match (&article.polish_title, lang.as_str()) {
+            (Some(pl), l) if l != "pl" => fetch("pl", pl).await.ok(),
+            _ => None,
+        };
+        store(&mut db.lock(), block_id, &article, polish.as_ref(), None)?;
+    }
+    let mut check = FactCheck { block_id, title, updated: false, note: None };
+    if changed || force {
+        if let Some(note) = correct_lesson(db, block_id).await? {
+            check.updated = true;
+            check.note = Some(note);
+        }
+    }
+    diesel::update(blocks::table.find(block_id))
+        .set(blocks::fact_checked_at.eq(db::now_secs()))
+        .execute(&mut *db.lock())?;
+    Ok(check)
+}
+
+/// Asks the model whether the lesson is out of date against its sources and,
+/// if so, stores the corrected lesson. Returns what changed.
+async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
+    let (key, model, lesson, objectives, reading) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let (lesson, objectives): (String, String) =
+            blocks::table.find(block_id).select((blocks::lesson, blocks::objectives)).first(conn)?;
+        (
+            crate::ai::api_key(conn)?,
+            crate::ai::require_model(conn)?,
+            lesson,
+            objectives,
+            reading_for(conn, block_id, READ_LIMIT)?,
+        )
+    };
+    if reading.is_empty() {
+        return Ok(None);
+    }
+    let messages = vec![
+        crate::ai::Wire::system(
+            "You keep a short lesson in a Polish-learning app accurate against its sources. You \
+             answer with JSON only.",
+        ),
+        crate::ai::Wire::user(format!(
+            "The lesson:\n{lesson}\n\nWhat the learner should be able to do: {objectives}\n\n\
+             The sources, as they read today:\n{reading}\n\n\
+             Is anything in the lesson now wrong or out of date according to the sources — a figure, \
+             a name, an officeholder, a date? Wording, style, the Polish teaching, and things the \
+             sources do not mention are fine: do not touch those.\n\
+             Answer {{\"outdated\": false}}, or {{\"outdated\": true, \"changes\": \"one or two \
+             sentences: what was out of date and what it is now\", \"lesson\": \"the whole lesson, \
+             corrected and otherwise unchanged, in the same markdown\"}}."
+        )),
+    ];
+    let reply = crate::ai::complete_with(&key, &model, &messages, 0.1, 4000).await?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    let _ = crate::costs::record(conn, crate::costs::FACT_CHECK, "openrouter", &model, reply.cost, "");
+    let verdict = parse_verdict(&reply.text)?;
+    let Some((changes, corrected)) = verdict else { return Ok(None) };
+    let today = crate::commands::civil_date(db::today(conn));
+    let note = format!("{}-{:02}-{:02}: {changes}", today.0, today.1, today.2);
+    diesel::update(blocks::table.find(block_id))
+        .set((blocks::lesson.eq(corrected.trim()), blocks::fact_note.eq(&note)))
+        .execute(conn)?;
+    Ok(Some(note))
+}
+
+/// The model's verdict: None when the lesson stands, else what changed and
+/// the corrected lesson.
+fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
+    let start = text.find('{').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
+    let end = text.rfind('}').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
+    let value: Value = serde_json::from_str(&text[start..=end])
+        .map_err(|_| Error::msg("The fact check's answer was unreadable."))?;
+    if value["outdated"].as_bool() != Some(true) {
+        return Ok(None);
+    }
+    let changes = value["changes"].as_str().unwrap_or("Corrected against Wikipedia.").trim().to_string();
+    match value["lesson"].as_str().map(str::trim).filter(|l| !l.is_empty()) {
+        Some(lesson) => Ok(Some((changes, lesson.to_string()))),
+        None => Ok(None),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -428,6 +593,12 @@ pub async fn source_article(db: State<'_, Db>, source_id: i64, polish: bool) -> 
     })
 }
 
+/// Checks one block against its sources now, whatever the date.
+#[tauri::command]
+pub async fn fact_check_block(db: State<'_, Db>, block_id: i64) -> Result<FactCheck> {
+    fact_check(&db, block_id, true).await
+}
+
 #[tauri::command]
 pub async fn source_remove(db: State<'_, Db>, source_id: i64) -> Result<()> {
     remove(&mut db.lock(), source_id)
@@ -452,6 +623,20 @@ mod tests {
         assert_eq!(api("pl").unwrap(), "https://pl.wikipedia.org/w/api.php");
         assert!(api("evil.example.com/").is_err());
         assert!(api("EN").is_err());
+    }
+
+    #[test]
+    fn a_fact_check_verdict_is_read_from_the_reply() {
+        assert_eq!(parse_verdict("```json\n{\"outdated\": false}\n```").unwrap(), None);
+        let (changes, lesson) = parse_verdict(
+            "Here: {\"outdated\": true, \"changes\": \"The population is now 804,000.\", \"lesson\": \"Kraków has 804,000 people.\"}",
+        )
+        .unwrap()
+        .unwrap();
+        assert!(changes.contains("804,000") && lesson.starts_with("Kraków"));
+        assert!(parse_verdict("no json here").is_err());
+        // A verdict without a corrected lesson changes nothing.
+        assert_eq!(parse_verdict("{\"outdated\": true, \"changes\": \"x\"}").unwrap(), None);
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { Banner, Loading, Stack } from "./design";
 import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
+import { toast } from "./lib/toast";
 import { resumeCast, syncRepeatFromSettings } from "./lib/player";
 import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
@@ -18,6 +19,7 @@ import type {
   Stats,
   TopicProgress,
   TutorDone,
+  FactCheck,
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
@@ -246,6 +248,17 @@ export default function App() {
     report();
     document.addEventListener("visibilitychange", report);
     return () => document.removeEventListener("visibilitychange", report);
+  }, []);
+
+  // A lesson corrected against Wikipedia in the background (the
+  // three-monthly check at start).
+  useEffect(() => {
+    const off = listen<FactCheck>("facts://updated", (event) => {
+      toast(`“${event.payload.title}” was updated from Wikipedia`, "info");
+    });
+    return () => {
+      void off.then((stop) => stop());
+    };
   }, []);
 
   // A new course's picture arrived (drawn in the background): the lists

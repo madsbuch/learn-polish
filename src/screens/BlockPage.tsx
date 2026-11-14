@@ -201,7 +201,14 @@ export function BlockPage({
               </div>
             </Card>
           </Section>
-          <Sources key={sourcesVersion} blockId={block.id} onRead={setReading} />
+          <Sources
+            key={sourcesVersion}
+            blockId={block.id}
+            factNote={block.factNote}
+            factCheckedAt={block.factCheckedAt}
+            onRead={setReading}
+            onChecked={() => void reload()}
+          />
         </>
       ) : null}
 

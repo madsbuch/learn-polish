@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { Avatar, Button, List, ListItem, Screen, Section, Segmented, Spinner, Stack, Text } from "../design";
+import { Avatar, Button, Inline, List, ListItem, Screen, Section, Segmented, Spinner, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
@@ -12,8 +12,23 @@ import { Markdown } from "./Markdown";
  * A study block's Wikipedia sources: a card each, opening the article in the
  * app. Nothing shows for a block without any.
  */
-export function Sources({ blockId, onRead }: { blockId: number; onRead: (source: WikiSource) => void }) {
+export function Sources({
+  blockId,
+  factNote,
+  factCheckedAt,
+  onRead,
+  onChecked,
+}: {
+  blockId: number;
+  /** What the last check changed. */
+  factNote: string | null;
+  factCheckedAt: number | null;
+  onRead: (source: WikiSource) => void;
+  /** A check corrected the lesson: reload the block. */
+  onChecked: () => void;
+}) {
   const [sources, setSources] = useState<WikiSource[]>([]);
+  const [checking, setChecking] = useState(false);
   useEffect(() => {
     api
       .blockSources(blockId)
@@ -31,6 +46,11 @@ export function Sources({ blockId, onRead }: { blockId: number; onRead: (source:
         </p>
       }
     >
+      {factNote ? (
+        <Text variant="small" tone="dim" as="p">
+          Updated from Wikipedia — {factNote}
+        </Text>
+      ) : null}
       <List>
         {sources.map((source) => (
           <ListItem
@@ -49,6 +69,32 @@ export function Sources({ blockId, onRead }: { blockId: number; onRead: (source:
           />
         ))}
       </List>
+      <Inline gap={2} justify="between">
+        <Text variant="caption" tone="faint">
+          {factCheckedAt ? `Checked ${new Date(factCheckedAt * 1000).toLocaleDateString()}` : "Not checked yet"} ·
+          again every three months
+        </Text>
+        <Button
+          size="sm"
+          variant="plain"
+          loading={checking}
+          onClick={async () => {
+            setChecking(true);
+            try {
+              const check = await api.factCheckBlock(blockId);
+              const what = check.note?.replace(/^\d{4}-\d{2}-\d{2}: /, "") ?? "the lesson was out of date";
+              toast(check.updated ? `Corrected — ${what}` : "Still matches its sources");
+              onChecked();
+            } catch (cause) {
+              toast(errorMessage(cause), "error");
+            } finally {
+              setChecking(false);
+            }
+          }}
+        >
+          Check now
+        </Button>
+      </Inline>
     </Section>
   );
 }
