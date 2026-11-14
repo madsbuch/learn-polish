@@ -23,6 +23,8 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useDraft, writeDraft } from "../lib/drafts";
+import { useStickToBottom } from "../lib/stickToBottom";
+import { JumpToLatest } from "../components/JumpToLatest";
 import { ensurePermission } from "../lib/notifications";
 import type { AgentStatus, ChatMessage, Conversation, StreamEvent, TutorAction, TutorDone } from "../lib/types";
 
@@ -309,7 +311,6 @@ function Chat({
   const error = localError ?? job.error;
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState(title);
-  const endRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(() => {
     if (conversationId === null) return;
@@ -324,9 +325,9 @@ function Chat({
     if (job.finished > 0) loadHistory();
   }, [job.finished, loadHistory]);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, live, status, sending]);
+  // Follows the reply as it comes in — until the learner scrolls up to read.
+  const scroll = useStickToBottom([messages, live, status, sending]);
+  const endRef = scroll.endRef;
 
   // Send the opening message once — a ref, so React's double effects in
   // development don't send it twice.
@@ -352,6 +353,7 @@ function Chat({
       ...current,
       { id: -Date.now(), conversationId: conversationId ?? 0, role: "user", content: message, actions: [] },
     ]);
+    scroll.follow();
     job.begin();
     // So a reply that finishes while the app is away can say so.
     void ensurePermission().catch(() => false);
@@ -518,6 +520,7 @@ function Chat({
         ) : null}
         <div ref={endRef} />
       </div>
+      {scroll.away ? <JumpToLatest onClick={scroll.follow} /> : null}
 
       {managing && conversationId !== null ? (
         <Sheet title="Conversation" onClose={() => setManaging(false)}>

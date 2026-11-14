@@ -788,3 +788,15 @@
   border-radius: 50%;
 }
 
+
+/* "Latest" in a chat scrolled up: stays at the foot of the visible chat. */
+.jump-latest {
+  position: sticky;
+  bottom: var(--space-2);
+  align-self: center;
+  z-index: 2;
+  margin-top: calc(var(--space-6) * -1);
+}
+.jump-latest .button {
+  box-shadow: var(--card-shadow);
+}

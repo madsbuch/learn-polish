@@ -21,6 +21,8 @@ import {
 } from "../design";
 import { api } from "../lib/api";
 import { useAiStream } from "../lib/useAiStream";
+import { useStickToBottom } from "../lib/stickToBottom";
+import { JumpToLatest } from "../components/JumpToLatest";
 import { playComplete } from "../lib/sounds";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/blocks";
@@ -77,15 +79,14 @@ export function CheckIn({
   const error = stream.error;
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [first, setFirst] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const song = useSongItem(songId).item;
   const player = usePlayer();
   const songCurrent = song !== null && currentItem(player)?.track.id === song.track.id;
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines, live, assessment]);
+  // Follows the examiner — until the learner scrolls up to read.
+  const scroll = useStickToBottom([lines, live, assessment]);
+  const endRef = scroll.endRef;
 
   async function exchange(run: (streamId: string) => ReturnType<typeof api.checkinStart>) {
     const turn = await stream.run(run);
@@ -116,6 +117,7 @@ export function CheckIn({
     const text = draft.trim();
     if (!text || busy || checkinId === null) return;
     setDraft("");
+    scroll.follow();
     setLines((current) => [...current, { role: "user", content: text }]);
     const ok = await exchange((streamId) => api.checkinSend(checkinId, text, streamId));
     if (!ok) {
@@ -238,6 +240,7 @@ export function CheckIn({
         ) : null}
         <div ref={endRef} />
       </div>
+      {scroll.away ? <JumpToLatest onClick={scroll.follow} /> : null}
 
       {assessment && verdict ? (
         <Section title="Verdict">
