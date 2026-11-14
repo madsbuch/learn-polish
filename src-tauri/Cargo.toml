@@ -32,6 +32,8 @@ thiserror = "2"
 rand = "0.9"
 # Generated speech crosses the IPC boundary as a data: URI.
 base64 = "0.22"
+# Content hashes for the files table.
+sha2 = "0.10"
 
 # SQLite is compiled in (`bundled`) so Android/macOS do not depend on a system libsqlite3.
 # Typed SQL: queries are checked against src/schema.rs at compile time.

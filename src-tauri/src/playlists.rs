@@ -257,18 +257,17 @@ pub async fn playlist_move(
 
 /// A take's bytes and a friendly file name, e.g. "Kawa (take 2).mp3".
 fn track_file(conn: &mut Conn, track_id: i64) -> Result<(String, Vec<u8>)> {
-    let (title, ord, path, bytes): (String, i64, String, Option<Vec<u8>>) = song_tracks::table
+    let (title, ord, file_id): (String, i64, Option<i64>) = song_tracks::table
         .inner_join(songs::table)
         .filter(song_tracks::id.eq(track_id))
-        .select((songs::title, song_tracks::ord, song_tracks::audio_path, song_tracks::audio_bytes))
+        .select((songs::title, song_tracks::ord, song_tracks::audio_file_id))
         .first(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That take no longer exists."))?;
-    let bytes = match bytes {
-        Some(bytes) => bytes,
-        None => std::fs::read(&path)?,
-    };
-    let extension = std::path::Path::new(&path)
+    let file_id = file_id.ok_or_else(|| Error::msg("That take has no audio."))?;
+    let name = crate::files::info(conn, file_id)?.name;
+    let (_, bytes) = crate::files::read(conn, file_id)?;
+    let extension = std::path::Path::new(&name)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("mp3")

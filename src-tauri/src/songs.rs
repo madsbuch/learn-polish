@@ -6,7 +6,7 @@
 //! English line with the same line in Polish, sung right after it, and the
 //! chorus is a single Polish sentence repeated until it sticks.
 
-use std::path::{Path, PathBuf};
+
 use std::time::Duration;
 
 use diesel::prelude::*;
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ai;
+use crate::files;
 use crate::db::{self, Conn, Db};
 use crate::schema::{course_sentences, course_words, reviews, sentences, song_tracks, songs, topics, words};
 use crate::error::{Error, Result};
@@ -713,22 +714,38 @@ async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)
     Ok((parse_task(&data), credits_consumed(&data)))
 }
 
-/// Downloads a file to `path` and returns its bytes, which are also kept in
-/// the database.
-async fn download(url: &str, path: &Path) -> Result<Vec<u8>> {
+/// Downloads a file and returns its bytes and type; the caller stores them in
+/// the files table.
+async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
     let response = crate::http::downloads().get(url).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(Error::msg(format!("Could not download the song ({}).", response.status())));
     }
+    let mime = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or("").trim().to_string())
+        .filter(|v| v.starts_with("audio/") || v.starts_with("image/"));
     let bytes = response.bytes().await.map_err(unreachable)?;
     if bytes.is_empty() {
         return Err(Error::msg("The downloaded song was empty."));
     }
-    // Write then rename, so a crash never leaves a half file that looks done.
-    let partial = path.with_extension("part");
-    std::fs::write(&partial, &bytes)?;
-    std::fs::rename(&partial, path)?;
-    Ok(bytes.to_vec())
+    Ok((mime, bytes.to_vec()))
+}
+
+/// A MIME type from a file extension, when the server did not say.
+fn mime_for(ext: &str, fallback: &str) -> String {
+    match ext {
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "m4a" => "audio/mp4",
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        _ => fallback,
+    }
+    .to_string()
 }
 
 fn extension(url: &str, fallback: &str) -> String {
@@ -919,80 +936,6 @@ async fn sync_track_lyrics(app: &AppHandle, track_id: i64) -> Result<()> {
 // Storage
 // ---------------------------------------------------------------------------
 
-/// Keeps the database and the song files on disk in step, in the background:
-/// a take downloaded before songs were stored in the database has its bytes
-/// copied in, and a file that has gone missing (an app-data clean-up, or a
-/// database restored from an export) is written back out from its bytes.
-pub fn sync_media(app: &AppHandle) {
-    let app = app.clone();
-    std::thread::spawn(move || {
-        if let Err(error) = sync_media_now(&app) {
-            eprintln!("song media sync failed: {error}");
-        }
-    });
-}
-
-fn sync_media_now(app: &AppHandle) -> Result<()> {
-    let dir = songs_dir(app)?;
-    let db = app.state::<Db>();
-    let rows: Vec<(i64, String, Option<String>, bool, bool)> = song_tracks::table
-        .select((
-            song_tracks::id,
-            song_tracks::audio_path,
-            song_tracks::image_path,
-            song_tracks::audio_bytes.is_not_null(),
-            song_tracks::image_bytes.is_not_null(),
-        ))
-        .load(&mut *db.lock())?;
-
-    for (id, audio_path, image_path, has_audio, has_image) in rows {
-        let take = song_tracks::table.find(id);
-        for (is_audio, path, stored) in [(true, Some(audio_path), has_audio), (false, image_path, has_image)] {
-            let Some(path) = path else { continue };
-            let mut on_disk = PathBuf::from(&path);
-            if stored && !on_disk.exists() {
-                // The data folder may have moved (a restore on a new phone),
-                // so the file goes back under the current one.
-                if let Some(name) = on_disk.file_name() {
-                    on_disk = dir.join(name);
-                }
-                let conn = &mut *db.lock();
-                let bytes: Option<Vec<u8>> = if is_audio {
-                    take.select(song_tracks::audio_bytes).first(conn)?
-                } else {
-                    take.select(song_tracks::image_bytes).first(conn)?
-                };
-                std::fs::write(&on_disk, bytes.unwrap_or_default())?;
-                let written = on_disk.to_string_lossy().to_string();
-                if is_audio {
-                    diesel::update(take).set(song_tracks::audio_path.eq(written)).execute(conn)?;
-                } else {
-                    diesel::update(take).set(song_tracks::image_path.eq(written)).execute(conn)?;
-                }
-            } else if !stored && on_disk.exists() {
-                let bytes = std::fs::read(&on_disk)?;
-                let conn = &mut *db.lock();
-                if is_audio {
-                    diesel::update(take).set(song_tracks::audio_bytes.eq(bytes)).execute(conn)?;
-                } else {
-                    diesel::update(take).set(song_tracks::image_bytes.eq(bytes)).execute(conn)?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-pub fn songs_dir(app: &AppHandle) -> Result<PathBuf> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| Error::msg(format!("no app data directory: {e}")))?
-        .join("songs");
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir)
-}
-
 /// A take as stored, before its word timings are matched to the lyrics.
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = song_tracks, check_for_backend(diesel::sqlite::Sqlite))]
@@ -1000,26 +943,32 @@ struct TrackRow {
     id: i64,
     song_id: i64,
     ord: i64,
-    audio_path: String,
-    image_path: Option<String>,
+    audio_file_id: Option<i64>,
+    image_file_id: Option<i64>,
     duration: f64,
     play_count: i64,
     aligned_words: Option<String>,
 }
 
 fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
-    Ok(song_tracks::table
+    let rows: Vec<TrackRow> = song_tracks::table
         .filter(song_tracks::song_id.eq(song_id))
+        .filter(song_tracks::audio_file_id.is_not_null())
         .order(song_tracks::ord)
         .select(TrackRow::as_select())
-        .load(conn)?
+        .load(conn)?;
+    // The players stream from each file's copy on disk.
+    let ids: Vec<i64> = rows.iter().flat_map(|r| [r.audio_file_id, r.image_file_id]).flatten().collect();
+    let paths = files::paths(conn, &ids)?;
+    let path = |id: Option<i64>| id.and_then(|id| paths.get(&id).cloned());
+    Ok(rows
         .into_iter()
         .map(|row| SongTrack {
             id: row.id,
             song_id: row.song_id,
             ord: row.ord,
-            audio_path: row.audio_path,
-            image_path: row.image_path,
+            audio_path: path(row.audio_file_id).unwrap_or_default(),
+            image_path: path(row.image_file_id),
             duration: row.duration,
             play_count: row.play_count,
             lines: row
@@ -1211,48 +1160,59 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
         tokio::time::sleep(POLL_INTERVAL).await;
     };
 
-    let dir = songs_dir(app)?;
+    let dir = files::media_dir(app)?;
     for (ord, track) in tracks.iter().enumerate() {
-        let audio = dir.join(format!(
-            "song-{song_id}-{ord}.{}",
-            extension(&track.audio_url, "mp3")
-        ));
-        let audio_bytes = download(&track.audio_url, &audio).await?;
-        let (image, image_bytes) = match &track.image_url {
-            Some(url) => {
-                let path = dir.join(format!("song-{song_id}-{ord}.{}", extension(url, "jpg")));
-                // Cover art is a nicety; a failed download must not lose the song.
-                match download(url, &path).await {
-                    Ok(bytes) => (Some(path), Some(bytes)),
-                    Err(_) => (None, None),
-                }
-            }
-            None => (None, None),
+        let (audio_mime, audio) = download(&track.audio_url).await?;
+        // Cover art is a nicety; a failed download must not lose the song.
+        let image = match &track.image_url {
+            Some(url) => download(url).await.ok().map(|(mime, bytes)| (url, mime, bytes)),
+            None => None,
         };
         let db = app.state::<Db>();
-        let audio_path = audio.to_string_lossy().to_string();
-        let image_path = image.map(|p| p.to_string_lossy().to_string());
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let audio_ext = extension(&track.audio_url, "mp3");
+        let audio_mime = audio_mime.unwrap_or_else(|| mime_for(&audio_ext, "audio/mpeg"));
+        let audio_id =
+            files::store(conn, files::SONG_AUDIO, &format!("song-{song_id}-{ord}.{audio_ext}"), &audio_mime, &audio)?;
+        files::materialize(conn, &dir, audio_id)?;
+        let image_id = match image {
+            Some((url, mime, bytes)) => {
+                let ext = extension(url, "jpg");
+                let mime = mime.unwrap_or_else(|| mime_for(&ext, "image/jpeg"));
+                let id = files::store(conn, files::SONG_IMAGE, &format!("song-{song_id}-{ord}.{ext}"), &mime, &bytes)?;
+                files::materialize(conn, &dir, id)?;
+                Some(id)
+            }
+            None => None,
+        };
+        // Downloading a take again replaces its files.
+        let old: Option<(Option<i64>, Option<i64>)> = song_tracks::table
+            .filter(song_tracks::song_id.eq(song_id))
+            .filter(song_tracks::remote_id.eq(&track.id))
+            .select((song_tracks::audio_file_id, song_tracks::image_file_id))
+            .first(conn)
+            .optional()?;
         diesel::insert_into(song_tracks::table)
             .values((
                 song_tracks::song_id.eq(song_id),
                 song_tracks::ord.eq(ord as i64),
                 song_tracks::remote_id.eq(&track.id),
-                song_tracks::audio_path.eq(&audio_path),
-                song_tracks::image_path.eq(&image_path),
                 song_tracks::duration.eq(track.duration),
-                song_tracks::audio_bytes.eq(&audio_bytes),
-                song_tracks::image_bytes.eq(&image_bytes),
+                song_tracks::audio_file_id.eq(audio_id),
+                song_tracks::image_file_id.eq(image_id),
             ))
             .on_conflict((song_tracks::song_id, song_tracks::remote_id))
             .do_update()
             .set((
-                song_tracks::audio_path.eq(&audio_path),
-                song_tracks::image_path.eq(&image_path),
                 song_tracks::duration.eq(track.duration),
-                song_tracks::audio_bytes.eq(&audio_bytes),
-                song_tracks::image_bytes.eq(&image_bytes),
+                song_tracks::audio_file_id.eq(audio_id),
+                song_tracks::image_file_id.eq(image_id),
             ))
-            .execute(&mut *db.lock())?;
+            .execute(conn)?;
+        if let Some((old_audio, old_image)) = old {
+            files::delete(conn, &[old_audio, old_image].into_iter().flatten().collect::<Vec<_>>())?;
+        }
     }
 
     let db = app.state::<Db>();
@@ -1413,15 +1373,17 @@ pub async fn song_delete(db: State<'_, Db>, song_id: i64) -> Result<()> {
 
 /// Deletes a song, its takes and their files. Its takes leave every playlist.
 pub fn delete_song(conn: &mut Conn, song_id: i64) -> Result<()> {
-    for track in load_tracks(conn, song_id, &[])? {
-        let _ = std::fs::remove_file(&track.audio_path);
-        if let Some(image) = track.image_path {
-            let _ = std::fs::remove_file(image);
-        }
-    }
-    diesel::delete(song_tracks::table.filter(song_tracks::song_id.eq(song_id))).execute(conn)?;
+    let takes = song_tracks::table.filter(song_tracks::song_id.eq(song_id));
+    let ids = take_files(takes.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?);
+    diesel::delete(takes).execute(conn)?;
+    files::delete(conn, &ids)?;
     diesel::delete(songs::table.find(song_id)).execute(conn)?;
     Ok(())
+}
+
+/// The file ids of takes' audio and cover art.
+fn take_files(rows: Vec<(Option<i64>, Option<i64>)>) -> Vec<i64> {
+    rows.into_iter().flat_map(|(audio, image)| [audio, image]).flatten().collect()
 }
 
 /// Removes one take, keeping the song and its other takes.
@@ -1429,18 +1391,10 @@ pub fn delete_song(conn: &mut Conn, song_id: i64) -> Result<()> {
 pub async fn song_track_delete(db: State<'_, Db>, track_id: i64) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let paths: Option<(String, Option<String>)> = song_tracks::table
-        .find(track_id)
-        .select((song_tracks::audio_path, song_tracks::image_path))
-        .first(conn)
-        .optional()?;
-    if let Some((audio, image)) = paths {
-        let _ = std::fs::remove_file(audio);
-        if let Some(image) = image {
-            let _ = std::fs::remove_file(image);
-        }
-    }
-    diesel::delete(song_tracks::table.find(track_id)).execute(conn)?;
+    let take = song_tracks::table.find(track_id);
+    let ids = take_files(take.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?);
+    diesel::delete(take).execute(conn)?;
+    files::delete(conn, &ids)?;
     Ok(())
 }
 

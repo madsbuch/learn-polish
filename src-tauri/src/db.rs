@@ -14,7 +14,7 @@ use diesel::sql_types::{BigInt, Text};
 
 use crate::content::{self, Conversation};
 use crate::error::{Error, Result};
-use crate::schema::{blocks, course_blocks, settings, topics, tutor_conversations, tutor_messages};
+use crate::schema::{blocks, course_blocks, settings, song_tracks, topics, tutor_conversations, tutor_messages};
 
 /// The app's database connection.
 pub type Conn = SqliteConnection;
@@ -84,7 +84,7 @@ mod legacy {
     }
 }
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA: &str = r#"
 -- A topic is a course: a folder of blocks (see course_blocks). `kind` is
@@ -178,16 +178,32 @@ CREATE TABLE IF NOT EXISTS achievements (
     unlocked_at  INTEGER NOT NULL
 );
 
--- Generated speech, so a sentence is only ever paid for once and replays work
+-- Every file the app keeps — speech clips, song audio, cover art — bytes and
+-- all, so the database alone is a complete backup. Other tables reference a
+-- file by id. `path` is a copy on disk for the players that need a real file;
+-- it is only a cache, written from `bytes` when missing (see files.rs).
+CREATE TABLE IF NOT EXISTS files (
+    id         INTEGER PRIMARY KEY,
+    kind       TEXT    NOT NULL,          -- speech | song_audio | song_image
+    name       TEXT    NOT NULL,          -- e.g. "song-3-0.mp3"
+    mime       TEXT    NOT NULL,
+    size       INTEGER NOT NULL,          -- bytes
+    sha256     TEXT    NOT NULL,          -- hex
+    bytes      BLOB    NOT NULL,
+    path       TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS files_kind ON files(kind);
+
+-- Generated speech, so a line is only ever paid for once and replays work
 -- offline. Keyed by the exact text plus the model and voice that produced it,
--- so changing voice does not serve stale audio.
-CREATE TABLE IF NOT EXISTS audio_cache (
+-- so changing voice does not serve stale audio. The audio is a file.
+CREATE TABLE IF NOT EXISTS speech_clips (
     cache_key  TEXT PRIMARY KEY,
-    model      TEXT NOT NULL,
-    voice      TEXT NOT NULL,
-    text       TEXT NOT NULL,
-    mime       TEXT NOT NULL,
-    bytes      BLOB NOT NULL,
+    model      TEXT    NOT NULL,
+    voice      TEXT    NOT NULL,
+    text       TEXT    NOT NULL,
+    file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL
 );
 
@@ -301,23 +317,19 @@ CREATE TABLE IF NOT EXISTS songs (
     origin       TEXT    NOT NULL DEFAULT '{}'
 );
 
--- Suno sings every song twice. Each take is stored here, bytes and all, so
--- the database alone is a complete backup; `audio_path` is a copy on disk
--- that the native player and Sonos stream from, and is rebuilt from the
--- blob whenever it goes missing.
+-- Suno sings every song twice; each take is a row, its audio and cover art
+-- files. A take without its audio file cannot be played and is not kept.
 CREATE TABLE IF NOT EXISTS song_tracks (
     id             INTEGER PRIMARY KEY,
     song_id        INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
     ord            INTEGER NOT NULL,
     remote_id      TEXT    NOT NULL,
-    audio_path     TEXT    NOT NULL,
-    image_path     TEXT,
     duration       REAL    NOT NULL DEFAULT 0,
     play_count     INTEGER NOT NULL DEFAULT 0,
     last_played_at INTEGER,
     aligned_words  TEXT,                -- Suno's word timings (JSON)
-    audio_bytes    BLOB,
-    image_bytes    BLOB,
+    audio_file_id  INTEGER REFERENCES files(id),
+    image_file_id  INTEGER REFERENCES files(id) ON DELETE SET NULL,
     UNIQUE (song_id, remote_id)
 );
 
@@ -374,12 +386,13 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     if version < 4 && table_exists(conn, "words")? {
         upgrade_to_block_owned_items(conn)?;
     }
+    if version < 5 && table_exists(conn, "song_tracks")? {
+        upgrade_to_files(conn)?;
+    }
     conn.batch_execute(SCHEMA)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
     add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
-    add_column(conn, "song_tracks", "audio_bytes", "BLOB")?;
-    add_column(conn, "song_tracks", "image_bytes", "BLOB")?;
     add_column(
         conn,
         "tutor_messages",
@@ -391,6 +404,127 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "songs", "origin", "TEXT NOT NULL DEFAULT '{}'")?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
+}
+
+/// Version 5: every file is a row in `files`. Song takes move their bytes (or
+/// the file on disk, for takes from before bytes were stored) into it and
+/// reference it by id; the old speech cache is dropped — clips are made
+/// again, with the current voices, as lines are played.
+fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
+    #[derive(diesel::QueryableByName)]
+    struct OldTake {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        id: i64,
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        song_id: i64,
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        ord: i64,
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        audio_path: String,
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+        image_path: Option<String>,
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
+        audio_bytes: Option<Vec<u8>>,
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
+        image_bytes: Option<Vec<u8>>,
+    }
+    if !column_exists(conn, "song_tracks", "audio_path")? {
+        return Ok(());
+    }
+    // Very old databases lack the blob columns; the files on disk are read then.
+    add_column(conn, "song_tracks", "audio_bytes", "BLOB")?;
+    add_column(conn, "song_tracks", "image_bytes", "BLOB")?;
+    conn.batch_execute(
+        "CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL,
+            size INTEGER NOT NULL, sha256 TEXT NOT NULL, bytes BLOB NOT NULL, path TEXT,
+            created_at INTEGER NOT NULL
+        );",
+    )?;
+    add_column(conn, "song_tracks", "audio_file_id", "INTEGER REFERENCES files(id)")?;
+    add_column(conn, "song_tracks", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
+
+    conn.transaction::<_, Error, _>(|tx| {
+        let takes: Vec<OldTake> = diesel::sql_query(
+            "SELECT id, song_id, ord, audio_path, image_path, audio_bytes, image_bytes FROM song_tracks",
+        )
+        .load(tx)?;
+        for take in takes {
+            let audio = take.audio_bytes.or_else(|| std::fs::read(&take.audio_path).ok()).filter(|b| !b.is_empty());
+            let Some(audio) = audio else {
+                // Nothing left to play: the take goes (and leaves its playlists).
+                diesel::delete(song_tracks::table.find(take.id)).execute(tx)?;
+                continue;
+            };
+            let audio_id = moved_file(tx, crate::files::SONG_AUDIO, &take.audio_path, take.song_id, take.ord, &audio, "mp3")?;
+            let image = take
+                .image_bytes
+                .or_else(|| take.image_path.as_ref().and_then(|p| std::fs::read(p).ok()))
+                .filter(|b| !b.is_empty());
+            let image_id = match (image, &take.image_path) {
+                (Some(bytes), Some(path)) => {
+                    Some(moved_file(tx, crate::files::SONG_IMAGE, path, take.song_id, take.ord, &bytes, "jpg")?)
+                }
+                _ => None,
+            };
+            diesel::update(song_tracks::table.find(take.id))
+                .set((song_tracks::audio_file_id.eq(audio_id), song_tracks::image_file_id.eq(image_id)))
+                .execute(tx)?;
+        }
+        Ok(())
+    })?;
+    conn.batch_execute(
+        "ALTER TABLE song_tracks DROP COLUMN audio_path;
+         ALTER TABLE song_tracks DROP COLUMN image_path;
+         ALTER TABLE song_tracks DROP COLUMN audio_bytes;
+         ALTER TABLE song_tracks DROP COLUMN image_bytes;
+         DROP TABLE IF EXISTS audio_cache;",
+    )?;
+    // The old speech cache and the duplicated song bytes leave free pages.
+    conn.batch_execute("VACUUM")?;
+    Ok(())
+}
+
+/// A song file from before the files table, as a file row. The copy on disk
+/// is kept where it is.
+fn moved_file(
+    conn: &mut Conn,
+    kind: &str,
+    old_path: &str,
+    song_id: i64,
+    ord: i64,
+    bytes: &[u8],
+    fallback_ext: &str,
+) -> Result<i64> {
+    let ext = std::path::Path::new(old_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or(fallback_ext)
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "m4a" => "audio/mp4",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "jpg" | "jpeg" => "image/jpeg",
+        _ if kind == crate::files::SONG_AUDIO => "audio/mpeg",
+        _ => "image/jpeg",
+    };
+    let id = crate::files::store(conn, kind, &format!("song-{song_id}-{ord}.{ext}"), mime, bytes)?;
+    if std::path::Path::new(old_path).exists() {
+        diesel::update(crate::schema::files::table.find(id))
+            .set(crate::schema::files::path.eq(old_path))
+            .execute(conn)?;
+    }
+    Ok(id)
+}
+
+fn column_exists(conn: &mut Conn, table: &str, column: &str) -> Result<bool> {
+    Ok(diesel::sql_query(format!("SELECT name FROM pragma_table_info('{table}')"))
+        .load::<legacy::Name>(conn)?
+        .iter()
+        .any(|row| row.name == column))
 }
 
 /// Messages from before conversations existed become one conversation, so
@@ -949,7 +1083,7 @@ mod tests {
         }
         check!(
             topics, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
-            audio_cache, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
+            files, speech_clips, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
             playlist_tracks, ai_costs, memories,
         );

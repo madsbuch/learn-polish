@@ -562,12 +562,16 @@ async fn send_file(stream: &mut TcpStream, request: &Request, path: &str) -> Res
     Ok(())
 }
 
+/// A take's audio and cover art, as paths of their copies on disk.
 fn track_files(conn: &mut Conn, track_id: i64) -> Result<Option<(String, Option<String>)>> {
-    Ok(song_tracks::table
+    let ids: Option<(Option<i64>, Option<i64>)> = song_tracks::table
         .find(track_id)
-        .select((song_tracks::audio_path, song_tracks::image_path))
+        .select((song_tracks::audio_file_id, song_tracks::image_file_id))
         .first(conn)
-        .optional()?)
+        .optional()?;
+    let Some((Some(audio), image)) = ids else { return Ok(None) };
+    let paths = crate::files::paths(conn, &[Some(audio), image].into_iter().flatten().collect::<Vec<_>>())?;
+    Ok(paths.get(&audio).map(|path| (path.clone(), image.and_then(|id| paths.get(&id).cloned()))))
 }
 
 async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
@@ -705,13 +709,14 @@ pub fn play_mode(repeat: &str) -> &'static str {
 fn load_items(conn: &mut Conn, track_ids: &[i64]) -> Result<Vec<(CastItem, String)>> {
     let mut items = Vec::new();
     for id in track_ids {
-        let row: Option<(String, String, String)> = song_tracks::table
+        let row: Option<(String, String)> = song_tracks::table
             .inner_join(songs::table)
             .filter(song_tracks::id.eq(id))
-            .select((songs::title, songs::chorus_pl, song_tracks::audio_path))
+            .select((songs::title, songs::chorus_pl))
             .first(conn)
             .optional()?;
-        if let Some((title, chorus, path)) = row {
+        let path = track_files(conn, *id)?.map(|(audio, _)| audio);
+        if let (Some((title, chorus)), Some(path)) = (row, path) {
             items.push((CastItem { track_id: *id, title, artist: chorus }, path));
         }
     }

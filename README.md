@@ -201,6 +201,12 @@ tab makes them to order:
   takes and their cover art are downloaded and stored in the database, and play
   offline, for good. A copy on disk is what the native player and Sonos stream
   from; it is rebuilt from the database whenever it goes missing.
+
+Every file the app keeps — speech clips, song audio, cover art — is a row in
+one `files` table (bytes, type, size, SHA-256), and other tables reference it
+by id: `speech_clips.file_id`, `song_tracks.audio_file_id` and
+`image_file_id`. The database alone is a complete backup; the copies on disk
+are only a cache (`src-tauri/src/files.rs`).
 - **Lyrics that follow the music:** when a song is ready the app asks
   kie.ai for Suno's word timings and stores them with each take. The player
   highlights the line being sung, with its English meaning under each Polish

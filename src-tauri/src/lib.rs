@@ -8,6 +8,7 @@ mod costs;
 mod courses;
 mod db;
 mod error;
+mod files;
 mod examiner;
 mod http;
 mod memories;
@@ -49,7 +50,7 @@ pub fn run() {
             app.manage(Db(Mutex::new(connection)));
             app.manage(cast::CastSessions::default());
             songs::resume_pending(app.handle());
-            songs::sync_media(app.handle());
+            files::sync_to_disk(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -497,34 +498,94 @@ mod integration {
     }
 
     #[test]
+    fn song_files_and_speech_move_into_the_files_table() {
+        let dir = std::env::temp_dir().join("learn-polish-tests").join(format!("to-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.db");
+        let on_disk = dir.join("song-1-1.mp3");
+        std::fs::write(&on_disk, b"from disk").unwrap();
+        {
+            // A version-4 database: takes carry their bytes or only a path,
+            // and speech sits in audio_cache.
+            let mut conn = db::open(&path).unwrap();
+            conn.batch_execute(&format!(
+                "DROP TABLE playlist_tracks; DROP TABLE song_tracks; DROP TABLE speech_clips; DROP TABLE files;
+                 CREATE TABLE song_tracks (
+                     id INTEGER PRIMARY KEY, song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+                     ord INTEGER NOT NULL, remote_id TEXT NOT NULL, audio_path TEXT NOT NULL, image_path TEXT,
+                     duration REAL NOT NULL DEFAULT 0, play_count INTEGER NOT NULL DEFAULT 0,
+                     last_played_at INTEGER, aligned_words TEXT, audio_bytes BLOB, image_bytes BLOB,
+                     UNIQUE (song_id, remote_id));
+                 CREATE TABLE playlist_tracks (
+                     id INTEGER PRIMARY KEY, playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                     track_id INTEGER NOT NULL REFERENCES song_tracks(id) ON DELETE CASCADE, ord INTEGER NOT NULL);
+                 CREATE TABLE audio_cache (cache_key TEXT PRIMARY KEY, model TEXT NOT NULL, voice TEXT NOT NULL,
+                     text TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL);
+                 INSERT INTO audio_cache VALUES ('k', 'm', 'Kore', 'Cześć', 'audio/mpeg', x'01', 0);
+                 INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+                     VALUES (1, 'Kawa', 'Kawa', 'Coffee', 'pop', '[]', '', 'V5', 'ready', 0);
+                 INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path, image_path, audio_bytes, image_bytes)
+                     VALUES (10, 1, 0, 'a', '/gone/song-1-0.mp3', '/gone/song-1-0.png', x'4142', x'89'),
+                            (11, 1, 1, 'b', '{disk}', NULL, NULL, NULL),
+                            (12, 1, 2, 'c', '/gone/song-1-2.mp3', NULL, NULL, NULL);
+                 INSERT INTO playlists (id, name, created_at) VALUES (1, 'Run', 0);
+                 INSERT INTO playlist_tracks (playlist_id, track_id, ord) VALUES (1, 10, 0), (1, 11, 1);
+                 PRAGMA user_version = 4;",
+                disk = on_disk.display()
+            ))
+            .unwrap();
+        }
+        let mut conn = db::open(&path).unwrap();
+        let tracks: Vec<(i64, Option<i64>, Option<i64>)> = t::song_tracks::table
+            .order(t::song_tracks::id)
+            .select((t::song_tracks::id, t::song_tracks::audio_file_id, t::song_tracks::image_file_id))
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(tracks.len(), 2, "a take with no audio anywhere is not kept");
+        let (_, audio, image) = tracks[0];
+        let (mime, bytes) = files::read(&mut conn, audio.unwrap()).unwrap();
+        assert_eq!((mime.as_str(), bytes.as_slice()), ("audio/mpeg", &b"AB"[..]));
+        assert_eq!(files::info(&mut conn, image.unwrap()).unwrap().mime, "image/png");
+        let from_disk = files::info(&mut conn, tracks[1].1.unwrap()).unwrap();
+        assert_eq!(files::read(&mut conn, from_disk.id).unwrap().1, b"from disk", "a take only on disk is read in");
+        assert_eq!(from_disk.path.as_deref(), Some(on_disk.to_str().unwrap()), "its copy stays where it was");
+
+        let in_playlist: i64 = t::playlist_tracks::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(in_playlist, 2, "playlists keep their takes");
+        assert_eq!(songs::list_songs(&mut conn).unwrap()[0].tracks.len(), 2);
+        assert_eq!(speech::audio_cache_stats_in(&mut conn).unwrap().clips, 0, "speech is made again");
+
+        // Deleting the song deletes its files.
+        songs::delete_song(&mut conn, 1).unwrap();
+        let left: i64 = t::files::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(left, 0);
+        assert!(!on_disk.exists(), "and their copies on disk");
+    }
+
+    #[test]
     fn audio_cache_round_trips_and_is_keyed_by_voice() {
         let mut conn = scratch_db("audio");
-        let mut insert = |voice: &str, bytes: &[u8]| {
-            diesel::insert_into(t::audio_cache::table)
-                .values((
-                    t::audio_cache::cache_key.eq(format!("m\u{1}{voice}\u{1}Cześć")),
-                    t::audio_cache::model.eq("m"),
-                    t::audio_cache::voice.eq(voice),
-                    t::audio_cache::text.eq("Cześć"),
-                    t::audio_cache::mime.eq("audio/mpeg"),
-                    t::audio_cache::bytes.eq(bytes),
-                    t::audio_cache::created_at.eq(0),
-                ))
-                .execute(&mut conn)
-                .unwrap();
-        };
-        insert("Kore", &[1, 2, 3]);
-        insert("Puck", &[9, 9]);
-
-        let stored: Vec<u8> = t::audio_cache::table
-            .filter(t::audio_cache::voice.eq("Kore"))
-            .select(t::audio_cache::bytes)
+        for (voice, bytes) in [("Kore", &[1u8, 2, 3][..]), ("Puck", &[9, 9][..])] {
+            let key = speech::audio_key("m", voice, "Cześć");
+            speech::store_clip(&mut conn, &key, "m", voice, "Cześć", "audio/mpeg", bytes).unwrap();
+        }
+        let stored: Vec<u8> = t::speech_clips::table
+            .inner_join(t::files::table)
+            .filter(t::speech_clips::voice.eq("Kore"))
+            .select(t::files::bytes)
             .first(&mut conn)
             .unwrap();
         assert_eq!(stored, vec![1, 2, 3], "blobs must survive the round trip");
 
         let stats = speech::audio_cache_stats_in(&mut conn).unwrap();
         assert_eq!((stats.clips, stats.bytes), (2, 5), "two voices of the same line are stored separately");
+
+        // Making a clip again replaces it, file and all.
+        let key = speech::audio_key("m", "Kore", "Cześć");
+        speech::store_clip(&mut conn, &key, "m", "Kore", "Cześć", "audio/mpeg", &[7]).unwrap();
+        let files: i64 = t::files::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(files, 2, "the replaced file is gone");
     }
 
     #[test]
@@ -539,18 +600,8 @@ mod integration {
         let first = items[0].clone();
         let voice = ai::voice_for(&mut conn, &first.gender);
         for (voice, text) in [(voice.as_str(), first.text.as_str()), ("OldVoice", "Cześć")] {
-            diesel::insert_into(t::audio_cache::table)
-                .values((
-                    t::audio_cache::cache_key.eq(format!("{}\u{1}{voice}\u{1}{text}", ai::SPEECH_MODEL)),
-                    t::audio_cache::model.eq(ai::SPEECH_MODEL),
-                    t::audio_cache::voice.eq(voice),
-                    t::audio_cache::text.eq(text),
-                    t::audio_cache::mime.eq("audio/mpeg"),
-                    t::audio_cache::bytes.eq(&[1u8, 2, 3][..]),
-                    t::audio_cache::created_at.eq(0),
-                ))
-                .execute(&mut conn)
-                .unwrap();
+            let key = speech::audio_key(ai::SPEECH_MODEL, voice, text);
+            speech::store_clip(&mut conn, &key, ai::SPEECH_MODEL, voice, text, "audio/mpeg", &[1, 2, 3]).unwrap();
         }
         let overview = speech::audio_overview_in(&mut conn).unwrap();
         let course = overview.courses.iter().find(|c| c.topic_id == basics).unwrap();
@@ -585,12 +636,13 @@ mod integration {
 
         assert_eq!(songs::suno_model(&mut conn), songs::DEFAULT_SUNO_MODEL);
         let id = songs::insert_song(&mut conn, &draft, "V6").unwrap();
+        let audio = files::store(&mut conn, files::SONG_AUDIO, "song-1-0.mp3", "audio/mpeg", b"mp3").unwrap();
         diesel::insert_into(t::song_tracks::table)
             .values((
                 t::song_tracks::song_id.eq(id),
                 t::song_tracks::ord.eq(0),
                 t::song_tracks::remote_id.eq("r1"),
-                t::song_tracks::audio_path.eq("/tmp/a.mp3"),
+                t::song_tracks::audio_file_id.eq(audio),
                 t::song_tracks::duration.eq(120.5),
             ))
             .execute(&mut conn)
@@ -837,8 +889,9 @@ mod integration {
         conn.batch_execute(
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
              VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0);
-             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path) VALUES
-                 (10, 1, 0, 'a', '/tmp/a.mp3'), (11, 1, 1, 'b', '/tmp/b.mp3');",
+INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES (100, 'song_audio', 'f100.mp3', 'audio/mpeg', 1, '', x'00', 0), (101, 'song_audio', 'f101.mp3', 'audio/mpeg', 1, '', x'00', 0);
+             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_file_id) VALUES
+                 (10, 1, 0, 'a', 100), (11, 1, 1, 'b', 101);",
         )
         .unwrap();
 
@@ -961,9 +1014,10 @@ mod integration {
              VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0),
                     (2, 'Kolory', 'Niebo', 'Sky', 'pop', '[]', '', 'V6', 'ready', 0),
                     (3, 'Na dworcu', 'x', 'x', 'pop', '[]', '', 'V6', 'generating', 0);
-             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path, play_count) VALUES
-                 (10, 1, 0, 'a', '/tmp/a.mp3', 1), (11, 1, 1, 'b', '/tmp/b.mp3', 5),
-                 (20, 2, 0, 'c', '/tmp/c.mp3', 0);",
+INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES (100, 'song_audio', 'f100.mp3', 'audio/mpeg', 1, '', x'00', 0), (101, 'song_audio', 'f101.mp3', 'audio/mpeg', 1, '', x'00', 0), (102, 'song_audio', 'f102.mp3', 'audio/mpeg', 1, '', x'00', 0);
+             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_file_id, play_count) VALUES
+                 (10, 1, 0, 'a', 100, 1), (11, 1, 1, 'b', 101, 5),
+                 (20, 2, 0, 'c', 102, 0);",
         )
         .unwrap();
 
@@ -1111,8 +1165,9 @@ mod integration {
             "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
              VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop', '[]', '', 'V6', 'ready', 0),
                     (2, 'Kolory', 'Niebo jest niebieskie', 'The sky is blue', 'pop', '[]', '', 'V6', 'failed', 0);
-             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_path, play_count)
-                 VALUES (10, 1, 0, 'a', '/nonexistent/a.mp3', 3);",
+INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES (100, 'song_audio', 'f100.mp3', 'audio/mpeg', 1, '', x'00', 0);
+             INSERT INTO song_tracks (id, song_id, ord, remote_id, audio_file_id, play_count)
+                 VALUES (10, 1, 0, 'a', 100, 3);",
         )
         .unwrap();
         let listed = tutor::run_tool_for_test(&mut conn, "list_songs", serde_json::json!({}));

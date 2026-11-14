@@ -5,7 +5,6 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use diesel::connection::SimpleConnection;
-use diesel::dsl::sum;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
@@ -13,13 +12,8 @@ use tauri::{Emitter, State};
 use crate::ai;
 use crate::costs;
 use crate::db::{self, Conn, Db};
-use crate::schema::{audio_cache, course_lines, course_sentences, course_words, sentences, topics};
-
-#[diesel::declare_sql_function]
-extern "SQL" {
-    /// SQLite's `length()` of a blob, in bytes.
-    fn length(bytes: diesel::sql_types::Binary) -> diesel::sql_types::Integer;
-}
+use crate::files;
+use crate::schema::{course_lines, course_sentences, course_words, files as files_table, sentences, speech_clips, topics};
 use crate::error::{Error, Result};
 use crate::models::*;
 
@@ -83,19 +77,20 @@ pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Re
 
 /// Cache identity: the same text spoken by a different model or voice is a
 /// different clip. Unit separators keep the parts from running together.
-fn audio_key(model: &str, voice: &str, text: &str) -> String {
+pub(crate) fn audio_key(model: &str, voice: &str, text: &str) -> String {
     format!("{model}\u{1}{voice}\u{1}{text}")
 }
 
 fn cached_clip(conn: &mut Conn, key: &str) -> Result<Option<(String, Vec<u8>)>> {
-    Ok(audio_cache::table
-        .find(key)
-        .select((audio_cache::mime, audio_cache::bytes))
+    Ok(speech_clips::table
+        .inner_join(files_table::table)
+        .filter(speech_clips::cache_key.eq(key))
+        .select((files_table::mime, files_table::bytes))
         .first(conn)
         .optional()?)
 }
 
-fn store_clip(
+pub(crate) fn store_clip(
     conn: &mut Conn,
     key: &str,
     model: &str,
@@ -104,21 +99,27 @@ fn store_clip(
     mime: &str,
     bytes: &[u8],
 ) -> Result<()> {
-    diesel::insert_into(audio_cache::table)
-        .values((
-            audio_cache::cache_key.eq(key),
-            audio_cache::model.eq(model),
-            audio_cache::voice.eq(voice),
-            audio_cache::text.eq(text),
-            audio_cache::mime.eq(mime),
-            audio_cache::bytes.eq(bytes),
-            audio_cache::created_at.eq(db::now_secs()),
-        ))
-        .on_conflict(audio_cache::cache_key)
-        .do_update()
-        .set((audio_cache::mime.eq(mime), audio_cache::bytes.eq(bytes)))
-        .execute(conn)?;
-    Ok(())
+    conn.transaction::<_, Error, _>(|tx| {
+        // A clip made again replaces the old one, file and all.
+        let old: Option<i64> =
+            speech_clips::table.find(key).select(speech_clips::file_id).first(tx).optional()?;
+        if let Some(old) = old {
+            files::delete(tx, &[old])?;
+        }
+        let name = format!("speech-{}.{}", db::now_secs(), files::extension_for(mime));
+        let file_id = files::store(tx, files::SPEECH, &name, mime, bytes)?;
+        diesel::insert_into(speech_clips::table)
+            .values((
+                speech_clips::cache_key.eq(key),
+                speech_clips::model.eq(model),
+                speech_clips::voice.eq(voice),
+                speech_clips::text.eq(text),
+                speech_clips::file_id.eq(file_id),
+                speech_clips::created_at.eq(db::now_secs()),
+            ))
+            .execute(tx)?;
+        Ok(())
+    })
 }
 
 /// Everything needed to synthesise, read in one lock so the await is clean.
@@ -336,11 +337,11 @@ fn course_audio_items(conn: &mut Conn, topic_id: i64) -> Result<Vec<(&'static st
 
 /// Every stored clip's key and size, without loading the audio itself.
 fn stored_clips(conn: &mut Conn) -> Result<std::collections::HashMap<String, i64>> {
-    Ok(audio_cache::table
-        .select((audio_cache::cache_key, length(audio_cache::bytes)))
-        .load::<(String, i32)>(conn)?
+    Ok(speech_clips::table
+        .inner_join(files_table::table)
+        .select((speech_clips::cache_key, files_table::size))
+        .load::<(String, i64)>(conn)?
         .into_iter()
-        .map(|(key, size)| (key, i64::from(size)))
         .collect())
 }
 
@@ -453,16 +454,15 @@ pub fn delete_unused_audio_in(conn: &mut Conn) -> Result<i64> {
             used.insert(voices.key(&text, &gender));
         }
     }
-    let unused: Vec<String> = audio_cache::table
-        .select(audio_cache::cache_key)
-        .load::<String>(conn)?
+    let unused: Vec<i64> = speech_clips::table
+        .select((speech_clips::cache_key, speech_clips::file_id))
+        .load::<(String, i64)>(conn)?
         .into_iter()
-        .filter(|key| !used.contains(key))
+        .filter(|(key, _)| !used.contains(key))
+        .map(|(_, file_id)| file_id)
         .collect();
-    let mut deleted = 0;
-    for chunk in unused.chunks(500) {
-        deleted += diesel::delete(audio_cache::table.filter(audio_cache::cache_key.eq_any(chunk))).execute(conn)?;
-    }
+    // Deleting the file deletes its clip row with it.
+    let deleted = files::delete(conn, &unused)?;
     if deleted > 0 {
         conn.batch_execute("VACUUM")?;
     }
@@ -491,17 +491,17 @@ pub async fn topic_audio_lines(db: State<'_, Db>, topic_id: i64) -> Result<Vec<S
 
 /// The query behind [`audio_cache_stats`], callable without Tauri (tests).
 pub fn audio_cache_stats_in(conn: &mut Conn) -> Result<AudioCacheStats> {
-    let clips: i64 = audio_cache::table.count().get_result(conn)?;
-    let bytes = audio_cache::table.select(sum(length(audio_cache::bytes))).first::<Option<i64>>(conn)?.unwrap_or(0);
+    let clips: i64 = speech_clips::table.count().get_result(conn)?;
+    let bytes: i64 = stored_clips(conn)?.values().sum();
     // Sentences are narrated by the female voice, so that is what counts here.
     let sentences_cached = match speech_config(conn, "f") {
         Ok(config) => sentences::table
             .filter(
                 sentences::pl.eq_any(
-                    audio_cache::table
-                        .filter(audio_cache::model.eq(&config.model))
-                        .filter(audio_cache::voice.eq(&config.voice))
-                        .select(audio_cache::text),
+                    speech_clips::table
+                        .filter(speech_clips::model.eq(&config.model))
+                        .filter(speech_clips::voice.eq(&config.voice))
+                        .select(speech_clips::text),
                 ),
             )
             .count()
@@ -525,7 +525,7 @@ pub async fn audio_cache_stats(db: State<'_, Db>) -> Result<AudioCacheStats> {
 pub async fn clear_audio_cache(db: State<'_, Db>) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
-    diesel::delete(audio_cache::table).execute(conn)?;
+    diesel::delete(files_table::table.filter(files_table::kind.eq(files::SPEECH))).execute(conn)?;
     // Reclaim the space; audio is by far the largest thing in the database.
     conn.batch_execute("VACUUM")?;
     Ok(())

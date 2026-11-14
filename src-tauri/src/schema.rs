@@ -92,13 +92,27 @@ diesel::table! {
 }
 
 diesel::table! {
-    audio_cache (cache_key) {
+    /// Every file the app keeps (files.rs).
+    files (id) {
+        id -> BigInt,
+        kind -> Text,
+        name -> Text,
+        mime -> Text,
+        size -> BigInt,
+        sha256 -> Text,
+        bytes -> Binary,
+        path -> Nullable<Text>,
+        created_at -> BigInt,
+    }
+}
+
+diesel::table! {
+    speech_clips (cache_key) {
         cache_key -> Text,
         model -> Text,
         voice -> Text,
         text -> Text,
-        mime -> Text,
-        bytes -> Binary,
+        file_id -> BigInt,
         created_at -> BigInt,
     }
 }
@@ -245,14 +259,12 @@ diesel::table! {
         song_id -> BigInt,
         ord -> BigInt,
         remote_id -> Text,
-        audio_path -> Text,
-        image_path -> Nullable<Text>,
         duration -> Double,
         play_count -> BigInt,
         last_played_at -> Nullable<BigInt>,
         aligned_words -> Nullable<Text>,
-        audio_bytes -> Nullable<Binary>,
-        image_bytes -> Nullable<Binary>,
+        audio_file_id -> Nullable<BigInt>,
+        image_file_id -> Nullable<BigInt>,
     }
 }
 
@@ -313,6 +325,7 @@ diesel::joinable!(checkins -> blocks (block_id));
 diesel::joinable!(checkin_messages -> checkins (checkin_id));
 diesel::joinable!(tutor_messages -> tutor_conversations (conversation_id));
 diesel::joinable!(song_tracks -> songs (song_id));
+diesel::joinable!(speech_clips -> files (file_id));
 diesel::joinable!(blocks -> songs (song_id));
 diesel::joinable!(songs -> topics (topic_id));
 diesel::joinable!(playlist_tracks -> playlists (playlist_id));
@@ -327,7 +340,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     day_log,
     settings,
     achievements,
-    audio_cache,
+    files,
+    speech_clips,
     blocks,
     course_blocks,
     course_words,
