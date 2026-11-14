@@ -48,6 +48,8 @@ export function Composer({
         variant="primary"
         icon={<SendIcon />}
         label="Send"
+        // One tap sends: the box keeps focus, so the keyboard stays up.
+        keepFocus
         disabled={disabled || !canSend || draft.trim().length === 0}
         onClick={() => onSend(draft)}
       />

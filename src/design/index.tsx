@@ -461,10 +461,17 @@ export function IconButton({
   loading,
   failed,
   off,
+  keepFocus,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  /**
+   * Tapping it leaves focus (and the keyboard) where it is — for a send
+   * button next to a text box. Otherwise the box loses focus first, the
+   * keyboard drops, the layout jumps and the tap misses.
+   */
+  keepFocus?: boolean;
   /** A toggle that is currently off (shown dimmed, still tappable). */
   off?: boolean;
   variant?: "tinted" | "primary" | "inverse" | "inverse-solid";
@@ -482,6 +489,8 @@ export function IconButton({
       data-failed={failed || undefined}
       data-off={off || undefined}
       disabled={disabled || loading}
+      onPointerDown={keepFocus ? (event) => event.preventDefault() : undefined}
+      onMouseDown={keepFocus ? (event) => event.preventDefault() : undefined}
       onClick={(event) => {
         event.stopPropagation();
         onClick?.();
