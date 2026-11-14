@@ -70,7 +70,7 @@ type Overlay =
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
   | { kind: "search" }
-  | { kind: "player" }
+  | { kind: "player"; back?: Overlay }
   | {
       kind: "topic";
       progress: TopicProgress;
@@ -284,6 +284,11 @@ export default function App() {
     return <Loading label="Przygotowuję…" />;
   }
 
+  // The player bar follows the learner onto every page — except the full
+  // player itself and the ones whose own buttons sit where it would (a
+  // drill, a check-in). Opened from a page, the player closes back to it.
+  const miniPlayer = <MiniPlayer onOpen={() => setOverlay({ kind: "player", back: overlay })} />;
+
   if (overlay.kind === "session") {
     return (
       <div className="app">
@@ -327,6 +332,7 @@ export default function App() {
             void refresh();
           }}
         />
+        {miniPlayer}
       </div>
     );
   }
@@ -346,6 +352,7 @@ export default function App() {
           }}
           onChanged={() => void reloadAll()}
         />
+        {miniPlayer}
       </div>
     );
   }
@@ -380,6 +387,7 @@ export default function App() {
             void refresh();
           }}
         />
+        {miniPlayer}
       </div>
     );
   }
@@ -425,6 +433,7 @@ export default function App() {
     return (
       <div className="app">
         <AudioScreen onBack={() => setOverlay({ kind: "none" })} />
+        {miniPlayer}
       </div>
     );
   }
@@ -433,6 +442,7 @@ export default function App() {
     return (
       <div className="app">
         <Memories onBack={() => setOverlay(overlay.back)} />
+        {miniPlayer}
       </div>
     );
   }
@@ -448,6 +458,7 @@ export default function App() {
             setOverlay({ kind: "topic", progress, back: { kind: "progress" } })
           }
         />
+        {miniPlayer}
       </div>
     );
   }
@@ -456,7 +467,7 @@ export default function App() {
     return (
       <div className="app">
         <Player
-          onClose={() => setOverlay({ kind: "none" })}
+          onClose={() => setOverlay(overlay.back ?? { kind: "none" })}
           onOpenSong={(songId) => {
             setOverlay({ kind: "none" });
             setTab("music");
@@ -471,6 +482,7 @@ export default function App() {
     return (
       <div className="app">
         <Search topics={topics} onBack={() => setOverlay({ kind: "none" })} />
+        {miniPlayer}
       </div>
     );
   }
@@ -533,7 +545,7 @@ export default function App() {
         </button>
       ) : null}
 
-      <MiniPlayer onOpen={() => setOverlay({ kind: "player" })} />
+      {miniPlayer}
 
       <nav className="nav">
         {TABS.map((entry) => {
