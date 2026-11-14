@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { CostCenter } from "../components/CostCenter";
+import { megabytes } from "./AudioScreen";
 import { MemoryIcon, PlayerIcon } from "../components/icons";
 import {
   Banner,
@@ -13,7 +13,6 @@ import {
   Inline,
   List,
   ListItem,
-  Progress,
   Screen,
   Section,
   Segmented,
@@ -30,7 +29,6 @@ import { playCorrect, setSoundsEnabled, soundsEnabled } from "../lib/sounds";
 import type {
   AiModel,
   AudioCacheStats,
-  CacheProgress,
   Settings,
   SettingsPatch,
   Voice,
@@ -39,22 +37,20 @@ import type {
 /** Spoken when testing a voice, so you can hear whether it handles Polish. */
 const VOICE_TEST_LINE = "Dzień dobry! Uczę się języka polskiego.";
 
-function megabytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} kB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export function SettingsScreen({
   settings,
   onSettings,
   onReset,
   onOpenMemories,
+  onOpenAudio,
 }: {
   settings: Settings;
   onSettings: (settings: Settings) => void;
   onReset: () => void;
   onOpenMemories: () => void;
+  /** The downloaded-audio page. */
+  onOpenAudio: () => void;
 }) {
   const [keyDraft, setKeyDraft] = useState("");
   const [sounds, setSounds] = useState(soundsEnabled);
@@ -65,7 +61,6 @@ export function SettingsScreen({
   const [chatModels, setChatModels] = useState<AiModel[] | null>(null);
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
-  const [progress, setProgress] = useState<CacheProgress | null>(null);
   const [includeKeys, setIncludeKeys] = useState(false);
   const [theme, setTheme] = useThemePreference();
 
@@ -79,17 +74,6 @@ export function SettingsScreen({
   useEffect(() => {
     api.listVoices().then(setVoices).catch(() => setVoices(null));
   }, []);
-
-  // Bulk caching reports line-by-line so a 200-sentence run is not a black box.
-  useEffect(() => {
-    const unlisten = listen<CacheProgress>("tts://progress", (event) => {
-      setProgress(event.payload);
-      if (event.payload.finished) refreshCache();
-    });
-    return () => {
-      void unlisten.then((off) => off());
-    };
-  }, [refreshCache]);
 
   async function patch(update: SettingsPatch, label: string) {
     setBusy(label);
@@ -577,31 +561,18 @@ export function SettingsScreen({
         </List>
       </Section>
 
-      <Section
-        title="Downloaded audio"
-        info={<p>Stored lines replay instantly and for free, even offline.</p>}
-      >
+      <Section title="Sound">
         <List>
-          {cache ? (
-            <SettingRow
-              label={`${cache.sentencesCached} of ${cache.sentencesTotal} sentences`}
-              value={megabytes(cache.bytes)}
-              stacked
-              control={
-                progress && !progress.finished ? (
-                  <Stack gap={1}>
-                    <Progress value={progress.done} max={Math.max(1, progress.total)} />
-                    <Text variant="caption" tone="faint">
-                      Making {progress.done} of {progress.total}…
-                      {progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
-                    </Text>
-                  </Stack>
-                ) : (
-                  <Progress value={cache.sentencesCached} max={cache.sentencesTotal} tone="mint" />
-                )
-              }
-            />
-          ) : null}
+          <ListItem
+            leading={<PlayerIcon.download />}
+            title="Downloaded audio"
+            subtitle={
+              cache
+                ? `${cache.clips} clips · ${megabytes(cache.bytes)} — see what's stored, per course`
+                : "See what's stored, per course"
+            }
+            onClick={onOpenAudio}
+          />
           <SettingRow
             label="Answer sounds"
             description="A chime when you're right, a bump when you're not"
@@ -629,40 +600,6 @@ export function SettingsScreen({
             }
           />
         </List>
-        <Button
-          block
-          icon={<PlayerIcon.download />}
-          loading={busy === "cache-all"}
-          onClick={() =>
-            run("cache-all", async () => {
-              const lines = [];
-              for (const topic of await api.getTopicProgress()) {
-                lines.push(...(await api.topicAudioLines(topic.topic.id)));
-              }
-              const result = await api.cacheAudio(lines);
-              setNotice(
-                result.error
-                  ? `Stored ${result.done}. Stopped after an error: ${result.error}`
-                  : `Stored ${result.done} new clips.`,
-              );
-            })
-          }
-        >
-          Download every sentence and dialogue
-        </Button>
-        <ConfirmButton
-          label="Delete downloaded audio"
-          confirmLabel="Delete"
-          question="Delete every stored clip? They are made again when played."
-          block
-          onConfirm={() =>
-            run("cache-clear", async () => {
-              await api.clearAudioCache();
-              refreshCache();
-              setNotice("Downloaded audio deleted.");
-            })
-          }
-        />
       </Section>
 
       <Section title="Memories">

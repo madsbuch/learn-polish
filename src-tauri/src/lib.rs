@@ -104,6 +104,9 @@ pub fn run() {
             speech::topic_audio_lines,
             speech::audio_cache_stats,
             speech::clear_audio_cache,
+            speech::audio_overview,
+            speech::course_audio,
+            speech::delete_unused_audio,
             commands::kie_set_key,
             commands::kie_clear_key,
             songs::kie_credits,
@@ -520,6 +523,43 @@ mod integration {
 
         let stats = speech::audio_cache_stats_in(&mut conn).unwrap();
         assert_eq!((stats.clips, stats.bytes), (2, 5), "two voices of the same line are stored separately");
+    }
+
+    #[test]
+    fn audio_overview_shows_what_each_course_has_stored() {
+        let mut conn = scratch_db("audio-overview");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let items = speech::course_audio_in(&mut conn, basics).unwrap();
+        assert!(items.iter().any(|i| i.kind == "word") && items.iter().any(|i| i.kind == "sentence"));
+        assert!(items.iter().all(|i| !i.stored), "nothing downloaded yet");
+
+        // Store the first item in the voice it is read in, plus a stray clip.
+        let first = items[0].clone();
+        let voice = ai::voice_for(&mut conn, &first.gender);
+        for (voice, text) in [(voice.as_str(), first.text.as_str()), ("OldVoice", "Cześć")] {
+            diesel::insert_into(t::audio_cache::table)
+                .values((
+                    t::audio_cache::cache_key.eq(format!("{}\u{1}{voice}\u{1}{text}", ai::SPEECH_MODEL)),
+                    t::audio_cache::model.eq(ai::SPEECH_MODEL),
+                    t::audio_cache::voice.eq(voice),
+                    t::audio_cache::text.eq(text),
+                    t::audio_cache::mime.eq("audio/mpeg"),
+                    t::audio_cache::bytes.eq(&[1u8, 2, 3][..]),
+                    t::audio_cache::created_at.eq(0),
+                ))
+                .execute(&mut conn)
+                .unwrap();
+        }
+        let overview = speech::audio_overview_in(&mut conn).unwrap();
+        let course = overview.courses.iter().find(|c| c.topic_id == basics).unwrap();
+        assert_eq!((course.stored, course.bytes), (1, 3));
+        assert_eq!(course.total, items.len() as i64);
+        assert_eq!((overview.clips, overview.unused_clips), (2, 1), "the old voice's clip is unused");
+        assert!(speech::course_audio_in(&mut conn, basics).unwrap()[0].stored);
+
+        assert_eq!(speech::delete_unused_audio_in(&mut conn).unwrap(), 1);
+        let after = speech::audio_overview_in(&mut conn).unwrap();
+        assert_eq!((after.clips, after.unused_clips), (1, 0), "the used clip stays");
     }
 
     #[test]

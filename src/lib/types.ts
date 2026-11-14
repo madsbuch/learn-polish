@@ -382,6 +382,33 @@ export interface AudioCacheStats {
   sentencesTotal: number;
 }
 
+/** How much of one course can be played without the network. */
+export interface CourseAudio {
+  topicId: number;
+  title: string;
+  titlePl: string;
+  total: number;
+  stored: number;
+  bytes: number;
+}
+
+export interface AudioOverview {
+  clips: number;
+  bytes: number;
+  courses: CourseAudio[];
+  /** Clips no course uses with the current voices. */
+  unusedClips: number;
+  unusedBytes: number;
+}
+
+export interface AudioItem {
+  kind: "word" | "sentence" | "line";
+  text: string;
+  gender: string;
+  stored: boolean;
+  bytes: number;
+}
+
 export interface CacheProgress {
   done: number;
   total: number;

@@ -15,6 +15,7 @@ export function SpeakButton({
   label,
   size = "md",
   variant,
+  onPlayed,
 }: {
   text: string;
   /** "f" or "m" for dialogue lines; omitted elsewhere. */
@@ -22,6 +23,8 @@ export function SpeakButton({
   label?: string;
   size?: "sm" | "md";
   variant?: "tinted";
+  /** After it played (its audio is stored by then). */
+  onPlayed?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -39,6 +42,7 @@ export function SpeakButton({
         setBusy(true);
         try {
           await speak(text, gender);
+          onPlayed?.();
         } catch (cause) {
           setFailure(cause instanceof Error ? cause.message : "Could not play audio.");
         } finally {

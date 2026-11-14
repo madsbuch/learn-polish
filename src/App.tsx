@@ -26,6 +26,7 @@ import { Memories } from "./screens/Memories";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { BlockPage } from "./screens/BlockPage";
+import { AudioScreen } from "./screens/AudioScreen";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music } from "./screens/Music";
 import { Player } from "./screens/Player";
@@ -65,6 +66,7 @@ type Overlay =
     }
   | { kind: "progress" }
   | { kind: "memories"; back: Overlay }
+  | { kind: "audio" }
   | { kind: "search" }
   | { kind: "player" }
   | {
@@ -360,6 +362,14 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "audio") {
+    return (
+      <div className="app">
+        <AudioScreen onBack={() => setOverlay({ kind: "none" })} />
+      </div>
+    );
+  }
+
   if (overlay.kind === "memories") {
     return (
       <div className="app">
@@ -454,6 +464,7 @@ export default function App() {
           onSettings={applySettings}
           onReset={() => void refresh()}
           onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
+          onOpenAudio={() => setOverlay({ kind: "audio" })}
         />
       ) : null}
 

@@ -13,7 +13,7 @@ use tauri::{Emitter, State};
 use crate::ai;
 use crate::costs;
 use crate::db::{self, Conn, Db};
-use crate::schema::{audio_cache, course_lines, course_sentences, sentences};
+use crate::schema::{audio_cache, course_lines, course_sentences, course_words, sentences, topics};
 
 #[diesel::declare_sql_function]
 extern "SQL" {
@@ -267,23 +267,197 @@ pub async fn cache_audio( app: tauri::AppHandle, db: State<'_, Db>, lines: Vec<S
     Ok(progress)
 }
 
-/// Every Polish line of a topic: its sentences, then its conversation with the
-/// gender each line should be read in.
+/// Every Polish line of a topic: its words, its sentences, then its
+/// conversation with the gender each line should be read in.
 /// The query behind [`topic_audio_lines`], callable without Tauri (tests).
 pub fn topic_audio_lines_in(conn: &mut Conn, topic_id: i64) -> Result<Vec<SpeechLine>> {
+    Ok(course_audio_items(conn, topic_id)?
+        .into_iter()
+        .map(|(_, text, gender)| SpeechLine { text, gender })
+        .collect())
+}
+
+/// A course's spoken items as (kind, text, gender), without repeats: words,
+/// sentences, then dialogue lines.
+fn course_audio_items(conn: &mut Conn, topic_id: i64) -> Result<Vec<(&'static str, String, String)>> {
+    let words = course_words::table
+        .filter(course_words::topic_id.eq(topic_id))
+        .order((course_words::block_id, course_words::ord))
+        .select(course_words::pl)
+        .load::<String>(conn)?
+        .into_iter()
+        .map(|text| ("word", text, String::new()));
     let sentences = course_sentences::table
         .filter(course_sentences::topic_id.eq(topic_id))
+        .order((course_sentences::block_id, course_sentences::ord))
         .select(course_sentences::pl)
         .load::<String>(conn)?
         .into_iter()
-        .map(|text| SpeechLine { text, gender: String::new() });
+        .map(|text| ("sentence", text, String::new()));
     let lines = course_lines::table
         .filter(course_lines::topic_id.eq(topic_id))
+        .order((course_lines::block_id, course_lines::ord))
         .select((course_lines::pl, course_lines::gender))
         .load::<(String, String)>(conn)?
         .into_iter()
-        .map(|(text, gender)| SpeechLine { text, gender });
-    Ok(sentences.chain(lines).collect())
+        .map(|(text, gender)| ("line", text, gender));
+    let mut seen = std::collections::HashSet::new();
+    Ok(words
+        .chain(sentences)
+        .chain(lines)
+        .map(|(kind, text, gender)| (kind, text.trim().to_string(), gender))
+        .filter(|(_, text, gender)| !text.is_empty() && seen.insert((text.clone(), gender.clone())))
+        .collect())
+}
+
+/// Every stored clip's key and size, without loading the audio itself.
+fn stored_clips(conn: &mut Conn) -> Result<std::collections::HashMap<String, i64>> {
+    Ok(audio_cache::table
+        .select((audio_cache::cache_key, length(audio_cache::bytes)))
+        .load::<(String, i32)>(conn)?
+        .into_iter()
+        .map(|(key, size)| (key, i64::from(size)))
+        .collect())
+}
+
+/// The cache key an item is stored under with the voices chosen now.
+struct Voices {
+    female: String,
+    male: String,
+}
+
+impl Voices {
+    fn current(conn: &mut Conn) -> Self {
+        Voices { female: ai::voice_for(conn, "f"), male: ai::voice_for(conn, "m") }
+    }
+    fn key(&self, text: &str, gender: &str) -> String {
+        audio_key(ai::SPEECH_MODEL, if gender == "m" { &self.male } else { &self.female }, text)
+    }
+}
+
+/// How much of one course can be played without the network.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseAudio {
+    pub topic_id: i64,
+    pub title: String,
+    pub title_pl: String,
+    pub total: i64,
+    pub stored: i64,
+    pub bytes: i64,
+}
+
+/// Downloaded audio at a glance: per course, and what no course uses.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioOverview {
+    pub clips: i64,
+    pub bytes: i64,
+    pub courses: Vec<CourseAudio>,
+    /// Clips no course item uses with the voices chosen now: other voices,
+    /// deleted items, voice samples.
+    pub unused_clips: i64,
+    pub unused_bytes: i64,
+}
+
+/// One spoken item of a course and whether its audio is stored.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioItem {
+    /// "word" | "sentence" | "line"
+    pub kind: String,
+    pub text: String,
+    pub gender: String,
+    pub stored: bool,
+    pub bytes: i64,
+}
+
+pub fn audio_overview_in(conn: &mut Conn) -> Result<AudioOverview> {
+    let stored = stored_clips(conn)?;
+    let voices = Voices::current(conn);
+    let mut used = std::collections::HashSet::new();
+    let mut courses = Vec::new();
+    let list: Vec<(i64, String, String)> = topics::table
+        .order((topics::ord, topics::id))
+        .select((topics::id, topics::title_en, topics::title_pl))
+        .load(conn)?;
+    for (topic_id, title, title_pl) in list {
+        let items = course_audio_items(conn, topic_id)?;
+        if items.is_empty() {
+            continue;
+        }
+        let (mut count, mut bytes) = (0, 0);
+        for (_, text, gender) in &items {
+            let key = voices.key(text, gender);
+            if let Some(size) = stored.get(&key) {
+                count += 1;
+                bytes += size;
+            }
+            used.insert(key);
+        }
+        courses.push(CourseAudio { topic_id, title, title_pl, total: items.len() as i64, stored: count, bytes });
+    }
+    let unused: Vec<i64> = stored.iter().filter(|(key, _)| !used.contains(*key)).map(|(_, size)| *size).collect();
+    Ok(AudioOverview {
+        clips: stored.len() as i64,
+        bytes: stored.values().sum(),
+        courses,
+        unused_clips: unused.len() as i64,
+        unused_bytes: unused.iter().sum(),
+    })
+}
+
+pub fn course_audio_in(conn: &mut Conn, topic_id: i64) -> Result<Vec<AudioItem>> {
+    let stored = stored_clips(conn)?;
+    let voices = Voices::current(conn);
+    Ok(course_audio_items(conn, topic_id)?
+        .into_iter()
+        .map(|(kind, text, gender)| {
+            let size = stored.get(&voices.key(&text, &gender)).copied();
+            AudioItem { kind: kind.into(), stored: size.is_some(), bytes: size.unwrap_or(0), text, gender }
+        })
+        .collect())
+}
+
+/// Deletes the clips no course uses with the current voices.
+pub fn delete_unused_audio_in(conn: &mut Conn) -> Result<i64> {
+    let voices = Voices::current(conn);
+    let topic_ids: Vec<i64> = topics::table.select(topics::id).load(conn)?;
+    let mut used = std::collections::HashSet::new();
+    for topic_id in topic_ids {
+        for (_, text, gender) in course_audio_items(conn, topic_id)? {
+            used.insert(voices.key(&text, &gender));
+        }
+    }
+    let unused: Vec<String> = audio_cache::table
+        .select(audio_cache::cache_key)
+        .load::<String>(conn)?
+        .into_iter()
+        .filter(|key| !used.contains(key))
+        .collect();
+    let mut deleted = 0;
+    for chunk in unused.chunks(500) {
+        deleted += diesel::delete(audio_cache::table.filter(audio_cache::cache_key.eq_any(chunk))).execute(conn)?;
+    }
+    if deleted > 0 {
+        conn.batch_execute("VACUUM")?;
+    }
+    Ok(deleted as i64)
+}
+
+#[tauri::command]
+pub async fn audio_overview(db: State<'_, Db>) -> Result<AudioOverview> {
+    audio_overview_in(&mut db.lock())
+}
+
+#[tauri::command]
+pub async fn course_audio(db: State<'_, Db>, topic_id: i64) -> Result<Vec<AudioItem>> {
+    course_audio_in(&mut db.lock(), topic_id)
+}
+
+#[tauri::command]
+pub async fn delete_unused_audio(db: State<'_, Db>) -> Result<i64> {
+    delete_unused_audio_in(&mut db.lock())
 }
 
 #[tauri::command]

@@ -769,3 +769,21 @@
 .follow-tail {
   height: 30vh;
 }
+
+/* An audio line not downloaded yet: a hollow ring where the ✓ would be,
+   in a box the same size as the icon so titles line up. */
+.audio-missing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+.audio-missing::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 50%;
+}
