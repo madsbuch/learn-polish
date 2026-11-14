@@ -147,7 +147,7 @@ export function Screen({
   /** False on screens that cover the tab bar. */
   nav?: boolean;
   /**
-   * Docked below the scrolling content and above the tab bar and player bar,
+   * Docked below the scrolling content and above the tab bar,
    * e.g. the tutor's message box. It never scrolls away or floats.
    */
   footer?: ReactNode;

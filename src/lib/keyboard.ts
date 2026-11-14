@@ -3,8 +3,8 @@
  *
  * On Android the app is shrunk above the keyboard (see MainActivity.kt), so
  * the keyboard shows up here as the window getting much shorter while a text
- * field has focus. The tab bar and the player bar then step aside, so a
- * message box sits right on top of the keyboard instead of above two bars.
+ * field has focus. The tab bar then steps aside, so a
+ * message box sits right on top of the keyboard instead of above it.
  */
 export function watchKeyboard() {
   let tallest = window.innerHeight;

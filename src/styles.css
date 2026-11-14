@@ -631,48 +631,6 @@
   accent-color: var(--on-hero);
 }
 
-.mini-player {
-  position: absolute;
-  left: var(--space-2);
-  right: var(--space-2);
-  bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-2));
-  min-height: calc(var(--player-bar-space) - var(--space-3));
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  z-index: var(--z-raised);
-  /* Swiped right to dismiss (MiniPlayer.tsx); vertical drags still scroll. */
-  transform: translateX(var(--swipe, 0px));
-  opacity: var(--swipe-fade, 1);
-  touch-action: pan-y;
-  transition: transform var(--duration) var(--ease-out), opacity var(--duration) var(--ease-out);
-}
-.mini-player[data-dragging="true"] {
-  transition: none;
-}
-.mini-open {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  text-align: left;
-}
-.mini-progress {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--brand);
-  transition: width 0.25s linear;
-}
-
 /* Lyrics */
 .lyrics {
   display: flex;
@@ -822,11 +780,3 @@
   overflow-y: auto;
 }
 
-/* On pages without the tab bar, the player bar sits at the very bottom,
-   and the page leaves room for it. */
-.app:not(:has(.nav)) .mini-player {
-  bottom: calc(var(--safe-bottom) + var(--space-2));
-}
-.app:has(.mini-player) .screen[data-nav="false"] {
-  padding-bottom: calc(var(--safe-bottom) + var(--player-bar-space) + var(--space-5));
-}

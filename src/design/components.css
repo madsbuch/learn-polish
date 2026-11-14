@@ -24,13 +24,8 @@
 .screen[data-nav="false"] {
   padding-bottom: calc(var(--safe-bottom) + var(--space-8));
 }
-/* Room for the player bar, so it never hides the end of a page. */
-.app:has(.mini-player) .screen[data-nav="true"] {
-  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--player-bar-space) + var(--space-5));
-}
 /* With a docked header and footer, only the middle scrolls. */
-.screen[data-footer="true"],
-.app:has(.mini-player) .screen[data-footer="true"] {
+.screen[data-footer="true"] {
   padding-top: var(--space-4);
   padding-bottom: var(--space-4);
 }
@@ -50,7 +45,7 @@
   display: block;
 }
 /* A plain block in the app's column, so it sits exactly above whatever
-   overlays the bottom: the tab bar, and the player bar when it shows. */
+   overlays the bottom: the tab bar. */
 .screen-footer {
   flex: none;
   padding: var(--space-2) var(--gutter);
@@ -62,18 +57,13 @@
   margin-bottom: 0;
   padding-bottom: calc(var(--safe-bottom) + var(--space-2));
 }
-.app:has(.mini-player) .screen-footer[data-nav="true"] {
-  margin-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--player-bar-space));
-}
 
-/* While the keyboard is up (lib/keyboard.ts) the tab bar and the player bar
-   step aside, so the message box sits right on the keyboard. */
-[data-keyboard] .nav,
-[data-keyboard] .mini-player {
+/* While the keyboard is up (lib/keyboard.ts) the tab bar steps aside, so
+   the message box sits right on the keyboard. */
+[data-keyboard] .nav {
   display: none;
 }
-[data-keyboard] .screen-footer,
-[data-keyboard] .app:has(.mini-player) .screen-footer[data-nav="true"] {
+[data-keyboard] .screen-footer {
   margin-bottom: 0;
   /* The web view ends a navigation bar's height below the keyboard's top
      edge (MainActivity.kt), and the safe-area inset is that height. */

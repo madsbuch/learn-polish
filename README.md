@@ -266,7 +266,9 @@ from the database when missing (`src-tauri/src/files.rs`).
   the songwriter (`make_song`), Suno sings it in the background, and its reply
   links to the song. It can also list and (after asking) delete songs.
 - **Built for repetition:** play, shuffle, repeat all / one, play counts, and
-  the player bar keeps the music going while you practise.
+  the music keeps going while you practise. What is playing shows at the top
+  of the Music tab (tap it for the lyrics); everywhere else, the phone's own
+  media controls — the control center and the lock screen — run it.
 - **The phone's own player:** on Android, songs play through a native Media3
   service (`src-tauri/plugins/songplayer`), not the web view. That gives the
   lock screen and notification controls, headphone and Bluetooth buttons, a
@@ -399,7 +401,7 @@ keyboard opens (it would pan the whole screen up instead, sliding the header
 away). `src-tauri/android/MainActivity.kt` replaces the activity `tauri android
 init` generates — CI copies it in and sets `adjustResize` — and turns the
 keyboard's height into bottom padding, so the page lays out above it.
-`src/lib/keyboard.ts` then hides the tab bar and player bar while you type.
+`src/lib/keyboard.ts` then hides the tab bar while you type.
 
 ### Architecture
 
@@ -441,7 +443,7 @@ src/
   lib/back.ts              Android's back button over in-app pages
   lib/player.ts            the app-wide music player and queue
   screens/                 one file per screen (Exercises, BlockPage, Session, CheckIn, Tutor, Music…)
-  components/              pieces shared between screens (Markdown, SetExercises, MiniPlayer…)
+  components/              pieces shared between screens (Markdown, SetExercises, Cover…)
 ```
 
 A few conventions keep it that way:
@@ -473,8 +475,7 @@ Four tabs: **Exercises**, **Tutor**, **Music** and **Settings**.
 Android's back button walks back through the app — closing a sheet first,
 then the page you are on, then from another tab to Exercises — and only
 leaves the app from Exercises (`src/lib/back.ts`: every page with a ← or ⌄,
-and every sheet, adds a history entry that back pops). The player bar above
-the tabs can be swiped away to the right, which stops the music.
+and every sheet, adds a history entry that back pops).
 
 Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Blocks** (in the course's
 order), **Words** and **Sentences** — every item with the drill it belongs to,

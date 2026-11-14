@@ -67,6 +67,35 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+/**
+ * What is playing, at the top of the Music tab, while something is: the way
+ * into the full player. Controls outside the app live in the phone's media
+ * controls (control center, lock screen).
+ */
+function NowPlaying({ onOpen }: { onOpen: () => void }) {
+  const player = usePlayer();
+  const item = currentItem(player);
+  if (!item) return null;
+  return (
+    <List>
+      <ListItem
+        leading={<Cover fileId={item.track.imageFileId} size={44} />}
+        title={item.song.title}
+        subtitle={player.cast ? `Now playing on ${player.cast.device.name}` : "Now playing"}
+        label="Open the player"
+        onClick={onOpen}
+        trailing={
+          <IconButton
+            icon={player.playing ? <PlayerIcon.pause size={20} /> : <PlayerIcon.play size={20} />}
+            label={player.playing ? "Pause" : "Play"}
+            onClick={toggle}
+          />
+        }
+      />
+    </List>
+  );
+}
+
 export function Music({
   settings,
   topics,
@@ -74,6 +103,7 @@ export function Music({
   onOpenSettings,
   onSongOpened,
   onOpenBlock,
+  onOpenPlayer,
 }: {
   settings: Settings;
   topics: TopicProgress[];
@@ -83,6 +113,8 @@ export function Music({
   onSongOpened: () => void;
   /** Opens a block's page (a song's listening block). */
   onOpenBlock: (blockId: number) => void;
+  /** Opens the full player (lyrics that follow the music). */
+  onOpenPlayer: () => void;
 }) {
   const [songs, setSongs] = useState<Song[] | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
@@ -248,6 +280,8 @@ export function Music({
       }
     >
       {feedback}
+
+      <NowPlaying onOpen={onOpenPlayer} />
 
       {!ready ? (
         <Banner tone="info">

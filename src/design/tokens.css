@@ -66,8 +66,6 @@
 
   /* ---- Shell */
   --nav-height: 64px;
-  /* Room the player bar takes above the tab bar, including its gap. */
-  --player-bar-space: 76px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --max-width: 620px;
