@@ -4,14 +4,20 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
+import android.os.Bundle
 import android.os.Looper
 import android.os.PowerManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
@@ -19,12 +25,18 @@ import com.google.common.util.concurrent.ListenableFuture
  * Owns the phone's media session. Normally the session plays downloaded songs
  * with ExoPlayer; while a Sonos speaker is playing, it swaps in [RemotePlayer]
  * so the lock screen, notification and volume keys control the speaker.
+ *
+ * The notification with the controls stays for as long as songs are queued —
+ * paused too — and has a Close button that stops the music and removes it.
  */
 class PlaybackService : MediaSessionService() {
     companion object {
         @Volatile
         var instance: PlaybackService? = null
             private set
+
+        /** The notification's Close button. */
+        private val CLOSE = SessionCommand("polski.close", Bundle.EMPTY)
     }
 
     private lateinit var local: ExoPlayer
@@ -51,7 +63,16 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
-        val builder = MediaSession.Builder(this, local).setCallback(SessionCallback())
+        @Suppress("DEPRECATION")
+        val close = CommandButton.Builder()
+            .setDisplayName("Close")
+            .setIconResId(android.R.drawable.ic_menu_close_clear_cancel)
+            .setSessionCommand(CLOSE)
+            .build()
+        @Suppress("DEPRECATION")
+        val builder = MediaSession.Builder(this, local)
+            .setCallback(SessionCallback())
+            .setCustomLayout(ImmutableList.of(close))
         packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
             // Tapping the notification opens the app.
             builder.setSessionActivity(
@@ -68,6 +89,17 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    /**
+     * Media3 lets the notification go once playback pauses (it can then be
+     * swiped away, and goes after a while). Keeping the service in the
+     * foreground while songs are queued keeps the controls up until Close.
+     */
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val player = session.player
+        val queued = player.mediaItemCount > 0 && player.playbackState != Player.STATE_IDLE
+        super.onUpdateNotification(session, startInForegroundRequired || queued)
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Swiping the app away stops the service unless music is playing.
@@ -135,6 +167,33 @@ class PlaybackService : MediaSessionService() {
     }
 
     private inner class SessionCallback : MediaSession.Callback {
+        /** Every controller may use Close, the notification's included. */
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(CLOSE).build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .build()
+        }
+
+        /** Close: stop, forget the queue, and let the notification go. */
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == CLOSE.customAction) {
+                stopRemote()
+                session.player.stop()
+                session.player.clearMediaItems()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            return super.onCustomCommand(session, controller, customCommand, args)
+        }
+
         /**
          * Controllers hand media items over without their file URI (Media3
          * strips it), so the plugin sends the path in the request metadata

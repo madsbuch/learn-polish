@@ -114,9 +114,12 @@ interface NativeState {
   duration: number;
   ended: boolean;
   remote: boolean;
+  /** Songs queued in the native player. */
+  count: number;
 }
 
 let nativeListening = false;
+let nativeCount = 0;
 
 function listenNative() {
   if (!isAndroid || nativeListening) return;
@@ -124,6 +127,14 @@ function listenNative() {
   void addPluginListener<NativeState>("songplayer", "state", (native) => {
     // While casting, the speaker's state is the truth.
     if (state.cast || native.remote) return;
+    // The queue went from something to nothing on the native side: closed
+    // from the notification. The app's player goes too.
+    const closed = nativeCount > 0 && native.count === 0;
+    nativeCount = native.count;
+    if (closed) {
+      set({ queue: [], index: -1, playing: false, position: 0, duration: 0 });
+      return;
+    }
     const index = state.queue.findIndex((item) => String(item.track.id) === native.id);
     const current = state.queue[index >= 0 ? index : native.index];
     set({
