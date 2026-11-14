@@ -1,8 +1,8 @@
 import { useState } from "react";
 
 import { IconButton } from "../design";
-import { speak } from "../lib/speech";
-import { MutedIcon, SpeakerIcon } from "./icons";
+import { speak, speakSlowly } from "../lib/speech";
+import { MutedIcon, SpeakerIcon, SlowIcon } from "./icons";
 
 /**
  * Plays a line of Polish. Always shown — a button that silently vanishes is
@@ -43,6 +43,46 @@ export function SpeakButton({
         try {
           await speak(text, gender);
           onPlayed?.();
+        } catch (cause) {
+          setFailure(cause instanceof Error ? cause.message : "Could not play audio.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    />
+  );
+}
+
+/**
+ * Plays a line slowly and clearly: its own version, made once and kept —
+ * for a sentence that needs hearing properly.
+ */
+export function SlowButton({
+  text,
+  gender,
+  size = "md",
+  variant,
+}: {
+  text: string;
+  gender?: string;
+  size?: "sm" | "md";
+  variant?: "tinted";
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  return (
+    <IconButton
+      icon={failure ? <MutedIcon /> : <SlowIcon />}
+      label={failure ?? `Slowly: ${text}`}
+      size={size}
+      variant={variant}
+      loading={busy}
+      failed={Boolean(failure)}
+      onClick={async () => {
+        setFailure(null);
+        setBusy(true);
+        try {
+          await speakSlowly(text, gender);
         } catch (cause) {
           setFailure(cause instanceof Error ? cause.message : "Could not play audio.");
         } finally {

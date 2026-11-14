@@ -560,6 +560,7 @@ export function SettingsScreen({
           })}
           <SettingRow
             label="Speaking speed"
+            description="Every line plays at this speed, stored ones too. For one slow line, use 🐢 next to it."
             value={`${settings.ttsSpeed.toFixed(2)}×`}
             stacked
             control={

@@ -312,6 +312,15 @@ export function WriteIcon() {
   );
 }
 
+/** Slowly: a tortoise — read at a glance, at any size. */
+export function SlowIcon() {
+  return (
+    <span className="emoji-icon" aria-hidden="true">
+      🐢
+    </span>
+  );
+}
+
 /** Something drawn: a course picture. */
 export function SparkIcon() {
   return (

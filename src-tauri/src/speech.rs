@@ -34,14 +34,7 @@ pub async fn list_voices() -> Result<Vec<Voice>> {
 /// Plays a sample so a voice can be judged on Polish before it is chosen.
 #[tauri::command]
 pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Result<AudioClip> {
-    let (key, speed) = {
-        let mut guard = db.lock();
-        let conn = &mut *guard;
-        let speed = db::get_setting(conn, "tts_speed")?
-            .and_then(|value| value.parse::<f32>().ok())
-            .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
-        (ai::api_key(conn)?, speed)
-    };
+    let key = ai::api_key(&mut db.lock())?;
 
     let cached = {
         let mut guard = db.lock();
@@ -53,7 +46,7 @@ pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Re
     }
 
     let (mime, bytes) =
-        ai::synthesize(&key, ai::SPEECH_MODEL, &voice, &text, speed).await?;
+        ai::synthesize(&key, ai::SPEECH_MODEL, &voice, &text, false).await?;
     {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -127,21 +120,22 @@ struct SpeechConfig {
     key: String,
     model: String,
     voice: String,
-    speed: Option<f32>,
 }
 
 /// `gender` is "f" or "m" for dialogue lines; everything else reads in the
 /// female voice.
 fn speech_config(conn: &mut Conn, gender: &str) -> Result<SpeechConfig> {
-    let speed = db::get_setting(conn, "tts_speed")?
-        .and_then(|value| value.parse::<f32>().ok())
-        .filter(|value| (*value - 1.0).abs() > f32::EPSILON);
     Ok(SpeechConfig {
         key: ai::api_key(conn)?,
         model: ai::SPEECH_MODEL.to_string(),
         voice: ai::voice_for(conn, gender),
-        speed,
     })
+}
+
+/// The voice a clip is stored under: the slow version of a line is a clip
+/// of its own, next to the normal one.
+fn voice_variant(voice: &str, slow: bool) -> String {
+    if slow { format!("{voice}/slow") } else { voice.to_string() }
 }
 
 /// One lock per clip being made, so two asks for the same line — a 🔊 tap
@@ -162,9 +156,10 @@ fn clip_lock(key: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
 /// A line's clip in the voice its gender gets: the stored one, or made now
 /// and stored (`force` makes it again even when stored). Returns its type,
 /// bytes, and whether it was already stored.
-async fn clip(db: &Db, text: &str, gender: &str, force: bool) -> Result<(String, Vec<u8>, bool)> {
+async fn clip(db: &Db, text: &str, gender: &str, force: bool, slow: bool) -> Result<(String, Vec<u8>, bool)> {
     let config = speech_config(&mut db.lock(), gender)?;
-    let key = audio_key(&config.model, &config.voice, text);
+    let voice = voice_variant(&config.voice, slow);
+    let key = audio_key(&config.model, &voice, text);
     let lock = clip_lock(&key);
     let _making = lock.lock().await;
     if !force {
@@ -172,22 +167,22 @@ async fn clip(db: &Db, text: &str, gender: &str, force: bool) -> Result<(String,
             return Ok((mime, bytes, true));
         }
     }
-    let (mime, bytes) = ai::synthesize(&config.key, &config.model, &config.voice, text, config.speed).await?;
+    let (mime, bytes) = ai::synthesize(&config.key, &config.model, &config.voice, text, slow).await?;
     let mut guard = db.lock();
     let conn = &mut *guard;
     record_speech(conn, &config.model, text);
-    store_clip(conn, &key, &config.model, &config.voice, text, &mime, &bytes)?;
+    store_clip(conn, &key, &config.model, &voice, text, &mime, &bytes)?;
     Ok((mime, bytes, false))
 }
 
 /// Speaks a line of Polish, generating it only the first time.
 #[tauri::command]
-pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<AudioClip> {
+pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>, slow: Option<bool>) -> Result<AudioClip> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err(Error::msg("Nothing to say."));
     }
-    let (mime, bytes, cached) = clip(&db, &text, &gender.unwrap_or_default(), false).await?;
+    let (mime, bytes, cached) = clip(&db, &text, &gender.unwrap_or_default(), false, slow.unwrap_or(false)).await?;
     Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached })
 }
 
@@ -199,7 +194,7 @@ pub async fn respeak(db: State<'_, Db>, text: String, gender: Option<String>) ->
     if text.is_empty() {
         return Err(Error::msg("Nothing to say."));
     }
-    let (mime, bytes, _) = clip(&db, &text, &gender.unwrap_or_default(), true).await?;
+    let (mime, bytes, _) = clip(&db, &text, &gender.unwrap_or_default(), true, false).await?;
     Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
 }
 
@@ -287,7 +282,7 @@ async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>, force: bo
     let (mut done, mut failed, mut first_error) = (0, 0, None::<String>);
     // Three at a time: much faster than one by one, gentle on the API.
     let mut results = futures_util::stream::iter(pending)
-        .map(|line| async move { clip(db, &line.text, &line.gender, force).await })
+        .map(|line| async move { clip(db, &line.text, &line.gender, force, false).await })
         .buffered(3);
     while let Some(result) = results.next().await {
         match result {
@@ -375,6 +370,10 @@ impl Voices {
     fn key(&self, text: &str, gender: &str) -> String {
         audio_key(ai::SPEECH_MODEL, if gender == "m" { &self.male } else { &self.female }, text)
     }
+    /// The slow version's key, which counts as used along with the line.
+    fn slow_key(&self, text: &str, gender: &str) -> String {
+        audio_key(ai::SPEECH_MODEL, &voice_variant(if gender == "m" { &self.male } else { &self.female }, true), text)
+    }
 }
 
 /// How much of one course can be played without the network.
@@ -436,6 +435,7 @@ pub fn audio_overview_in(conn: &mut Conn) -> Result<AudioOverview> {
                 bytes += size;
             }
             used.insert(key);
+            used.insert(voices.slow_key(text, gender));
         }
         courses.push(CourseAudio { topic_id, title, title_pl, total: items.len() as i64, stored: count, bytes });
     }
@@ -469,6 +469,7 @@ pub fn delete_unused_audio_in(conn: &mut Conn) -> Result<i64> {
     for topic_id in topic_ids {
         for (_, text, gender) in course_audio_items(conn, topic_id)? {
             used.insert(voices.key(&text, &gender));
+            used.insert(voices.slow_key(&text, &gender));
         }
     }
     let unused: Vec<i64> = speech_clips::table

@@ -1046,3 +1046,9 @@ button.badge:active {
     transform: translateY(-8px);
   }
 }
+
+/* An emoji standing in for an icon (🐢): sized like the line icons. */
+.emoji-icon {
+  font-size: 1.05em;
+  line-height: 1;
+}

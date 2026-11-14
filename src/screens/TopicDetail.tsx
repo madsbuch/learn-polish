@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { BlockRow } from "../components/BlockRow";
 import { SparkIcon } from "../components/icons";
-import { SpeakButton } from "../components/ui";
+import { SlowButton, SpeakButton } from "../components/ui";
 import {
   Banner,
   Button,
@@ -19,6 +19,7 @@ import {
   Spinner,
   Stack,
   Text,
+  Inline,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
@@ -199,7 +200,12 @@ export function TopicDetail({
               subtitle={`${sentence.meaning} · ${sentence.block}`}
               label={`${sentence.pl}: open ${sentence.block}`}
               onClick={() => onOpenBlock(sentence.blockId)}
-              trailing={<SpeakButton text={sentence.pl} />}
+              trailing={
+                <Inline gap={1}>
+                  <SpeakButton text={sentence.pl} />
+                  <SlowButton text={sentence.pl} />
+                </Inline>
+              }
             />
           ))}
         </List>

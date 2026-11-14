@@ -690,35 +690,16 @@ pub type Clip = (String, Vec<u8>);
 /// MP3 first (smallest, universally playable), then PCM for models that only
 /// speak PCM (Gemini), and finally without `speed`, which not every model
 /// honours. The original error is what surfaces if none of it works.
-pub async fn synthesize(
-    key: &str,
-    model: &str,
-    voice: &str,
-    text: &str,
-    speed: Option<f32>,
-) -> Result<Clip> {
-    let first = speech_request(key, model, voice, text, speed, "mp3").await;
+pub async fn synthesize(key: &str, model: &str, voice: &str, text: &str, slow: bool) -> Result<Clip> {
+    let first = speech_request(key, model, voice, text, slow, "mp3").await;
     let error = match first {
         Ok(clip) => return Ok(clip),
         Err(error) => error,
     };
-    let complaint = error.to_string().to_lowercase();
-
-    let mut formats: Vec<&str> = Vec::new();
-    if complaint.contains("pcm") {
-        formats.push("pcm");
-    }
-
-    for format in &formats {
-        if let Ok(clip) = speech_request(key, model, voice, text, speed, format).await {
+    // Some providers only speak PCM, and say so when asked for MP3.
+    if error.to_string().to_lowercase().contains("pcm") {
+        if let Ok(clip) = speech_request(key, model, voice, text, slow, "pcm").await {
             return Ok(clip);
-        }
-    }
-    if speed.is_some() {
-        for format in std::iter::once("mp3").chain(formats) {
-            if let Ok(clip) = speech_request(key, model, voice, text, None, format).await {
-                return Ok(clip);
-            }
         }
     }
     Err(error)
@@ -728,11 +709,20 @@ pub async fn synthesize(
 /// that is also English ("transport") gets an American accent, and a lone
 /// word ("prom") can be taken as a cue to say something else entirely.
 /// Saying what the text is, and that nothing else is wanted, fixes both.
-pub fn speech_prompt(text: &str) -> String {
-    format!(
-        "Read the following Polish text aloud with native Polish pronunciation. It is Polish, \
-         not English. Say exactly this and nothing else: {text}"
-    )
+pub fn speech_prompt(text: &str, slow: bool) -> String {
+    if slow {
+        // The slow version: for a line the learner needs to hear clearly.
+        format!(
+            "Read the following Polish text aloud slowly and very clearly, as a teacher does for a \
+             learner: native Polish pronunciation, every syllable distinct, a short pause between \
+             words. It is Polish, not English. Say exactly this and nothing else: {text}"
+        )
+    } else {
+        format!(
+            "Read the following Polish text aloud with native Polish pronunciation. It is Polish, \
+             not English. Say exactly this and nothing else: {text}"
+        )
+    }
 }
 
 async fn speech_request(
@@ -740,7 +730,7 @@ async fn speech_request(
     model: &str,
     voice: &str,
     text: &str,
-    speed: Option<f32>,
+    slow: bool,
     format: &str,
 ) -> Result<Clip> {
     let response = crate::http::api()
@@ -750,10 +740,12 @@ async fn speech_request(
         .header("X-Title", "Polski")
         .json(&SpeechRequest {
             model,
-            input: &speech_prompt(text),
+            input: &speech_prompt(text, slow),
             response_format: format,
             voice,
-            speed,
+            // Playback sets the speed (the app's speaking-speed setting);
+            // clips are made at the voice's own pace.
+            speed: None,
         })
         .send()
         .await?;

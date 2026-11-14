@@ -162,7 +162,8 @@ export const api = {
   listVoices: () => invoke<Voice[]>("list_voices"),
   previewVoice: (voice: string, text: string) =>
     invoke<AudioClip>("preview_voice", { voice, text }),
-  speak: (text: string, gender?: string) => invoke<AudioClip>("speak", { text, gender }),
+  /** A line's clip; `slow` is its slow, clearly spoken version (stored apart). */
+  speak: (text: string, gender?: string, slow = false) => invoke<AudioClip>("speak", { text, gender, slow }),
   /** `force` makes stored lines again too, replacing their clips. */
   cacheAudio: (lines: SpeechLine[], force = false) => invoke<CacheProgress>("cache_audio", { lines, force }),
   /** Downloads a session's audio in the background; returns at once. */

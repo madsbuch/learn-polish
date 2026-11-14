@@ -4,7 +4,7 @@ import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { WordChat } from "../components/WordChat";
 import { GapFill, Memory } from "../components/SetExercises";
 import { CloseIcon } from "../components/icons";
-import { SpeakButton } from "../components/ui";
+import { SlowButton, SpeakButton } from "../components/ui";
 import {
   Badge,
   Banner,
@@ -16,6 +16,7 @@ import {
   Progress,
   Stack,
   Text,
+  Inline,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
@@ -261,7 +262,10 @@ export function Session({
               <Text variant="display" selectable>
                 {exercise.pl}
               </Text>
-              <SpeakButton text={exercise.pl} variant="tinted" />
+              <Inline gap={2} justify="center">
+                <SpeakButton text={exercise.pl} variant="tinted" />
+                <SlowButton text={exercise.pl} variant="tinted" />
+              </Inline>
               <Text variant="lead" tone="dim" weight="medium">
                 {exercise.meaning}
               </Text>
@@ -279,7 +283,10 @@ export function Session({
               <Text variant="title" selectable>
                 {exercise.pl}
               </Text>
-              <SpeakButton text={exercise.pl} variant="tinted" />
+              <Inline gap={2} justify="center">
+                <SpeakButton text={exercise.pl} variant="tinted" />
+                <SlowButton text={exercise.pl} variant="tinted" />
+              </Inline>
               <Text tone="dim">{exercise.meaning}</Text>
             </div>
           </>

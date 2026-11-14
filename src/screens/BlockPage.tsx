@@ -6,7 +6,7 @@ import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
 import { ArticleReader, Sources } from "../components/Sources";
 import { SongToListen } from "../components/SongToListen";
-import { SpeakButton } from "../components/ui";
+import { SlowButton, SpeakButton } from "../components/ui";
 import {
   Badge,
   Banner,
@@ -238,7 +238,18 @@ export function BlockPage({
         <Section title={`${block.sentences.length} sentences`}>
           <List>
             {block.sentences.map(([pl, en]) => (
-              <ListItem key={pl} selectable title={pl} subtitle={en} trailing={<SpeakButton text={pl} />} />
+              <ListItem
+                key={pl}
+                selectable
+                title={pl}
+                subtitle={en}
+                trailing={
+                  <Inline gap={1}>
+                    <SpeakButton text={pl} />
+                    <SlowButton text={pl} />
+                  </Inline>
+                }
+              />
             ))}
           </List>
         </Section>

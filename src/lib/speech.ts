@@ -13,11 +13,14 @@ import { api } from "./api";
 
 let hasKey = false;
 let hasVoice = false;
+/** The speaking speed (Settings): every clip plays at it. */
+let speed = 1;
 
 /** Kept in sync by the app shell whenever settings change. */
-export function setSpeechConfig(config: { hasKey: boolean; hasVoice: boolean }): void {
+export function setSpeechConfig(config: { hasKey: boolean; hasVoice: boolean; speed?: number }): void {
   hasKey = config.hasKey;
   hasVoice = config.hasVoice;
+  if (config.speed && config.speed > 0) speed = config.speed;
 }
 
 const aiVoiceReady = () => hasKey && hasVoice;
@@ -66,7 +69,7 @@ function speakNatively(text: string, rate: number): boolean {
     speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "pl-PL";
-    utterance.rate = rate;
+    utterance.rate = rate * speed;
     const voice = polishVoice();
     if (voice) utterance.voice = voice;
     speechSynthesis.speak(utterance);
@@ -81,10 +84,18 @@ function speakNatively(text: string, rate: number): boolean {
 // One element for the whole app, so starting a new clip stops the previous one.
 let player: HTMLAudioElement | null = null;
 
-function play(mime: string, base64: string): Promise<void> {
+/**
+ * Plays a clip at `rate` — the speaking speed. Clips are made at the voice's
+ * own pace and sped up or slowed down here, keeping their pitch, so the
+ * setting applies to every clip at once, stored ones included.
+ */
+function play(mime: string, base64: string, rate = speed): Promise<void> {
   if (!player) player = new Audio();
   player.pause();
   player.src = `data:${mime};base64,${base64}`;
+  player.preservesPitch = true;
+  player.defaultPlaybackRate = rate;
+  player.playbackRate = rate;
   // Autoplay policies can reject this when there was no user gesture; the
   // caller treats that as "no audio" rather than an error worth showing.
   return player.play();
@@ -130,14 +141,24 @@ export async function speak(text: string, gender = "", rate = 0.85): Promise<voi
   return speakLine(text, gender, rate);
 }
 
-async function speakLine(text: string, gender = "", rate = 0.85): Promise<void> {
+/**
+ * Speaks a line slowly and clearly — its own version, made once and kept,
+ * for a sentence that needs hearing properly.
+ */
+export async function speakSlowly(text: string, gender = ""): Promise<void> {
+  if (conversation?.playing) stopConversation();
+  return speakLine(text, gender, 0.6, true);
+}
+
+async function speakLine(text: string, gender = "", rate = 0.85, slow = false): Promise<void> {
   const line = text.trim();
   if (!line) return;
 
   if (aiVoiceReady()) {
     try {
-      const clip = await api.speak(line, gender);
-      await play(clip.mime, clip.base64);
+      const clip = await api.speak(line, gender, slow);
+      // The slow version is slow already; the speed setting is for the rest.
+      await play(clip.mime, clip.base64, slow ? 1 : speed);
       return;
     } catch (cause) {
       // Fall back to the platform engine if there is one; otherwise report the

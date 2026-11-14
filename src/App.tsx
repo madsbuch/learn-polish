@@ -151,8 +151,9 @@ export default function App() {
       // Speech is pinned to Gemini, so a voice always exists; only the key
       // decides whether audio is actually reachable.
       hasVoice: true,
+      speed: settings?.ttsSpeed,
     });
-  }, [settings?.hasApiKey]);
+  }, [settings?.hasApiKey, settings?.ttsSpeed]);
 
   /**
    * Downloads the audio a session is about to use, so every 🔊 tap and every

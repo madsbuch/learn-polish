@@ -13,7 +13,7 @@ import {
 } from "../lib/speech";
 import type { DialogueLine } from "../lib/types";
 import { CloseIcon, PlayerIcon } from "./icons";
-import { SpeakButton } from "./ui";
+import { SlowButton, SpeakButton } from "./ui";
 
 function toSpeech(lines: DialogueLine[]) {
   return lines.map((line) => ({ text: line.pl, gender: line.gender }));
@@ -85,7 +85,10 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
                   </Text>
                 ) : null}
               </div>
-              <SpeakButton text={line.pl} gender={line.gender} size="sm" label={`Listen to ${line.speaker}`} />
+              <span className="line-audio">
+                <SpeakButton text={line.pl} gender={line.gender} size="sm" label={`Listen to ${line.speaker}`} />
+                <SlowButton text={line.pl} gender={line.gender} size="sm" />
+              </span>
             </div>
           </div>
         );

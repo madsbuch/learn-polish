@@ -828,3 +828,10 @@
 body:has(.session-foot) .conversation-control {
   bottom: calc(var(--safe-bottom) + 104px);
 }
+
+/* A dialogue line's audio: normal and slow, side by side. */
+.line-audio {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+}
