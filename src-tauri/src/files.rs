@@ -6,6 +6,11 @@
 //! (`fileUrl(id)` in the frontend; [`serve`] here): straight from this
 //! table, never from a path. Sonos streams from it too (cast.rs).
 //!
+//! Integrity: every reference to a file is a foreign key (SQLite enforces
+//! them), listed in [`referenced`]; a file nothing references is an orphan
+//! and is swept at startup ([`collect_orphans`]). Where the bytes live is a
+//! detail of this module — callers only ever hold a file id.
+//!
 //! Only Android's native player needs a real file, so song audio and art also
 //! have a copy on disk, `path`. That copy is only a cache: it is written from
 //! the bytes when missing, and deleted with the row.
@@ -88,19 +93,47 @@ pub fn paths(conn: &mut Conn, ids: &[i64]) -> Result<std::collections::HashMap<i
         .collect())
 }
 
-/// Deletes files and their copies on disk.
+/// Deletes files and their copies on disk. A file still referenced where
+/// that is not allowed (a take's audio) is refused, and nothing is deleted.
 pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
     if ids.is_empty() {
         return Ok(0);
     }
-    for (_, path) in paths(conn, ids)? {
+    let copies = paths(conn, ids)?;
+    let deleted = conn.transaction::<_, Error, _>(|tx| {
+        let mut deleted = 0;
+        for chunk in ids.chunks(500) {
+            deleted += diesel::delete(files::table.filter(files::id.eq_any(chunk))).execute(tx)?;
+        }
+        Ok(deleted)
+    })?;
+    // Only once the rows are gone: a refused delete keeps its copy.
+    for path in copies.into_values() {
         let _ = std::fs::remove_file(path);
     }
-    let mut deleted = 0;
-    for chunk in ids.chunks(500) {
-        deleted += diesel::delete(files::table.filter(files::id.eq_any(chunk))).execute(conn)?;
-    }
     Ok(deleted)
+}
+
+/// Every file some row points at. This is the one list of the columns that
+/// reference files: a new one belongs here, with a foreign key in the schema.
+pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
+    use crate::schema::{song_tracks, speech_clips, topics};
+    let mut ids: std::collections::HashSet<i64> =
+        speech_clips::table.select(speech_clips::file_id).load::<i64>(conn)?.into_iter().collect();
+    let takes: Vec<(Option<i64>, Option<i64>)> =
+        song_tracks::table.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?;
+    ids.extend(takes.into_iter().flat_map(|(audio, image)| [audio, image]).flatten());
+    ids.extend(topics::table.select(topics::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
+    Ok(ids)
+}
+
+/// Deletes files nothing references (and their copies on disk). Returns how
+/// many went.
+pub fn collect_orphans(conn: &mut Conn) -> Result<usize> {
+    let used = referenced(conn)?;
+    let orphans: Vec<i64> =
+        files::table.select(files::id).load::<i64>(conn)?.into_iter().filter(|id| !used.contains(id)).collect();
+    delete(conn, &orphans)
 }
 
 /// Writes a file's copy into `dir` unless a copy is already there, and

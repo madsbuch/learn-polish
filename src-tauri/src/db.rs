@@ -44,6 +44,14 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
     )?;
     migrate(&mut conn)?;
     seed(&mut conn)?;
+    // Files whose owner is gone (a crash between deleting a row and its
+    // file, say) are not kept.
+    crate::files::collect_orphans(&mut conn)?;
+    match foreign_key_violations(&mut conn) {
+        Ok(0) => {}
+        Ok(n) => eprintln!("database integrity: {n} rows point at rows that do not exist"),
+        Err(error) => eprintln!("database integrity check failed: {error}"),
+    }
     Ok(conn)
 }
 
@@ -877,6 +885,13 @@ fn add_column(conn: &mut Conn, table: &str, column: &str, definition: &str) -> R
 /// converted to courses first, and the starter content is then written over
 /// them by its natural keys (it could not have been changed), which keeps row
 /// ids and so review history.
+/// Rows whose foreign keys point at nothing — none, in a healthy database.
+pub fn foreign_key_violations(conn: &mut Conn) -> Result<i64> {
+    Ok(diesel::sql_query("SELECT count(*) AS n FROM pragma_foreign_key_check")
+        .get_result::<legacy::Count>(conn)?
+        .n)
+}
+
 fn seed(conn: &mut Conn) -> Result<()> {
     if get_setting(conn, "starter_seeded")?.is_some() {
         return Ok(());

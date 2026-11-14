@@ -961,3 +961,47 @@ button.badge:active {
   background: color-mix(in srgb, var(--bg) 70%, transparent);
   backdrop-filter: blur(8px);
 }
+
+/* A row with a picture behind it (ListItem's `backdrop`): the picture fills
+   the row and fades in from the left, so the text sits on the card colour
+   and the picture shows on the right. */
+.list-item[data-backdrop="true"] {
+  position: relative;
+  isolation: isolate;
+  min-height: 104px;
+}
+.list-item__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.list-item__backdrop img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 72%;
+  height: 100%;
+  object-fit: cover;
+}
+.list-item__backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    var(--surface) 32%,
+    color-mix(in srgb, var(--surface) 82%, transparent) 50%,
+    color-mix(in srgb, var(--surface) 25%, transparent) 78%,
+    transparent 100%
+  );
+}
+/* The chevron stays visible on any picture. */
+.list-item[data-backdrop="true"] .list-item__chevron {
+  padding: var(--space-1);
+  margin-right: var(--space-1);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(6px);
+}

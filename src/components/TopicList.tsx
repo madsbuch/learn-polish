@@ -15,10 +15,9 @@ export function TopicList({
       {entries.map((entry) => (
         <ListItem
           key={entry.topic.id}
+          backdrop={entry.imageFileId !== null ? fileUrl(entry.imageFileId) : null}
           leading={
-            entry.imageFileId !== null ? (
-              <img className="course-thumb" src={fileUrl(entry.imageFileId)} alt="" />
-            ) : (
+            entry.imageFileId !== null ? undefined : (
               <Avatar muted={entry.startedBlocks === 0}>
                 {(entry.topic.titlePl || entry.topic.title).charAt(0).toUpperCase()}
               </Avatar>

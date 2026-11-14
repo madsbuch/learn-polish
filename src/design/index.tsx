@@ -318,7 +318,10 @@ export function ListItem({
   label,
   selectable,
   oneLine,
+  backdrop,
 }: {
+  /** A picture (image URL) behind the row, fading in from the left. */
+  backdrop?: string | null;
   leading?: ReactNode;
   title: ReactNode;
   subtitle?: ReactNode;
@@ -364,7 +367,17 @@ export function ListItem({
   // The row's button covers the whole row, chevron and edges included, so
   // a tap anywhere but on a trailing control opens it.
   return (
-    <div className="list-item" data-selected={selected} data-interactive={Boolean(onClick)}>
+    <div
+      className="list-item"
+      data-selected={selected}
+      data-interactive={Boolean(onClick)}
+      data-backdrop={Boolean(backdrop)}
+    >
+      {backdrop ? (
+        <span className="list-item__backdrop" aria-hidden="true">
+          <img src={backdrop} alt="" loading="lazy" />
+        </span>
+      ) : null}
       {onClick ? (
         <button className="list-item__main" onClick={onClick} aria-label={label}>
           {content}

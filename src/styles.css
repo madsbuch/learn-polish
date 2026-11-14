@@ -788,12 +788,3 @@
   border-radius: 50%;
 }
 
-/* A course's picture as a small square in lists (on its page it is the
-   screen's backdrop). */
-.course-thumb {
-  width: 40px;
-  height: 40px;
-  flex: none;
-  border-radius: var(--radius-md);
-  object-fit: cover;
-}

@@ -610,6 +610,52 @@ mod integration {
     }
 
     #[test]
+    fn files_keep_referential_integrity() {
+        let mut conn = scratch_db("file-integrity");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        // A picture, a song take with art, a speech clip, and a stray file.
+        let picture = files::store(&mut conn, files::COURSE_IMAGE, "c.png", "image/png", b"p").unwrap();
+        diesel::update(t::topics::table.find(basics)).set(t::topics::image_file_id.eq(Some(picture))).execute(&mut conn).unwrap();
+        conn.batch_execute(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+             VALUES (1, 'Kawa', 'Kawa', 'Coffee', 'pop', '[]', '', 'V6', 'ready', 0);",
+        )
+        .unwrap();
+        let audio = files::store(&mut conn, files::SONG_AUDIO, "a.mp3", "audio/mpeg", b"a").unwrap();
+        let art = files::store(&mut conn, files::SONG_IMAGE, "a.png", "image/png", b"i").unwrap();
+        diesel::insert_into(t::song_tracks::table)
+            .values((
+                t::song_tracks::song_id.eq(1),
+                t::song_tracks::ord.eq(0),
+                t::song_tracks::remote_id.eq("r"),
+                t::song_tracks::audio_file_id.eq(audio),
+                t::song_tracks::image_file_id.eq(art),
+            ))
+            .execute(&mut conn)
+            .unwrap();
+        let key = speech::audio_key("m", "Kore", "Cześć");
+        speech::store_clip(&mut conn, &key, "m", "Kore", "Cześć", "audio/mpeg", b"s").unwrap();
+        let stray = files::store(&mut conn, files::SPEECH, "x.mp3", "audio/mpeg", b"x").unwrap();
+
+        assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
+        // A file a take still plays cannot be deleted from under it.
+        assert!(files::delete(&mut conn, &[audio]).is_err(), "the take's audio is protected");
+        assert!(files::info(&mut conn, audio).is_ok(), "and it is all still there");
+        // The stray file is the only orphan, and the sweep takes it.
+        assert_eq!(files::collect_orphans(&mut conn).unwrap(), 1);
+        assert!(files::info(&mut conn, stray).is_err());
+
+        // Deleting what owns files deletes them; nothing dangles afterwards.
+        songs::delete_song(&mut conn, 1).unwrap();
+        courses::delete(&mut conn, basics).unwrap();
+        diesel::delete(t::speech_clips::table).execute(&mut conn).unwrap();
+        assert_eq!(files::collect_orphans(&mut conn).unwrap(), 1, "the clip's file, once its clip was removed by hand");
+        let left: i64 = t::files::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(left, 0);
+        assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
+    }
+
+    #[test]
     fn audio_cache_round_trips_and_is_keyed_by_voice() {
         let mut conn = scratch_db("audio");
         for (voice, bytes) in [("Kore", &[1u8, 2, 3][..]), ("Puck", &[9, 9][..])] {
