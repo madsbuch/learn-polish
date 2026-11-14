@@ -59,6 +59,16 @@ for (const file of files.filter((f) => f.endsWith(".tsx") && !f.startsWith(desig
   }
 }
 
+// 1b. Stored files reach the webview only through the files API, by id
+//     (lib/files.ts → the media protocol), never by a path on disk.
+for (const file of files.filter((f) => /\.tsx?$/.test(f) && !f.endsWith(join("lib", "files.ts")))) {
+  const text = readFileSync(file, "utf8");
+  const match = text.match(/\bconvertFileSrc\b/);
+  if (match) {
+    report(file, lineOf(text, match.index), "loads a file by path — use fileUrl(fileId) from lib/files.ts");
+  }
+}
+
 // 2. Only tokens.css holds raw values: no hex colours, and no font sizes
 //    off the type scale, anywhere else.
 for (const file of files.filter((f) => f.endsWith(".css") && !f.endsWith("tokens.css"))) {

@@ -113,8 +113,8 @@ export const api = {
   tutorRetry: (conversationId: number) => invoke<void>("tutor_retry", { conversationId }),
   /** Whether the app is on screen: off screen, finished replies notify. */
   appVisibility: (visible: boolean) => invoke<void>("app_visibility", { visible }),
-  /** Draws a new picture for a course; returns its path on disk. */
-  coursePicture: (topicId: number) => invoke<string>("course_picture", { topicId }),
+  /** Draws a new picture for a course; returns its file id. */
+  coursePicture: (topicId: number) => invoke<number>("course_picture", { topicId }),
   coursePictureDelete: (topicId: number) => invoke<void>("course_picture_delete", { topicId }),
   tutorConversations: () => invoke<Conversation[]>("tutor_conversations"),
   tutorHistory: (conversationId: number) =>

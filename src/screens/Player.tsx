@@ -85,7 +85,7 @@ export function Player({
 
       <Hero className="player-card">
         <div className="player-cover">
-          <Cover path={item.track.imagePath} size={232} />
+          <Cover fileId={item.track.imageFileId} size={232} />
         </div>
         <Stack gap={1} align="center">
           <h2 className="t-center">{item.song.title}</h2>
@@ -215,7 +215,7 @@ export function Player({
             {player.queue.map((entry, index) => (
               <ListItem
                 key={`${entry.track.id}-${index}`}
-                leading={<Cover path={entry.track.imagePath} size={44} />}
+                leading={<Cover fileId={entry.track.imageFileId} size={44} />}
                 title={entry.song.title}
                 subtitle={`${index === player.index ? "Playing · " : ""}take ${entry.track.ord + 1} · ${formatTime(entry.track.duration)}`}
                 selected={index === player.index}

@@ -171,8 +171,8 @@ pub struct TopicProgress {
     pub total_blocks: i64,
     /// Blocks done at least once.
     pub started_blocks: i64,
-    /// The course's picture, as the path of its copy on disk.
-    pub image_path: Option<String>,
+    /// The course's picture: a file id, shown through the media protocol.
+    pub image_file_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

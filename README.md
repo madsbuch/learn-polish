@@ -213,8 +213,14 @@ one `files` table (bytes, type, size, SHA-256), and other tables reference it
 by id: `speech_clips.file_id`, `song_tracks.audio_file_id` and
 `image_file_id`, `topics.image_file_id`. A course's picture is drawn by an
 OpenRouter image model (Settings → Course pictures; Gemini 2.5 Flash Image by
-default) from its title, summary and words. The database alone is a complete backup; the copies on disk
-are only a cache (`src-tauri/src/files.rs`).
+default) from its title, summary and words. The database alone is a complete backup.
+
+The webview loads every file — pictures, covers, songs — by id through the
+`media` protocol, straight from the database, with byte ranges for seeking
+(`fileUrl(id)` in `src/lib/files.ts`; the build fails on any other way of
+loading a file). Sonos streams from the same table. Only Android's native
+player needs real files, so song audio and art keep a copy on disk, written
+from the database when missing (`src-tauri/src/files.rs`).
 - **Lyrics that follow the music:** when a song is ready the app asks
   kie.ai for Suno's word timings and stores them with each take. The player
   highlights the line being sung, with its English meaning under each Polish

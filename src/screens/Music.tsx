@@ -329,7 +329,7 @@ function TrackCover({ item, size = 48 }: { item: QueueItem; size?: number }) {
   const current = currentItem(player)?.track.id === item.track.id;
   return (
     <span className="cover-wrap">
-      <Cover path={item.track.imagePath} size={size} />
+      <Cover fileId={item.track.imageFileId} size={size} />
       {current ? (
         <span className="cover-badge">
           {player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
@@ -470,7 +470,7 @@ function SongList({
                       <span className="check" data-checked={checked}>
                         {checked ? <CheckIcon /> : null}
                       </span>
-                      <Cover path={song.tracks[0]?.imagePath ?? null} size={48} />
+                      <Cover fileId={song.tracks[0]?.imageFileId ?? null} size={48} />
                     </Inline>
                   }
                   title={song.title}
@@ -487,7 +487,7 @@ function SongList({
               return (
                 <ListItem
                   key={song.id}
-                  leading={<Cover path={null} size={48} />}
+                  leading={<Cover fileId={null} size={48} />}
                   title={song.title}
                   subtitle={song.status === "generating" ? "Suno is singing… (2–4 min)" : "Could not be made"}
                   trailing={
@@ -587,7 +587,7 @@ function SongPage({
   return (
     <>
       <div className="song-head">
-        <Cover path={song.tracks[0]?.imagePath ?? null} size={112} />
+        <Cover fileId={song.tracks[0]?.imageFileId ?? null} size={112} />
         <Stack gap={1} className="grow">
           <h2>{song.title}</h2>
           <Text weight="bold" tone="polish" selectable>
@@ -784,7 +784,7 @@ function PlaylistList({
             return (
               <ListItem
                 key={playlist.id}
-                leading={<Cover path={items[0]?.item.track.imagePath ?? null} size={48} />}
+                leading={<Cover fileId={items[0]?.item.track.imageFileId ?? null} size={48} />}
                 title={playlist.name}
                 subtitle={`${plural(items.length, "song")}${seconds > 0 ? ` · ${formatTime(seconds)}` : ""}`}
                 onClick={() => onOpen(playlist.id)}

@@ -227,8 +227,8 @@ export interface TopicProgress {
   totalBlocks: number;
   /** Blocks done at least once. */
   startedBlocks: number;
-  /** The course's picture on disk, if it has one. */
-  imagePath: string | null;
+  /** The course's picture: a file id, loaded with fileUrl(). */
+  imageFileId: number | null;
 }
 
 export interface Stats {
@@ -485,6 +485,10 @@ export interface SongTrack {
   id: number;
   songId: number;
   ord: number;
+  /** The take's audio and cover art: file ids, loaded with fileUrl(). */
+  audioFileId: number;
+  imageFileId: number | null;
+  /** Copies on disk, only for Android's native player. */
   audioPath: string;
   imagePath: string | null;
   duration: number;

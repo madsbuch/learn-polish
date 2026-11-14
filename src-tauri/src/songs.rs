@@ -107,7 +107,11 @@ pub struct SongTrack {
     pub id: i64,
     pub song_id: i64,
     pub ord: i64,
-    /// Absolute path on this device; the webview plays it via the asset protocol.
+    /// The take's audio and cover art: file ids, which the webview loads
+    /// through the media protocol.
+    pub audio_file_id: i64,
+    pub image_file_id: Option<i64>,
+    /// The copies on disk, only for Android's native player.
     pub audio_path: String,
     pub image_path: Option<String>,
     pub duration: f64,
@@ -967,6 +971,8 @@ fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Resul
             id: row.id,
             song_id: row.song_id,
             ord: row.ord,
+            audio_file_id: row.audio_file_id.unwrap_or_default(),
+            image_file_id: row.image_file_id,
             audio_path: path(row.audio_file_id).unwrap_or_default(),
             image_path: path(row.image_file_id),
             duration: row.duration,

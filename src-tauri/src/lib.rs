@@ -40,6 +40,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_songplayer::init())
+        // Every file the webview shows or plays — pictures, covers, songs —
+        // by id, straight from the files table: media://localhost/<id>.
+        .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || responder.respond(files::serve(&app, &request)));
+        })
         .setup(|app| {
             let path = app
                 .path()

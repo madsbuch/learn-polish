@@ -239,13 +239,9 @@ pub fn topic_progress(conn: &mut Conn) -> Result<Vec<TopicProgress>> {
             let course_words = course_words::table.filter(course_words::topic_id.eq(id));
             let course_sentences = course_sentences::table.filter(course_sentences::topic_id.eq(id));
             let listed = course_blocks::table.filter(course_blocks::topic_id.eq(id));
-            let image: Option<i64> = topics::table.find(id).select(topics::image_file_id).first(conn)?;
-            let image_path = match image {
-                Some(file) => crate::files::paths(conn, &[file])?.remove(&file),
-                None => None,
-            };
+            let image_file_id: Option<i64> = topics::table.find(id).select(topics::image_file_id).first(conn)?;
             Ok(TopicProgress {
-                image_path,
+                image_file_id,
                 topic,
                 total_words: course_words.count().get_result(conn)?,
                 seen_words: course_words.filter(course_words::id.eq_any(seen("word"))).count().get_result(conn)?,

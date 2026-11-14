@@ -103,7 +103,7 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
     >
       <span className="mini-progress" style={{ width: `${pct}%` }} />
       <button className="mini-open" onClick={onOpen} aria-label="Open the player">
-        <Cover path={item.track.imagePath} size={44} />
+        <Cover fileId={item.track.imageFileId} size={44} />
         <span className="grow">
           <Text weight="bold" ellipsis>
             {item.song.title}

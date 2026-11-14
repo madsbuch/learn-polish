@@ -2,8 +2,11 @@
 //! is a row in the `files` table, bytes and all, and other tables point at
 //! it by id. The database alone is then a complete backup.
 //!
-//! Some players need a real file (the webview's asset protocol, the native
-//! player, a Sonos speaker streaming over the network), so a file can also
+//! The webview loads every file through the `media` protocol, by id
+//! (`fileUrl(id)` in the frontend; [`serve`] here): straight from this
+//! table, never from a path. Sonos streams from it too (cast.rs).
+//!
+//! Only Android's native player needs a real file, so song audio and art also
 //! have a copy on disk, `path`. That copy is only a cache: it is written from
 //! the bytes when missing, and deleted with the row.
 
@@ -120,36 +123,115 @@ pub fn materialize(conn: &mut Conn, dir: &Path, id: i64) -> Result<String> {
     Ok(path)
 }
 
-/// Where the copies of song files live.
+/// Where the copies of song files live, for the native player.
 pub fn media_dir(app: &AppHandle) -> Result<PathBuf> {
-    dir_for(app, SONG_AUDIO)
-}
-
-/// Where copies of a kind of file live: songs and their art in `songs`,
-/// pictures in `pictures`.
-pub fn dir_for(app: &AppHandle, kind: &str) -> Result<PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| Error::msg(format!("no app data directory: {e}")))?
-        .join(if kind == COURSE_IMAGE { "pictures" } else { "songs" });
+        .join("songs");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-/// Makes sure every song file and picture has its copy on disk — after a restore, on a
-/// new phone, or when the copies were cleared — in the background.
+#[diesel::declare_sql_function]
+extern "SQL" {
+    /// SQLite's `substr()` on a blob: `length` bytes from 1-based `start`.
+    fn substr(bytes: diesel::sql_types::Binary, start: diesel::sql_types::BigInt, length: diesel::sql_types::BigInt) -> diesel::sql_types::Binary;
+}
+
+/// Part of a file's bytes, read in SQLite so a range request does not load
+/// a whole song.
+pub fn read_range(conn: &mut Conn, id: i64, start: u64, length: u64) -> Result<Vec<u8>> {
+    Ok(files::table
+        .find(id)
+        .select(substr(files::bytes, start as i64 + 1, length as i64))
+        .first(conn)?)
+}
+
+/// What part of a file a request asks for.
+#[derive(Debug, PartialEq)]
+pub enum Slice {
+    Whole,
+    /// First and last byte, inclusive.
+    Part(u64, u64),
+    Unsatisfiable,
+}
+
+/// Reads `bytes=start-end` (end optional) from a Range header.
+pub fn parse_range(header: &str) -> Option<(u64, Option<u64>)> {
+    let spec = header.trim().strip_prefix("bytes=")?;
+    let (start, end) = spec.split_once('-')?;
+    Some((start.trim().parse().ok()?, end.trim().parse().ok()))
+}
+
+pub fn slice(size: u64, range: Option<(u64, Option<u64>)>) -> Slice {
+    match range {
+        None => Slice::Whole,
+        Some((start, end)) if start < size => Slice::Part(start, end.unwrap_or(size - 1).min(size - 1)),
+        Some(_) => Slice::Unsatisfiable,
+    }
+}
+
+/// Answers a `media://<id>` request from the webview: the file, or the
+/// requested range of it (audio seeks this way).
+pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{header, Response, StatusCode};
+    let not_found = || Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()).unwrap();
+    let Some(id) = request.uri().path().trim_matches('/').split('/').next().and_then(|s| s.parse::<i64>().ok())
+    else {
+        return not_found();
+    };
+    let db = app.state::<Db>();
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    let Ok(file) = info(conn, id) else { return not_found() };
+    let size = file.size as u64;
+    let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).and_then(parse_range);
+    let response = Response::builder()
+        .header(header::CONTENT_TYPE, &file.mime)
+        .header(header::ACCEPT_RANGES, "bytes")
+        // A file's bytes never change: a new picture or clip is a new id.
+        .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    let result = match slice(size, range) {
+        Slice::Whole => read(conn, id).map(|(_, bytes)| response.status(StatusCode::OK).body(bytes)),
+        Slice::Part(start, end) => read_range(conn, id, start, end - start + 1).map(|bytes| {
+            response
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
+                .body(bytes)
+        }),
+        Slice::Unsatisfiable => Ok(response
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{size}"))
+            .body(Vec::new())),
+    };
+    result.ok().and_then(|r| r.ok()).unwrap_or_else(not_found)
+}
+
+/// Makes sure every song file has its copy on disk for the native player —
+/// after a restore, on a new phone, or when the copies were cleared — in the
+/// background.
 pub fn sync_to_disk(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let result = (|| -> Result<()> {
+            let dir = media_dir(&app)?;
             let db = app.state::<Db>();
-            let found: Vec<(i64, String)> = files::table
-                .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE, COURSE_IMAGE]))
-                .select((files::id, files::kind))
+            // Course pictures had copies on disk before everything went
+            // through the media protocol; they are not needed.
+            if let Ok(data) = app.path().app_data_dir() {
+                let _ = std::fs::remove_dir_all(data.join("pictures"));
+            }
+            diesel::update(files::table.filter(files::kind.ne_all([SONG_AUDIO, SONG_IMAGE])))
+                .set(files::path.eq(None::<String>))
+                .execute(&mut *db.lock())?;
+            let ids: Vec<i64> = files::table
+                .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
+                .select(files::id)
                 .load(&mut *db.lock())?;
-            for (id, kind) in found {
-                let dir = dir_for(&app, &kind)?;
+            for id in ids {
                 materialize(&mut db.lock(), &dir, id)?;
             }
             Ok(())
@@ -197,6 +279,13 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(materialize(conn, &dir, id).unwrap(), path);
         assert!(Path::new(&path).exists());
+
+        // Ranges are read inside SQLite.
+        assert_eq!(read_range(conn, id, 1, 2).unwrap(), b"bc");
+        assert_eq!(slice(3, None), Slice::Whole);
+        assert_eq!(slice(3, parse_range("bytes=1-")), Slice::Part(1, 2));
+        assert_eq!(slice(3, parse_range("bytes=0-99")), Slice::Part(0, 2));
+        assert_eq!(slice(3, parse_range("bytes=5-")), Slice::Unsatisfiable);
 
         assert_eq!(delete(conn, &[id]).unwrap(), 1);
         assert!(!Path::new(&path).exists(), "the copy goes with the row");

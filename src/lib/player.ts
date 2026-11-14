@@ -12,10 +12,12 @@
  * Screens only see `PlayerState` and the functions below.
  */
 import { useSyncExternalStore } from "react";
-import { addPluginListener, convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { addPluginListener, invoke } from "@tauri-apps/api/core";
+
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 
+import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
 import type { CastDevice, CastState, Song, SongTrack } from "./types";
 
@@ -181,7 +183,7 @@ function webLoad(index: number, autoplay: boolean) {
   const item = state.queue[index];
   if (!item) return;
   const a = element();
-  a.src = convertFileSrc(item.track.audioPath);
+  a.src = fileUrl(item.track.audioFileId);
   set({ index, position: 0, duration: item.track.duration || 0 });
   updateMediaMetadata(item);
   if (autoplay) void a.play().catch(() => set({ playing: false }));
@@ -539,9 +541,8 @@ function updateMediaMetadata(item: QueueItem) {
       title: item.song.title,
       artist: item.song.chorusPl,
       album: "Polski",
-      artwork: item.track.imagePath
-        ? [{ src: convertFileSrc(item.track.imagePath), sizes: "512x512" }]
-        : [],
+      artwork:
+        item.track.imageFileId !== null ? [{ src: fileUrl(item.track.imageFileId), sizes: "512x512" }] : [],
     });
   } catch {
     /* MediaMetadata missing in some webviews */

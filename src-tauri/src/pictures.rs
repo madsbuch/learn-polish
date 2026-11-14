@@ -42,29 +42,27 @@ pub fn prompt(conn: &mut Conn, topic_id: i64) -> Result<String> {
     Ok(prompt)
 }
 
-/// Draws a new picture for a course, replacing the old one. Returns the path
-/// of its copy on disk.
+/// Draws a new picture for a course, replacing the old one. Returns its file
+/// id (the webview shows it through the media protocol).
 #[tauri::command]
-pub async fn course_picture(app: tauri::AppHandle, db: State<'_, Db>, topic_id: i64) -> Result<String> {
+pub async fn course_picture(db: State<'_, Db>, topic_id: i64) -> Result<i64> {
     let (key, model, prompt) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         (crate::ai::api_key(conn)?, crate::ai::image_model(conn), prompt(conn, topic_id)?)
     };
     let (mime, bytes, cost) = crate::ai::generate_image(&key, &model, &prompt).await?;
-    let dir = files::dir_for(&app, files::COURSE_IMAGE)?;
     let mut guard = db.lock();
     let conn = &mut *guard;
     let _ = crate::costs::record(conn, crate::costs::PICTURES, "openrouter", &model, cost, "");
     let name = format!("course-{topic_id}-{}.{}", crate::db::now_secs(), files::extension_for(&mime));
     let id = files::store(conn, files::COURSE_IMAGE, &name, &mime, &bytes)?;
-    let path = files::materialize(conn, &dir, id)?;
     let old: Option<i64> = topics::table.find(topic_id).select(topics::image_file_id).first(conn)?;
     diesel::update(topics::table.find(topic_id)).set(topics::image_file_id.eq(id)).execute(conn)?;
     if let Some(old) = old {
         files::delete(conn, &[old])?;
     }
-    Ok(path)
+    Ok(id)
 }
 
 /// Removes a course's picture.

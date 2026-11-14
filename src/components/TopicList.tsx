@@ -1,5 +1,5 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { Avatar, List, ListItem, Progress, Stack } from "../design";
+import { fileUrl } from "../lib/files";
 import type { TopicProgress } from "../lib/types";
 
 /** Courses, each with how many of its blocks have been started. */
@@ -16,8 +16,8 @@ export function TopicList({
         <ListItem
           key={entry.topic.id}
           leading={
-            entry.imagePath ? (
-              <img className="course-thumb" src={convertFileSrc(entry.imagePath)} alt="" />
+            entry.imageFileId !== null ? (
+              <img className="course-thumb" src={fileUrl(entry.imageFileId)} alt="" />
             ) : (
               <Avatar muted={entry.startedBlocks === 0}>
                 {(entry.topic.titlePl || entry.topic.title).charAt(0).toUpperCase()}

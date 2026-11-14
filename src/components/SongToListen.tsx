@@ -59,7 +59,7 @@ export function SongToListen({ songId }: { songId: number }) {
     <Card>
       <Stack gap={3}>
         <Inline gap={3}>
-          <Cover path={item.track.imagePath} size={64} />
+          <Cover fileId={item.track.imageFileId} size={64} />
           <div className="grow">
             <Text weight="bold" as="div">
               {item.song.title}

@@ -18,7 +18,7 @@ use std::time::Duration;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::db::{self, Conn, Db};
@@ -514,30 +514,44 @@ fn mime_for(path: &str) -> &'static str {
     }
 }
 
-async fn send_file(stream: &mut TcpStream, request: &Request, path: &str) -> Result<()> {
-    let mut file = match tokio::fs::File::open(path).await {
-        Ok(file) => file,
-        Err(_) => return respond(stream, "404 Not Found", "text/plain", b"gone").await,
+/// Serves a file from the files table, whole or by range, over HTTP.
+async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, file_id: i64) -> Result<()> {
+    let file = {
+        let db = app.state::<Db>();
+        let mut guard = db.lock();
+        crate::files::info(&mut guard, file_id)
     };
-    let size = file.metadata().await?.len();
-    let (status, start, end) = match request.range {
-        Some((start, end)) if start < size => {
-            let end = end.unwrap_or(size - 1).min(size - 1);
-            ("206 Partial Content", start, end)
-        }
-        Some(_) => {
+    let Ok(file) = file else {
+        return respond(stream, "404 Not Found", "text/plain", b"gone").await;
+    };
+    let read = |at: u64, length: u64| {
+        let db = app.state::<Db>();
+        let mut guard = db.lock();
+        crate::files::read_range(&mut guard, file_id, at, length)
+    };
+    send_bytes(stream, request, &file.mime, file.size as u64, read).await
+}
+
+/// Answers a request for `size` bytes of type `mime`, whole or by range,
+/// reading them with `read(start, length)` a chunk at a time.
+async fn send_bytes<F>(stream: &mut TcpStream, request: &Request, mime: &str, size: u64, mut read: F) -> Result<()>
+where
+    F: FnMut(u64, u64) -> Result<Vec<u8>>,
+{
+    let (status, start, end) = match crate::files::slice(size, request.range) {
+        crate::files::Slice::Part(start, end) => ("206 Partial Content", start, end),
+        crate::files::Slice::Unsatisfiable => {
             let head = format!(
                 "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{size}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             );
             stream.write_all(head.as_bytes()).await?;
             return Ok(());
         }
-        None => ("200 OK", 0, size.saturating_sub(1)),
+        crate::files::Slice::Whole => ("200 OK", 0, size.saturating_sub(1)),
     };
     let length = if size == 0 { 0 } else { end - start + 1 };
     let mut head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {length}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n",
-        mime_for(path)
+        "HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {length}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n"
     );
     if status.starts_with("206") {
         head.push_str(&format!("Content-Range: bytes {start}-{end}/{size}\r\n"));
@@ -547,31 +561,31 @@ async fn send_file(stream: &mut TcpStream, request: &Request, path: &str) -> Res
     if request.method == "HEAD" || length == 0 {
         return Ok(());
     }
-    file.seek(std::io::SeekFrom::Start(start)).await?;
-    let mut remaining = length;
-    let mut buffer = vec![0u8; 64 * 1024];
-    while remaining > 0 {
-        let want = remaining.min(buffer.len() as u64) as usize;
-        let read = file.read(&mut buffer[..want]).await?;
-        if read == 0 {
+    // In chunks, each read inside SQLite, so the lock is held only briefly.
+    let mut at = start;
+    while at <= end {
+        let want = (end - at + 1).min(256 * 1024);
+        let chunk = read(at, want)?;
+        if chunk.is_empty() {
             break;
         }
-        stream.write_all(&buffer[..read]).await?;
-        remaining -= read as u64;
+        stream.write_all(&chunk).await?;
+        at += chunk.len() as u64;
     }
     Ok(())
 }
 
-/// A take's audio and cover art, as paths of their copies on disk.
-fn track_files(conn: &mut Conn, track_id: i64) -> Result<Option<(String, Option<String>)>> {
+/// A take's audio and cover art files.
+fn track_files(conn: &mut Conn, track_id: i64) -> Result<Option<(i64, Option<i64>)>> {
     let ids: Option<(Option<i64>, Option<i64>)> = song_tracks::table
         .find(track_id)
         .select((song_tracks::audio_file_id, song_tracks::image_file_id))
         .first(conn)
         .optional()?;
-    let Some((Some(audio), image)) = ids else { return Ok(None) };
-    let paths = crate::files::paths(conn, &[Some(audio), image].into_iter().flatten().collect::<Vec<_>>())?;
-    Ok(paths.get(&audio).map(|path| (path.clone(), image.and_then(|id| paths.get(&id).cloned()))))
+    Ok(match ids {
+        Some((Some(audio), image)) => Some((audio, image)),
+        _ => None,
+    })
 }
 
 async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
@@ -602,13 +616,13 @@ async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAd
                 let conn = &mut *guard;
                 track_files(conn, track_id)?
             };
-            let path = match (files, *kind) {
+            let file = match (files, *kind) {
                 (Some((audio, _)), "media") => Some(audio),
                 (Some((_, image)), _) => image,
                 (None, _) => None,
             };
-            match path {
-                Some(path) => send_file(&mut stream, &request, &path).await,
+            match file {
+                Some(file) => send_file(&mut stream, &request, &app, file).await,
                 None => respond(&mut stream, "404 Not Found", "text/plain", b"unknown").await,
             }
         }
@@ -715,9 +729,13 @@ fn load_items(conn: &mut Conn, track_ids: &[i64]) -> Result<Vec<(CastItem, Strin
             .select((songs::title, songs::chorus_pl))
             .first(conn)
             .optional()?;
-        let path = track_files(conn, *id)?.map(|(audio, _)| audio);
-        if let (Some((title, chorus)), Some(path)) = (row, path) {
-            items.push((CastItem { track_id: *id, title, artist: chorus }, path));
+        // The audio file's name, for its type and extension.
+        let name = match track_files(conn, *id)? {
+            Some((audio, _)) => Some(crate::files::info(conn, audio)?.name),
+            None => None,
+        };
+        if let (Some((title, chorus)), Some(name)) = (row, name) {
+            items.push((CastItem { track_id: *id, title, artist: chorus }, name));
         }
     }
     Ok(items)
@@ -1214,22 +1232,18 @@ mod tests {
 
     #[tokio::test]
     async fn songs_are_served_whole_or_by_range() {
-        let dir = std::env::temp_dir().join(format!("polski-serve-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("song.mp3");
-        std::fs::write(&path, (0u8..200).collect::<Vec<u8>>()).unwrap();
-        let path = path.to_string_lossy().to_string();
+        let song: Vec<u8> = (0u8..200).collect();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let served = path.clone();
         tokio::spawn(async move {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut buffer = [0u8; 2048];
                 let n = stream.read(&mut buffer).await.unwrap();
                 let request = parse_request(&String::from_utf8_lossy(&buffer[..n])).unwrap();
-                send_file(&mut stream, &request, &served).await.unwrap();
+                let read = |at: u64, length: u64| Ok(song[at as usize..(at + length) as usize].to_vec());
+                send_bytes(&mut stream, &request, "audio/mpeg", 200, read).await.unwrap();
             }
         });
 
@@ -1251,7 +1265,6 @@ mod tests {
 
         let beyond = http.get(&url).header("Range", "bytes=500-").send().await.unwrap();
         assert_eq!(beyond.status(), 416);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
