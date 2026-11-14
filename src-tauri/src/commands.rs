@@ -399,7 +399,7 @@ pub async fn ai_explain_stream( app: tauri::AppHandle, db: State<'_, Db>, item_k
 
 /// A civil date from days since the epoch (Howard Hinnant's algorithm), for
 /// the export's file name.
-fn civil_date(days: i64) -> (i64, i64, i64) {
+pub fn civil_date(days: i64) -> (i64, i64, i64) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;

@@ -295,7 +295,10 @@ CREATE TABLE IF NOT EXISTS songs (
     error        TEXT,
     created_at   INTEGER NOT NULL,
     -- The course whose words it uses, where its listening block goes.
-    topic_id     INTEGER REFERENCES topics(id) ON DELETE SET NULL
+    topic_id     INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+    -- JSON: what was asked for and with what (brief, requested style,
+    -- length, songwriter model, revisions).
+    origin       TEXT    NOT NULL DEFAULT '{}'
 );
 
 -- Suno sings every song twice. Each take is stored here, bytes and all, so
@@ -385,6 +388,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     )?;
     adopt_loose_tutor_messages(conn)?;
     add_column(conn, "songs", "topic_id", "INTEGER REFERENCES topics(id) ON DELETE SET NULL")?;
+    add_column(conn, "songs", "origin", "TEXT NOT NULL DEFAULT '{}'")?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }

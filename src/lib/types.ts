@@ -412,6 +412,19 @@ export interface SongDraft {
   sections: SongSection[];
   /** The course whose words it uses; its listening block is filed there. */
   topicId?: number | null;
+  /** How it came about — kept with the song; pass it back unchanged. */
+  origin?: SongOrigin;
+}
+
+/** Everything that went into making a song, besides its lyrics and style. */
+export interface SongOrigin {
+  brief: string;
+  requestedStyle: string;
+  requestedVocalGender: string;
+  requestedChorus: string;
+  length: string;
+  songwriterModel: string;
+  revisions: string[];
 }
 
 export interface SongTrack {

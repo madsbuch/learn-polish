@@ -116,7 +116,9 @@ Using tools:
   make_song with what it should be about (and a topic id, chorus sentence or style if they \
   said or it fits). The app's songwriter writes the lyrics and Suno sings two takes in 2–4 \
   minutes; it costs the learner kie.ai credits, so make one song per request unless they ask \
-  for more. Use list_songs to see what exists, e.g. before suggesting what to delete.
+  for more. Use list_songs to see what exists, e.g. before suggesting what to delete. Every song keeps what it \
+  was made with (style, singer, brief, length, models, revisions): get_song shows it under \
+  made_with — to make a song like another, or a variation, start from its style and singer.
 - Playlists: the learner groups songs into playlists in the Music tab. list_playlists shows them \
   with their songs; create_playlist, add_to_playlist, remove_from_playlist and rename_playlist \
   change them, by song id (a song's most-played take goes in). Use list_songs to find song ids \
@@ -602,13 +604,13 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "list_songs",
             "Looking at your songs…",
-            "The learner's songs: title, chorus, status, takes and how often each was played.",
+            "The learner's songs: title, chorus, musical style, singer, what each is about, status, takes and how often they were played.",
             json!({ "type": "object", "properties": {} }),
         ),
         tool(
             "get_song",
             "Reading the lyrics…",
-            "One song in full: its lyrics (Polish with English, by section), the course it was written from, and where its listening block is filed.",
+            "One song in full: its lyrics (Polish with English, by section), the course it was written from, where its listening block is filed, and everything it was made with — style, singer, Suno model, the brief, what was asked for, length, the songwriter model and any revisions. Use it to make a song that matches or varies another.",
             json!({
                 "type": "object",
                 "properties": { "song_id": { "type": "integer" } },
@@ -901,6 +903,15 @@ struct ListeningArgs {
 #[derive(Deserialize)]
 struct SongArg {
     song_id: i64,
+}
+
+/// "female", "male" or "any" — clearer for the model than "f"/"m"/"".
+fn singer(vocal_gender: &str) -> &'static str {
+    match vocal_gender {
+        "f" => "female",
+        "m" => "male",
+        _ => "any",
+    }
 }
 
 /// Which course a song was written from, and where its listening block is.
@@ -1332,6 +1343,9 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                         "title": song.title,
                         "chorus_pl": song.chorus_pl,
                         "chorus_en": song.chorus_en,
+                        "style": song.style,
+                        "singer": singer(&song.vocal_gender),
+                        "about": song.origin.brief,
                         "status": song.status,
                         "takes": song.tracks.len(),
                         "plays": song.tracks.iter().map(|t| t.play_count).sum::<i64>(),
@@ -1354,14 +1368,36 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                     })
                 })
                 .collect();
+            let (y, m, d) = crate::commands::civil_date(song.created_at.div_euclid(86_400));
+            let made_on = format!("{y}-{m:02}-{d:02}");
+            let takes: Vec<Value> =
+                song.tracks.iter().map(|t| json!({ "seconds": t.duration.round(), "plays": t.play_count })).collect();
+            let made_with = json!({
+                "style": song.style,
+                "singer": singer(&song.vocal_gender),
+                "suno_model": song.suno_model,
+                "about": song.origin.brief,
+                "asked_for_style": song.origin.requested_style,
+                "asked_for_singer": singer(&song.origin.requested_vocal_gender),
+                "asked_for_chorus": song.origin.requested_chorus,
+                "length": song.origin.length,
+                "songwriter_model": song.origin.songwriter_model,
+                "revisions": song.origin.revisions,
+                "made_on": made_on,
+            });
             Ok(Outcome::data(json!({
                 "song_id": song.id,
                 "title": song.title,
                 "chorus_pl": song.chorus_pl,
                 "chorus_en": song.chorus_en,
                 "status": song.status,
+                "failed_because": song.error,
                 "lyrics": lyrics,
                 "filed": song_placement(conn, song.id)?,
+                // Everything that went into making it, so a new song can match
+                // or vary it.
+                "made_with": made_with,
+                "takes": takes,
             })))
         }
         "delete_songs" => {

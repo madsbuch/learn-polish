@@ -76,6 +76,28 @@ pub struct SongDraft {
     pub sections: Vec<SongSection>,
     /// The course whose words it uses: its listening block is filed there.
     pub topic_id: Option<i64>,
+    /// How the song came about: what was asked and with what. Saved with the
+    /// song, so it can be made again or varied later.
+    pub origin: SongOrigin,
+}
+
+/// Everything that went into making a song, besides the lyrics and style it
+/// ended up with (which the song itself holds).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SongOrigin {
+    /// What the song was asked to be about.
+    pub brief: String,
+    /// The style, singer and chorus asked for (empty: left to the songwriter).
+    pub requested_style: String,
+    pub requested_vocal_gender: String,
+    pub requested_chorus: String,
+    /// "short" | "medium" | "long", as written.
+    pub length: String,
+    /// The model that wrote the lyrics.
+    pub songwriter_model: String,
+    /// Changes asked for while refining the draft, in order.
+    pub revisions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -134,6 +156,11 @@ pub struct Song {
     pub error: Option<String>,
     pub created_at: i64,
     pub tracks: Vec<SongTrack>,
+    /// The course it was written from.
+    pub topic_id: Option<i64>,
+    /// The Suno model that sang it.
+    pub suno_model: String,
+    pub origin: SongOrigin,
 }
 
 /// What the songwriter is asked for.
@@ -394,7 +421,9 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
     let mut brief = String::new();
     if let Some(previous) = &request.previous {
         brief.push_str("Here is the current draft:\n");
-        brief.push_str(&serde_json::to_string_pretty(previous).unwrap_or_default());
+        // How it came about is for the record, not for the songwriter.
+        let previous = SongDraft { origin: SongOrigin::default(), ..previous.clone() };
+        brief.push_str(&serde_json::to_string_pretty(&previous).unwrap_or_default());
         brief.push_str("\n\nRevise it as follows, keeping everything else:\n");
         brief.push_str(if request.feedback.trim().is_empty() {
             "Make it catchier."
@@ -1016,6 +1045,9 @@ struct SongRow {
     status: String,
     error: Option<String>,
     created_at: i64,
+    topic_id: Option<i64>,
+    suno_model: String,
+    origin: String,
 }
 
 fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
@@ -1032,6 +1064,9 @@ fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
         status: row.status,
         error: row.error,
         created_at: row.created_at,
+        topic_id: row.topic_id,
+        suno_model: row.suno_model,
+        origin: serde_json::from_str(&row.origin).unwrap_or_default(),
     })
 }
 
@@ -1069,6 +1104,7 @@ pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Resu
             songs::status.eq("generating"),
             songs::created_at.eq(db::now_secs()),
             songs::topic_id.eq(topic_id),
+            songs::origin.eq(serde_json::to_string(&draft.origin)?),
         ))
         .returning(songs::id)
         .get_result(conn)?)
@@ -1089,6 +1125,7 @@ fn draft_of(song: &Song) -> SongDraft {
         sections: song.sections.clone(),
         // Only for generation, which does not file anything.
         topic_id: None,
+        origin: song.origin.clone(),
     }
 }
 
@@ -1301,6 +1338,27 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
     }
     draft.topic_id = request.topic_id.or(request.previous.as_ref().and_then(|p| p.topic_id));
+    draft.origin = match &request.previous {
+        // A revision keeps how the song began and adds what was changed.
+        Some(previous) => {
+            let mut origin = previous.origin.clone();
+            origin.revisions.push(match request.feedback.trim() {
+                "" => "Make it catchier.".to_string(),
+                feedback => feedback.to_string(),
+            });
+            origin.songwriter_model = model.clone();
+            origin
+        }
+        None => SongOrigin {
+            brief: request.brief.trim().to_string(),
+            requested_style: request.style.trim().to_string(),
+            requested_vocal_gender: request.vocal_gender.trim().to_string(),
+            requested_chorus: request.chorus_pl.trim().to_string(),
+            length: length.clone(),
+            songwriter_model: model.clone(),
+            revisions: Vec::new(),
+        },
+    };
     // The learner's explicit choices beat the model's.
     if request.previous.is_none() {
         if !request.chorus_pl.trim().is_empty() {
@@ -1437,6 +1495,7 @@ mod tests {
             style: "acoustic pop".into(),
             vocal_gender: "".into(),
             topic_id: None,
+            origin: SongOrigin::default(),
             sections: vec![
                 SongSection {
                     kind: "verse".into(),

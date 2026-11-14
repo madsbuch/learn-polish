@@ -530,6 +530,7 @@ mod integration {
             style: String::new(),
             vocal_gender: "f".into(),
             topic_id: None,
+            origin: songs::SongOrigin { brief: "Ordering coffee".into(), ..Default::default() },
             sections: vec![songs::SongSection {
                 kind: "chorus".into(),
                 lines: vec![songs::SongLine { en: "A coffee, please".into(), pl: "Poproszę kawę".into() }],
@@ -555,6 +556,8 @@ mod integration {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].status, "generating");
         assert_eq!(listed[0].sections, draft.sections, "lyrics survive storage");
+        assert_eq!(listed[0].origin.brief, "Ordering coffee", "how it was made is kept");
+        assert_eq!(listed[0].suno_model, "V6");
         assert_eq!(listed[0].tracks.len(), 1);
         assert_eq!(listed[0].tracks[0].duration, 120.5);
 

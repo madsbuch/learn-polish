@@ -234,6 +234,8 @@ diesel::table! {
         error -> Nullable<Text>,
         created_at -> BigInt,
         topic_id -> Nullable<BigInt>,
+        /// JSON: how the song came about (songs::SongOrigin).
+        origin -> Text,
     }
 }
 
