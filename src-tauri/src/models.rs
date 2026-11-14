@@ -229,6 +229,8 @@ pub struct Settings {
     pub partner_model: String,
     /// "Talk about it" chats; empty means the tutor model.
     pub word_chat_model: String,
+    /// Models starred in the model picker, shown first.
+    pub favorite_models: Vec<String>,
     /// Draws course pictures; empty means the default image model.
     pub image_model: String,
     pub has_kie_key: bool,
@@ -300,7 +302,10 @@ pub struct AiModel {
     pub id: String,
     pub name: String,
     pub context_length: i64,
+    /// Dollars per input token, as OpenRouter writes it ("0.0000003").
     pub prompt_price: String,
+    /// Dollars per output token.
+    pub completion_price: String,
     /// Non-empty for speech models: the voice names the model accepts.
     pub voices: Vec<String>,
     /// True when the model can call tools, which the tutor needs to act in

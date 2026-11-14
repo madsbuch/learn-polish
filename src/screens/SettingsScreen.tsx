@@ -1,10 +1,10 @@
+import { ModelSetting } from "../components/ModelPicker";
 import { useCallback, useEffect, useState } from "react";
 
 import { CostCenter } from "../components/CostCenter";
 import { megabytes } from "./AudioScreen";
 import { MemoryIcon, PlayerIcon } from "../components/icons";
 import {
-  Banner,
   Button,
   Card,
   ConfirmButton,
@@ -28,7 +28,6 @@ import { sendTestNotification, syncReminder } from "../lib/notifications";
 import { playClip } from "../lib/speech";
 import { playCorrect, setSoundsEnabled, soundsEnabled } from "../lib/sounds";
 import type {
-  AiModel,
   AudioCacheStats,
   Settings,
   SettingsPatch,
@@ -57,7 +56,6 @@ export function SettingsScreen({
   const [sounds, setSounds] = useState(soundsEnabled);
   const [kieDraft, setKieDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [chatModels, setChatModels] = useState<AiModel[] | null>(null);
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
   const [includeKeys, setIncludeKeys] = useState(false);
@@ -73,6 +71,12 @@ export function SettingsScreen({
   useEffect(() => {
     api.listVoices().then(setVoices).catch(() => setVoices(null));
   }, []);
+
+  // Every model row shares the starred models.
+  const models = {
+    favorites: settings.favoriteModels ?? [],
+    onFavorites: (favorites: string[]) => void patch({ favoriteModels: favorites }, "favorites"),
+  };
 
   async function patch(update: SettingsPatch, label: string) {
     setBusy(label);
@@ -296,142 +300,45 @@ export function SettingsScreen({
         }
       >
         <List>
-          <SettingRow
+          <ModelSetting
             label="Tutor"
-            description={settings.aiModel || "None chosen yet"}
-            stacked={chatModels !== null}
-            control={
-              chatModels ? (
-                <select
-                  value={settings.aiModel}
-                  aria-label="Tutor model"
-                  onChange={(event) => patch({ aiModel: event.target.value }, "model")}
-                >
-                  <option value="">— choose a model —</option>
-                  {[...chatModels]
-                    .sort((a, b) => Number(b.tools) - Number(a.tools))
-                    .map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.tools ? "🛠 " : ""}
-                        {model.name}
-                      </option>
-                    ))}
-                </select>
-              ) : undefined
-            }
+            value={settings.aiModel}
+            need="tools"
+            {...models}
+            onChange={(model) => patch({ aiModel: model }, "model")}
           />
-          <SettingRow
+          <ModelSetting
             label="Songwriter"
-            description={settings.songwriterModel || "Same as the tutor"}
-            stacked={chatModels !== null}
-            control={
-              chatModels ? (
-                <select
-                  value={settings.songwriterModel}
-                  aria-label="Songwriter model"
-                  onChange={(event) => patch({ songwriterModel: event.target.value }, "songwriter-model")}
-                >
-                  <option value="">Same as the tutor</option>
-                  {chatModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-              ) : undefined
-            }
+            value={settings.songwriterModel}
+            fallback="Same as the tutor"
+            {...models}
+            onChange={(model) => patch({ songwriterModel: model }, "songwriter-model")}
           />
-          <SettingRow
+          <ModelSetting
             label="Writing partner"
-            description={
-              settings.partnerModel || "Same as the tutor. A small, fast model marked 🛠 is enough here"
-            }
-            stacked={chatModels !== null}
-            control={
-              chatModels ? (
-                <select
-                  value={settings.partnerModel}
-                  aria-label="Writing partner model"
-                  onChange={(event) => patch({ partnerModel: event.target.value }, "partner-model")}
-                >
-                  <option value="">Same as the tutor</option>
-                  {[...chatModels]
-                    .sort((a, b) => Number(b.tools) - Number(a.tools))
-                    .map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.tools ? "🛠 " : ""}
-                        {model.name}
-                      </option>
-                    ))}
-                </select>
-              ) : undefined
-            }
+            value={settings.partnerModel}
+            fallback="Same as the tutor"
+            need="tools"
+            {...models}
+            onChange={(model) => patch({ partnerModel: model }, "partner-model")}
           />
-          <SettingRow
+          <ModelSetting
             label="Talk about it"
-            description={
-              settings.wordChatModel || "Same as the tutor. A small, fast model marked 🛠 is enough here"
-            }
-            stacked={chatModels !== null}
-            control={
-              chatModels ? (
-                <select
-                  value={settings.wordChatModel}
-                  aria-label="Talk about it model"
-                  onChange={(event) => patch({ wordChatModel: event.target.value }, "word-chat-model")}
-                >
-                  <option value="">Same as the tutor</option>
-                  {[...chatModels]
-                    .sort((a, b) => Number(b.tools) - Number(a.tools))
-                    .map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.tools ? "🛠 " : ""}
-                        {model.name}
-                      </option>
-                    ))}
-                </select>
-              ) : undefined
-            }
+            value={settings.wordChatModel}
+            fallback="Same as the tutor"
+            need="tools"
+            {...models}
+            onChange={(model) => patch({ wordChatModel: model }, "word-chat-model")}
           />
-          <SettingRow
+          <ModelSetting
             label="Course pictures"
-            description={settings.imageModel || "Gemini 2.5 Flash Image (default)"}
-            stacked={chatModels !== null}
-            control={
-              chatModels ? (
-                <select
-                  value={settings.imageModel}
-                  aria-label="Course picture model"
-                  onChange={(event) => patch({ imageModel: event.target.value }, "image-model")}
-                >
-                  <option value="">Default (Gemini 2.5 Flash Image)</option>
-                  {chatModels
-                    .filter((model) => model.images)
-                    .map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-                </select>
-              ) : undefined
-            }
+            value={settings.imageModel}
+            fallback="Default (Gemini 2.5 Flash Image)"
+            need="images"
+            {...models}
+            onChange={(model) => patch({ imageModel: model }, "image-model")}
           />
         </List>
-        {settings.aiModel && chatModels?.some((model) => model.id === settings.aiModel && !model.tools) ? (
-          <Banner tone="error">
-            This model can't use tools, so the tutor won't be able to build courses or songs
-            with it. Pick one marked 🛠.
-          </Banner>
-        ) : null}
-        {chatModels === null ? (
-          <Button
-            block
-            loading={busy === "models"}
-            onClick={() => run("models", async () => setChatModels(await api.aiListModels()))}
-          >
-            Choose models
-          </Button>
-        ) : null}
       </Section>
 
       <Section

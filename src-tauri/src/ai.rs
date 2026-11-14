@@ -634,6 +634,8 @@ struct Architecture {
 struct Pricing {
     #[serde(default)]
     prompt: Option<String>,
+    #[serde(default)]
+    completion: Option<String>,
 }
 
 async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
@@ -652,7 +654,8 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
         .map(|m| AiModel {
             name: m.name.clone().unwrap_or_else(|| m.id.clone()),
             context_length: m.context_length.unwrap_or(0),
-            prompt_price: m.pricing.and_then(|p| p.prompt).unwrap_or_default(),
+            prompt_price: m.pricing.as_ref().and_then(|p| p.prompt.clone()).unwrap_or_default(),
+            completion_price: m.pricing.and_then(|p| p.completion).unwrap_or_default(),
             voices: m.supported_voices.unwrap_or_default(),
             tools: m
                 .supported_parameters

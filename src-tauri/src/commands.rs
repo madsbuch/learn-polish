@@ -44,6 +44,9 @@ fn read_settings(conn: &mut Conn) -> Result<Settings> {
         songwriter_model: ai::stored_model(conn, "songwriter_model"),
         partner_model: ai::stored_model(conn, "partner_model"),
         word_chat_model: ai::stored_model(conn, "word_chat_model"),
+        favorite_models: db::get_setting(conn, "favorite_models")?
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default(),
         image_model: ai::stored_model(conn, "image_model"),
         has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
         suno_model: songs::suno_model(conn),
@@ -95,6 +98,7 @@ pub struct SettingsPatch {
     pub songwriter_model: Option<String>,
     pub partner_model: Option<String>,
     pub word_chat_model: Option<String>,
+    pub favorite_models: Option<Vec<String>>,
     pub image_model: Option<String>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
@@ -153,6 +157,9 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.word_chat_model {
         db::set_setting(conn, "word_chat_model", model.trim())?;
+    }
+    if let Some(favorites) = patch.favorite_models {
+        db::set_setting(conn, "favorite_models", &serde_json::to_string(&favorites)?)?;
     }
     if let Some(model) = patch.image_model {
         db::set_setting(conn, "image_model", model.trim())?;

@@ -284,6 +284,8 @@ export interface Settings {
   partnerModel: string;
   /** "Talk about it" chats; empty means the tutor model. */
   wordChatModel: string;
+  /** Models starred in the model picker, shown first. */
+  favoriteModels: string[];
   /** Draws course pictures; empty means the default image model. */
   imageModel: string;
   hasKieKey: boolean;
@@ -309,6 +311,7 @@ export interface SettingsPatch {
   songwriterModel?: string;
   partnerModel?: string;
   wordChatModel?: string;
+  favoriteModels?: string[];
   imageModel?: string;
   sunoModel?: string;
   songLength?: SongLength;
@@ -407,7 +410,10 @@ export interface AiModel {
   id: string;
   name: string;
   contextLength: number;
+  /** Dollars per input token, e.g. "0.0000003". */
   promptPrice: string;
+  /** Dollars per output token. */
+  completionPrice: string;
   /** Non-empty for speech models: the voice names the model accepts. */
   voices: string[];
   /** Can call tools — the tutor needs this to act in the app. */

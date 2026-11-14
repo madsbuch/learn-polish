@@ -1052,3 +1052,21 @@ button.badge:active {
   font-size: 1.05em;
   line-height: 1;
 }
+
+/* The favourite star in the model picker. */
+.model-star {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-faint);
+}
+.model-star[data-on] {
+  color: var(--gold-ink);
+}
+.model-star:active {
+  background: var(--surface-sunken);
+}
