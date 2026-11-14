@@ -159,6 +159,8 @@ pub struct DayStat {
     pub answered: i64,
     pub correct: i64,
     pub completed: bool,
+    /// Missed, but a streak freeze kept the run going.
+    pub frozen: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -188,6 +190,8 @@ pub struct Stats {
     pub xp_into_level: i64,
     pub xp_for_next_level: i64,
     pub current_streak: i64,
+    /// Freezes kept: each covers one missed day (at most two).
+    pub streak_freezes: i64,
     pub longest_streak: i64,
     pub words_seen: i64,
     pub words_mastered: i64,

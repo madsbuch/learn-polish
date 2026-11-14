@@ -217,6 +217,8 @@ export interface DayStat {
   answered: number;
   correct: number;
   completed: boolean;
+  /** Missed, but a streak freeze kept the run going. */
+  frozen: boolean;
 }
 
 export interface TopicProgress {
@@ -242,6 +244,8 @@ export interface Stats {
   xpIntoLevel: number;
   xpForNextLevel: number;
   currentStreak: number;
+  /** Freezes kept: each covers one missed day (at most two). */
+  streakFreezes: number;
   longestStreak: number;
   wordsSeen: number;
   wordsMastered: number;

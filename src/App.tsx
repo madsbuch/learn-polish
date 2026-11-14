@@ -125,13 +125,6 @@ export default function App() {
         // A speaker may still be playing from before a reload.
         resumeCast();
         await refresh();
-        // Re-arm the reminder on every launch: the OS drops scheduled
-        // notifications after a reboot or an app update.
-        void syncReminder({
-          enabled: loaded.remindersEnabled,
-          hour: loaded.reminderHour,
-          minute: loaded.reminderMinute,
-        });
       } catch (cause) {
         if (!cancelled) setError(errorMessage(cause));
       }
@@ -225,6 +218,27 @@ export default function App() {
       setError(errorMessage(cause));
     }
   }, [refresh]);
+
+  // Reminders follow the day: re-armed on every launch (the OS drops them
+  // after a reboot or an update), and whenever the day is done or what is
+  // due changes, so today's is skipped once there is nothing left to nag about.
+  const remindersOn = settings?.remindersEnabled;
+  const reminderHour = settings?.reminderHour;
+  const reminderMinute = settings?.reminderMinute;
+  const doneToday = stats?.completedToday;
+  const dueCount = overview?.due.length;
+  const streak = stats?.currentStreak;
+  useEffect(() => {
+    if (remindersOn === undefined || reminderHour === undefined || reminderMinute === undefined) return;
+    void syncReminder({
+      enabled: remindersOn,
+      hour: reminderHour,
+      minute: reminderMinute,
+      doneToday,
+      due: dueCount,
+      streak,
+    });
+  }, [remindersOn, reminderHour, reminderMinute, doneToday, dueCount, streak]);
 
   // The tutor answers in the background. Off screen, a finished reply is
   // announced with a notification, so the backend needs to know.

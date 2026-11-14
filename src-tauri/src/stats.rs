@@ -10,7 +10,10 @@ use crate::error::Result;
 use crate::models::{Achievement, DayStat, Stats, TopicProgress};
 use crate::session;
 
-pub const DEFAULT_DAILY_GOAL: i64 = 60;
+/// About ten minutes: a drill and a check-in.
+pub const DEFAULT_DAILY_GOAL: i64 = 150;
+/// Streak freezes kept at most; one is earned with every seven-day run.
+pub const MAX_FREEZES: i64 = 2;
 /// Correct reps after which a word counts as "mastered" on the progress screen.
 const MASTERY_REPS: i64 = 4;
 const HISTORY_DAYS: i64 = 120;
@@ -48,18 +51,32 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
     base + if is_new { 2 } else { 0 }
 }
 
-/// XP for a study check-in: deeper blocks are worth more; failing earns none.
-pub fn xp_for_checkin(complexity: &str, result: &str) -> i64 {
+/// XP for a check-in, paid by effort: a check-in takes as long as several
+/// drills and is the deeper work, so it pays like it. A writing block adds
+/// a bonus per goal got across. Failing earns none.
+pub fn xp_for_checkin(complexity: &str, result: &str, writing_goals: usize) -> i64 {
     let base = match complexity {
-        "low" => 10,
-        "medium" => 25,
-        _ => 50,
-    };
+        "low" => 30,
+        "medium" => 80,
+        _ => 160,
+    } + 10 * writing_goals as i64;
     match result {
         "pass" => base,
         "partial" => base / 2,
         _ => 0,
     }
+}
+
+/// XP that is not an answer (a check-in's verdict): it counts toward the day
+/// and the level, not toward accuracy.
+pub fn add_xp(conn: &mut Conn, day: i64, xp: i64) -> Result<()> {
+    diesel::insert_into(day_log::table)
+        .values((day_log::day.eq(day), day_log::xp.eq(xp)))
+        .on_conflict(day_log::day)
+        .do_update()
+        .set(day_log::xp.eq(day_log::xp + excluded(day_log::xp)))
+        .execute(conn)?;
+    Ok(())
 }
 
 pub fn total_xp(conn: &mut Conn) -> Result<i64> {
@@ -85,12 +102,24 @@ pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Resul
     Ok(())
 }
 
-/// Marks today as practised (any block counts toward the streak). Returns
-/// true the first time it is called on a day.
+/// Whether a day is done: the daily goal reached, or — having practised —
+/// nothing left due. One definition for the goal ring, the streak and the
+/// reminder.
+pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
+    let xp: i64 = day_log::table.find(day).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+    if xp >= db::get_setting_i64(conn, "daily_goal", DEFAULT_DAILY_GOAL) {
+        return Ok(true);
+    }
+    let due: i64 = blocks::table.filter(blocks::due_day.le(day)).count().get_result(conn)?;
+    Ok(xp > 0 && due == 0)
+}
+
+/// After a block: marks today done if it now is. Returns true the moment the
+/// day becomes done — and then a seven-day run earns a streak freeze.
 pub fn mark_practised(conn: &mut Conn, day: i64) -> Result<bool> {
     let already: Option<i64> =
         day_log::table.find(day).select(day_log::completed).first(conn).optional()?;
-    if already == Some(1) {
+    if already == Some(1) || !day_is_done(conn, day)? {
         return Ok(false);
     }
     diesel::insert_into(day_log::table)
@@ -99,42 +128,80 @@ pub fn mark_practised(conn: &mut Conn, day: i64) -> Result<bool> {
         .do_update()
         .set(day_log::completed.eq(1))
         .execute(conn)?;
+    let (current, _) = streaks(conn, day)?;
+    if current > 0 && current % 7 == 0 {
+        let freezes = db::get_setting_i64(conn, "streak_freezes", 0);
+        db::set_setting(conn, "streak_freezes", &(freezes + 1).min(MAX_FREEZES).to_string())?;
+    }
     Ok(true)
 }
 
+/// Spends streak freezes on missed days, so a run survives them. Runs before
+/// the streak is read: if the days missed since the last done day (today
+/// not counted — it is not over) are no more than the freezes kept, each is
+/// marked frozen. Frozen days keep a run going but do not add to it.
+pub fn apply_freezes(conn: &mut Conn, today: i64) -> Result<()> {
+    let last: Option<i64> = day_log::table
+        .filter(day_log::completed.eq(1).or(day_log::frozen.eq(1)))
+        .filter(day_log::day.lt(today))
+        .select(diesel::dsl::max(day_log::day))
+        .first(conn)?;
+    let Some(last) = last else { return Ok(()) };
+    let missed = today - 1 - last;
+    let freezes = db::get_setting_i64(conn, "streak_freezes", 0);
+    if missed < 1 || missed > freezes {
+        return Ok(());
+    }
+    for day in last + 1..today {
+        diesel::insert_into(day_log::table)
+            .values((day_log::day.eq(day), day_log::frozen.eq(1)))
+            .on_conflict(day_log::day)
+            .do_update()
+            .set(day_log::frozen.eq(1))
+            .execute(conn)?;
+    }
+    db::set_setting(conn, "streak_freezes", &(freezes - missed).to_string())?;
+    Ok(())
+}
+
+/// The current and longest streak, in done days. A frozen day keeps a run
+/// going without adding to it.
 pub fn streaks(conn: &mut Conn, today: i64) -> Result<(i64, i64)> {
-    let days: Vec<i64> = day_log::table
-        .filter(day_log::completed.eq(1))
+    let rows: Vec<(i64, i64, i64)> = day_log::table
+        .filter(day_log::completed.eq(1).or(day_log::frozen.eq(1)))
         .order(day_log::day)
-        .select(day_log::day)
+        .select((day_log::day, day_log::completed, day_log::frozen))
         .load(conn)?;
 
     let mut longest = 0;
     let mut run = 0;
     let mut previous: Option<i64> = None;
-    for day in &days {
-        run = match previous {
-            Some(p) if *day == p + 1 => run + 1,
-            _ => 1,
-        };
+    for &(day, completed, _) in &rows {
+        if previous.is_some_and(|p| day != p + 1) {
+            run = 0;
+        }
+        if completed == 1 {
+            run += 1;
+        }
         longest = longest.max(run);
-        previous = Some(*day);
+        previous = Some(day);
     }
 
-    // The current streak survives until the end of tomorrow: finishing
-    // yesterday and not yet having practised today should still read as a
-    // live streak.
-    let set: std::collections::HashSet<i64> = days.into_iter().collect();
-    let mut cursor = if set.contains(&today) {
+    // The current streak survives until the end of tomorrow: done yesterday
+    // and not yet today still reads as a live streak.
+    let kept: std::collections::HashMap<i64, bool> = rows.iter().map(|&(d, c, _)| (d, c == 1)).collect();
+    let mut cursor = if kept.contains_key(&today) {
         today
-    } else if set.contains(&(today - 1)) {
+    } else if kept.contains_key(&(today - 1)) {
         today - 1
     } else {
         return Ok((0, longest));
     };
     let mut current = 0;
-    while set.contains(&cursor) {
-        current += 1;
+    while let Some(&done) = kept.get(&cursor) {
+        if done {
+            current += 1;
+        }
         cursor -= 1;
     }
     Ok((current, longest))
@@ -172,14 +239,15 @@ fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
 
 pub fn collect(conn: &mut Conn) -> Result<Stats> {
     let today = db::today(conn);
+    apply_freezes(conn, today)?;
     let c = counts(conn, today)?;
     let total = total_xp(conn)?;
     let level = level_from_xp(total);
     let (current_streak, longest_streak) = streaks(conn, today)?;
 
-    let days: Vec<(i64, i64, i64, i64, i64)> = day_log::table
+    let days: Vec<(i64, i64, i64, i64, i64, i64)> = day_log::table
         .order(day_log::day)
-        .select((day_log::day, day_log::xp, day_log::answered, day_log::correct, day_log::completed))
+        .select((day_log::day, day_log::xp, day_log::answered, day_log::correct, day_log::completed, day_log::frozen))
         .load(conn)?;
     let (day_xp, completed_today) = days
         .iter()
@@ -190,12 +258,13 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
     let history = days
         .iter()
         .filter(|d| d.0 > today - HISTORY_DAYS)
-        .map(|&(day, xp, answered, correct, completed)| DayStat {
+        .map(|&(day, xp, answered, correct, completed, frozen)| DayStat {
             day,
             xp,
             answered,
             correct,
             completed: completed == 1,
+            frozen: frozen == 1,
         })
         .collect();
 
@@ -211,6 +280,7 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
         xp_for_next_level: xp_for_level(level + 1) - xp_for_level(level),
         current_streak,
         longest_streak,
+        streak_freezes: db::get_setting_i64(conn, "streak_freezes", 0),
         words_seen: c.words_seen,
         words_mastered: c.words_mastered,
         words_total: c.words_total,

@@ -736,6 +736,72 @@ mod integration {
     }
 
     #[test]
+    fn a_day_is_done_by_the_goal_or_by_clearing_what_is_due() {
+        let mut conn = scratch_db("day-done");
+        let today = db::today(&mut conn);
+        db::set_setting(&mut conn, "daily_goal", "100").unwrap();
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let block = blocks::for_topic(&mut conn, basics).unwrap()[0].clone();
+        blocks::due_now(&mut conn, block.id).unwrap();
+
+        stats::add_xp(&mut conn, today, 40).unwrap();
+        assert!(!stats::day_is_done(&mut conn, today).unwrap(), "a block is still due and the goal is not met");
+        assert!(!stats::mark_practised(&mut conn, today).unwrap());
+        stats::add_xp(&mut conn, today, 60).unwrap();
+        assert!(stats::mark_practised(&mut conn, today).unwrap(), "the goal is met");
+        assert!(stats::collect(&mut conn).unwrap().completed_today);
+
+        // Effort pays: a check-in like several drills; writing goals add.
+        assert_eq!(stats::xp_for_checkin("medium", "pass", 0), 80);
+        assert_eq!(stats::xp_for_checkin("medium", "pass", 2), 100);
+        assert_eq!(stats::xp_for_checkin("high", "partial", 0), 80);
+        assert_eq!(stats::xp_for_checkin("low", "fail", 3), 0);
+    }
+
+    #[test]
+    fn streak_freezes_are_earned_by_a_week_and_bridge_a_missed_day() {
+        let mut conn = scratch_db("freezes");
+        let today = db::today(&mut conn);
+        db::set_setting(&mut conn, "daily_goal", "10").unwrap();
+        let done = |conn: &mut db::Conn, day: i64| {
+            diesel::insert_into(t::day_log::table)
+                .values((t::day_log::day.eq(day), t::day_log::xp.eq(50), t::day_log::completed.eq(1)))
+                .execute(conn)
+                .unwrap();
+        };
+        // Six done days, and today finishes the week: a freeze is earned.
+        for day in today - 6..today {
+            done(&mut conn, day);
+        }
+        stats::add_xp(&mut conn, today, 20).unwrap();
+        assert!(stats::mark_practised(&mut conn, today).unwrap());
+        assert_eq!(stats::collect(&mut conn).unwrap().streak_freezes, 1);
+        assert_eq!(stats::collect(&mut conn).unwrap().current_streak, 7);
+
+        // Two days later, one day missed (yesterday): the freeze covers it.
+        let mut later = scratch_db("freezes-later");
+        let now = db::today(&mut later);
+        for day in now - 5..now - 1 {
+            done(&mut later, day);
+        }
+        db::set_setting(&mut later, "streak_freezes", "1").unwrap();
+        let stats = stats::collect(&mut later).unwrap();
+        assert_eq!(stats.current_streak, 4, "the run survives; the frozen day adds nothing");
+        assert_eq!(stats.streak_freezes, 0, "and the freeze is spent");
+        assert!(stats.history.iter().any(|d| d.day == now - 1 && d.frozen));
+
+        // Two days missed with one freeze: the run is gone, the freeze kept.
+        let mut gap = scratch_db("freezes-gap");
+        let now = db::today(&mut gap);
+        for day in now - 6..now - 2 {
+            done(&mut gap, day);
+        }
+        db::set_setting(&mut gap, "streak_freezes", "1").unwrap();
+        let stats = stats::collect(&mut gap).unwrap();
+        assert_eq!((stats.current_streak, stats.streak_freezes), (0, 1));
+    }
+
+    #[test]
     fn audio_cache_round_trips_and_is_keyed_by_voice() {
         let mut conn = scratch_db("audio");
         for (voice, bytes) in [("Kore", &[1u8, 2, 3][..]), ("Puck", &[9, 9][..])] {

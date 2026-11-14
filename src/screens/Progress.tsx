@@ -8,8 +8,15 @@ function Heatmap({ stats }: { stats: Stats }) {
   for (let offset = 125; offset >= 0; offset--) {
     const day = stats.day - offset;
     const entry = byDay.get(day);
-    const level = !entry || entry.xp === 0 ? 0 : entry.xp >= stats.dailyGoal ? 3 : entry.xp >= stats.dailyGoal / 2 ? 2 : 1;
-    cells.push(<i key={day} data-level={level} />);
+    // A done day is full; a frozen one shows the freeze that kept the run.
+    const level = entry?.completed
+      ? 3
+      : !entry || entry.xp === 0
+        ? 0
+        : entry.xp >= stats.dailyGoal / 2
+          ? 2
+          : 1;
+    cells.push(<i key={day} data-level={level} data-frozen={entry?.frozen || undefined} />);
   }
   return <div className="heat">{cells}</div>;
 }

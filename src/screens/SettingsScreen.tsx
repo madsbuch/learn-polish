@@ -131,13 +131,14 @@ export function SettingsScreen({
         <List>
           <SettingRow
             label="Daily goal"
+            description="Reach it — or clear everything due — and the day counts for your streak"
             value={`${settings.dailyGoal} XP`}
             stacked
             control={
               <input
                 type="range"
-                min={20}
-                max={300}
+                min={50}
+                max={500}
                 step={10}
                 value={settings.dailyGoal}
                 aria-label="Daily goal"

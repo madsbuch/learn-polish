@@ -374,6 +374,11 @@
 .heat i[data-level="3"] {
   background: var(--brand);
 }
+/* A missed day a streak freeze covered. */
+.heat i[data-frozen] {
+  background: var(--sky);
+  opacity: 0.6;
+}
 
 /* ============================================================== markdown */
 

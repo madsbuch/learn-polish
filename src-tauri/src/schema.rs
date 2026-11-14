@@ -74,6 +74,7 @@ diesel::table! {
         correct -> BigInt,
         topic_id -> Nullable<BigInt>,
         completed -> BigInt,
+        frozen -> BigInt,
     }
 }
 

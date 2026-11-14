@@ -272,12 +272,14 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     let current = blocks::load(conn, block_id)?;
     let extra = blocks::is_extra_practice(&current, today);
     let block = if extra { current } else { blocks::record(conn, block_id, &assessment.result)? };
-    assessment.xp = stats::xp_for_checkin(&block.complexity, &assessment.result);
+    let writing_goals = if block.format == "writing" { blocks::detail(conn, block_id)?.objectives.len() } else { 0 };
+    assessment.xp = stats::xp_for_checkin(&block.complexity, &assessment.result, writing_goals);
     if extra {
         assessment.xp = (assessment.xp + 1) / 2;
     }
     assessment.next_due_day = block.due_day.unwrap_or(today);
-    stats::record_answer(conn, today, assessment.xp, assessment.result != "fail")?;
+    // A verdict is not an answer: it counts toward the day, not accuracy.
+    stats::add_xp(conn, today, assessment.xp)?;
     let first = stats::mark_practised(conn, today)?;
     let mut feedback = assessment.summary.clone();
     if !assessment.to_review.is_empty() {

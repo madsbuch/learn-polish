@@ -179,7 +179,10 @@ CREATE TABLE IF NOT EXISTS day_log (
     answered  INTEGER NOT NULL DEFAULT 0,
     correct   INTEGER NOT NULL DEFAULT 0,
     topic_id  INTEGER,                    -- unused: the old daily session's topic
-    completed INTEGER NOT NULL DEFAULT 0
+    -- The day is done: the daily goal reached, or nothing left due.
+    completed INTEGER NOT NULL DEFAULT 0,
+    -- Missed, but a streak freeze kept the run going.
+    frozen    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -430,6 +433,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     adopt_loose_tutor_messages(conn)?;
     add_column(conn, "songs", "topic_id", "INTEGER REFERENCES topics(id) ON DELETE SET NULL")?;
     add_column(conn, "songs", "origin", "TEXT NOT NULL DEFAULT '{}'")?;
+    add_column(conn, "day_log", "frozen", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_error", "TEXT")?;
     add_column(conn, "topics", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
