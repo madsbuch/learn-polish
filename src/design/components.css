@@ -1003,3 +1003,46 @@ button.badge:active {
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   backdrop-filter: blur(6px);
 }
+
+/* Toasts (Toaster): float at the top of the screen, over sheets too, so a
+   message is seen however far down the page is scrolled. A tap closes one. */
+.toaster {
+  position: fixed;
+  top: calc(var(--safe-top) + var(--space-2));
+  left: var(--gutter);
+  right: var(--gutter);
+  z-index: calc(var(--z-sheet) + 1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  /* Inverted, like a snackbar: it stands out on any page, light or dark. */
+  background: var(--text);
+  color: var(--bg);
+  border: none;
+  border-left: 5px solid var(--ok);
+  box-shadow: var(--shadow);
+  font-size: var(--font-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-medium);
+  animation: toast-in var(--duration) var(--ease-out);
+}
+.toast[data-tone="error"] {
+  border-left-color: var(--bad);
+}
+.toast[data-tone="info"] {
+  border-left-color: var(--brand);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}

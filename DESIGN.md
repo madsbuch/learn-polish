@@ -76,6 +76,12 @@ Every screen is a `Screen`:
 - Sheets (`Sheet`) are for short tasks that return to where you were: picking
   a playlist, a speaker, reading an explanation.
 
+- The outcome of something the learner just did — "Added to Morning run",
+  "Saved to Downloads", a button whose action failed — is a **toast**
+  (`toast()` from `src/lib/toast.ts`): it floats at the top of the screen, so
+  it is seen however far down the page is. A `Banner` is for a page's own
+  state (it could not load, a key is missing), shown where it applies.
+
 ## Components
 
 | Component | Use it for |

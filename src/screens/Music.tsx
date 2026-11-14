@@ -32,6 +32,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { toast } from "../lib/toast";
 import {
   currentItem,
   formatTime,
@@ -122,7 +123,6 @@ export function Music({
   const [view, setView] = useState<View>({ kind: "library" });
   const [selecting, setSelecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -158,15 +158,13 @@ export function Music({
     return map;
   }, [songs]);
 
-  const message = (text: string, isError = false) => {
-    if (isError) setError(text);
-    else setNotice(text);
-  };
+  // Confirmations and failed actions float over the screen, seen wherever
+  // the page is scrolled.
+  const message = (text: string, isError = false) => toast(text, isError ? "error" : "ok");
 
   const back = () => {
     setView({ kind: "library" });
     setError(null);
-    setNotice(null);
   };
 
   if (view.kind === "compose") {
@@ -186,7 +184,6 @@ export function Music({
   const feedback = (
     <>
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {notice ? <Banner tone="ok">{notice}</Banner> : null}
     </>
   );
 
@@ -209,7 +206,7 @@ export function Music({
               try {
                 onOpenBlock((await api.blockForSong(song.id)).id);
               } catch (cause) {
-                setError(errorMessage(cause));
+                toast(errorMessage(cause), "error");
               }
             }}
           />
@@ -240,7 +237,7 @@ export function Music({
               back();
               refresh();
             }}
-            onError={setError}
+            onError={(text) => toast(text, "error")}
           />
         ) : playlists === null ? (
           <Spinner />
@@ -316,7 +313,7 @@ export function Music({
           onOpen={(songId) => setView({ kind: "song", songId })}
           onCompose={ready ? () => setView({ kind: "compose" }) : undefined}
           onDeleted={refresh}
-          onError={setError}
+          onError={(text) => toast(text, "error")}
         />
       ) : (
         <PlaylistList
@@ -327,7 +324,7 @@ export function Music({
             setPlaylists((current) => [playlist, ...(current ?? [])]);
             setView({ kind: "playlist", playlistId: playlist.id });
           }}
-          onError={setError}
+          onError={(text) => toast(text, "error")}
         />
       )}
     </Screen>

@@ -35,6 +35,7 @@ import {
   toggle,
   usePlayer,
 } from "../lib/player";
+import { toast } from "../lib/toast";
 
 /**
  * The player, on its own screen: what is playing, the controls, the lyrics
@@ -53,8 +54,7 @@ export function Player({
   const [panel, setPanel] = useState<"lyrics" | "queue">("lyrics");
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
-  const exporter = useTrackExport((text, error = false) => setMessage({ text, error }));
+  const exporter = useTrackExport((text, error = false) => toast(text, error ? "error" : "ok"));
 
   // Following the lyrics means not touching the phone: keep the screen on
   // while a song plays here. Pausing or closing the player lets it sleep.
@@ -81,7 +81,6 @@ export function Player({
       nav={false}
     >
       {player.error ? <Banner tone="error">{player.error}</Banner> : null}
-      {message ? <Banner tone={message.error ? "error" : "ok"}>{message.text}</Banner> : null}
 
       <Hero className="player-card">
         <div className="player-cover">
@@ -232,7 +231,7 @@ export function Player({
         <AddToPlaylist
           trackId={item.track.id}
           onClose={() => setAdding(false)}
-          onDone={(text) => setMessage({ text, error: false })}
+          onDone={(text) => toast(text)}
         />
       ) : null}
     </Screen>

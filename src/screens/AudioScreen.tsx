@@ -21,6 +21,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { toast } from "../lib/toast";
 import { playClip, speak } from "../lib/speech";
 import type { AudioItem, AudioOverview, CacheProgress, CourseAudio } from "../lib/types";
 
@@ -73,7 +74,6 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
   const [open, setOpen] = useState<CourseAudio | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -91,12 +91,11 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
   async function run(action: () => Promise<string | void>) {
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       const message = await action();
-      if (message) setNotice(message);
+      if (message) toast(message);
     } catch (cause) {
-      setError(errorMessage(cause));
+      toast(errorMessage(cause), "error");
     } finally {
       setBusy(false);
       refresh();
@@ -133,7 +132,6 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
       }
     >
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {notice ? <Banner tone="ok">{notice}</Banner> : null}
       {overview === null ? (
         <Spinner />
       ) : (
@@ -325,9 +323,9 @@ function CourseAudioPage({
               setError(null);
               try {
                 const result = await api.cacheAudio(missing.map(({ text, gender }) => ({ text, gender })));
-                if (result.error) setError(`Stopped after an error: ${result.error}`);
+                if (result.error) toast(`Stopped after an error: ${result.error}`, "error");
               } catch (cause) {
-                setError(errorMessage(cause));
+                toast(errorMessage(cause), "error");
               } finally {
                 setBusy(false);
                 load();
@@ -349,7 +347,7 @@ function CourseAudioPage({
                 try {
                   const all = items.map(({ text, gender }) => ({ text, gender }));
                   const result = await api.cacheAudio(all, true);
-                  if (result.error) setError(`Stopped after an error: ${result.error}`);
+                  if (result.error) toast(`Stopped after an error: ${result.error}`, "error");
                 } catch (cause) {
                   setError(errorMessage(cause));
                 } finally {
@@ -423,7 +421,7 @@ function CourseAudioPage({
               {selected.gender === "m" ? " · male voice" : ""} ·{" "}
               {selected.stored ? `downloaded, ${megabytes(selected.bytes)}` : "not downloaded"}
             </Text>
-            <Button block icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => setError(errorMessage(cause)))}>
+            <Button block icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))}>
               Play
             </Button>
             <Button

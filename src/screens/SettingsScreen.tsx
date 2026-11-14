@@ -22,6 +22,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { toast } from "../lib/toast";
 import { useThemePreference, type ThemePreference } from "../lib/theme";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
 import { playClip } from "../lib/speech";
@@ -56,8 +57,6 @@ export function SettingsScreen({
   const [sounds, setSounds] = useState(soundsEnabled);
   const [kieDraft, setKieDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<AiModel[] | null>(null);
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const [cache, setCache] = useState<AudioCacheStats | null>(null);
@@ -77,7 +76,6 @@ export function SettingsScreen({
 
   async function patch(update: SettingsPatch, label: string) {
     setBusy(label);
-    setError(null);
     try {
       const next = await api.updateSettings(update);
       onSettings(next);
@@ -91,14 +89,12 @@ export function SettingsScreen({
           hour: next.reminderHour,
           minute: next.reminderMinute,
         });
-        setNotice(
-          next.remindersEnabled && !active
-            ? "Notifications are switched off for this app in your system settings."
-            : null,
-        );
+        if (next.remindersEnabled && !active) {
+          toast("Notifications are switched off for this app in your system settings.", "error");
+        }
       }
     } catch (cause) {
-      setError(errorMessage(cause));
+      toast(errorMessage(cause), "error");
     } finally {
       setBusy(null);
     }
@@ -106,12 +102,10 @@ export function SettingsScreen({
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
-    setError(null);
-    setNotice(null);
     try {
       await action();
     } catch (cause) {
-      setError(errorMessage(cause));
+      toast(errorMessage(cause), "error");
     } finally {
       setBusy(null);
     }
@@ -124,8 +118,6 @@ export function SettingsScreen({
 
   return (
     <Screen title="Settings">
-      {error ? <Banner tone="error">{error}</Banner> : null}
-      {notice ? <Banner tone="ok">{notice}</Banner> : null}
 
       <Section title="Practice">
         <List>
@@ -186,7 +178,7 @@ export function SettingsScreen({
             onClick={() =>
               run("test-note", async () => {
                 const sent = await sendTestNotification();
-                setNotice(sent ? "Sent — check your notifications." : "This device did not allow the notification.");
+                toast(sent ? "Sent — check your notifications." : "This device did not allow the notification.");
               })
             }
           >
@@ -234,7 +226,7 @@ export function SettingsScreen({
                     onClick={() =>
                       run("test-key", async () => {
                         const reply = await api.aiTestKey();
-                        setNotice(`The model replied “${reply}” — everything works.`);
+                        toast(`The model replied “${reply}” — everything works.`);
                       })
                     }
                   >
@@ -434,7 +426,7 @@ export function SettingsScreen({
                     onClick={() =>
                       run("kie-credits", async () => {
                         const credits = await api.kieCredits();
-                        setNotice(`kie.ai works — ${credits} credits left.`);
+                        toast(`kie.ai works — ${credits} credits left.`);
                       })
                     }
                   >
@@ -663,7 +655,7 @@ export function SettingsScreen({
           onClick={() =>
             run("export", async () => {
               const where = await api.exportDatabase(includeKeys);
-              if (where) setNotice(`Exported to ${decodeURIComponent(where)}`);
+              if (where) toast(`Exported to ${decodeURIComponent(where)}`);
             })
           }
         >

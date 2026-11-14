@@ -3,11 +3,12 @@
  * else: they never set a font size, a colour or a spacing by hand. The rules
  * are in DESIGN.md; `scripts/check-design.mjs` enforces the mechanical ones.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
 import { useBackHandler } from "../lib/back";
+import { current as currentToasts, dismiss as dismissToast, subscribe as subscribeToasts } from "../lib/toast";
 import "./tokens.css";
 import "./base.css";
 import "./components.css";
@@ -911,5 +912,32 @@ export function ConfirmButton({
         </div>
       </Inline>
     </Stack>
+  );
+}
+
+/**
+ * The toasts from `toast()` (lib/toast.ts): floating at the top of the
+ * screen, over whatever is there, so a confirmation or a failure is seen
+ * however far the page is scrolled. A tap dismisses one. Mounted once, at
+ * the root.
+ */
+export function Toaster() {
+  const toasts = useSyncExternalStore(subscribeToasts, currentToasts);
+  return createPortal(
+    <div className="toaster" aria-live="polite">
+      {toasts.map((entry) => (
+        <button
+          key={entry.id}
+          type="button"
+          className="toast"
+          data-tone={entry.tone}
+          role={entry.tone === "error" ? "alert" : "status"}
+          onClick={() => dismissToast(entry.id)}
+        >
+          {entry.text}
+        </button>
+      ))}
+    </div>,
+    document.body,
   );
 }
