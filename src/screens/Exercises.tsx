@@ -34,8 +34,8 @@ function estimate(blocks: Block[]): number {
 }
 
 /**
- * Everything to practise, top to bottom: today (what is due for a check-in),
- * what to start next, and the courses every block lives in.
+ * Everything to practise, top to bottom: today (with the one thing to do
+ * next), what is due for a check-in, and the courses every block lives in.
  */
 export function Exercises({
   overview,
@@ -127,24 +127,6 @@ export function Exercises({
         >
           <List>
             {overview.due.map((block) => (
-              <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
-            ))}
-          </List>
-        </Section>
-      ) : null}
-
-      {overview.next.length > 0 ? (
-        <Section
-          title="Start next"
-          info={
-            <p>
-              The next blocks you have not started yet, from your newest courses first. They also
-              sit in their course below.
-            </p>
-          }
-        >
-          <List>
-            {overview.next.map((block) => (
               <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
             ))}
           </List>

@@ -89,8 +89,8 @@ belong. The
 and study blocks with their own lessons and objectives.
 
 The **Exercises** tab reads top to bottom: **today** (the XP ring and the next
-thing to do), **Due now** (blocks whose check-in has come), **Start next** (the
-next unstarted blocks from your newest courses), and **Courses**.
+thing to do — a due block, or else the next unstarted one), **Due now** (blocks
+whose check-in has come), and **Courses**.
 
 Practising any block counts toward the day's streak.
 
@@ -461,8 +461,7 @@ leaves the app from Exercises (`src/lib/back.ts`: every page with a ← or ⌄,
 and every sheet, adds a history entry that back pops). The player bar above
 the tabs can be swiped away to the right, which stops the music.
 
-Exercises is the home screen: today on top, what is due, what to start next,
-then your courses. A course page has tabs: **Blocks** (in the course's
+Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Blocks** (in the course's
 order), **Words** and **Sentences** — every item with the drill it belongs to,
 one tap away — and *Rename* / *Delete course*. A conversation drill's
 dialogue is on that drill's page. Two screens open from it rather than taking a tab:
