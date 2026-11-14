@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon, SendIcon } from "../components/icons";
+import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, SendIcon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
 import {
   Banner,
@@ -54,9 +54,46 @@ type Shared = {
   onOpenMemories: () => void;
 };
 
+/** The box a message is typed in, with its send button. */
+function Composer({
+  draft,
+  setDraft,
+  disabled,
+  onSend,
+}: {
+  draft: string;
+  setDraft: (text: string) => void;
+  disabled?: boolean;
+  onSend: (text: string) => void;
+}) {
+  return (
+    <div className="composer">
+      <textarea
+        rows={1}
+        value={draft}
+        placeholder="Ask the tutor"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            onSend(draft);
+          }
+        }}
+      />
+      <IconButton
+        variant="primary"
+        icon={<SendIcon />}
+        label="Send"
+        disabled={disabled || draft.trim().length === 0}
+        onClick={() => onSend(draft)}
+      />
+    </div>
+  );
+}
+
 /**
- * The Tutor tab: your conversations, newest first. Each keeps its own
- * history; a new one starts from a blank page.
+ * The Tutor tab: your conversations, newest first, with a box at the bottom
+ * — writing in it starts a new conversation.
  */
 export function Tutor({
   hasApiKey,
@@ -73,15 +110,22 @@ export function Tutor({
   const [open, setOpen] = useState<number | "new" | null>(null);
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  // The message a new conversation opens with, sent as soon as it shows.
+  const [opening, setOpening] = useState<string | null>(null);
+
+  function start(text: string) {
+    const message = text.trim();
+    if (!message) return;
+    setDraft("");
+    setOpening(message);
+    setOpen("new");
+  }
 
   const refresh = useCallback(() => {
     api
       .tutorConversations()
-      .then((list) => {
-        setConversations(list);
-        // With nothing to list, go straight to a new conversation.
-        if (list.length === 0) setOpen((current) => current ?? "new");
-      })
+      .then(setConversations)
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
 
@@ -114,12 +158,14 @@ export function Tutor({
         key={open}
         conversationId={open === "new" ? null : open}
         title={conversation?.title ?? "New conversation"}
-        canGoBack={(conversations?.length ?? 0) > 0 || open !== "new"}
+        firstMessage={open === "new" ? opening : null}
         onStarted={(id) => {
+          setOpening(null);
           setOpen(id);
           refresh();
         }}
         onBack={() => {
+          setOpening(null);
           setOpen(null);
           refresh();
         }}
@@ -137,26 +183,28 @@ export function Tutor({
     <Screen
       title="Tutor"
       info={<TutorInfo />}
-      actions={
-        <IconButton
-          variant="primary"
-          icon={<PlusIcon />}
-          label="New conversation"
-          onClick={() => setOpen("new")}
-        />
-      }
+      footer={<Composer draft={draft} setDraft={setDraft} onSend={start} />}
     >
       {error ? <Banner tone="error">{error}</Banner> : null}
       {conversations === null ? (
         <Spinner />
+      ) : conversations.length === 0 ? (
+        <Section title="Try asking">
+          <List>
+            {STARTERS.map((starter) => (
+              <ListItem key={starter} title={starter} onClick={() => start(starter)} />
+            ))}
+          </List>
+        </Section>
       ) : (
         <Section title="Conversations">
           <List>
             {conversations.map((conversation) => (
               <ListItem
                 key={conversation.id}
+                oneLine
                 title={conversation.title}
-                subtitle={`${when(conversation.updatedAt)} · ${conversation.preview}`}
+                subtitle={when(conversation.updatedAt)}
                 onClick={() => setOpen(conversation.id)}
               />
             ))}
@@ -170,7 +218,7 @@ export function Tutor({
 function Chat({
   conversationId,
   title,
-  canGoBack,
+  firstMessage,
   onStarted,
   onBack,
   onRenamed,
@@ -184,7 +232,8 @@ function Chat({
   /** null for a conversation not yet started. */
   conversationId: number | null;
   title: string;
-  canGoBack: boolean;
+  /** Sent once when the conversation opens (typed on the list). */
+  firstMessage: string | null;
   /** The first reply arrived; the conversation now exists with this id. */
   onStarted: (id: number) => void;
   onBack: () => void;
@@ -214,6 +263,17 @@ function Chat({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, live, status, sending]);
+
+  // Send the opening message once — a ref, so React's double effects in
+  // development don't send it twice.
+  const sentFirst = useRef(false);
+  useEffect(() => {
+    if (firstMessage && !sentFirst.current) {
+      sentFirst.current = true;
+      void send(firstMessage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstMessage]);
 
   async function send(text: string) {
     const message = text.trim();
@@ -297,30 +357,8 @@ function Chat({
   return (
     <Screen
       title={title}
-      onBack={canGoBack ? onBack : undefined}
-      footer={
-        <div className="composer">
-          <textarea
-            rows={1}
-            value={draft}
-            placeholder="Ask the tutor"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send(draft);
-              }
-            }}
-          />
-          <IconButton
-            variant="primary"
-            icon={<SendIcon />}
-            label="Send"
-            disabled={sending || draft.trim().length === 0}
-            onClick={() => send(draft)}
-          />
-        </div>
-      }
+      onBack={onBack}
+      footer={<Composer draft={draft} setDraft={setDraft} disabled={sending} onSend={(text) => void send(text)} />}
       actions={
         conversationId !== null ? (
           <IconButton icon={<MoreIcon />} label="Rename or delete" onClick={() => setManaging(true)} />

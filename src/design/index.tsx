@@ -274,6 +274,7 @@ export function ListItem({
   selected,
   label,
   selectable,
+  oneLine,
 }: {
   leading?: ReactNode;
   title: ReactNode;
@@ -286,21 +287,32 @@ export function ListItem({
   /** Accessible name for the row button, when the title alone is unclear. */
   label?: string;
   selectable?: boolean;
+  /** Keep the title to one line, cut off with an ellipsis. */
+  oneLine?: boolean;
 }) {
+  const showChevron = chevron ?? (Boolean(onClick) && !trailing);
   const content = (
     <>
       {leading ? <span className="list-item__leading">{leading}</span> : null}
       <span className="list-item__text">
-        <span className={cx("list-item__title", selectable && "selectable")}>{title}</span>
+        <span className={cx("list-item__title", selectable && "selectable")} data-one-line={oneLine}>
+          {title}
+        </span>
         {subtitle ? (
           <span className={cx("list-item__subtitle", selectable && "selectable")}>{subtitle}</span>
         ) : null}
       </span>
+      {showChevron ? (
+        <span className="list-item__chevron" aria-hidden="true">
+          <ChevronIcon />
+        </span>
+      ) : null}
     </>
   );
-  const showChevron = chevron ?? (Boolean(onClick) && !trailing);
+  // The row's button covers the whole row, chevron and edges included, so
+  // a tap anywhere but on a trailing control opens it.
   return (
-    <div className="list-item" data-selected={selected}>
+    <div className="list-item" data-selected={selected} data-interactive={Boolean(onClick)}>
       {onClick ? (
         <button className="list-item__main" onClick={onClick} aria-label={label}>
           {content}
@@ -309,11 +321,6 @@ export function ListItem({
         <div className="list-item__main">{content}</div>
       )}
       {trailing ? <div className="list-item__trailing">{trailing}</div> : null}
-      {showChevron ? (
-        <span className="list-item__chevron" aria-hidden="true">
-          <ChevronIcon />
-        </span>
-      ) : null}
     </div>
   );
 }
