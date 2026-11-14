@@ -25,7 +25,6 @@ pub const PICTURES: &str = "pictures";
 pub const FACT_CHECK: &str = "fact check";
 pub const SONGWRITER: &str = "songwriter";
 pub const SONGS: &str = "songs";
-pub const EXPLAIN: &str = "explain";
 pub const SPEECH: &str = "speech";
 pub const KEY_TEST: &str = "key test";
 

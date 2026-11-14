@@ -17,6 +17,7 @@ import {
   ListItem,
   Screen,
   Section,
+  Segmented,
   Spinner,
   Stack,
   Text,
@@ -25,8 +26,9 @@ import { api, errorMessage } from "../lib/api";
 import { useDraft, writeDraft } from "../lib/drafts";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
+import { useTutorJob } from "../lib/tutorJob";
 import { ensurePermission } from "../lib/notifications";
-import type { AgentStatus, ChatMessage, Conversation, StreamEvent, TutorAction, TutorDone } from "../lib/types";
+import type { ChatMessage, Conversation, TutorAction, TutorDone } from "../lib/types";
 
 const STARTERS = [
   "Build me a course for learning the colours",
@@ -36,79 +38,6 @@ const STARTERS = [
   "When do I use “ty” and when “pan” or “pani”?",
 ];
 
-
-/**
- * Follows a conversation's background reply: whether the tutor is working,
- * the text so far, what a tool is doing, and a failure. `finished` counts
- * replies that ended while watching, so the caller can reload.
- */
-function useTutorJob(conversationId: number | null) {
-  const [working, setWorking] = useState(false);
-  const [text, setText] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [finished, setFinished] = useState(0);
-
-  // Opening a conversation the tutor is still answering (or failed on).
-  useEffect(() => {
-    if (conversationId === null) return;
-    api
-      .tutorConversations()
-      .then((list) => {
-        const entry = list.find((c) => c.id === conversationId);
-        if (!entry) return;
-        if (entry.working) setWorking(true);
-        setError(entry.error);
-      })
-      .catch(() => {});
-  }, [conversationId]);
-
-  useEffect(() => {
-    if (conversationId === null) return;
-    const id = `tutor-${conversationId}`;
-    const offs = [
-      listen<StreamEvent>("ai://stream", (event) => {
-        if (event.payload.id !== id || !event.payload.delta) return;
-        setWorking(true);
-        setStatus(null);
-        setText((current) => current + event.payload.delta);
-      }),
-      listen<AgentStatus>("agent://status", (event) => {
-        if (event.payload.id !== id) return;
-        setWorking(true);
-        setStatus(event.payload.label);
-      }),
-      listen<TutorDone>("tutor://done", (event) => {
-        if (event.payload.conversationId !== conversationId) return;
-        setWorking(false);
-        setText("");
-        setStatus(null);
-        setError(event.payload.error);
-        setFinished((n) => n + 1);
-      }),
-    ];
-    return () => {
-      for (const off of offs) void off.then((stop) => stop());
-    };
-  }, [conversationId]);
-
-  return {
-    working,
-    text,
-    status,
-    error,
-    finished,
-    /** A message was sent: the reply is on its way. */
-    begin: () => {
-      setWorking(true);
-      setText("");
-      setStatus(null);
-      setError(null);
-    },
-    /** Sending failed: nothing is on its way after all. */
-    cancel: () => setWorking(false),
-  };
-}
 
 /** "3 min ago", "yesterday", "12 Nov" — for the conversation list. */
 function when(seconds: number): string {
@@ -155,6 +84,8 @@ export function Tutor({
   const [draft, setDraft] = useDraft("list");
   // The message a new conversation opens with, sent as soon as it shows.
   const [opening, setOpening] = useState<string | null>(null);
+  // All conversations, or only the ones about a word ("Talk about it").
+  const [filter, setFilter] = useState<"all" | "word">("all");
 
   function start(text: string) {
     const message = text.trim();
@@ -247,18 +178,34 @@ export function Tutor({
         </Section>
       ) : (
         <Section title="Conversations">
+          {conversations.some((c) => c.tag === "word") ? (
+            <Segmented
+              value={filter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "word", label: "Words" },
+              ]}
+              onChange={setFilter}
+            />
+          ) : null}
           <List>
-            {conversations.map((conversation) => (
+            {conversations
+              .filter((c) => filter === "all" || c.tag === filter)
+              .map((conversation) => (
               <ListItem
                 key={conversation.id}
                 oneLine
-                title={conversation.title}
+                title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
                 subtitle={
                   conversation.working
                     ? "The tutor is writing…"
-                    : conversation.error
-                      ? `${when(conversation.updatedAt)} · didn't finish`
-                      : when(conversation.updatedAt)
+                    : [
+                        conversation.tag === "word" ? "Word" : null,
+                        when(conversation.updatedAt),
+                        conversation.error ? "didn't finish" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
                 }
                 onClick={() => setOpen(conversation.id)}
               />

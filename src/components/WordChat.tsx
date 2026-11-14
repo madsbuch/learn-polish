@@ -1,20 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Banner, Inline, Sheet, Spinner, Stack, Text } from "../design";
-import { api } from "../lib/api";
-import { useAiStream } from "../lib/useAiStream";
+import { api, errorMessage } from "../lib/api";
+import { useTutorJob } from "../lib/tutorJob";
+import type { ChatMessage } from "../lib/types";
 import { Composer } from "./Composer";
 import { Markdown } from "./Markdown";
 
-interface Turn {
-  role: "user" | "assistant";
-  content: string;
-}
-
 /**
- * A short chat about a word or sentence just practised: how it is really
- * used, and the learner trying it out — not a dictionary entry. It opens
- * itself; nothing is saved when it closes.
+ * A chat with the tutor about a word or sentence just practised: how it is
+ * really used, and the learner trying it out. It is an ordinary tutor
+ * conversation, tagged "word" — saved, listed in the Tutor tab, and carried
+ * on the next time the same word is talked about. The tutor writes in the
+ * background, so closing the sheet loses nothing.
  */
 export function WordChat({
   itemKind,
@@ -28,66 +26,81 @@ export function WordChat({
   title: string;
   onClose: () => void;
 }) {
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const stream = useAiStream();
+  const [error, setError] = useState<string | null>(null);
+  const job = useTutorJob(conversationId);
   const endRef = useRef<HTMLDivElement>(null);
 
-  async function exchange(history: Turn[]) {
-    const reply = await stream.run((streamId) => api.aiExplainStream(itemKind, itemId, streamId, history));
-    if (reply) {
-      stream.reset();
-      setTurns([...history, { role: "assistant", content: reply }]);
-    }
-    return Boolean(reply);
-  }
-
-  // The tutor opens the conversation.
+  // Open (or find) the conversation about this word.
   const opened = useRef(false);
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
-    void exchange([]);
+    api
+      .tutorTalkAbout(itemKind, itemId)
+      .then((talk) => {
+        if (!talk.existing) job.begin();
+        setConversationId(talk.conversationId);
+      })
+      .catch((cause) => setError(errorMessage(cause)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const load = useCallback(() => {
+    if (conversationId === null) return;
+    api
+      .tutorHistory(conversationId)
+      .then(setMessages)
+      .catch((cause) => setError(errorMessage(cause)));
+  }, [conversationId]);
+
+  useEffect(load, [load, job.finished]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [turns, stream.text]);
+  }, [messages, job.text]);
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message || stream.streaming) return;
+    if (!message || job.working || conversationId === null) return;
     setDraft("");
-    const history: Turn[] = [...turns, { role: "user", content: message }];
-    setTurns(history);
-    if (!(await exchange(history))) {
-      setTurns(turns);
+    job.begin();
+    try {
+      const started = await api.tutorSend(message, conversationId);
+      setMessages((current) => [...current, started.message]);
+    } catch (cause) {
+      job.cancel();
       setDraft(message);
+      setError(errorMessage(cause));
     }
   }
+
+  // The opening "Let's talk about …" is the app's, not the learner's: not shown.
+  const shown = messages[0]?.role === "user" ? messages.slice(1) : messages;
 
   return (
     <Sheet title={title} onClose={onClose}>
       <Stack gap={3}>
         <div className="chat word-chat">
-          {turns.map((turn, i) => (
-            <div key={i} className="msg selectable" data-role={turn.role}>
-              {turn.role === "assistant" ? <Markdown text={turn.content} /> : turn.content}
+          {shown.map((message) => (
+            <div key={message.id} className="msg selectable" data-role={message.role}>
+              {message.role === "assistant" ? <Markdown text={message.content} /> : message.content}
             </div>
           ))}
-          {stream.streaming ? (
+          {job.working ? (
             <div className="msg" data-role="assistant">
-              {stream.text ? (
+              {job.text ? (
                 <div>
-                  <Markdown text={stream.text} />
+                  <Markdown text={job.text} />
                   <span className="caret" />
                 </div>
               ) : (
                 <Inline gap={2}>
                   <Spinner />
                   <Text variant="small" tone="faint">
-                    Thinking…
+                    {job.status ?? "Thinking…"}
                   </Text>
                 </Inline>
               )}
@@ -95,14 +108,17 @@ export function WordChat({
           ) : null}
           <div ref={endRef} />
         </div>
-        {stream.error ? <Banner tone="error">{stream.error}</Banner> : null}
+        {error || job.error ? <Banner tone="error">{error ?? job.error}</Banner> : null}
         <Composer
           draft={draft}
           setDraft={setDraft}
           placeholder="Try it, or ask about it"
-          canSend={!stream.streaming && turns.length > 0}
+          canSend={!job.working && conversationId !== null}
           onSend={(text) => void send(text)}
         />
+        <Text variant="small" tone="faint" align="center">
+          Saved in the Tutor tab, under Words.
+        </Text>
       </Stack>
     </Sheet>
   );

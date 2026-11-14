@@ -304,7 +304,12 @@ CREATE TABLE IF NOT EXISTS tutor_conversations (
     -- The tutor answers in the background: set while it works on a reply.
     job_started_at INTEGER,
     -- Why the last reply failed, until the next one is asked for.
-    job_error  TEXT
+    job_error  TEXT,
+    -- What kind of conversation: NULL for an ordinary one, 'word' for a
+    -- chat about one word or sentence ("Talk about it").
+    tag        TEXT,
+    -- What it is about, for a tagged one: "gratulacje — congratulations".
+    about      TEXT
 );
 
 -- The messages of a conversation with the tutor. `actions` is a JSON list of what the tutor
@@ -464,6 +469,8 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "blocks", "fact_checked_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_error", "TEXT")?;
+    add_column(conn, "tutor_conversations", "tag", "TEXT")?;
+    add_column(conn, "tutor_conversations", "about", "TEXT")?;
     add_column(conn, "topics", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())

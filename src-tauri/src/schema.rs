@@ -246,6 +246,8 @@ diesel::table! {
         updated_at -> BigInt,
         job_started_at -> Nullable<BigInt>,
         job_error -> Nullable<Text>,
+        tag -> Nullable<Text>,
+        about -> Nullable<Text>,
     }
 }
 

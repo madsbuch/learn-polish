@@ -267,6 +267,8 @@ pub struct Conversation {
     pub working: bool,
     /// Why the last reply failed, if it did.
     pub error: Option<String>,
+    /// "word" for a chat about a word or sentence; None for an ordinary one.
+    pub tag: Option<String>,
 }
 
 /// Something the tutor did in the app, shown under its reply (and, for a

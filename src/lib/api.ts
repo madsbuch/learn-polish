@@ -17,6 +17,7 @@ import type {
   FactCheck,
   WikiSource,
   TutorStarted,
+  TalkAbout,
   AudioOverview,
   AudioClip,
   CacheProgress,
@@ -105,13 +106,12 @@ export const api = {
   aiClearKey: () => invoke<Settings>("ai_clear_key"),
   aiTestKey: () => invoke<string>("ai_test_key"),
   aiListModels: () => invoke<AiModel[]>("ai_list_models"),
-  /** One turn of a short chat about a word or sentence; empty history opens it. */
-  aiExplainStream: (
-    itemKind: string,
-    itemId: number,
-    streamId: string,
-    history: { role: "user" | "assistant"; content: string }[] = [],
-  ) => invoke<string>("ai_explain_stream", { itemKind, itemId, streamId, history }),
+  /**
+   * Opens the tutor conversation about a word or sentence — or carries on the
+   * one already about it. A new one starts with the tutor talking.
+   */
+  tutorTalkAbout: (itemKind: string, itemId: number) =>
+    invoke<TalkAbout>("tutor_talk_about", { itemKind, itemId }),
 
   /**
    * Stores the message and starts the reply in the background; `conversationId`

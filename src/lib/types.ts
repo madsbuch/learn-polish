@@ -363,6 +363,14 @@ export interface Conversation {
   working: boolean;
   /** Why the last reply failed, if it did. */
   error: string | null;
+  /** "word" for a chat about a word or sentence ("Talk about it"). */
+  tag: string | null;
+}
+
+/** `tutor_talk_about`: the conversation about a word, new or carried on. */
+export interface TalkAbout {
+  conversationId: number;
+  existing: boolean;
 }
 
 /** `tutor_send` returns at once; the reply follows in the background. */

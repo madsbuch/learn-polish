@@ -11,11 +11,11 @@ use diesel::sql_types::Text;
 use serde::Deserialize;
 use tauri::State;
 
-use crate::agent::{Agent, ToolFuture, ToolOutput};
+
 use crate::ai;
 use crate::costs;
 use crate::db::{self, Conn, Db};
-use crate::schema::{blocks, course_sentences, course_words, sentences, words};
+use crate::schema::{blocks, course_sentences, course_words};
 use crate::error::{Error, Result};
 use crate::models::*;
 use crate::songs;
@@ -368,49 +368,6 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
     let reply = ai::complete(&key, &model, &[ai::Wire::user("Reply with exactly: OK")]).await?;
     let _ = costs::record(&mut db.lock(), costs::KEY_TEST, "openrouter", &model, reply.cost, "");
     Ok(reply.text.trim().to_string())
-}
-
-/// One turn of a short chat about a word or sentence (see
-/// [`ai::explain_prompt`]); `history` is the chat so far, empty to open it.
-/// Text arrives as `ai://stream` events.
-#[tauri::command]
-pub async fn ai_explain_stream(
-    app: tauri::AppHandle,
-    db: State<'_, Db>,
-    item_kind: String,
-    item_id: i64,
-    stream_id: String,
-    history: Option<Vec<ai::ChatTurn>>,
-) -> Result<String> {
-    let messages = {
-        let mut guard = db.lock();
-        let conn = &mut *guard;
-        let (polish, gloss): (String, String) = match item_kind.as_str() {
-            "word" => words::table.find(item_id).select((words::pl, words::en)).first(conn)?,
-            "sentence" => sentences::table.find(item_id).select((sentences::pl, sentences::en)).first(conn)?,
-            other => return Err(Error::msg(format!("cannot explain a '{other}'"))),
-        };
-        ai::explain_prompt(&polish, &gloss, &history.unwrap_or_default())
-    };
-    let agent = Agent {
-        app: &app,
-        db: &db,
-        name: costs::EXPLAIN,
-        stream_id: &stream_id,
-        tools: None,
-        max_rounds: 1,
-        stop_once_answered: true,
-        show_status: false,
-        model: None,
-    };
-    let outcome = agent
-        .run(messages, |_| -> ToolFuture<'_, ()> { Box::pin(async { ToolOutput::reply(serde_json::Value::Null) }) })
-        .await;
-    match outcome.failed {
-        Some(error) => Err(error),
-        None if outcome.text.trim().is_empty() => Err(Error::msg("OpenRouter returned an empty answer.")),
-        None => Ok(outcome.text),
-    }
 }
 
 // ---------------------------------------------------------------------------

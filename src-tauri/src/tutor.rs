@@ -1966,7 +1966,7 @@ pub fn create_conversation(conn: &mut Conn, first_message: &str) -> Result<i64> 
 }
 
 pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
-    let heads: Vec<(i64, String, i64, Option<i64>, Option<String>)> = tutor_conversations::table
+    let heads: Vec<(i64, String, i64, Option<i64>, Option<String>, Option<String>)> = tutor_conversations::table
         .order((tutor_conversations::updated_at.desc(), tutor_conversations::id.desc()))
         .select((
             tutor_conversations::id,
@@ -1974,11 +1974,12 @@ pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
             tutor_conversations::updated_at,
             tutor_conversations::job_started_at,
             tutor_conversations::job_error,
+            tutor_conversations::tag,
         ))
         .load(conn)?;
     heads
         .into_iter()
-        .map(|(id, title, updated_at, job, error)| {
+        .map(|(id, title, updated_at, job, error, tag)| {
             let of = tutor_messages::table.filter(tutor_messages::conversation_id.eq(id));
             let messages = of.count().get_result(conn)?;
             let last: String = of
@@ -1994,6 +1995,7 @@ pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
                 messages,
                 working: job.is_some(),
                 error,
+                tag,
                 // Markdown marks would show as stray symbols in a one-line preview.
                 preview: crate::text::clean(&last.replace(['*', '_', '#', '`'], "")).chars().take(120).collect(),
             })
@@ -2194,7 +2196,16 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     let wire = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let mut wire = vec![Wire::system(system_prompt(conn)?)];
+        let mut prompt = system_prompt(conn)?;
+        // A chat about one word: talk about it, don't lecture.
+        let about: Option<String> = tutor_conversations::table
+            .find(conversation_id)
+            .select(tutor_conversations::about)
+            .first(conn)?;
+        if let Some(about) = about {
+            prompt.push_str(&format!("\n\n{}", word_chat_rules(&about)));
+        }
+        let mut wire = vec![Wire::system(prompt)];
         // The question is already stored, so it is the end of the history.
         wire.extend(recent_history(conn, conversation_id)?);
         wire
@@ -2263,6 +2274,77 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
 
 fn course_ids(conn: &mut Conn) -> HashSet<i64> {
     topics::table.select(topics::id).load::<i64>(conn).map(|ids| ids.into_iter().collect()).unwrap_or_default()
+}
+
+/// How a conversation about one word or sentence goes (\"Talk about it\"):
+/// a chat about using it, not a dictionary entry.
+fn word_chat_rules(about: &str) -> String {
+    format!(
+        "This conversation is about one thing the learner just practised: {about}.
+- Talk, don't lecture: two to four sentences a turn, no headings, no dictionary entry.
+- Open with how and when people actually use it — a real situation and one natural example \
+  (Polish, with a translation) — then invite the learner to try: ask them to say something with \
+  it, or what they would say in a situation you describe.
+- When they answer, react like a person would. If their Polish has a slip, show the right form in \
+  passing and why, briefly. Then take it one step further: a related phrase, another form, or a \
+  new little situation to try.
+- Grammar only when it helps them say the next thing. If they want practice on it, you can make \
+  a block — when they ask."
+    )
+}
+
+/// What \"Talk about it\" opens.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalkAbout {
+    pub conversation_id: i64,
+    /// The word had been talked about before: its conversation carries on.
+    pub existing: bool,
+}
+
+/// Opens the tutor conversation about a word or sentence (tagged \"word\"),
+/// or carries on the one already about it. A new one starts with the tutor
+/// talking, in the background like any reply.
+#[tauri::command]
+pub async fn tutor_talk_about(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    item_kind: String,
+    item_id: i64,
+) -> Result<TalkAbout> {
+    let conversation_id = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let (polish, meaning): (String, String) = match item_kind.as_str() {
+            "word" => crate::schema::words::table
+                .find(item_id)
+                .select((crate::schema::words::pl, crate::schema::words::en))
+                .first(conn)?,
+            "sentence" => crate::schema::sentences::table
+                .find(item_id)
+                .select((crate::schema::sentences::pl, crate::schema::sentences::en))
+                .first(conn)?,
+            other => return Err(Error::msg(format!("Cannot talk about a '{other}'."))),
+        };
+        let about = format!("{polish} — {meaning}");
+        let existing: Option<i64> = tutor_conversations::table
+            .filter(tutor_conversations::tag.eq("word"))
+            .filter(tutor_conversations::about.eq(&about))
+            .select(tutor_conversations::id)
+            .first(conn)
+            .optional()?;
+        if let Some(id) = existing {
+            return Ok(TalkAbout { conversation_id: id, existing: true });
+        }
+        let id = create_conversation(conn, &polish)?;
+        diesel::update(tutor_conversations::table.find(id))
+            .set((tutor_conversations::tag.eq("word"), tutor_conversations::about.eq(&about)))
+            .execute(conn)?;
+        append(conn, id, "user", &format!("Let's talk about “{polish}”."), &[])?;
+        id
+    };
+    start_job(&app, &db, conversation_id)?;
+    Ok(TalkAbout { conversation_id, existing: false })
 }
 
 /// A reply that was running when the app was closed never finished: say so,
