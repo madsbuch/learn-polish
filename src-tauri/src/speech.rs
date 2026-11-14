@@ -230,7 +230,12 @@ pub async fn cache_audio(
 /// heard, so the first ones are ready first; it carries on with the screen
 /// off.
 #[tauri::command]
-pub async fn prefetch_audio(app: tauri::AppHandle, lines: Vec<SpeechLine>) -> Result<()> {
+pub async fn prefetch_audio(app: tauri::AppHandle, db: State<'_, Db>, lines: Vec<SpeechLine>) -> Result<()> {
+    // Already all downloaded (practising a block again): nothing to keep
+    // the app awake for.
+    if missing_lines(&mut db.lock(), &lines).is_empty() {
+        return Ok(());
+    }
     let busy = crate::work::begin(&app, "Downloading the lesson's audio…");
     let app_ref = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -240,6 +245,21 @@ pub async fn prefetch_audio(app: tauri::AppHandle, lines: Vec<SpeechLine>) -> Re
         fill(&app_ref, &db, lines, false).await;
     });
     Ok(())
+}
+
+/// The lines among `lines` with no stored clip in the voice they get.
+fn missing_lines(conn: &mut Conn, lines: &[SpeechLine]) -> Vec<SpeechLine> {
+    lines
+        .iter()
+        .filter(|line| {
+            let text = line.text.trim();
+            !text.is_empty()
+                && speech_config(conn, &line.gender)
+                    .map(|c| cached_clip(conn, &audio_key(&c.model, &c.voice, text)).ok().flatten().is_none())
+                    .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
 }
 
 /// Makes every missing clip among `lines`, a few at a time, in order.

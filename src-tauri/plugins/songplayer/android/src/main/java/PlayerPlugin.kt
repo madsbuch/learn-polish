@@ -352,9 +352,21 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
         val intent = Intent(context, WorkService::class.java).putExtra(WorkService.EXTRA_LABEL, args.label)
         try {
             if (args.on) {
+                WorkService.stopRequested = false
                 ContextCompat.startForegroundService(context, intent)
+            } else if (WorkService.running) {
+                // Through the service itself, so it leaves the foreground
+                // properly. It is in the foreground already, so stopping it
+                // directly is the safe fallback.
+                try {
+                    context.startService(intent.setAction(WorkService.ACTION_STOP))
+                } catch (error: Exception) {
+                    context.stopService(intent)
+                }
             } else {
-                context.stopService(intent)
+                // Still starting: stopping it now, before it has shown its
+                // notification, would crash the app. It stops once it has.
+                WorkService.stopRequested = true
             }
             invoke.resolve()
         } catch (error: Exception) {

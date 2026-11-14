@@ -25,7 +25,23 @@ class WorkService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val label = intent?.getStringExtra(EXTRA_LABEL) ?: "Working…"
-        startForegroundWith(notification(label))
+        // A service started with startForegroundService must call
+        // startForeground — even when it is only being told to stop (work
+        // that ended at once); otherwise Android kills the app.
+        try {
+            startForegroundWith(notification(label))
+        } catch (error: Exception) {
+            // Not allowed from the background on newer Android: the work
+            // runs as long as Android lets it, without the service.
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        running = true
+        if (intent?.action == ACTION_STOP || stopRequested) {
+            stopRequested = false
+            finish()
+            return START_NOT_STICKY
+        }
         if (wakeLock == null) {
             val power = getSystemService(POWER_SERVICE) as PowerManager
             // A ceiling, in case the app never says it is done.
@@ -60,7 +76,9 @@ class WorkService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setSmallIcon(applicationInfo.icon)
+            // A plain system icon: launcher icons (adaptive) can be refused
+            // as a notification icon, which crashes the app.
+            .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setContentTitle("Polski")
             .setContentText(label)
             .setOngoing(true)
@@ -68,12 +86,24 @@ class WorkService : Service() {
             .build()
     }
 
-    // Android 15 caps data-sync work; stop rather than be stopped.
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    private fun finish() {
+        running = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         stopSelf()
     }
 
+    // Android 15 caps data-sync work; stop rather than be stopped.
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        finish()
+    }
+
     override fun onDestroy() {
+        running = false
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
@@ -81,6 +111,15 @@ class WorkService : Service() {
 
     companion object {
         const val EXTRA_LABEL = "label"
+        const val ACTION_STOP = "com.polski.songplayer.WORK_STOP"
+
+        /** In the foreground right now. */
+        @Volatile
+        var running = false
+
+        /** Told to stop before it got to start: stop as soon as it does. */
+        @Volatile
+        var stopRequested = false
         private const val CHANNEL_ID = "polski-work"
         private const val NOTIFICATION_ID = 7301
     }
