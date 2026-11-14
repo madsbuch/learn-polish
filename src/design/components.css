@@ -980,13 +980,17 @@ button.badge:active {
   z-index: -1;
   pointer-events: none;
 }
+/* The picture keeps to the right half and is toned down a little, so a list
+   of them stays calm and the text never sits on a busy part. */
 .list-item__backdrop img {
   position: absolute;
   top: 0;
   right: 0;
-  width: 72%;
+  width: 56%;
   height: 100%;
   object-fit: cover;
+  opacity: 0.8;
+  filter: saturate(0.8);
 }
 .list-item__backdrop::after {
   content: "";
@@ -995,9 +999,9 @@ button.badge:active {
   background: linear-gradient(
     90deg,
     var(--surface) 0%,
-    var(--surface) 32%,
-    color-mix(in srgb, var(--surface) 82%, transparent) 50%,
-    color-mix(in srgb, var(--surface) 25%, transparent) 78%,
+    var(--surface) 46%,
+    color-mix(in srgb, var(--surface) 70%, transparent) 62%,
+    color-mix(in srgb, var(--surface) 15%, transparent) 86%,
     transparent 100%
   );
 }
