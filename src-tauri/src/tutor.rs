@@ -2193,7 +2193,7 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
 /// Runs one reply to the conversation's last message and stores it.
 async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<ChatMessage> {
     let stream_id = job_stream(conversation_id);
-    let wire = {
+    let (wire, model) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let mut prompt = system_prompt(conn)?;
@@ -2202,13 +2202,19 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
             .find(conversation_id)
             .select(tutor_conversations::about)
             .first(conn)?;
+        // A word chat can run on its own, smaller and faster model.
+        let mut model = None;
         if let Some(about) = about {
             prompt.push_str(&format!("\n\n{}", word_chat_rules(&about)));
+            let own = crate::ai::stored_model(conn, "word_chat_model");
+            if !own.is_empty() {
+                model = Some(own);
+            }
         }
         let mut wire = vec![Wire::system(prompt)];
         // The question is already stored, so it is the end of the history.
         wire.extend(recent_history(conn, conversation_id)?);
-        wire
+        (wire, model)
     };
 
     let agent = Agent {
@@ -2220,7 +2226,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
         max_rounds: MAX_ROUNDS,
         stop_once_answered: false,
         show_status: true,
-        model: None,
+        model,
     };
     let outcome = agent
         .run(wire, |call| {

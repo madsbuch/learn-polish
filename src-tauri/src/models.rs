@@ -227,6 +227,8 @@ pub struct Settings {
     pub songwriter_model: String,
     /// Plays the other side in writing blocks; empty means the tutor model.
     pub partner_model: String,
+    /// "Talk about it" chats; empty means the tutor model.
+    pub word_chat_model: String,
     /// Draws course pictures; empty means the default image model.
     pub image_model: String,
     pub has_kie_key: bool,

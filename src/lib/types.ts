@@ -282,6 +282,8 @@ export interface Settings {
   songwriterModel: string;
   /** Plays the other side in writing blocks; empty means the tutor model. */
   partnerModel: string;
+  /** "Talk about it" chats; empty means the tutor model. */
+  wordChatModel: string;
   /** Draws course pictures; empty means the default image model. */
   imageModel: string;
   hasKieKey: boolean;
@@ -306,6 +308,7 @@ export interface SettingsPatch {
   ttsPrefetch?: boolean;
   songwriterModel?: string;
   partnerModel?: string;
+  wordChatModel?: string;
   imageModel?: string;
   sunoModel?: string;
   songLength?: SongLength;

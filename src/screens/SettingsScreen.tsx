@@ -281,11 +281,16 @@ export function SettingsScreen({
         info={
           <>
             <p>
-              <b>Tutor</b> answers in the Tutor tab and explains words and sentences. To build
+              <b>Tutor</b> answers in the Tutor tab. To build
               courses, lessons and songs it needs a model that can use tools — those are marked 🛠.
             </p>
             <p>
               <b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.
+            </p>
+            <p>
+              <b>Writing partner</b> plays the other person in writing blocks. <b>Talk about it</b>{" "}
+              chats with you about a word or sentence. Both are short replies, so a small, fast
+              model is enough; pick one marked 🛠 so it can still make a drill when you ask.
             </p>
           </>
         }
@@ -348,6 +353,32 @@ export function SettingsScreen({
                   value={settings.partnerModel}
                   aria-label="Writing partner model"
                   onChange={(event) => patch({ partnerModel: event.target.value }, "partner-model")}
+                >
+                  <option value="">Same as the tutor</option>
+                  {[...chatModels]
+                    .sort((a, b) => Number(b.tools) - Number(a.tools))
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.tools ? "🛠 " : ""}
+                        {model.name}
+                      </option>
+                    ))}
+                </select>
+              ) : undefined
+            }
+          />
+          <SettingRow
+            label="Talk about it"
+            description={
+              settings.wordChatModel || "Same as the tutor. A small, fast model marked 🛠 is enough here"
+            }
+            stacked={chatModels !== null}
+            control={
+              chatModels ? (
+                <select
+                  value={settings.wordChatModel}
+                  aria-label="Talk about it model"
+                  onChange={(event) => patch({ wordChatModel: event.target.value }, "word-chat-model")}
                 >
                   <option value="">Same as the tutor</option>
                   {[...chatModels]
