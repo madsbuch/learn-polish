@@ -8,6 +8,7 @@ import {
   Badge,
   Banner,
   Button,
+  Card,
   IconButton,
   Inline,
   List,
@@ -24,6 +25,12 @@ import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/blocks";
 import type { Assessment } from "../lib/types";
 
+
+/** A writing block's situation and goals. */
+export interface Writing {
+  situation: string;
+  goals: string[];
+}
 
 const VERDICT = {
   pass: { title: "Passed", tone: "mint", line: "You know this." },
@@ -44,6 +51,7 @@ interface Line {
 export function CheckIn({
   blockId,
   songId,
+  writing,
   title,
   onClose,
   onFinished,
@@ -51,6 +59,8 @@ export function CheckIn({
   blockId: number;
   /** For a listening block: its song, playable during the check-in. */
   songId: number | null;
+  /** For a writing block: the conversation is with a partner, in Polish. */
+  writing?: Writing | null;
   title: string;
   onClose: () => void;
   /** The verdict is in; `first` is true when it earned today's streak. */
@@ -112,16 +122,27 @@ export function CheckIn({
     }
   }
 
+  async function end() {
+    if (busy || checkinId === null) return;
+    await exchange((streamId) => api.checkinEnd(checkinId, streamId));
+  }
+
   const verdict = assessment ? VERDICT[assessment.result] : null;
 
   return (
     <Screen
       title={title}
-      subtitle="Check-in"
+      subtitle={writing ? "Writing" : "Check-in"}
       onClose={onClose}
       nav={false}
       actions={
-        song ? (
+        writing ? (
+          !assessment && checkinId !== null ? (
+            <Button size="sm" disabled={busy} onClick={() => void end()}>
+              End
+            </Button>
+          ) : undefined
+        ) : song ? (
           <IconButton
             variant="tinted"
             icon={songCurrent && player.playing ? <PlayerIcon.pause size={18} /> : <PlayerIcon.play size={18} />}
@@ -139,7 +160,7 @@ export function CheckIn({
           <Composer
             draft={draft}
             setDraft={setDraft}
-            placeholder="Your answer"
+            placeholder={writing ? "Write in Polish" : "Your answer"}
             disabled={checkinId === null}
             canSend={!busy}
             onSend={() => void answer()}
@@ -156,6 +177,19 @@ export function CheckIn({
             </Button>
           ) : null}
         </Stack>
+      ) : null}
+
+      {writing ? (
+        <Card>
+          <Stack gap={2}>
+            <div className="selectable">
+              <Markdown text={writing.situation} />
+            </div>
+            <Text variant="small" tone="dim">
+              Get across: {writing.goals.join(" · ")}
+            </Text>
+          </Stack>
+        </Card>
       ) : null}
 
       <div className="chat">
@@ -188,7 +222,13 @@ export function CheckIn({
               <Inline gap={2}>
                 <Spinner />
                 <Text variant="small" tone="faint">
-                  {lines.length === 0 ? "Preparing your questions…" : "Thinking…"}
+                  {lines.length === 0
+                    ? writing
+                      ? "Setting the scene…"
+                      : "Preparing your questions…"
+                    : writing
+                      ? "Writing…"
+                      : "Thinking…"}
                 </Text>
               </Inline>
             )}
@@ -210,12 +250,18 @@ export function CheckIn({
                 </Inline>
               }
             />
-            <ListItem title="What the examiner said" subtitle={assessment.summary} />
+            <ListItem
+              title={writing ? "How it went" : "What the examiner said"}
+              subtitle={assessment.summary}
+            />
             {assessment.strengths.length > 0 ? (
               <ListItem title="Strong" subtitle={assessment.strengths.join(" · ")} />
             ) : null}
             {assessment.toReview.length > 0 ? (
-              <ListItem title="Go over again" subtitle={assessment.toReview.join(" · ")} />
+              <ListItem
+                title={writing ? "Corrections" : "Go over again"}
+                subtitle={assessment.toReview.join(" · ")}
+              />
             ) : null}
             <ListItem title="Next check-in" subtitle={dayToDate(assessment.nextDueDay)} />
           </List>

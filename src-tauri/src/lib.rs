@@ -67,7 +67,9 @@ pub fn run() {
             blocks::commands::block_for_song,
             practice::checkin_summary,
             examiner::checkin_start,
-            examiner::checkin_send,            commands::get_stats,
+            examiner::checkin_send,
+            examiner::checkin_end,
+            commands::get_stats,
             commands::get_topic_progress,
             commands::browse_words,
             commands::browse_sentences,
@@ -818,6 +820,40 @@ mod integration {
     /// Every query an agent prompt, a tutor tool or a screen runs, on a database
     /// with a bit of everything in it — so a column renamed in the schema
     /// fails here, not on the phone.
+    #[test]
+    fn writing_blocks_are_filed_and_prompt_a_polish_only_partner() {
+        let mut conn = scratch_db("writing");
+        let made = tutor::run_tool_for_test(
+            &mut conn,
+            "create_writing_block",
+            serde_json::json!({
+                "title": "Where do you live?",
+                "summary": "Tell a new neighbour where you live.",
+                "complexity": "low",
+                "scenario": "You've just moved in. Your neighbour Pani Ewa stops you on the stairs.",
+                "goals": ["Say which city you live in", "Say who you live with"]
+            }),
+        );
+        let id = made["created"]["block_id"].as_i64().unwrap_or_else(|| panic!("{made}"));
+        let detail = blocks::detail(&mut conn, id).unwrap();
+        assert_eq!((detail.block.kind.as_str(), detail.block.format.as_str()), ("study", "writing"));
+        assert_eq!(detail.objectives.len(), 2);
+        let writing = courses::writing_course(&mut conn).unwrap();
+        assert_eq!(detail.block.course_ids, vec![writing], "filed in Writing by default");
+
+        let prompt = examiner::writing_prompt(&mut conn, &detail).unwrap();
+        assert!(prompt.contains("Say who you live with") && prompt.contains("Pani Ewa"));
+        assert!(prompt.contains("understand only Polish"));
+        assert!(prompt.contains("A1"), "a low block gets simple Polish");
+
+        let missing = tutor::run_tool_for_test(
+            &mut conn,
+            "create_writing_block",
+            serde_json::json!({ "title": "x", "summary": "", "complexity": "low", "scenario": "y", "goals": [] }),
+        );
+        assert!(missing.get("error").is_some(), "goals are required");
+    }
+
     #[test]
     fn every_read_path_runs_on_a_full_database() {
         let mut conn = scratch_db("read-paths");

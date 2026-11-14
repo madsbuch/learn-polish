@@ -196,6 +196,11 @@ pub fn listening_course(conn: &mut Conn) -> Result<i64> {
     ensure(conn, "listening", "Listening", "Słuchanie", "Listen to your songs and answer questions about them.")
 }
 
+/// Where writing blocks go when no course is given.
+pub fn writing_course(conn: &mut Conn) -> Result<i64> {
+    ensure(conn, "writing", "Writing", "Pisanie", "Write your way through everyday situations, in Polish only.")
+}
+
 /// Where the starter lessons are. Dated like the other starter courses, so
 /// it sorts with them.
 pub fn grammar_course(conn: &mut Conn) -> Result<i64> {

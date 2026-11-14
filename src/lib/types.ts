@@ -268,6 +268,8 @@ export interface Settings {
   tzOffsetMinutes: number;
   /** Empty means the songwriter uses the tutor model. */
   songwriterModel: string;
+  /** Plays the other side in writing blocks; empty means the tutor model. */
+  partnerModel: string;
   hasKieKey: boolean;
   sunoModel: string;
   sunoModels: string[];
@@ -289,6 +291,7 @@ export interface SettingsPatch {
   ttsSpeed?: number;
   ttsPrefetch?: boolean;
   songwriterModel?: string;
+  partnerModel?: string;
   sunoModel?: string;
   songLength?: SongLength;
   theme?: "system" | "light" | "dark";

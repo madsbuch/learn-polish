@@ -357,6 +357,32 @@ export function SettingsScreen({
               ) : undefined
             }
           />
+          <SettingRow
+            label="Writing partner"
+            description={
+              settings.partnerModel || "Same as the tutor. A small, fast model marked 🛠 is enough here"
+            }
+            stacked={chatModels !== null}
+            control={
+              chatModels ? (
+                <select
+                  value={settings.partnerModel}
+                  aria-label="Writing partner model"
+                  onChange={(event) => patch({ partnerModel: event.target.value }, "partner-model")}
+                >
+                  <option value="">Same as the tutor</option>
+                  {[...chatModels]
+                    .sort((a, b) => Number(b.tools) - Number(a.tools))
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.tools ? "🛠 " : ""}
+                        {model.name}
+                      </option>
+                    ))}
+                </select>
+              ) : undefined
+            }
+          />
         </List>
         {settings.aiModel && chatModels?.some((model) => model.id === settings.aiModel && !model.tools) ? (
           <Banner tone="error">

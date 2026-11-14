@@ -21,6 +21,7 @@ import type { CostSummary, FeatureCost } from "../lib/types";
 const FEATURES: Record<string, string> = {
   tutor: "Tutor",
   examiner: "Check-ins",
+  "writing partner": "Writing partner",
   songwriter: "Song lyrics",
   songs: "Song audio",
   explain: "Explanations",

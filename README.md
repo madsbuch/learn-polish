@@ -48,6 +48,14 @@ Learning happens in **blocks**: small units with one job each.
   during the check-in. Every song the tutor makes gets one; any song's page
   has *Listen and answer questions*.
 
+- **Writing blocks** are a situation played out in writing — tell a new
+  neighbour where you live, order dinner — with an AI partner who writes and
+  understands only Polish. It answers anything else with "Przepraszam, nie
+  rozumiem…". The conversation ends, with a verdict and corrections, as soon
+  as you have got every goal across (or when you tap End). The partner runs on
+  its own model (Settings → Writing partner), so a small, fast one can be used.
+  Writing blocks without a course go in *Writing*.
+
 Every block has a **complexity** — low (1–2 min), medium (5–10 min) or deep
 (20+ min) — set by how hard its subject is, not by how much is in it. And every
 block has its own **check-in period**: the first pass brings it back after the
@@ -111,7 +119,7 @@ the app through tools, implemented in `src-tauri/src/tutor.rs`:
 | Tool | What it does |
 |---|---|
 | `create_course` | Builds a course on a theme: words, sentences, a dialogue — cut into drills |
-| `create_study_block`, `create_drill_block`, `create_listening_block` | Writes a lesson with objectives, one drill in a chosen format, or a listening block for a song |
+| `create_study_block`, `create_drill_block`, `create_listening_block`, `create_writing_block` | Writes a lesson with objectives, one drill in a chosen format, a listening block for a song, or a writing situation with goals |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, starter ones included |
 | `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |

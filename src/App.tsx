@@ -26,7 +26,7 @@ import { Memories } from "./screens/Memories";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { BlockPage } from "./screens/BlockPage";
-import { CheckIn } from "./screens/CheckIn";
+import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music } from "./screens/Music";
 import { Player } from "./screens/Player";
 import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
@@ -46,7 +46,15 @@ type Overlay =
   | { kind: "none" }
   | { kind: "block"; blockId: number; back: Overlay }
   | { kind: "session"; plan: SessionPlan; back: Overlay }
-  | { kind: "checkin"; blockId: number; title: string; songId: number | null; back: Overlay }
+  | {
+      kind: "checkin";
+      blockId: number;
+      title: string;
+      songId: number | null;
+      /** A writing block's situation and goals, shown above the conversation. */
+      writing: Writing | null;
+      back: Overlay;
+    }
   | {
       kind: "summary";
       result: SessionResult;
@@ -296,6 +304,10 @@ export default function App() {
               blockId,
               title: detail?.title ?? "Check-in",
               songId: detail?.songId ?? null,
+              writing:
+                detail?.format === "writing"
+                  ? { situation: detail.lesson, goals: detail.objectives }
+                  : null,
               back: overlay,
             });
           }}
@@ -314,6 +326,7 @@ export default function App() {
         <CheckIn
           blockId={overlay.blockId}
           songId={overlay.songId}
+          writing={overlay.writing}
           title={overlay.title}
           onClose={() => {
             setOverlay(overlay.back);

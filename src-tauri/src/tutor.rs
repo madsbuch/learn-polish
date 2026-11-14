@@ -52,7 +52,7 @@ How to talk:
 - Be brief and friendly. Markdown is rendered (bold, lists, short headings).
 
 What the app does — learning happens in blocks:
-- A block is small and has one job. Two kinds:
+- A block is small and has one job. The kinds:
   - drill: mechanical practice on a few words or sentences. Formats: words (new-word cards, \
     multiple choice, typing as they get known, then a memory round), memory (memory cards \
     only), typing (type every word from memory), sentences (build them from shuffled words, \
@@ -63,6 +63,11 @@ What the app does — learning happens in blocks:
   - listening: a study block tied to a song. The learner listens (lyrics hidden), then the \
     examiner asks about what they heard. make_song makes one with each new song; \
     create_listening_block makes one for an existing song.
+  - writing: a study block that is a situation played out in writing with an AI partner who \
+    only understands Polish (explain where you live to a new neighbour, order dinner, book a \
+    room). It ends when the learner has got every goal across in Polish. Make one with \
+    create_writing_block when the learner wants to practise writing or using what they know; \
+    goals must be things to get across (\"Say where you live\"), not grammar to show.
 - Complexity comes from how hard the subject is, not from how much is in it:
   - low (1–2 min): one small idea. 6–8 words; one verb's present tense; one politeness rule.
   - medium (5–10 min): a pattern with variations. A conjugation group; gender and adjective \
@@ -393,6 +398,25 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Checking your progress…",
             "The learner's statistics: XP, level, streak, accuracy, words met and mastered, recent days, and the words they get wrong most.",
             none,
+        ),
+        tool(
+            "create_writing_block",
+            "Setting the scene…",
+            "Make a writing block: a situation the learner writes their way through with an AI \
+             partner who only understands Polish. It ends when they have got every goal across.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Short, e.g. \"Where do you live?\"" },
+                    "summary": { "type": "string", "description": "One sentence: what the learner does" },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "How much Polish it takes: low — a few simple sentences; medium — a short exchange; high — a real conversation. Also sets how simply the partner writes." },
+                    "scenario": { "type": "string", "description": "The situation in English, to the learner: where they are and who they are writing with, e.g. \"You've just moved in. Your new neighbour Pani Ewa stops you on the stairs.\"" },
+                    "goals": { "type": "array", "items": { "type": "string" }, "description": "1–4 things the learner has to get across, e.g. \"Say which city you live in\", \"Say who you live with\"" },
+                    "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
+                    "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Writing\"" }
+                },
+                "required": ["title", "summary", "complexity", "scenario", "goals"]
+            }),
         ),
         tool(
             "create_study_block",
@@ -804,6 +828,12 @@ struct OrderArgs {
 }
 
 #[derive(Deserialize)]
+struct WritingArgs {
+    #[serde(flatten)]
+    writing: blocks::NewWriting,
+}
+
+#[derive(Deserialize)]
 struct StudyArgs {
     #[serde(flatten)]
     study: blocks::NewStudy,
@@ -1067,6 +1097,16 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             Ok(Outcome::data(search(conn, &args.query)?))
         }
         "get_progress" => Ok(Outcome::data(progress(conn)?)),
+        "create_writing_block" => {
+            let args: WritingArgs = parse(arguments)?;
+            let block = blocks::create_writing(conn, args.writing, "tutor")?;
+            Ok(Outcome::block(
+                json!({ "created": block_json(&block) }),
+                "blockCreated",
+                format!("Set up “{}” — {} writing block", block.title, complexity_label(&block.complexity)),
+                block.id,
+            ))
+        }
         "create_study_block" => {
             let args: StudyArgs = parse(arguments)?;
             let block = blocks::create_study(conn, args.study, "tutor")?;
@@ -1862,6 +1902,7 @@ pub async fn tutor_send(
         max_rounds: MAX_ROUNDS,
         stop_once_answered: false,
         show_status: true,
+        model: None,
     };
     let app_ref = &app;
     let outcome = agent

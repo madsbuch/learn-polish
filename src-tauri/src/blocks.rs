@@ -4,7 +4,10 @@
 //! handful of words or sentences (flashcards, memory cards, gaps, a
 //! dialogue). A **study** block is a short lesson — a conjugation, a grammar
 //! point, a bit of culture — checked by an examiner agent that interviews the
-//! learner.
+//! learner. A **writing** block is a study block of its own format: a
+//! situation played out in writing, in Polish only, with an AI partner, until
+//! the learner has done what the block asks (say where they live, order a
+//! meal, …).
 //!
 //! Every block has a **complexity** (low ≈ 1–2 minutes, medium ≈ 5–10, high
 //! ≈ 20+), set by how hard its subject is, and its own **check-in period**.
@@ -461,6 +464,65 @@ pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Bl
             lesson: input.lesson.trim(),
             objectives: &serde_json::to_string(&objectives)?,
             period_days: period,
+            origin,
+            created_at: db::now_secs(),
+            ..Default::default()
+        },
+    )?;
+    crate::courses::add_block(conn, topic_id, id)?;
+    load(conn, id)
+}
+
+/// A writing block: a situation the learner writes their way through, with
+/// an AI partner who only understands Polish. The goals are what they must
+/// get across; the conversation ends when they have.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct NewWriting {
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    pub complexity: String,
+    /// The situation, in English: where they are and who they are talking to.
+    #[serde(alias = "scenario")]
+    pub lesson: String,
+    /// What the learner has to get across, e.g. "Say where you live".
+    #[serde(default, alias = "goals")]
+    pub objectives: Vec<String>,
+    #[serde(default)]
+    pub period_days: Option<i64>,
+    /// The course to file it under; None files it in "Writing".
+    #[serde(default, alias = "course_id")]
+    pub topic_id: Option<i64>,
+}
+
+pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Result<Block> {
+    let title = clean(&input.title);
+    if title.is_empty() || input.lesson.trim().is_empty() {
+        return Err(Error::msg("A writing block needs a title and a situation."));
+    }
+    check_complexity(&input.complexity)?;
+    let goals: Vec<String> = input.objectives.iter().map(|o| clean(o)).filter(|o| !o.is_empty()).collect();
+    if goals.is_empty() {
+        return Err(Error::msg("A writing block needs goals: what the learner has to get across."));
+    }
+    let topic_id = match input.topic_id {
+        Some(id) => {
+            crate::courses::require_course(conn, id)?;
+            id
+        }
+        None => crate::courses::writing_course(conn)?,
+    };
+    let id = insert(
+        conn,
+        NewBlock {
+            kind: "study",
+            format: "writing",
+            title: &title,
+            summary: &clean(&input.summary),
+            complexity: &input.complexity,
+            lesson: input.lesson.trim(),
+            objectives: &serde_json::to_string(&goals)?,
+            period_days: input.period_days.unwrap_or_else(|| default_period("study", &input.complexity)).clamp(1, 60),
             origin,
             created_at: db::now_secs(),
             ..Default::default()

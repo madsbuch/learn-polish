@@ -302,6 +302,16 @@ export function StudyIcon() {
   );
 }
 
+/** A writing block: a conversation written in Polish. */
+export function WriteIcon() {
+  return (
+    <Glyph>
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-4-4L4 16z" />
+      <path d="M13.5 6.5l4 4" />
+    </Glyph>
+  );
+}
+
 /** Long-term memory: what the agents remember about the learner. */
 export function MemoryIcon() {
   return (

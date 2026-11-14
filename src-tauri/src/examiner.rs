@@ -4,6 +4,12 @@
 //! the block — gives a line of feedback after each answer, and ends by calling
 //! `finish_assessment` with a verdict. The verdict schedules the block's next
 //! check-in exactly as a drill score does.
+//!
+//! A writing block is checked differently: the agent is not an examiner but
+//! the other person in a situation — a neighbour, a waiter — writing only in
+//! Polish and understanding only Polish. It runs on the partner model (small
+//! and fast is fine) and gives its verdict as soon as the learner has done
+//! what the block asks, or when they end the conversation.
 
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -31,14 +37,7 @@ fn question_plan(complexity: &str) -> &'static str {
 }
 
 pub(crate) fn system_prompt(conn: &mut Conn, block: &blocks::BlockDetail) -> Result<String> {
-    let previous: Option<String> = checkins::table
-        .filter(checkins::block_id.eq(block.block.id))
-        .filter(checkins::finished_at.is_not_null())
-        .order(checkins::id.desc())
-        .select(checkins::feedback)
-        .first::<Option<String>>(conn)
-        .optional()?
-        .flatten();
+    let previous = previous_feedback(conn, block.block.id)?;
     let song = match block.block.song_id {
         Some(id) => Some(crate::songs::load_song(conn, id)?),
         None => None,
@@ -105,6 +104,71 @@ The lesson the learner studied:
             .unwrap_or_default(),
         memory = memory_section(conn)?,
     ))
+}
+
+/// How simply the partner writes, by complexity.
+fn partner_level(complexity: &str) -> &'static str {
+    match complexity {
+        "low" => "A1: very short, simple sentences, the most common words, present tense",
+        "medium" => "A2: short everyday sentences; past and future are fine",
+        _ => "B1: natural everyday Polish, as you would write to a foreigner who speaks it reasonably",
+    }
+}
+
+/// What the app tells the partner when the learner ends the conversation.
+const LEARNER_ENDED: &str = "(The app: the learner has ended the conversation. Do not reply in \
+     character — call finish_assessment now, judging only what they wrote.)";
+const OPENING: &str = "(The app: the learner has opened the conversation. Begin it, in character, in Polish.)";
+
+pub(crate) fn writing_prompt(conn: &mut Conn, block: &blocks::BlockDetail) -> Result<String> {
+    Ok(format!(
+        "You play a character in Polski, an app where an English speaker learns Polish by \
+         writing. This is a role-play in writing, in Polish only.
+
+The situation (the learner has read it):
+{scenario}
+
+What the learner has to get across — the goals:
+{goals}
+
+How to play it:
+- Stay in character as the other person in the situation. Write only in Polish, at level \
+  {level}. One or two sentences per message, like a chat. Never translate, never explain \
+  grammar, never switch to English.
+- You understand only Polish. If the learner writes in English or any other language — even a \
+  single word of it in place of Polish — you don't understand that part: say so in Polish, \
+  in character (\"Przepraszam, nie rozumiem…\", \"Co to znaczy?\") and wait for Polish. \
+  Polish without diacritics (\"czesc\") is fine; so are small mistakes when the meaning is clear.
+- When the meaning is unclear, ask in Polish what they mean, as a real person would. Don't \
+  correct their mistakes in the conversation.
+- Steer the conversation so the learner gets the chance to reach every goal — ask the \
+  question that invites it — but never say it for them or put words in their mouth.
+- As soon as the learner has got every goal across in understandable Polish, reply once in \
+  character to close the exchange naturally, and in the same message call finish_assessment.
+  pass: every goal reached in Polish. partial: reached, but only with a lot of help, or some \
+  goals only half there. fail: the goals not reached when the learner ended it.
+  In the verdict (in English), summary says how it went; to_review lists their actual \
+  mistakes as \"what they wrote → correct Polish\" — the conversation itself corrected nothing.
+- Messages starting with \"(The app:\" come from the app, not the learner: follow them.
+{previous}",
+        scenario = block.lesson,
+        goals = block.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
+        level = partner_level(&block.block.complexity),
+        previous = previous_feedback(conn, block.block.id)?
+            .map(|feedback| format!("\nLast time's verdict, for your judgement only: {feedback}"))
+            .unwrap_or_default(),
+    ))
+}
+
+fn previous_feedback(conn: &mut Conn, block_id: i64) -> Result<Option<String>> {
+    Ok(checkins::table
+        .filter(checkins::block_id.eq(block_id))
+        .filter(checkins::finished_at.is_not_null())
+        .order(checkins::id.desc())
+        .select(checkins::feedback)
+        .first::<Option<String>>(conn)
+        .optional()?
+        .flatten())
 }
 
 /// What the agents remember, plus what the examiner in particular should
@@ -229,7 +293,7 @@ async fn turn(
     user: Option<String>,
     stream_id: &str,
 ) -> Result<CheckinTurn> {
-    let wire = {
+    let (wire, writing, model) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let (block_id, finished): (i64, Option<i64>) =
@@ -241,19 +305,25 @@ async fn turn(
         if let Some(text) = &user {
             append(conn, checkin_id, "user", text)?;
         }
-        let mut wire = vec![Wire::system(system_prompt(conn, &detail)?)];
+        let writing = detail.block.format == "writing";
+        let (prompt, opening, model) = if writing {
+            (writing_prompt(conn, &detail)?, OPENING, Some(crate::ai::partner_model(conn)?))
+        } else {
+            (system_prompt(conn, &detail)?, "I'm ready for the check-in.", None)
+        };
+        let mut wire = vec![Wire::system(prompt)];
         let past = history(conn, checkin_id)?;
         if past.is_empty() {
-            wire.push(Wire::user("I'm ready for the check-in."));
+            wire.push(Wire::user(opening));
         }
         wire.extend(past);
-        wire
+        (wire, writing, model)
     };
 
     let agent = Agent {
         app,
         db,
-        name: crate::costs::EXAMINER,
+        name: if writing { crate::costs::PARTNER } else { crate::costs::EXAMINER },
         stream_id,
         tools: Some(tools()),
         max_rounds: MAX_ROUNDS,
@@ -261,6 +331,7 @@ async fn turn(
         // them the examiner gets another round to say something.
         stop_once_answered: true,
         show_status: false,
+        model,
     };
     let outcome = agent
         .run(wire, |call| {
@@ -322,6 +393,18 @@ pub async fn checkin_start(
             .get_result::<i64>(conn)?
     };
     turn(&app, &db, checkin_id, None, &stream_id).await
+}
+
+/// Ends a writing conversation early: the partner gives its verdict on what
+/// was written so far.
+#[tauri::command]
+pub async fn checkin_end(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    checkin_id: i64,
+    stream_id: String,
+) -> Result<CheckinTurn> {
+    turn(&app, &db, checkin_id, Some(LEARNER_ENDED.to_string()), &stream_id).await
 }
 
 /// Answers the examiner.

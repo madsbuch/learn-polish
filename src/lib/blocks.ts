@@ -21,11 +21,13 @@ const FORMAT_NAMES: Record<string, string> = {
   gaps: "Fill the gaps",
   dialogue: "Conversation",
   song: "Listening",
+  writing: "Writing",
 };
 
 /** "Study" or the drill's format, e.g. "Memory cards". */
 export function kindName(block: Block): string {
   if (block.format === "song") return "Listening";
+  if (block.format === "writing") return "Writing";
   return block.kind === "study" ? "Study" : (FORMAT_NAMES[block.format] ?? "Drill");
 }
 

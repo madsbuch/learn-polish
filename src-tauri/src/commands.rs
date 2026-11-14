@@ -42,6 +42,7 @@ fn read_settings(conn: &mut Conn) -> Result<Settings> {
         tts_prefetch: db::get_setting_i64(conn, "tts_prefetch", 1) == 1,
         tz_offset_minutes: db::get_setting_i64(conn, "tz_offset_minutes", 0),
         songwriter_model: ai::stored_model(conn, "songwriter_model"),
+        partner_model: ai::stored_model(conn, "partner_model"),
         has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
@@ -90,6 +91,7 @@ pub struct SettingsPatch {
     pub tts_speed: Option<f32>,
     pub tts_prefetch: Option<bool>,
     pub songwriter_model: Option<String>,
+    pub partner_model: Option<String>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
     pub theme: Option<String>,
@@ -141,6 +143,9 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.songwriter_model {
         db::set_setting(conn, "songwriter_model", model.trim())?;
+    }
+    if let Some(model) = patch.partner_model {
+        db::set_setting(conn, "partner_model", model.trim())?;
     }
     if let Some(length) = patch.song_length {
         if !songs::SONG_LENGTHS.contains(&length.as_str()) {
@@ -382,6 +387,7 @@ pub async fn ai_explain_stream( app: tauri::AppHandle, db: State<'_, Db>, item_k
         max_rounds: 1,
         stop_once_answered: true,
         show_status: false,
+        model: None,
     };
     let outcome = agent
         .run(messages, |_| -> ToolFuture<'_, ()> { Box::pin(async { ToolOutput::reply(serde_json::Value::Null) }) })

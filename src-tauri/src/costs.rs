@@ -20,6 +20,7 @@ pub const KIE_USD_PER_CREDIT: f64 = 0.005;
 /// Features as they are stored and shown.
 pub const TUTOR: &str = "tutor";
 pub const EXAMINER: &str = "examiner";
+pub const PARTNER: &str = "writing partner";
 pub const SONGWRITER: &str = "songwriter";
 pub const SONGS: &str = "songs";
 pub const EXPLAIN: &str = "explain";

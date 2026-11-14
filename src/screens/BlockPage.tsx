@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { CloseIcon, DrillIcon, NavIcon, PlayerIcon, PlusIcon, StudyIcon } from "../components/icons";
+import { BlockIcon } from "../components/BlockRow";
+import { CloseIcon, PlayerIcon, PlusIcon } from "../components/icons";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
 import { SongToListen } from "../components/SongToListen";
@@ -100,6 +101,7 @@ export function BlockPage({
 
   const study = block.kind === "study";
   const listening = block.songId !== null;
+  const writing = block.format === "writing";
   const started = block.dueDay !== null;
   const period = String(block.periodDays);
   const periodOptions = PERIOD_CHOICES.some((choice) => choice.value === period)
@@ -116,7 +118,7 @@ export function BlockPage({
         <Inline gap={2} wrap>
           <Badge tone="brand">
             <Inline gap={1}>
-              {listening ? <NavIcon.songs /> : study ? <StudyIcon /> : <DrillIcon />}
+              <BlockIcon block={block} />
               {kindName(block)}
             </Inline>
           </Badge>
@@ -137,7 +139,11 @@ export function BlockPage({
           icon={<PlayerIcon.play size={18} />}
           onClick={() => (study ? onCheckIn(block.id) : onStartDrill(block.id))}
         >
-          {study
+          {writing
+            ? started
+              ? "Write it again"
+              : "Start writing"
+            : study
             ? started
               ? "Check in"
               : listening
@@ -157,14 +163,20 @@ export function BlockPage({
 
       {study ? (
         <>
-          <Section title="You will be able to">
+          {writing ? (
+            <Text variant="small" tone="dim" as="p">
+              Write only in Polish — your partner doesn't understand anything else. The
+              conversation ends when you've got every goal across.
+            </Text>
+          ) : null}
+          <Section title={writing ? "Goals" : "You will be able to"}>
             <List>
               {block.objectives.map((objective) => (
                 <ListItem key={objective} title={objective} />
               ))}
             </List>
           </Section>
-          <Section title={listening ? "Note" : "Lesson"}>
+          <Section title={writing ? "The situation" : listening ? "Note" : "Lesson"}>
             <Card>
               <div className="selectable">
                 <Markdown text={block.lesson} />

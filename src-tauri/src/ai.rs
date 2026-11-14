@@ -41,6 +41,16 @@ pub fn require_model(conn: &mut Conn) -> Result<String> {
     Ok(model)
 }
 
+/// The writing partner's model: its own setting (a small, fast model suits
+/// it), else the main model.
+pub fn partner_model(conn: &mut Conn) -> Result<String> {
+    let model = stored_model(conn, "partner_model");
+    if !model.is_empty() {
+        return Ok(model);
+    }
+    require_model(conn)
+}
+
 /// Speech is pinned to Gemini: it handles Polish well, it is the cheapest of
 /// the models that do, and pinning it means the voice list can ship with the
 /// app instead of needing a network round trip to populate a dropdown.

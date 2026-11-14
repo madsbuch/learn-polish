@@ -77,6 +77,9 @@ export const api = {
     invoke<CheckinTurn>("checkin_start", { blockId, streamId }),
   checkinSend: (checkinId: number, message: string, streamId: string) =>
     invoke<CheckinTurn>("checkin_send", { checkinId, message, streamId }),
+  /** Ends a writing conversation; the partner gives its verdict. */
+  checkinEnd: (checkinId: number, streamId: string) =>
+    invoke<CheckinTurn>("checkin_end", { checkinId, streamId }),
   checkinSummary: (firstCompletionToday: boolean) =>
     invoke<SessionResult>("checkin_summary", { firstCompletionToday }),
 

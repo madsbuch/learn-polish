@@ -115,6 +115,8 @@ pub struct Agent<'a> {
     pub stop_once_answered: bool,
     /// Say what each tool is doing while it runs (`agent://status`).
     pub show_status: bool,
+    /// A model of its own (e.g. a small, fast one); None uses the main model.
+    pub model: Option<String>,
 }
 
 impl<'a> Agent<'a> {
@@ -127,7 +129,11 @@ impl<'a> Agent<'a> {
         let mut outcome = Outcome { text: String::new(), extras: Vec::new(), remembered: Vec::new(), failed: None };
         let (key, model) = {
             let conn = &mut *self.db.lock();
-            match (ai::api_key(conn), ai::require_model(conn)) {
+            let model = match &self.model {
+                Some(model) if !model.is_empty() => Ok(model.clone()),
+                _ => ai::require_model(conn),
+            };
+            match (ai::api_key(conn), model) {
                 (Ok(key), Ok(model)) => (key, model),
                 (Err(error), _) | (_, Err(error)) => {
                     outcome.failed = Some(error);
