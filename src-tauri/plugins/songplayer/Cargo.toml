@@ -8,6 +8,7 @@ links = "tauri-plugin-songplayer"
 
 [dependencies]
 tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }

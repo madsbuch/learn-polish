@@ -1922,7 +1922,10 @@ fn start_job(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<()
         }
     }
     let app = app.clone();
+    // With the screen off, Android would freeze the app half-way through.
+    let busy = crate::work::begin(&app, "The tutor is writing a reply…");
     tauri::async_runtime::spawn(async move {
+        let _busy = busy;
         let db = app.state::<Db>();
         let result = answer(&app, &db, conversation_id).await;
         let done = {

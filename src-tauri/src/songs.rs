@@ -1096,7 +1096,10 @@ fn notify(app: &AppHandle, song_id: i64) {
 /// that started it, so leaving the screen (or the app) does not lose the song;
 /// unfinished songs are picked up again at the next launch.
 pub fn spawn_generation(app: AppHandle, song_id: i64) {
+    // Suno takes minutes; the app has to stay awake for them.
+    let busy = crate::work::begin(&app, "Making a song…");
     tauri::async_runtime::spawn(async move {
+        let _busy = busy;
         if let Err(error) = generate(&app, song_id).await {
             let db = app.state::<Db>();
             let mut guard = db.lock();

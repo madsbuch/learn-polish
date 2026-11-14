@@ -76,6 +76,12 @@ class ShareArgs {
 }
 
 @InvokeArg
+class KeepWorkingArgs {
+    var on: Boolean = false
+    var label: String = "Working…"
+}
+
+@InvokeArg
 class KeepAwakeArgs {
     var enabled: Boolean = false
 }
@@ -332,6 +338,29 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
             invoke.resolve()
+        }
+    }
+
+    /**
+     * Starts or stops [WorkService], which keeps the app alive with the screen
+     * off while the tutor writes or a song is made. Called from Rust.
+     */
+    @Command
+    fun keepWorking(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepWorkingArgs::class.java)
+        val context = activity.applicationContext
+        val intent = Intent(context, WorkService::class.java).putExtra(WorkService.EXTRA_LABEL, args.label)
+        try {
+            if (args.on) {
+                ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.stopService(intent)
+            }
+            invoke.resolve()
+        } catch (error: Exception) {
+            // Android refuses a foreground service started from the
+            // background; the work then runs as long as Android allows.
+            invoke.reject(error.message ?: "Could not keep working in the background")
         }
     }
 

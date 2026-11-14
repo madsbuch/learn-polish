@@ -17,6 +17,7 @@ const COMMANDS: &[&str] = &[
     "multicast",
     "share_file",
     "keep_awake",
+    "keep_working",
     "register_listener",
     "remove_listener",
 ];

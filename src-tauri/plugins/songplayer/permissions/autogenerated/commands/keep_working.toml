@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-keep-working"
+description = "Enables the keep_working command without any pre-configured scope."
+commands.allow = ["keep_working"]
+
+[[permission]]
+identifier = "deny-keep-working"
+description = "Denies the keep_working command without any pre-configured scope."
+commands.deny = ["keep_working"]

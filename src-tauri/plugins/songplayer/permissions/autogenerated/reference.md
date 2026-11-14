@@ -87,6 +87,32 @@ Denies the keep_awake command without any pre-configured scope.
 <tr>
 <td>
 
+`songplayer:allow-keep-working`
+
+</td>
+<td>
+
+Enables the keep_working command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`songplayer:deny-keep-working`
+
+</td>
+<td>
+
+Denies the keep_working command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `songplayer:allow-multicast`
 
 </td>

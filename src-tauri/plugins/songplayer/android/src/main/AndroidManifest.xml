@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Keeping the tutor and song making going with the screen off (WorkService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Finding Sonos speakers, and keeping Wi-Fi up while one plays our songs. -->
@@ -17,6 +19,10 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <service
+            android:name="com.polski.songplayer.WorkService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!-- Hands a song's MP3 to another app through the share sheet. A
              subclass, so it never collides with another library's provider. -->
         <provider

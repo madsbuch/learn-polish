@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the keep_awake command without any pre-configured scope."
         },
         {
+          "description": "Enables the keep_working command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-keep-working",
+          "markdownDescription": "Enables the keep_working command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the keep_working command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-keep-working",
+          "markdownDescription": "Denies the keep_working command without any pre-configured scope."
+        },
+        {
           "description": "Enables the multicast command without any pre-configured scope.",
           "type": "string",
           "const": "allow-multicast",

@@ -4091,6 +4091,7 @@ dependencies = [
 name = "tauri-plugin-songplayer"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "tauri",
  "tauri-plugin",
 ]

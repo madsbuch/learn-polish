@@ -24,6 +24,7 @@ mod srs;
 mod stats;
 mod text;
 mod tutor;
+mod work;
 
 use std::sync::Mutex;
 
