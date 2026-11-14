@@ -24,6 +24,7 @@ import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
 import { useAiStream } from "../lib/useAiStream";
 import type { AnswerResult, BlockFinished, Exercise, SessionPlan } from "../lib/types";
+import { playCorrect, playWrong } from "../lib/sounds";
 
 /** Cards that only show something; they are not scored. */
 const READING_KINDS = new Set(["dialogueRead", "intro", "sentenceIntro"]);
@@ -148,7 +149,15 @@ export function Session({
       setSessionXp((xp) => xp + answer.xpGained);
       if (answer.correct && !READING_KINDS.has(exercise.kind)) setCorrectCount((n) => n + 1);
       setPhase("checked");
-      if (answer.correct && exercise.pl && exercise.itemKind !== "dialogue") speakQuietly(exercise.pl);
+      if (!READING_KINDS.has(exercise.kind)) {
+        if (answer.correct) playCorrect();
+        else playWrong();
+      }
+      if (answer.correct && exercise.pl && exercise.itemKind !== "dialogue") {
+        // Let the chime ring before the word is read out.
+        const pl = exercise.pl;
+        window.setTimeout(() => speakQuietly(pl), 350);
+      }
       return true;
     } catch (cause) {
       setError(errorMessage(cause));

@@ -21,6 +21,7 @@ import {
 } from "../design";
 import { api } from "../lib/api";
 import { useAiStream } from "../lib/useAiStream";
+import { playComplete } from "../lib/sounds";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/blocks";
 import type { Assessment } from "../lib/types";
@@ -97,6 +98,7 @@ export function CheckIn({
       ...turn.remembered.map((content) => ({ role: "memory" as const, content })),
     ]);
     if (turn.assessment) {
+      if (turn.assessment.result === "pass") playComplete();
       setAssessment(turn.assessment);
       setFirst(turn.firstCompletionToday);
     }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, Stack, Text } from "../design";
 import type { Exercise } from "../lib/types";
+import { playMatch, playWrong } from "../lib/sounds";
 
 /**
  * Fill the gaps: a few sentences, each missing a word, and a word bank. Tap
@@ -161,7 +162,9 @@ export function Memory({
     if (first.pair === card.pair) {
       setFound(new Set([...found, card.pair]));
       setOpen([]);
+      playMatch();
     } else {
+      playWrong();
       setOpen([open[0], index]);
       setMiss([open[0], index]);
       timer.current = window.setTimeout(() => {

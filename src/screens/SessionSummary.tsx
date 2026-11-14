@@ -13,7 +13,10 @@ import {
   StatGrid,
   Text,
 } from "../design";
+import { useEffect } from "react";
+
 import { useBackHandler } from "../lib/back";
+import { playComplete } from "../lib/sounds";
 import { dayToDate } from "../lib/blocks";
 import type { BlockResult, SessionResult } from "../lib/types";
 
@@ -36,6 +39,12 @@ export function SessionSummary({
   onDone: () => void;
 }) {
   useBackHandler(true, onDone);
+  const passed = !outcome || outcome.result === "pass";
+  useEffect(() => {
+    if (passed) playComplete();
+    // Once, as the summary appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { stats, newlyUnlocked } = result;
   const goalMet = stats.dayXp >= stats.dailyGoal;
 

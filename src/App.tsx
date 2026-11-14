@@ -60,6 +60,8 @@ type Overlay =
       result: SessionResult;
       xp: number;
       outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
+      /** Where Done goes: wherever the block was started from. */
+      back: Overlay;
     }
   | { kind: "progress" }
   | { kind: "memories"; back: Overlay }
@@ -72,6 +74,14 @@ type Overlay =
       /** Where the back button goes. */
       back: Overlay;
     };
+
+/**
+ * Where to return once a block is done: the screen its page was opened from
+ * (a course, or home), not the block page itself.
+ */
+function startedFrom(back: Overlay): Overlay {
+  return back.kind === "block" ? back.back : back;
+}
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -243,6 +253,7 @@ export default function App() {
               result,
               xp: sessionXp,
               outcome: { title: result.block.title, result: result.result, nextDueDay: result.block.dueDay },
+              back: startedFrom(overlay.back),
             });
           }}
         />
@@ -258,8 +269,8 @@ export default function App() {
           sessionXp={overlay.xp}
           outcome={overlay.outcome}
           onDone={() => {
-            setOverlay({ kind: "none" });
-            setTab("exercises");
+            setOverlay(overlay.back);
+            if (overlay.back.kind === "none") setTab("exercises");
             void refresh();
           }}
         />
@@ -339,8 +350,9 @@ export default function App() {
             } catch {
               /* the summary is a nicety */
             }
-            setOverlay({ kind: "none" });
-            setTab("exercises");
+            const back = startedFrom(overlay.back);
+            setOverlay(back);
+            if (back.kind === "none") setTab("exercises");
             void refresh();
           }}
         />

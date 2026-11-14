@@ -26,6 +26,7 @@ import { api, errorMessage } from "../lib/api";
 import { useThemePreference, type ThemePreference } from "../lib/theme";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
 import { playClip } from "../lib/speech";
+import { playCorrect, setSoundsEnabled, soundsEnabled } from "../lib/sounds";
 import type {
   AiModel,
   AudioCacheStats,
@@ -56,6 +57,7 @@ export function SettingsScreen({
   onOpenMemories: () => void;
 }) {
   const [keyDraft, setKeyDraft] = useState("");
+  const [sounds, setSounds] = useState(soundsEnabled);
   const [kieDraft, setKieDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -600,6 +602,21 @@ export function SettingsScreen({
               }
             />
           ) : null}
+          <SettingRow
+            label="Answer sounds"
+            description="A chime when you're right, a bump when you're not"
+            control={
+              <Switch
+                label="Answer sounds"
+                checked={sounds}
+                onChange={(on) => {
+                  setSoundsEnabled(on);
+                  setSounds(on);
+                  if (on) playCorrect();
+                }}
+              />
+            }
+          />
           <SettingRow
             label="Fetch a session's audio up front"
             description="So no line waits on the network"
