@@ -393,15 +393,23 @@ pub fn cut_into_drills(
         })
         .cloned()
         .collect();
-    let first = drills_of(conn, "words")?.len() as i64;
+    let first = (drills_of(conn, "words")?.len() + drills_of(conn, "typing")?.len()) as i64;
     for (n, chunk) in fresh.chunks(crate::blocks::WORDS_PER_BLOCK).enumerate() {
         let preview: Vec<String> = chunk.iter().take(3).map(|w| clean(&w.pl)).collect();
+        // For variety, every third batch is typed from memory instead of
+        // recognised (both introduce their new words first).
+        let number = first + n as i64 + 1;
+        let (title, format) = if number % 3 == 0 {
+            (format!("Words {number} · typing"), "typing")
+        } else {
+            (format!("Words {number}"), "words")
+        };
         crate::blocks::create_drill(
             conn,
             topic_id,
-            &format!("Words {}", first + n as i64 + 1),
+            &title,
             &format!("{}, …", preview.join(", ")),
-            "words",
+            format,
             "low",
             &Items { words: chunk.to_vec(), ..Default::default() },
             None,
@@ -604,6 +612,49 @@ pub fn rename(conn: &mut Conn, topic_id: i64, title: Option<&str>, title_pl: Opt
         diesel::update(course).set(topics::summary_en.eq(clean(text))).execute(conn)?;
     }
     summary(conn, topic_id, 0)
+}
+
+/// Orders a course's blocks as a path: the conversation first, to hear the
+/// theme; then words, lessons and sentences interleaved, so each lesson
+/// comes when its words are known; listening after; writing — using it all
+/// in a situation — last.
+pub fn arrange_path(conn: &mut Conn, topic_id: i64) -> Result<()> {
+    let rows: Vec<(i64, String, String, Option<i64>)> = course_blocks::table
+        .inner_join(blocks::table)
+        .filter(course_blocks::topic_id.eq(topic_id))
+        .order((course_blocks::ord, course_blocks::block_id))
+        .select((blocks::id, blocks::kind, blocks::format, blocks::song_id))
+        .load(conn)?;
+    let pick = |test: &dyn Fn(&str, &str, Option<i64>) -> bool| -> Vec<i64> {
+        rows.iter().filter(|(_, k, f, s)| test(k, f, *s)).map(|(id, ..)| *id).collect()
+    };
+    let dialogues = pick(&|k, f, _| k == "drill" && f == "dialogue");
+    let words = pick(&|k, f, _| k == "drill" && (f == "words" || f == "typing" || f == "memory"));
+    let sentences = pick(&|k, f, _| k == "drill" && (f == "sentences" || f == "gaps"));
+    let lessons = pick(&|k, f, s| k == "study" && f != "writing" && f != "song" && s.is_none());
+    let listening = pick(&|k, f, s| k == "study" && (f == "song" || s.is_some()));
+    let writing = pick(&|k, f, _| k == "study" && f == "writing");
+
+    let mut path = dialogues;
+    let mut lessons = lessons.into_iter();
+    let rounds = words.len().max(sentences.len());
+    for round in 0..rounds {
+        path.extend(words.get(round));
+        // The first lesson once the first words are in; the next after the
+        // first sentences; then one per round.
+        if round == 0 {
+            path.extend(lessons.next());
+        }
+        path.extend(sentences.get(round));
+        path.extend(lessons.next());
+    }
+    path.extend(lessons);
+    path.extend(listening);
+    path.extend(writing);
+    // Anything not sorted above keeps its place at the end.
+    let placed: HashSet<i64> = path.iter().copied().collect();
+    path.extend(rows.iter().map(|(id, ..)| *id).filter(|id| !placed.contains(id)));
+    order_blocks(conn, topic_id, &path)
 }
 
 /// Deletes a course. Its blocks go with it — and their words and history —

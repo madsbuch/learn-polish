@@ -139,7 +139,7 @@ button to ask again.
 
 | Tool | What it does |
 |---|---|
-| `create_course` | Builds a course on a theme: words, sentences, a dialogue — cut into drills |
+| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), lessons on the grammar it uses, sentence drills, and a writing block last |
 | `create_study_block`, `create_drill_block`, `create_listening_block`, `create_writing_block` | Writes a lesson with objectives, one drill in a chosen format, a listening block for a song, or a writing situation with goals |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, starter ones included |

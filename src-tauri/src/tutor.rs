@@ -74,8 +74,11 @@ The app:
 - Complexity is how hard the subject is: low (1–2 min, one small idea), medium (5–10 min, a \
   pattern with variations), high (20+ min, a system like the cases). Split big subjects into \
   several blocks instead of stuffing one.
-- A new course on a theme: 15–30 words, 8–12 short sentences and an 8–12 line dialogue, unless \
-  asked otherwise. To grow a course, add to it rather than making a new one.
+- A new course is a small learning path, made in one create_course call: an 8–12 line dialogue \
+  to hear the theme; 15–30 words and 8–12 short sentences; one or two short lessons on the \
+  grammar the dialogue uses; and a writing block where the learner plays out the course's \
+  situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
+  To grow a course, add to it rather than making a new one.
 - Polish must be correct, with diacritics. Words in dictionary form, lowercase, with a short \
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
@@ -258,8 +261,10 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "create_course",
             "Building the course…",
-            "Create a new course on a theme, with words, sentences and optionally a dialogue. \
-             It is cut into drill blocks and can be practised straight away.",
+            "Create a new course on a theme: a small learning path. The words, sentences and \
+             dialogue are cut into drills (some word batches are typed, for variety); the lessons \
+             and the writing block join them; the app orders it all — conversation, words, \
+             lessons and sentences interleaved, writing last. It can be practised straight away.",
             json!({
                 "type": "object",
                 "properties": {
@@ -268,7 +273,34 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "summary": { "type": "string", "description": "One English sentence on what the course covers" },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
-                    "dialogue": dialogue_schema()
+                    "dialogue": dialogue_schema(),
+                    "lessons": {
+                        "type": "array",
+                        "description": "1–2 short lessons on the grammar the dialogue and sentences use (a case ending, a verb form), each a study block checked by the examiner",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "summary": { "type": "string", "description": "One sentence" },
+                                "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
+                                "lesson": { "type": "string", "description": "The lesson in markdown: short, with a small table or examples" },
+                                "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–4 things the learner can then do" }
+                            },
+                            "required": ["title", "summary", "complexity", "lesson", "objectives"]
+                        }
+                    },
+                    "writing": {
+                        "type": "object",
+                        "description": "The course's situation, played out in writing with a partner who only understands Polish — the last step",
+                        "properties": {
+                            "title": { "type": "string" },
+                            "summary": { "type": "string" },
+                            "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
+                            "scenario": { "type": "string", "description": "The situation, in English, to the learner" },
+                            "goals": { "type": "array", "items": { "type": "string" }, "description": "1–4 things to get across, using the course's words" }
+                        },
+                        "required": ["title", "summary", "complexity", "scenario", "goals"]
+                    }
                 },
                 "required": ["title", "title_pl", "summary", "words", "sentences"]
             }),
@@ -714,6 +746,12 @@ struct TopicArg {
 struct CreateArgs {
     #[serde(flatten)]
     course: NewCourse,
+    /// Short lessons on the grammar the course uses.
+    #[serde(default)]
+    lessons: Vec<blocks::NewStudy>,
+    /// The course's situation, written out in Polish at the end.
+    #[serde(default)]
+    writing: Option<blocks::NewWriting>,
 }
 
 #[derive(Deserialize)]
@@ -977,6 +1015,28 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
         "create_course" => {
             let args: CreateArgs = parse(arguments)?;
             let created = courses::create(conn, args.course, "tutor")?;
+            let topic_id = created.topic_id;
+            // The lessons and the writing block join the course; one that
+            // cannot be made is reported, not a reason to lose the course.
+            let mut problems = Vec::new();
+            let mut lessons = 0;
+            for mut lesson in args.lessons {
+                lesson.topic_id = Some(topic_id);
+                match blocks::create_study(conn, lesson, "tutor") {
+                    Ok(_) => lessons += 1,
+                    Err(error) => problems.push(format!("lesson: {error}")),
+                }
+            }
+            let mut writing = false;
+            if let Some(mut block) = args.writing {
+                block.topic_id = Some(topic_id);
+                match blocks::create_writing(conn, block, "tutor") {
+                    Ok(_) => writing = true,
+                    Err(error) => problems.push(format!("writing block: {error}")),
+                }
+            }
+            courses::arrange_path(conn, topic_id)?;
+
             let mut label = format!(
                 "Created “{}” — {} words, {} sentences",
                 created.title, created.words, created.sentences
@@ -984,10 +1044,18 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             if created.dialogue_lines > 0 {
                 label.push_str(", a dialogue");
             }
-            let blocks_made = blocks::for_topic(conn, created.topic_id)?.len();
-            label.push_str(&format!(" · {blocks_made} drill blocks"));
+            match lessons {
+                0 => {}
+                1 => label.push_str(", a lesson"),
+                n => label.push_str(&format!(", {n} lessons")),
+            }
+            if writing {
+                label.push_str(", a writing block");
+            }
+            let blocks_made = blocks::for_topic(conn, topic_id)?.len();
+            label.push_str(&format!(" · {blocks_made} blocks"));
             Ok(Outcome::acted(
-                json!({ "created": created, "drill_blocks": blocks_made }),
+                json!({ "created": created, "blocks": blocks_made, "lessons": lessons, "writing": writing, "problems": problems }),
                 "courseCreated",
                 label,
                 Some(created.topic_id),

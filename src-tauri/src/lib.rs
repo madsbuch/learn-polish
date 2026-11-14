@@ -222,7 +222,8 @@ mod integration {
         let list = blocks::for_topic(&mut conn, basics).unwrap();
         let count = |format: &str| list.iter().filter(|b| b.format == format).count();
         assert_eq!(count("dialogue"), 1);
-        assert!(count("words") >= 20, "words come in eights");
+        assert!(count("words") + count("typing") >= 20, "words come in eights");
+        assert!(count("typing") > 0 && count("words") > count("typing"), "every third batch is typed");
         assert_eq!(count("sentences"), 4, "twenty sentences in fives");
         assert!(list.iter().all(|b| b.due_day.is_none()), "nothing is scheduled before it is done");
 
@@ -858,6 +859,51 @@ mod integration {
         assert!(!stats.achievements.iter().any(|a| a.code.starts_with("level_")), "levels are not achievements");
         let every = stats.achievements.iter().find(|a| a.code == "words_all").unwrap();
         assert!(every.progress > 0.0 && every.progress < 1.0, "measured against the words you have");
+    }
+
+    #[test]
+    fn a_new_course_is_a_varied_path() {
+        let mut conn = scratch_db("course-path");
+        let words: Vec<serde_json::Value> = (0..24)
+            .map(|i| serde_json::json!({ "pl": format!("słowo{i}"), "en": format!("word {i}"), "pos": "n" }))
+            .collect();
+        let sentences: Vec<serde_json::Value> = (0..10)
+            .map(|i| serde_json::json!({ "pl": format!("To jest zdanie {i}."), "en": format!("This is sentence {i}.") }))
+            .collect();
+        let lesson = |title: &str| {
+            serde_json::json!({
+                "title": title, "summary": "s", "complexity": "low",
+                "lesson": "**Mam** — I have", "objectives": ["Say what you have"]
+            })
+        };
+        let made = tutor::run_tool_for_test(
+            &mut conn,
+            "create_course",
+            serde_json::json!({
+                "title": "At the market", "title_pl": "Na targu", "summary": "Buying food.",
+                "words": words, "sentences": sentences,
+                "dialogue": [
+                    { "speaker": "Ola", "gender": "f", "pl": "Dzień dobry!", "en": "Good morning!" },
+                    { "speaker": "Jan", "gender": "m", "pl": "Dzień dobry, proszę jabłka.", "en": "Good morning, apples please." }
+                ],
+                "lessons": [lesson("Mieć — to have"), lesson("The accusative after proszę")],
+                "writing": {
+                    "title": "Buying apples", "summary": "Buy some apples.", "complexity": "low",
+                    "scenario": "You are at a market stall.", "goals": ["Ask for apples", "Ask the price"]
+                }
+            }),
+        );
+        assert_eq!((made["lessons"].as_i64(), made["writing"].as_bool()), (Some(2), Some(true)), "{made}");
+        let topic = made["created"]["topic_id"].as_i64().unwrap();
+        let path: Vec<(String, String)> =
+            blocks::for_topic(&mut conn, topic).unwrap().into_iter().map(|b| (b.format, b.title)).collect();
+        let formats: Vec<&str> = path.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(formats.first(), Some(&"dialogue"), "the conversation first: {path:?}");
+        assert_eq!(formats.last(), Some(&"writing"), "writing last: {path:?}");
+        assert_eq!(formats[1], "words");
+        assert_eq!(formats[2], "", "the first lesson once the first words are in: {path:?}");
+        assert!(formats.contains(&"typing"), "every third batch of words is typed: {path:?}");
+        assert_eq!(formats.iter().filter(|f| **f == "words" || **f == "typing").count(), 3);
     }
 
     #[test]
