@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 /**
  * A small markdown renderer for AI answers.
@@ -7,8 +7,14 @@ import { Fragment, type ReactNode } from "react";
  * markup — no `dangerouslySetInnerHTML`, no sanitiser to keep in step. It
  * covers what the prompts actually produce: headings, emphasis, inline and
  * fenced code, bullet and numbered lists (one level of nesting), block quotes,
- * horizontal rules and tables (lessons are full of conjugation tables).
+ * horizontal rules, tables (lessons are full of conjugation tables) and TeX
+ * math — `$…$` or `\(…\)` inline, `$$…$$` or `\[…\]` on lines of their own.
  * Anything else falls through as plain text.
+ *
+ * Math is the one exception to "no HTML": KaTeX turns the TeX into MathML,
+ * which the web view draws natively. KaTeX escapes everything and runs with
+ * `trust: false` (no links, no raw HTML), so the guarantee holds. It loads
+ * only when an answer has math in it.
  */
 export function Markdown({ text }: { text: string }) {
   return <div className="md selectable">{renderBlocks(text)}</div>;
@@ -21,7 +27,8 @@ type Block =
   | { kind: "quote"; text: string }
   | { kind: "rule" }
   | { kind: "list"; ordered: boolean; items: ListItem[] }
-  | { kind: "table"; head: string[]; rows: string[][] };
+  | { kind: "table"; head: string[]; rows: string[][] }
+  | { kind: "math"; tex: string };
 
 interface ListItem {
   text: string;
@@ -57,6 +64,8 @@ function renderBlocks(source: string): ReactNode[] {
         );
       case "rule":
         return <hr key={index} className="md-rule" />;
+      case "math":
+        return <MathTex key={index} tex={block.tex} display />;
       case "list":
         return renderList(block, index);
       case "table":
@@ -156,6 +165,22 @@ function parseBlocks(source: string): Block[] {
       continue;
     }
 
+    // Display math: $$…$$ or \[…\], on one line or over several.
+    const opener = line.trim().startsWith("$$") ? "$$" : line.trim().startsWith("\\[") ? "\\[" : null;
+    if (opener) {
+      const closer = opener === "$$" ? "$$" : "\\]";
+      flush();
+      let body = line.trim().slice(2);
+      while (!body.trimEnd().endsWith(closer) && i + 1 < lines.length) {
+        i++;
+        body += "\n" + lines[i];
+      }
+      body = body.trimEnd();
+      if (body.endsWith(closer)) body = body.slice(0, -2);
+      blocks.push({ kind: "math", tex: body.trim() });
+      continue;
+    }
+
     if (line.trim() === "") {
       flush();
       continue;
@@ -229,6 +254,10 @@ function parseBlocks(source: string): Block[] {
 /** Ordered so that longer markers are tried before their prefixes. */
 const INLINE = [
   { pattern: /`([^`]+)`/, render: (body: string, key: number) => <code key={key} className="md-code">{body}</code> },
+  // Inline math. `$` must hug its content ("$3 + 5$"), so prices like "$5 or
+  // $6" stay text.
+  { pattern: /\$(?!\s)([^$\n]+?)(?<!\s)\$/, render: (body: string, key: number) => <MathTex key={key} tex={body} /> },
+  { pattern: /\\\((.+?)\\\)/, render: (body: string, key: number) => <MathTex key={key} tex={body} /> },
   { pattern: /\*\*([^*]+)\*\*/, render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong> },
   { pattern: /__([^_]+)__/, render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong> },
   { pattern: /\*([^*\n]+)\*/, render: (body: string, key: number) => <em key={key}>{renderInline(body)}</em> },
@@ -258,4 +287,31 @@ function renderInline(text: string): ReactNode {
       {renderInline(after)}
     </Fragment>
   );
+}
+
+type Katex = typeof import("katex").default;
+let katex: Promise<Katex> | null = null;
+
+/**
+ * TeX as math. KaTeX is loaded the first time it is needed; until then — and
+ * for TeX it cannot read — the source shows as code.
+ */
+function MathTex({ tex, display = false }: { tex: string; display?: boolean }) {
+  const [mathml, setMathml] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    katex ??= import("katex").then((module) => module.default);
+    katex
+      .then((k) => {
+        if (!current) return;
+        setMathml(k.renderToString(tex, { output: "mathml", displayMode: display, throwOnError: true, trust: false }));
+      })
+      .catch(() => current && setMathml(null));
+    return () => {
+      current = false;
+    };
+  }, [tex, display]);
+  if (mathml === null) return <code className="md-code">{tex}</code>;
+  const Tag = display ? "div" : "span";
+  return <Tag className={display ? "md-math md-math-display" : "md-math"} dangerouslySetInnerHTML={{ __html: mathml }} />;
 }

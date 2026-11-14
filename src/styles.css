@@ -800,3 +800,13 @@
 .jump-latest .button {
   box-shadow: var(--card-shadow);
 }
+
+/* TeX math in answers and lessons (MathML, drawn by the web view). */
+.md-math math {
+  font-size: 1.1em;
+}
+.md-math-display {
+  overflow-x: auto;
+  text-align: center;
+  margin: var(--space-2) 0;
+}
