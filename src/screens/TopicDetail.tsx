@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { BlockRow } from "../components/BlockRow";
+import { SparkIcon } from "../components/icons";
 import { SpeakButton } from "../components/ui";
 import {
   Banner,
@@ -58,6 +60,21 @@ export function TopicDetail({
     summary: progress.topic.summary,
   });
   const [renaming, setRenaming] = useState<typeof names | null>(null);
+  const [picture, setPicture] = useState<string | null>(progress.imagePath);
+  const [drawing, setDrawing] = useState(false);
+
+  async function drawPicture() {
+    setDrawing(true);
+    setError(null);
+    try {
+      setPicture(await api.coursePicture(topicId));
+      onChanged();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setDrawing(false);
+    }
+  }
 
   const topicId = progress.topic.id;
 
@@ -103,6 +120,13 @@ export function TopicDetail({
   return (
     <Screen title={names.titlePl} subtitle={names.title} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {picture ? (
+        <img className="course-picture" src={convertFileSrc(picture)} alt="" />
+      ) : (
+        <Button block icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
+          {drawing ? "Drawing a picture…" : "Make a picture for this course"}
+        </Button>
+      )}
       {names.summary ? (
         <Text variant="small" tone="dim" as="p">
           {names.summary}
@@ -170,6 +194,11 @@ export function TopicDetail({
           <Button block onClick={() => setRenaming(names)}>
             Rename
           </Button>
+          {picture ? (
+            <Button block icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
+              {drawing ? "Drawing…" : "Draw a new picture"}
+            </Button>
+          ) : null}
           <ConfirmButton
             label="Delete course"
             confirmLabel="Delete"

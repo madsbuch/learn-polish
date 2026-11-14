@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 import { NavIcon } from "./components/icons";
 import { MiniPlayer } from "./components/MiniPlayer";
@@ -17,6 +18,7 @@ import type {
   Settings,
   Stats,
   TopicProgress,
+  TutorDone,
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
@@ -222,6 +224,26 @@ export default function App() {
       setError(errorMessage(cause));
     }
   }, [refresh]);
+
+  // The tutor answers in the background. Off screen, a finished reply is
+  // announced with a notification, so the backend needs to know.
+  useEffect(() => {
+    const report = () => void api.appVisibility(document.visibilityState === "visible").catch(() => {});
+    report();
+    document.addEventListener("visibilitychange", report);
+    return () => document.removeEventListener("visibilitychange", report);
+  }, []);
+
+  // A background reply that changed things (a course, a song): every screen
+  // reloads, wherever the learner is.
+  useEffect(() => {
+    const off = listen<TutorDone>("tutor://done", (event) => {
+      if (event.payload.message && event.payload.message.actions.length > 0) void reloadAll();
+    });
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, [reloadAll]);
 
   if (error && !settings) {
     return (

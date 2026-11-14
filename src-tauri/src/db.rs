@@ -97,7 +97,9 @@ CREATE TABLE IF NOT EXISTS topics (
     title_pl   TEXT    NOT NULL,
     title_en   TEXT    NOT NULL,
     summary_en TEXT    NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT 0
+    created_at INTEGER NOT NULL DEFAULT 0,
+    -- A picture of what the course is about (pictures.rs).
+    image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL
 );
 
 -- Words, sentences and dialogue lines belong to a block — the drill that
@@ -279,7 +281,11 @@ CREATE TABLE IF NOT EXISTS tutor_conversations (
     id         INTEGER PRIMARY KEY,
     title      TEXT    NOT NULL,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    -- The tutor answers in the background: set while it works on a reply.
+    job_started_at INTEGER,
+    -- Why the last reply failed, until the next one is asked for.
+    job_error  TEXT
 );
 
 -- The messages of a conversation with the tutor. `actions` is a JSON list of what the tutor
@@ -402,6 +408,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     adopt_loose_tutor_messages(conn)?;
     add_column(conn, "songs", "topic_id", "INTEGER REFERENCES topics(id) ON DELETE SET NULL")?;
     add_column(conn, "songs", "origin", "TEXT NOT NULL DEFAULT '{}'")?;
+    add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
+    add_column(conn, "tutor_conversations", "job_error", "TEXT")?;
+    add_column(conn, "topics", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }

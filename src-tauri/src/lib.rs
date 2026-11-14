@@ -12,6 +12,7 @@ mod files;
 mod examiner;
 mod http;
 mod memories;
+mod pictures;
 mod practice;
 mod models;
 mod playlists;
@@ -46,7 +47,9 @@ pub fn run() {
                 .map_err(|e| format!("no writable app data directory: {e}"))?
                 .join("learn-polish.db");
 
-            let connection = db::open(&path).map_err(|e| e.to_string())?;
+            let mut connection = db::open(&path).map_err(|e| e.to_string())?;
+            // Replies that were being written when the app last closed.
+            let _ = tutor::recover_interrupted(&mut connection);
             app.manage(Db(Mutex::new(connection)));
             app.manage(cast::CastSessions::default());
             songs::resume_pending(app.handle());
@@ -82,6 +85,10 @@ pub fn run() {
             commands::ai_list_models,
             commands::ai_explain_stream,
             tutor::tutor_send,
+            tutor::tutor_retry,
+            pictures::course_picture,
+            pictures::course_picture_delete,
+            tutor::app_visibility,
             tutor::tutor_conversations,
             tutor::tutor_history,
             tutor::tutor_rename,
@@ -561,6 +568,39 @@ mod integration {
         let left: i64 = t::files::table.count().get_result(&mut conn).unwrap();
         assert_eq!(left, 0);
         assert!(!on_disk.exists(), "and their copies on disk");
+    }
+
+    #[test]
+    fn an_interrupted_tutor_reply_is_marked_for_asking_again() {
+        let mut conn = scratch_db("tutor-jobs");
+        let id = tutor::create_conversation(&mut conn, "Teach me numbers").unwrap();
+        diesel::update(t::tutor_conversations::table.find(id))
+            .set(t::tutor_conversations::job_started_at.eq(Some(1)))
+            .execute(&mut conn)
+            .unwrap();
+        let listed = tutor::list_conversations(&mut conn).unwrap();
+        assert!(listed[0].working && listed[0].error.is_none());
+
+        tutor::recover_interrupted(&mut conn).unwrap();
+        let listed = tutor::list_conversations(&mut conn).unwrap();
+        assert!(!listed[0].working);
+        assert!(listed[0].error.as_deref().unwrap().contains("Ask again"));
+    }
+
+    #[test]
+    fn course_pictures_are_prompted_from_the_course_and_go_with_it() {
+        let mut conn = scratch_db("pictures");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let prompt = pictures::prompt(&mut conn, basics).unwrap();
+        assert!(prompt.contains("Meeting for the first time") && prompt.contains("No text"), "{prompt}");
+
+        let file = files::store(&mut conn, files::COURSE_IMAGE, "c.png", "image/png", b"png").unwrap();
+        diesel::update(t::topics::table.find(basics))
+            .set(t::topics::image_file_id.eq(Some(file)))
+            .execute(&mut conn)
+            .unwrap();
+        courses::delete(&mut conn, basics).unwrap();
+        assert!(files::info(&mut conn, file).is_err(), "the picture goes with its course");
     }
 
     #[test]

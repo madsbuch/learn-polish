@@ -227,6 +227,8 @@ export interface TopicProgress {
   totalBlocks: number;
   /** Blocks done at least once. */
   startedBlocks: number;
+  /** The course's picture on disk, if it has one. */
+  imagePath: string | null;
 }
 
 export interface Stats {
@@ -270,6 +272,8 @@ export interface Settings {
   songwriterModel: string;
   /** Plays the other side in writing blocks; empty means the tutor model. */
   partnerModel: string;
+  /** Draws course pictures; empty means the default image model. */
+  imageModel: string;
   hasKieKey: boolean;
   sunoModel: string;
   sunoModels: string[];
@@ -292,6 +296,7 @@ export interface SettingsPatch {
   ttsPrefetch?: boolean;
   songwriterModel?: string;
   partnerModel?: string;
+  imageModel?: string;
   sunoModel?: string;
   songLength?: SongLength;
   theme?: "system" | "light" | "dark";
@@ -342,6 +347,23 @@ export interface Conversation {
   messages: number;
   /** Seconds since the epoch. */
   updatedAt: number;
+  /** The tutor is working on a reply in the background. */
+  working: boolean;
+  /** Why the last reply failed, if it did. */
+  error: string | null;
+}
+
+/** `tutor_send` returns at once; the reply follows in the background. */
+export interface TutorStarted {
+  conversationId: number;
+  message: ChatMessage;
+}
+
+/** `tutor://done`: a background reply finished, or failed. */
+export interface TutorDone {
+  conversationId: number;
+  message: ChatMessage | null;
+  error: string | null;
 }
 
 export interface ChatMessage {
@@ -367,6 +389,8 @@ export interface AiModel {
   voices: string[];
   /** Can call tools — the tutor needs this to act in the app. */
   tools: boolean;
+  /** Can make images — for course pictures. */
+  images: boolean;
 }
 
 export interface AudioClip {

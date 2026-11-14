@@ -16,6 +16,7 @@ diesel::table! {
         title_en -> Text,
         summary_en -> Text,
         created_at -> BigInt,
+        image_file_id -> Nullable<BigInt>,
     }
 }
 
@@ -218,6 +219,8 @@ diesel::table! {
         title -> Text,
         created_at -> BigInt,
         updated_at -> BigInt,
+        job_started_at -> Nullable<BigInt>,
+        job_error -> Nullable<Text>,
     }
 }
 

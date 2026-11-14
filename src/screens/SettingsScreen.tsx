@@ -369,6 +369,29 @@ export function SettingsScreen({
               ) : undefined
             }
           />
+          <SettingRow
+            label="Course pictures"
+            description={settings.imageModel || "Gemini 2.5 Flash Image (default)"}
+            stacked={chatModels !== null}
+            control={
+              chatModels ? (
+                <select
+                  value={settings.imageModel}
+                  aria-label="Course picture model"
+                  onChange={(event) => patch({ imageModel: event.target.value }, "image-model")}
+                >
+                  <option value="">Default (Gemini 2.5 Flash Image)</option>
+                  {chatModels
+                    .filter((model) => model.images)
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                </select>
+              ) : undefined
+            }
+          />
         </List>
         {settings.aiModel && chatModels?.some((model) => model.id === settings.aiModel && !model.tools) ? (
           <Banner tone="error">

@@ -21,6 +21,7 @@ pub const KIE_USD_PER_CREDIT: f64 = 0.005;
 pub const TUTOR: &str = "tutor";
 pub const EXAMINER: &str = "examiner";
 pub const PARTNER: &str = "writing partner";
+pub const PICTURES: &str = "pictures";
 pub const SONGWRITER: &str = "songwriter";
 pub const SONGS: &str = "songs";
 pub const EXPLAIN: &str = "explain";

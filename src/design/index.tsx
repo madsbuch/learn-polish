@@ -281,7 +281,11 @@ export function ListItem({
   subtitle?: ReactNode;
   trailing?: ReactNode;
   onClick?: () => void;
-  /** Defaults to true for rows that open something, false otherwise. */
+  /**
+   * Defaults to true for rows that open something, false otherwise. Set it
+   * explicitly to show it next to a `trailing` label (which then opens the
+   * row too); leave it out when `trailing` is a control of its own.
+   */
   chevron?: boolean;
   selected?: boolean;
   /** Accessible name for the row button, when the title alone is unclear. */
@@ -291,6 +295,10 @@ export function ListItem({
   oneLine?: boolean;
 }) {
   const showChevron = chevron ?? (Boolean(onClick) && !trailing);
+  // With an explicit chevron, `trailing` is a label (a badge, a duration),
+  // not a control: it goes inside the row's button, before the chevron, so
+  // the whole row opens it. Otherwise it is a control of its own (a 🔊).
+  const trailingInside = Boolean(onClick) && chevron === true;
   const content = (
     <>
       {leading ? <span className="list-item__leading">{leading}</span> : null}
@@ -302,6 +310,7 @@ export function ListItem({
           <span className={cx("list-item__subtitle", selectable && "selectable")}>{subtitle}</span>
         ) : null}
       </span>
+      {trailing && trailingInside ? <span className="list-item__trailing">{trailing}</span> : null}
       {showChevron ? (
         <span className="list-item__chevron" aria-hidden="true">
           <ChevronIcon />
@@ -320,7 +329,7 @@ export function ListItem({
       ) : (
         <div className="list-item__main">{content}</div>
       )}
-      {trailing ? <div className="list-item__trailing">{trailing}</div> : null}
+      {trailing && !trailingInside ? <div className="list-item__trailing">{trailing}</div> : null}
     </div>
   );
 }

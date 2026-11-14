@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon } from "../components/icons";
 import { Composer } from "../components/Composer";
@@ -17,12 +18,13 @@ import {
   Screen,
   Section,
   Spinner,
+  Stack,
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import { useAiStream } from "../lib/useAiStream";
 import { useDraft, writeDraft } from "../lib/drafts";
-import type { ChatMessage, Conversation, TutorAction } from "../lib/types";
+import { ensurePermission } from "../lib/notifications";
+import type { AgentStatus, ChatMessage, Conversation, StreamEvent, TutorAction, TutorDone } from "../lib/types";
 
 const STARTERS = [
   "Build me a course for learning the colours",
@@ -32,6 +34,79 @@ const STARTERS = [
   "When do I use “ty” and when “pan” or “pani”?",
 ];
 
+
+/**
+ * Follows a conversation's background reply: whether the tutor is working,
+ * the text so far, what a tool is doing, and a failure. `finished` counts
+ * replies that ended while watching, so the caller can reload.
+ */
+function useTutorJob(conversationId: number | null) {
+  const [working, setWorking] = useState(false);
+  const [text, setText] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [finished, setFinished] = useState(0);
+
+  // Opening a conversation the tutor is still answering (or failed on).
+  useEffect(() => {
+    if (conversationId === null) return;
+    api
+      .tutorConversations()
+      .then((list) => {
+        const entry = list.find((c) => c.id === conversationId);
+        if (!entry) return;
+        if (entry.working) setWorking(true);
+        setError(entry.error);
+      })
+      .catch(() => {});
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (conversationId === null) return;
+    const id = `tutor-${conversationId}`;
+    const offs = [
+      listen<StreamEvent>("ai://stream", (event) => {
+        if (event.payload.id !== id || !event.payload.delta) return;
+        setWorking(true);
+        setStatus(null);
+        setText((current) => current + event.payload.delta);
+      }),
+      listen<AgentStatus>("agent://status", (event) => {
+        if (event.payload.id !== id) return;
+        setWorking(true);
+        setStatus(event.payload.label);
+      }),
+      listen<TutorDone>("tutor://done", (event) => {
+        if (event.payload.conversationId !== conversationId) return;
+        setWorking(false);
+        setText("");
+        setStatus(null);
+        setError(event.payload.error);
+        setFinished((n) => n + 1);
+      }),
+    ];
+    return () => {
+      for (const off of offs) void off.then((stop) => stop());
+    };
+  }, [conversationId]);
+
+  return {
+    working,
+    text,
+    status,
+    error,
+    finished,
+    /** A message was sent: the reply is on its way. */
+    begin: () => {
+      setWorking(true);
+      setText("");
+      setStatus(null);
+      setError(null);
+    },
+    /** Sending failed: nothing is on its way after all. */
+    cancel: () => setWorking(false),
+  };
+}
 
 /** "3 min ago", "yesterday", "12 Nov" — for the conversation list. */
 function when(seconds: number): string {
@@ -95,6 +170,13 @@ export function Tutor({
   }, []);
 
   useEffect(refresh, [refresh]);
+  // A reply finished in the background: the list's "writing…" changes.
+  useEffect(() => {
+    const off = listen<TutorDone>("tutor://done", () => refresh());
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, [refresh]);
 
   if (!hasApiKey || !hasModel) {
     return (
@@ -169,7 +251,13 @@ export function Tutor({
                 key={conversation.id}
                 oneLine
                 title={conversation.title}
-                subtitle={when(conversation.updatedAt)}
+                subtitle={
+                  conversation.working
+                    ? "The tutor is writing…"
+                    : conversation.error
+                      ? `${when(conversation.updatedAt)} · didn't finish`
+                      : when(conversation.updatedAt)
+                }
                 onClick={() => setOpen(conversation.id)}
               />
             ))}
@@ -191,7 +279,6 @@ function Chat({
   onOpenTopic,
   onOpenBlock,
   onOpenSong,
-  onChanged,
   onOpenMemories,
 }: Shared & {
   /** null for a conversation not yet started. */
@@ -211,23 +298,31 @@ function Chat({
   const [draft, setDraft] = useDraft(conversationId === null ? "new" : String(conversationId));
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const stream = useAiStream();
-  const sending = stream.streaming;
-  const live = stream.text;
-  const status = stream.status;
+  // The reply is written in the background (the app can be left meanwhile):
+  // it streams under the conversation's own id, and `tutor://done` says it
+  // is stored.
+  const job = useTutorJob(conversationId);
+  const sending = job.working;
+  const live = job.text;
+  const status = job.status;
   const [localError, setError] = useState<string | null>(null);
-  const error = localError ?? stream.error;
+  const error = localError ?? job.error;
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState(title);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const loadHistory = useCallback(() => {
     if (conversationId === null) return;
     api
       .tutorHistory(conversationId)
       .then(setMessages)
       .catch((cause) => setError(errorMessage(cause)));
   }, [conversationId]);
+  useEffect(loadHistory, [loadHistory]);
+  // A reply finished: it is stored, so read the conversation back.
+  useEffect(() => {
+    if (job.finished > 0) loadHistory();
+  }, [job.finished, loadHistory]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -251,23 +346,26 @@ function Chat({
     // the opening message leave it alone).
     if (draftRef.current.trim() === message) setDraft("");
     setError(null);
-    // Show the learner's turn immediately; the backend persists both sides.
+    // Show the learner's turn immediately; the backend has stored it by the
+    // time tutorSend returns, and answers in the background.
     setMessages((current) => [
       ...current,
       { id: -Date.now(), conversationId: conversationId ?? 0, role: "user", content: message, actions: [] },
     ]);
-    const reply = await stream.run((streamId) => api.tutorSend(message, streamId, conversationId));
-    if (reply) {
-      stream.reset();
-      setMessages((current) => [...current, reply]);
-      if (reply.actions.length > 0) onChanged();
+    job.begin();
+    // So a reply that finishes while the app is away can say so.
+    void ensurePermission().catch(() => false);
+    try {
+      const started = await api.tutorSend(message, conversationId);
       if (conversationId === null) {
         // Whatever was written meanwhile goes with the conversation.
-        writeDraft(String(reply.conversationId), draftRef.current);
+        writeDraft(String(started.conversationId), draftRef.current);
         writeDraft("new", "");
-        onStarted(reply.conversationId);
+        onStarted(started.conversationId);
       }
-    } else {
+    } catch (cause) {
+      job.cancel();
+      setError(errorMessage(cause));
       setMessages((current) => current.slice(0, -1));
       if (!draftRef.current.trim()) setDraft(message);
     }
@@ -349,7 +447,31 @@ function Chat({
         ) : null
       }
     >
-      {error ? <Banner tone="error">{error}</Banner> : null}
+      {error ? (
+        <Banner tone="error">
+          <Stack gap={2}>
+            <span>{error}</span>
+            {job.error && conversationId !== null ? (
+              <div>
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    job.begin();
+                    try {
+                      await api.tutorRetry(conversationId);
+                    } catch (cause) {
+                      job.cancel();
+                      setError(errorMessage(cause));
+                    }
+                  }}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : null}
+          </Stack>
+        </Banner>
+      ) : null}
 
       {messages.length === 0 && !sending ? (
         <Section title="Try asking">

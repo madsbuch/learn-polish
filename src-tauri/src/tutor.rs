@@ -7,11 +7,12 @@
 //! app uses, so what the tutor makes is immediately practisable.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use diesel::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 use crate::agent::{tool, Agent, Tool, ToolOutput};
 use crate::ai::Wire;
@@ -1801,13 +1802,19 @@ pub fn create_conversation(conn: &mut Conn, first_message: &str) -> Result<i64> 
 }
 
 pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
-    let heads: Vec<(i64, String, i64)> = tutor_conversations::table
+    let heads: Vec<(i64, String, i64, Option<i64>, Option<String>)> = tutor_conversations::table
         .order((tutor_conversations::updated_at.desc(), tutor_conversations::id.desc()))
-        .select((tutor_conversations::id, tutor_conversations::title, tutor_conversations::updated_at))
+        .select((
+            tutor_conversations::id,
+            tutor_conversations::title,
+            tutor_conversations::updated_at,
+            tutor_conversations::job_started_at,
+            tutor_conversations::job_error,
+        ))
         .load(conn)?;
     heads
         .into_iter()
-        .map(|(id, title, updated_at)| {
+        .map(|(id, title, updated_at, job, error)| {
             let of = tutor_messages::table.filter(tutor_messages::conversation_id.eq(id));
             let messages = of.count().get_result(conn)?;
             let last: String = of
@@ -1821,6 +1828,8 @@ pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
                 title,
                 updated_at,
                 messages,
+                working: job.is_some(),
+                error,
                 // Markdown marks would show as stray symbols in a one-line preview.
                 preview: crate::text::clean(&last.replace(['*', '_', '#', '`'], "")).chars().take(120).collect(),
             })
@@ -1865,36 +1874,167 @@ pub async fn tutor_delete(db: State<'_, Db>, conversation_id: i64) -> Result<()>
     Ok(())
 }
 
-/// Sends a message to the tutor. Text streams out as `ai://stream` events with
-/// the given id; while a tool runs, an `agent://status` event says what it is
-/// doing. Returns the stored reply, with the actions taken.
+/// Whether the app is on screen; when it is not, a finished reply is
+/// announced with a notification. The frontend reports it.
+static APP_VISIBLE: AtomicBool = AtomicBool::new(true);
+
+#[tauri::command]
+pub async fn app_visibility(visible: bool) -> Result<()> {
+    APP_VISIBLE.store(visible, Ordering::Relaxed);
+    Ok(())
+}
+
+/// The stream id a conversation's background reply streams under, so a
+/// screen opened later can follow it.
+fn job_stream(conversation_id: i64) -> String {
+    format!("tutor-{conversation_id}")
+}
+
+/// Sent as `tutor://done` when a background reply is finished or failed.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobDone {
+    pub conversation_id: i64,
+    pub message: Option<ChatMessage>,
+    pub error: Option<String>,
+}
+
+/// What `tutor_send` returns at once: the conversation (new or not) and the
+/// stored question. The reply follows in the background.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Started {
+    pub conversation_id: i64,
+    pub message: ChatMessage,
+}
+
+/// Sends a message to the tutor. It is stored at once and the tutor answers
+/// in the background — the app can be left meanwhile. Text streams out as
+/// `ai://stream` events under `tutor-<conversation id>`; while a tool runs,
+/// `agent://status` says what it is doing; `tutor://done` carries the stored
+/// reply. Off screen, the reply is announced with a notification.
 #[tauri::command]
 pub async fn tutor_send(
     app: tauri::AppHandle,
     db: State<'_, Db>,
     message: String,
-    stream_id: String,
     // None starts a new conversation, titled after this message.
     conversation_id: Option<i64>,
-) -> Result<ChatMessage> {
+) -> Result<Started> {
     let message = message.trim().to_string();
     if message.is_empty() {
         return Err(Error::msg("Write something first."));
     }
-    let db: &Db = &db;
+    let (conversation_id, id) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let conversation_id = match conversation_id {
+            Some(id) => {
+                let job: Option<Option<i64>> = tutor_conversations::table
+                    .find(id)
+                    .select(tutor_conversations::job_started_at)
+                    .first(conn)
+                    .optional()?;
+                match job {
+                    None => return Err(Error::msg("That conversation no longer exists.")),
+                    Some(Some(_)) => return Err(Error::msg("The tutor is still working on the last message.")),
+                    Some(None) => id,
+                }
+            }
+            None => create_conversation(conn, &message)?,
+        };
+        let id = append(conn, conversation_id, "user", &message, &[])?;
+        (conversation_id, id)
+    };
+    start_job(&app, &db, conversation_id)?;
+    Ok(Started {
+        conversation_id,
+        message: ChatMessage { id, conversation_id, role: "user".into(), content: message, actions: Vec::new() },
+    })
+}
+
+/// Asks again after a reply failed: the tutor answers the last message anew.
+#[tauri::command]
+pub async fn tutor_retry(app: tauri::AppHandle, db: State<'_, Db>, conversation_id: i64) -> Result<()> {
+    start_job(&app, &db, conversation_id)
+}
+
+/// Marks the conversation busy and starts the reply in the background.
+fn start_job(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<()> {
+    {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let started = diesel::update(
+            tutor_conversations::table
+                .find(conversation_id)
+                .filter(tutor_conversations::job_started_at.is_null()),
+        )
+        .set((tutor_conversations::job_started_at.eq(db::now_secs()), tutor_conversations::job_error.eq(None::<String>)))
+        .execute(conn)?;
+        if started == 0 {
+            return Err(Error::msg("The tutor is already working on this conversation."));
+        }
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let db = app.state::<Db>();
+        let result = answer(&app, &db, conversation_id).await;
+        let done = {
+            let mut guard = db.lock();
+            let conn = &mut *guard;
+            let error = result.as_ref().err().map(|e| e.to_string());
+            let _ = diesel::update(tutor_conversations::table.find(conversation_id))
+                .set((
+                    tutor_conversations::job_started_at.eq(None::<i64>),
+                    tutor_conversations::job_error.eq(&error),
+                ))
+                .execute(conn);
+            JobDone { conversation_id, message: result.ok(), error }
+        };
+        if !APP_VISIBLE.load(Ordering::Relaxed) {
+            notify_done(&app, &db, &done);
+        }
+        let _ = app.emit("tutor://done", done);
+    });
+    Ok(())
+}
+
+fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
+    use tauri_plugin_notification::NotificationExt;
+    let title: String = tutor_conversations::table
+        .find(done.conversation_id)
+        .select(tutor_conversations::title)
+        .first(&mut *db.lock())
+        .unwrap_or_else(|_| "The tutor".into());
+    let body = match (&done.message, &done.error) {
+        (Some(message), _) => {
+            let text = crate::text::clean(&message.content.replace(['*', '_', '#', '`'], ""));
+            let mut short: String = text.chars().take(140).collect();
+            if text.chars().count() > 140 {
+                short.push('…');
+            }
+            short
+        }
+        (None, Some(error)) => format!("The tutor could not answer: {error}"),
+        (None, None) => "The tutor answered.".into(),
+    };
+    let _ = app.notification().builder().title(format!("Tutor: {title}")).body(body).show();
+}
+
+/// Runs one reply to the conversation's last message and stores it.
+async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<ChatMessage> {
+    let stream_id = job_stream(conversation_id);
     let wire = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let mut wire = vec![Wire::system(system_prompt(conn)?)];
-        if let Some(id) = conversation_id {
-            wire.extend(recent_history(conn, id)?);
-        }
-        wire.push(Wire::user(message.clone()));
+        // The question is already stored, so it is the end of the history.
+        wire.extend(recent_history(conn, conversation_id)?);
         wire
     };
 
     let agent = Agent {
-        app: &app,
+        app,
         db,
         name: crate::costs::TUTOR,
         stream_id: &stream_id,
@@ -1904,13 +2044,12 @@ pub async fn tutor_send(
         show_status: true,
         model: None,
     };
-    let app_ref = &app;
     let outcome = agent
         .run(wire, |call| {
             Box::pin(async move {
                 let done = if call.function.name == "make_song" {
                     // The network twice (songwriter, then Suno): not under the lock.
-                    make_song(app_ref, db, &call.function.arguments).await
+                    make_song(app, db, &call.function.arguments).await
                 } else {
                     let mut guard = db.lock();
                     let conn = &mut *guard;
@@ -1941,16 +2080,22 @@ pub async fn tutor_send(
     if reply.trim().is_empty() {
         reply = "Done.".into();
     }
-    // The conversation is only created once there is a reply worth keeping.
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let conversation_id = match conversation_id {
-        Some(id) => id,
-        None => create_conversation(conn, &message)?,
-    };
-    append(conn, conversation_id, "user", &message, &[])?;
     let id = append(conn, conversation_id, "assistant", &reply, &actions)?;
     Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
+}
+
+/// A reply that was running when the app was closed never finished: say so,
+/// so the conversation can be asked again. Called at startup.
+pub fn recover_interrupted(conn: &mut Conn) -> Result<()> {
+    diesel::update(tutor_conversations::table.filter(tutor_conversations::job_started_at.is_not_null()))
+        .set((
+            tutor_conversations::job_started_at.eq(None::<i64>),
+            tutor_conversations::job_error.eq("The app was closed before the tutor finished. Ask again."),
+        ))
+        .execute(conn)?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -116,6 +116,12 @@ model, and the **Tutor** tab becomes an assistant for the whole app. It speaks
 English (it only switches to Polish conversation if you ask it to) and acts in
 the app through tools, implemented in `src-tauri/src/tutor.rs`:
 
+The tutor answers in the background: a message is stored at once and the
+reply is written by a background task, so the app can be left meanwhile. Off
+screen, a finished reply arrives as a notification; reopening the conversation
+picks up where it is. A reply cut off by the app being closed is marked, with a
+button to ask again.
+
 | Tool | What it does |
 |---|---|
 | `create_course` | Builds a course on a theme: words, sentences, a dialogue — cut into drills |
@@ -205,7 +211,9 @@ tab makes them to order:
 Every file the app keeps — speech clips, song audio, cover art — is a row in
 one `files` table (bytes, type, size, SHA-256), and other tables reference it
 by id: `speech_clips.file_id`, `song_tracks.audio_file_id` and
-`image_file_id`. The database alone is a complete backup; the copies on disk
+`image_file_id`, `topics.image_file_id`. A course's picture is drawn by an
+OpenRouter image model (Settings → Course pictures; Gemini 2.5 Flash Image by
+default) from its title, summary and words. The database alone is a complete backup; the copies on disk
 are only a cache (`src-tauri/src/files.rs`).
 - **Lyrics that follow the music:** when a song is ready the app asks
   kie.ai for Suno's word timings and stores them with each take. The player

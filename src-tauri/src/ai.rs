@@ -41,6 +41,55 @@ pub fn require_model(conn: &mut Conn) -> Result<String> {
     Ok(model)
 }
 
+/// Draws course pictures unless another image model is chosen.
+pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-2.5-flash-image";
+
+pub fn image_model(conn: &mut Conn) -> String {
+    let model = stored_model(conn, "image_model");
+    if model.is_empty() { DEFAULT_IMAGE_MODEL.to_string() } else { model }
+}
+
+/// Asks an image model for a picture. Returns its type, bytes and cost.
+pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(String, Vec<u8>, Option<f64>)> {
+    let response = crate::http::api()
+        .post(format!("{BASE_URL}/chat/completions"))
+        .bearer_auth(key)
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("X-Title", "Polski")
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": prompt }],
+            "modalities": ["image", "text"],
+            "usage": { "include": true },
+        }))
+        .send()
+        .await?;
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| Error::msg(format!("OpenRouter returned an unexpected response ({status}).")))?;
+    if let Some(message) = body.pointer("/error/message").and_then(|m| m.as_str()) {
+        return Err(Error::msg(format!("OpenRouter: {message}")));
+    }
+    let url = body
+        .pointer("/choices/0/message/images/0/image_url/url")
+        .and_then(|u| u.as_str())
+        .ok_or_else(|| Error::msg(format!("The model {model} sent no picture. Pick one that makes images in Settings.")))?;
+    // A data URI: data:image/png;base64,....
+    let (head, data) = url
+        .strip_prefix("data:")
+        .and_then(|rest| rest.split_once(','))
+        .ok_or_else(|| Error::msg("The picture came in a form the app can't read."))?;
+    let mime = head.split(';').next().unwrap_or("image/png").to_string();
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.trim())
+        .map_err(|_| Error::msg("The picture could not be decoded."))?;
+    let cost = body.pointer("/usage/cost").and_then(|c| c.as_f64());
+    Ok((mime, bytes, cost))
+}
+
 /// The writing partner's model: its own setting (a small, fast model suits
 /// it), else the main model.
 pub fn partner_model(conn: &mut Conn) -> Result<String> {
@@ -571,6 +620,14 @@ struct ModelEntry {
     supported_voices: Option<Vec<String>>,
     #[serde(default)]
     supported_parameters: Option<Vec<String>>,
+    #[serde(default)]
+    architecture: Option<Architecture>,
+}
+
+#[derive(Deserialize)]
+struct Architecture {
+    #[serde(default)]
+    output_modalities: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -600,6 +657,7 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
             tools: m
                 .supported_parameters
                 .is_some_and(|params| params.iter().any(|p| p == "tools")),
+            images: m.architecture.is_some_and(|a| a.output_modalities.iter().any(|o| o == "image")),
             id: m.id,
         })
         .collect();

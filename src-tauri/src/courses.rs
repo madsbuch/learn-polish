@@ -613,7 +613,9 @@ pub fn delete(conn: &mut Conn, topic_id: i64) -> Result<String> {
     conn.transaction::<_, Error, _>(|conn| {
         let blocks: Vec<i64> =
             course_blocks::table.filter(course_blocks::topic_id.eq(topic_id)).select(course_blocks::block_id).load(conn)?;
+        let image: Option<i64> = topics::table.find(topic_id).select(topics::image_file_id).first(conn)?;
         diesel::delete(topics::table.find(topic_id)).execute(conn)?;
+        crate::files::delete(conn, &image.into_iter().collect::<Vec<_>>())?;
         for block in blocks {
             delete_if_orphaned(conn, block)?;
         }

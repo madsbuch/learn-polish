@@ -13,6 +13,7 @@ import type {
   AnswerResult,
   AudioCacheStats,
   AudioItem,
+  TutorStarted,
   AudioOverview,
   AudioClip,
   CacheProgress,
@@ -101,9 +102,20 @@ export const api = {
   aiExplainStream: (itemKind: string, itemId: number, streamId: string) =>
     invoke<string>("ai_explain_stream", { itemKind, itemId, streamId }),
 
-  /** `conversationId` null starts a new conversation; the reply says its id. */
-  tutorSend: (message: string, streamId: string, conversationId: number | null) =>
-    invoke<ChatMessage>("tutor_send", { message, streamId, conversationId }),
+  /**
+   * Stores the message and starts the reply in the background; `conversationId`
+   * null starts a new conversation. The reply streams under
+   * `tutor-<conversation id>` and arrives as `tutor://done`.
+   */
+  tutorSend: (message: string, conversationId: number | null) =>
+    invoke<TutorStarted>("tutor_send", { message, conversationId }),
+  /** Asks again after a reply failed. */
+  tutorRetry: (conversationId: number) => invoke<void>("tutor_retry", { conversationId }),
+  /** Whether the app is on screen: off screen, finished replies notify. */
+  appVisibility: (visible: boolean) => invoke<void>("app_visibility", { visible }),
+  /** Draws a new picture for a course; returns its path on disk. */
+  coursePicture: (topicId: number) => invoke<string>("course_picture", { topicId }),
+  coursePictureDelete: (topicId: number) => invoke<void>("course_picture_delete", { topicId }),
   tutorConversations: () => invoke<Conversation[]>("tutor_conversations"),
   tutorHistory: (conversationId: number) =>
     invoke<ChatMessage[]>("tutor_history", { conversationId }),

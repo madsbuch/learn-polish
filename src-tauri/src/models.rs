@@ -171,6 +171,8 @@ pub struct TopicProgress {
     pub total_blocks: i64,
     /// Blocks done at least once.
     pub started_blocks: i64,
+    /// The course's picture, as the path of its copy on disk.
+    pub image_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -219,6 +221,8 @@ pub struct Settings {
     pub songwriter_model: String,
     /// Plays the other side in writing blocks; empty means the tutor model.
     pub partner_model: String,
+    /// Draws course pictures; empty means the default image model.
+    pub image_model: String,
     pub has_kie_key: bool,
     /// The Suno version songs are sung with.
     pub suno_model: String,
@@ -253,6 +257,10 @@ pub struct Conversation {
     pub preview: String,
     pub messages: i64,
     pub updated_at: i64,
+    /// The tutor is working on a reply in the background.
+    pub working: bool,
+    /// Why the last reply failed, if it did.
+    pub error: Option<String>,
 }
 
 /// Something the tutor did in the app, shown under its reply (and, for a
@@ -288,6 +296,8 @@ pub struct AiModel {
     /// True when the model can call tools, which the tutor needs to act in
     /// the app.
     pub tools: bool,
+    /// True when the model can make images (course pictures).
+    pub images: bool,
 }
 
 /// One clip of generated speech, ready to become a `data:` URI.

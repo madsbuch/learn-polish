@@ -20,6 +20,7 @@ use crate::schema::files;
 pub const SPEECH: &str = "speech";
 pub const SONG_AUDIO: &str = "song_audio";
 pub const SONG_IMAGE: &str = "song_image";
+pub const COURSE_IMAGE: &str = "course_image";
 
 /// A file's details, without its bytes.
 #[allow(dead_code)] // every column, though not every caller reads each
@@ -121,28 +122,34 @@ pub fn materialize(conn: &mut Conn, dir: &Path, id: i64) -> Result<String> {
 
 /// Where the copies of song files live.
 pub fn media_dir(app: &AppHandle) -> Result<PathBuf> {
+    dir_for(app, SONG_AUDIO)
+}
+
+/// Where copies of a kind of file live: songs and their art in `songs`,
+/// pictures in `pictures`.
+pub fn dir_for(app: &AppHandle, kind: &str) -> Result<PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| Error::msg(format!("no app data directory: {e}")))?
-        .join("songs");
+        .join(if kind == COURSE_IMAGE { "pictures" } else { "songs" });
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-/// Makes sure every song file has its copy on disk — after a restore, on a
+/// Makes sure every song file and picture has its copy on disk — after a restore, on a
 /// new phone, or when the copies were cleared — in the background.
 pub fn sync_to_disk(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let result = (|| -> Result<()> {
-            let dir = media_dir(&app)?;
             let db = app.state::<Db>();
-            let ids: Vec<i64> = files::table
-                .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
-                .select(files::id)
+            let found: Vec<(i64, String)> = files::table
+                .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE, COURSE_IMAGE]))
+                .select((files::id, files::kind))
                 .load(&mut *db.lock())?;
-            for id in ids {
+            for (id, kind) in found {
+                let dir = dir_for(&app, &kind)?;
                 materialize(&mut db.lock(), &dir, id)?;
             }
             Ok(())

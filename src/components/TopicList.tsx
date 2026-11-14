@@ -1,3 +1,4 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { Avatar, List, ListItem, Progress, Stack } from "../design";
 import type { TopicProgress } from "../lib/types";
 
@@ -15,9 +16,13 @@ export function TopicList({
         <ListItem
           key={entry.topic.id}
           leading={
-            <Avatar muted={entry.startedBlocks === 0}>
-              {(entry.topic.titlePl || entry.topic.title).charAt(0).toUpperCase()}
-            </Avatar>
+            entry.imagePath ? (
+              <img className="course-thumb" src={convertFileSrc(entry.imagePath)} alt="" />
+            ) : (
+              <Avatar muted={entry.startedBlocks === 0}>
+                {(entry.topic.titlePl || entry.topic.title).charAt(0).toUpperCase()}
+              </Avatar>
+            )
           }
           title={entry.topic.title}
           subtitle={
