@@ -97,6 +97,7 @@ export function playClip(clip: { mime: string; base64: string }): Promise<void> 
 
 export function stop(): void {
   sequenceToken++;
+  setConversation(null);
   player?.pause();
   if (hasNativeSpeech()) {
     try {
@@ -124,6 +125,12 @@ export class SpeechError extends Error {}
  * voice was asked for and could not deliver, so the UI can explain why.
  */
 export async function speak(text: string, gender = "", rate = 0.85): Promise<void> {
+  // A line asked for on its own ends a conversation that is playing.
+  if (conversation?.playing) stopConversation();
+  return speakLine(text, gender, rate);
+}
+
+async function speakLine(text: string, gender = "", rate = 0.85): Promise<void> {
   const line = text.trim();
   if (!line) return;
 
@@ -156,24 +163,94 @@ export function speakQuietly(text: string, gender = "", rate = 0.85): void {
 
 let sequenceToken = 0;
 
+// ------------------------------------------------------------ conversations
+
+export interface ConversationLine {
+  text: string;
+  gender?: string;
+}
+
 /**
- * Reads several lines back to back, waiting for each to finish. Playing a
- * conversation line by line reuses the same cache entries the individual 🔊
- * buttons fill, instead of paying for one long clip that duplicates them.
+ * The conversation being read out: which one (`key`), its lines, the line
+ * now, and whether it is playing or paused there. One at a time.
  */
-export async function speakSequence(
-  lines: { text: string; gender?: string }[],
-  gapMs = 350,
-): Promise<void> {
+export interface Conversation {
+  key: string;
+  lines: ConversationLine[];
+  index: number;
+  playing: boolean;
+}
+
+let conversation: Conversation | null = null;
+const conversationListeners = new Set<() => void>();
+
+function setConversation(next: Conversation | null) {
+  conversation = next;
+  for (const listener of conversationListeners) listener();
+}
+
+export function subscribeConversation(listener: () => void): () => void {
+  conversationListeners.add(listener);
+  return () => conversationListeners.delete(listener);
+}
+
+export function currentConversation(): Conversation | null {
+  return conversation;
+}
+
+/** A conversation's identity: its lines, so the same one is recognised. */
+export function conversationKey(lines: ConversationLine[]): string {
+  return lines.map((line) => line.text).join("\u0001");
+}
+
+/**
+ * Reads a conversation line by line from `from`, each line waiting for the
+ * one before. Lines reuse the cache the 🔊 buttons fill, instead of paying
+ * for one long clip that duplicates them.
+ */
+export async function playConversation(lines: ConversationLine[], from = 0, gapMs = 350): Promise<void> {
   const token = ++sequenceToken;
-  for (const line of lines) {
-    // A newer sequence, or a stop(), cancels this one.
+  const key = conversationKey(lines);
+  for (let index = from; index < lines.length; index++) {
+    // A newer sequence, a pause or a stop cancels this one.
     if (token !== sequenceToken) return;
-    await speak(line.text, line.gender ?? "");
+    setConversation({ key, lines, index, playing: true });
+    await speakLine(lines[index].text, lines[index].gender ?? "");
     await finished();
     if (token !== sequenceToken) return;
     await new Promise((resolve) => setTimeout(resolve, gapMs));
   }
+  if (token === sequenceToken) setConversation(null);
+}
+
+/** Pauses on the current line; resume carries on from it. */
+export function pauseConversation() {
+  if (!conversation) return;
+  const paused = { ...conversation, playing: false };
+  sequenceToken++;
+  player?.pause();
+  if (hasNativeSpeech()) {
+    try {
+      speechSynthesis.cancel();
+    } catch {
+      /* nothing playing */
+    }
+  }
+  setConversation(paused);
+}
+
+export function resumeConversation() {
+  if (!conversation || conversation.playing) return;
+  void playConversation(conversation.lines, conversation.index).catch(() => setConversation(null));
+}
+
+export function stopConversation() {
+  if (conversation) stop();
+}
+
+/** Plays several lines back to back (a conversation). */
+export async function speakSequence(lines: ConversationLine[], gapMs = 350): Promise<void> {
+  return playConversation(lines, 0, gapMs);
 }
 
 /** Resolves when the current clip stops, whichever engine is playing it. */

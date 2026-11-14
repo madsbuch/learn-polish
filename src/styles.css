@@ -802,3 +802,29 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* A conversation being read out: its line now is marked, and a control
+   floats at the foot of the screen (above a drill's own buttons). */
+.line[data-speaking] .bubble {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.conversation-control {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--safe-bottom) + var(--space-4));
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+body:has(.session-foot) .conversation-control {
+  bottom: calc(var(--safe-bottom) + 104px);
+}

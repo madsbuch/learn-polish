@@ -1,10 +1,30 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 
 import { Avatar, Button, IconButton, Text } from "../design";
-import { speakSequence, stop } from "../lib/speech";
+import {
+  conversationKey,
+  currentConversation,
+  pauseConversation,
+  playConversation,
+  resumeConversation,
+  stopConversation,
+  subscribeConversation,
+} from "../lib/speech";
 import type { DialogueLine } from "../lib/types";
-import { PlayerIcon } from "./icons";
+import { CloseIcon, PlayerIcon } from "./icons";
 import { SpeakButton } from "./ui";
+
+function toSpeech(lines: DialogueLine[]) {
+  return lines.map((line) => ({ text: line.pl, gender: line.gender }));
+}
+
+/** The conversation being read out, if it is this one. */
+function useThisConversation(lines: DialogueLine[]) {
+  const conversation = useSyncExternalStore(subscribeConversation, currentConversation);
+  const key = conversationKey(toSpeech(lines));
+  return conversation?.key === key ? conversation : null;
+}
 
 /**
  * A conversation as chat bubbles. Translations start hidden so the learner
@@ -14,13 +34,35 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   // The first speaker sits on the left, everyone else on the right.
   const firstSpeaker = lines[0]?.speaker;
+  // While the conversation is read out, its line now is marked and kept in view.
+  const conversation = useThisConversation(lines);
+  const speaking = conversation ? conversation.index : -1;
+  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  useEffect(() => {
+    const line = lineRefs.current[speaking];
+    if (speaking < 0 || !conversation?.playing || !line) return;
+    // Follow along only while the conversation is on screen: scrolled away
+    // to read something else, the page stays where it is.
+    const box = line.closest(".dialogue")?.getBoundingClientRect();
+    if (box && box.bottom > 0 && box.top < window.innerHeight) {
+      line.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [speaking, conversation?.playing]);
 
   return (
     <div className="dialogue">
-      {lines.map((line) => {
+      {lines.map((line, i) => {
         const isOpen = revealAll || revealed.has(line.ord);
         return (
-          <div key={line.ord} className="line" data-side={line.speaker === firstSpeaker ? "left" : "right"}>
+          <div
+            key={line.ord}
+            ref={(element) => {
+              lineRefs.current[i] = element;
+            }}
+            className="line"
+            data-side={line.speaker === firstSpeaker ? "left" : "right"}
+            data-speaking={i === speaking || undefined}
+          >
             <Avatar>{line.speaker.slice(0, 2)}</Avatar>
             <div
               className="bubble selectable"
@@ -52,7 +94,12 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
   );
 }
 
-/** Show/hide every translation, and play the whole conversation. */
+/**
+ * Show/hide every translation, and play the whole conversation. While it
+ * plays, a control floats at the foot of the screen — the line it is on,
+ * pause, resume, stop — however far the page is scrolled; leaving the page
+ * stops it.
+ */
 export function DialogueToolbar({
   lines,
   revealAll,
@@ -62,7 +109,18 @@ export function DialogueToolbar({
   revealAll: boolean;
   onToggleReveal: () => void;
 }) {
-  const [playing, setPlaying] = useState(false);
+  const conversation = useThisConversation(lines);
+  const active = conversation !== null;
+
+  // Leaving the page (or this exercise) ends the conversation.
+  const key = conversationKey(toSpeech(lines));
+  useEffect(
+    () => () => {
+      if (currentConversation()?.key === key) stopConversation();
+    },
+    [key],
+  );
+
   return (
     <div className="inline gap-2">
       <div className="grow">
@@ -73,24 +131,31 @@ export function DialogueToolbar({
       <IconButton
         variant="tinted"
         size="sm"
-        icon={playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
-        label={playing ? "Stop" : "Play the whole conversation"}
-        onClick={async () => {
-          if (playing) {
-            stop();
-            setPlaying(false);
-            return;
-          }
-          setPlaying(true);
-          try {
-            await speakSequence(lines.map((line) => ({ text: line.pl, gender: line.gender })));
-          } catch {
-            /* the per-line buttons report why */
-          } finally {
-            setPlaying(false);
-          }
+        icon={active ? <CloseIcon /> : <PlayerIcon.play size={16} />}
+        label={active ? "Stop" : "Play the whole conversation"}
+        onClick={() => {
+          if (active) stopConversation();
+          else void playConversation(toSpeech(lines)).catch(() => stopConversation());
         }}
       />
+      {conversation
+        ? createPortal(
+            <div className="conversation-control fade-in" role="group" aria-label="The conversation">
+              <Text variant="small" weight="medium">
+                {conversation.playing ? "Playing" : "Paused"} · line {conversation.index + 1} of{" "}
+                {conversation.lines.length}
+              </Text>
+              <IconButton
+                variant="primary"
+                icon={conversation.playing ? <PlayerIcon.pause size={18} /> : <PlayerIcon.play size={18} />}
+                label={conversation.playing ? "Pause" : "Resume"}
+                onClick={conversation.playing ? pauseConversation : resumeConversation}
+              />
+              <IconButton icon={<CloseIcon />} label="Stop" onClick={stopConversation} />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
