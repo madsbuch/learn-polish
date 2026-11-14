@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 import { BlockRow } from "../components/BlockRow";
 import { SparkIcon } from "../components/icons";
@@ -78,6 +79,16 @@ export function TopicDetail({
   }
 
   const topicId = progress.topic.id;
+
+  // Drawn in the background for a new course: show it as soon as it is in.
+  useEffect(() => {
+    const off = listen<{ topicId: number; fileId: number }>("pictures://changed", (event) => {
+      if (event.payload.topicId === topicId) setPicture(event.payload.fileId);
+    });
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, [topicId]);
 
   async function act(action: () => Promise<void>) {
     setError(null);

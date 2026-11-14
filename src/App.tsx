@@ -234,6 +234,15 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", report);
   }, []);
 
+  // A new course's picture arrived (drawn in the background): the lists
+  // showing courses reload.
+  useEffect(() => {
+    const off = listen("pictures://changed", () => void refresh());
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, [refresh]);
+
   // A background reply that changed things (a course, a song): every screen
   // reloads, wherever the learner is.
   useEffect(() => {

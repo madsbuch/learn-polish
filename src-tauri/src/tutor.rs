@@ -2002,7 +2002,13 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                 } else {
                     let mut guard = db.lock();
                     let conn = &mut *guard;
-                    execute(conn, &call.function.name, &call.function.arguments)
+                    // Every new course gets a picture, whichever tool made it.
+                    let before = course_ids(conn);
+                    let done = execute(conn, &call.function.name, &call.function.arguments);
+                    for topic_id in course_ids(conn).difference(&before) {
+                        crate::pictures::draw_in_background(app, *topic_id);
+                    }
+                    done
                 };
                 ToolOutput { result: done.result, extra: done.action, ends_turn: false }
             })
@@ -2033,6 +2039,10 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     let conn = &mut *guard;
     let id = append(conn, conversation_id, "assistant", &reply, &actions)?;
     Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
+}
+
+fn course_ids(conn: &mut Conn) -> HashSet<i64> {
+    topics::table.select(topics::id).load::<i64>(conn).map(|ids| ids.into_iter().collect()).unwrap_or_default()
 }
 
 /// A reply that was running when the app was closed never finished: say so,
