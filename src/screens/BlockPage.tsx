@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BlockIcon } from "../components/BlockRow";
 import { CloseIcon, PlayerIcon, PlusIcon } from "../components/icons";
@@ -76,6 +76,21 @@ export function BlockPage({
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blockId]);
+
+  // Opening a block downloads its audio at normal speed in the background
+  // (conversation first, in each speaker's voice), so every 🔊 here plays at
+  // once. Slow versions are made only when 🐢 asks for one.
+  const prefetched = useRef<number | null>(null);
+  useEffect(() => {
+    if (!block || prefetched.current === block.id) return;
+    prefetched.current = block.id;
+    const lines = [
+      ...block.lines.map((line) => ({ text: line.pl, gender: line.gender })),
+      ...block.sentences.map(([pl]) => ({ text: pl, gender: "" })),
+      ...block.words.map(([pl]) => ({ text: pl, gender: "" })),
+    ];
+    if (lines.length) void api.prefetchAudio(lines).catch(() => {});
+  }, [block]);
 
   async function openPicker(mode: "add" | "move") {
     try {

@@ -226,6 +226,14 @@ pub async fn cache_audio(
 /// off.
 #[tauri::command]
 pub async fn prefetch_audio(app: tauri::AppHandle, db: State<'_, Db>, lines: Vec<SpeechLine>) -> Result<()> {
+    // Off in Settings, or no key to make audio with: nothing to do.
+    {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        if db::get_setting_i64(conn, "tts_prefetch", 1) != 1 || ai::api_key(conn).is_err() {
+            return Ok(());
+        }
+    }
     // Already all downloaded (practising a block again): nothing to keep
     // the app awake for.
     if missing_lines(&mut db.lock(), &lines).is_empty() {
