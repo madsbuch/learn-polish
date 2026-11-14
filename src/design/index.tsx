@@ -4,6 +4,7 @@
  * are in DESIGN.md; `scripts/check-design.mjs` enforces the mechanical ones.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
 import { useBackHandler } from "../lib/back";
@@ -786,8 +787,17 @@ export function Sheet({
   }, [onClose]);
   // Back closes the sheet, not the page under it.
   useBackHandler(true, onClose);
-  return (
-    <div className="sheet-backdrop fade-in" onClick={onClose}>
+  // Rendered at the top of the page, so it never takes on the look of where
+  // it was opened from (an ⓘ inside a bold, single-line title, say).
+  return createPortal(
+    <div
+      className="sheet-backdrop fade-in"
+      onClick={(event) => {
+        // A portal still passes clicks up to where it was opened from.
+        event.stopPropagation();
+        onClose();
+      }}
+    >
       <div
         className="sheet"
         role="dialog"
@@ -800,7 +810,8 @@ export function Sheet({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

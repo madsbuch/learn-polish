@@ -896,7 +896,11 @@ button.badge:active {
 .with-info {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+}
+/* Its own space, so it holds in any layout the title has (a docked header
+   makes the title a single clipped line, where a flex gap does nothing). */
+.with-info > .info-button {
+  margin-left: var(--space-3);
 }
 .info-body {
   display: flex;
