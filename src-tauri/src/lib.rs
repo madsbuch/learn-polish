@@ -802,6 +802,65 @@ mod integration {
     }
 
     #[test]
+    fn achievements_reward_the_deeper_work_and_mastery_needs_spacing() {
+        let mut conn = scratch_db("achievements");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let word: i64 = t::course_words::table
+            .filter(t::course_words::topic_id.eq(basics))
+            .select(t::course_words::id)
+            .first(&mut conn)
+            .unwrap();
+        let review = |interval: i64, reps: i64| {
+            (
+                t::reviews::kind.eq("word"),
+                t::reviews::item_id.eq(word),
+                t::reviews::due_day.eq(0),
+                t::reviews::interval.eq(interval),
+                t::reviews::ease.eq(2.5),
+                t::reviews::reps.eq(reps),
+                t::reviews::lapses.eq(0),
+                t::reviews::last_day.eq(0),
+            )
+        };
+        // Many reps in a short span is not mastery; three weeks of spacing is.
+        diesel::insert_into(t::reviews::table).values(review(3, 9)).execute(&mut conn).unwrap();
+        assert_eq!(stats::collect(&mut conn).unwrap().words_mastered, 0);
+        diesel::delete(t::reviews::table).execute(&mut conn).unwrap();
+        diesel::insert_into(t::reviews::table).values(review(21, 4)).execute(&mut conn).unwrap();
+        assert_eq!(stats::collect(&mut conn).unwrap().words_mastered, 1);
+
+        // A passed writing block unlocks both the check-in and the writing one.
+        let writing = blocks::create_writing(
+            &mut conn,
+            blocks::NewWriting {
+                title: "Where do you live?".into(),
+                complexity: "low".into(),
+                lesson: "A neighbour asks.".into(),
+                objectives: vec!["Say where you live".into()],
+                ..Default::default()
+            },
+            "tutor",
+        )
+        .unwrap();
+        diesel::insert_into(t::checkins::table)
+            .values((
+                t::checkins::block_id.eq(writing.id),
+                t::checkins::started_at.eq(0),
+                t::checkins::finished_at.eq(Some(1)),
+                t::checkins::result.eq(Some("pass")),
+            ))
+            .execute(&mut conn)
+            .unwrap();
+        let stats = stats::collect(&mut conn).unwrap();
+        let unlocked = |code: &str| stats.achievements.iter().any(|a| a.code == code && a.unlocked);
+        assert!(unlocked("checkin_first") && unlocked("writing_first") && unlocked("tutor_made"));
+        assert!(!unlocked("listening_first"));
+        assert!(!stats.achievements.iter().any(|a| a.code.starts_with("level_")), "levels are not achievements");
+        let every = stats.achievements.iter().find(|a| a.code == "words_all").unwrap();
+        assert!(every.progress > 0.0 && every.progress < 1.0, "measured against the words you have");
+    }
+
+    #[test]
     fn audio_cache_round_trips_and_is_keyed_by_voice() {
         let mut conn = scratch_db("audio");
         for (voice, bytes) in [("Kore", &[1u8, 2, 3][..]), ("Puck", &[9, 9][..])] {

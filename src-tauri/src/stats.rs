@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use diesel::upsert::excluded;
 
 use crate::db::{self, Conn};
-use crate::schema::{achievements, blocks, course_blocks, course_sentences, course_words, day_log, reviews, sentences, topics, words};
+use crate::schema::{achievements, blocks, checkins, course_blocks, course_sentences, course_words, day_log, reviews, sentences, songs, topics, words};
 use crate::error::Result;
 use crate::models::{Achievement, DayStat, Stats, TopicProgress};
 use crate::session;
@@ -14,8 +14,9 @@ use crate::session;
 pub const DEFAULT_DAILY_GOAL: i64 = 150;
 /// Streak freezes kept at most; one is earned with every seven-day run.
 pub const MAX_FREEZES: i64 = 2;
-/// Correct reps after which a word counts as "mastered" on the progress screen.
-const MASTERY_REPS: i64 = 4;
+/// A word is mastered once its review interval has reached three weeks:
+/// remembered across real spacing, not just answered a few times in a row.
+const MASTERY_INTERVAL: i64 = 21;
 const HISTORY_DAYS: i64 = 120;
 
 /// Cumulative XP required to reach a level: 0, 100, 300, 600, 1000, …
@@ -216,6 +217,13 @@ struct Counts {
     dialogues_total: i64,
     dialogues_seen: i64,
     due_today: i64,
+    days_done: i64,
+    checkins_passed: i64,
+    writing_passed: i64,
+    listening_passed: i64,
+    songs_made: i64,
+    tutor_blocks: i64,
+    courses_finished: i64,
 }
 
 fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
@@ -225,7 +233,7 @@ fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
         words_seen: reviews::table.filter(reviews::kind.eq("word")).count().get_result(conn)?,
         words_mastered: reviews::table
             .filter(reviews::kind.eq("word"))
-            .filter(reviews::reps.ge(MASTERY_REPS))
+            .filter(reviews::interval.ge(MASTERY_INTERVAL))
             .count()
             .get_result(conn)?,
         sentences_total: sentences::table.count().get_result(conn)?,
@@ -234,7 +242,39 @@ fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
         dialogues_seen: dialogues.filter(blocks::reps.gt(0)).count().get_result(conn)?,
         // What is due is counted in blocks, not single words.
         due_today: blocks::table.filter(blocks::due_day.le(today)).count().get_result(conn)?,
+        days_done: day_log::table.filter(day_log::completed.eq(1)).count().get_result(conn)?,
+        checkins_passed: passed(conn, None)?,
+        writing_passed: passed(conn, Some("writing"))?,
+        listening_passed: passed(conn, Some("song"))?,
+        songs_made: songs::table.filter(songs::status.eq("ready")).count().get_result(conn)?,
+        tutor_blocks: blocks::table.filter(blocks::origin.eq("tutor")).count().get_result(conn)?,
+        courses_finished: courses_finished(conn)?,
     })
+}
+
+/// Check-ins passed, of blocks in one format (None: any).
+fn passed(conn: &mut Conn, format: Option<&str>) -> Result<i64> {
+    let mut query = checkins::table
+        .inner_join(blocks::table)
+        .filter(checkins::result.eq("pass"))
+        .into_boxed();
+    if let Some(format) = format {
+        query = query.filter(blocks::format.eq(format));
+    }
+    Ok(query.count().get_result(conn)?)
+}
+
+/// Courses of three or more blocks with every block started.
+fn courses_finished(conn: &mut Conn) -> Result<i64> {
+    let rows: Vec<(i64, Option<i64>)> =
+        course_blocks::table.inner_join(blocks::table).select((course_blocks::topic_id, blocks::due_day)).load(conn)?;
+    let mut by_course: std::collections::HashMap<i64, (i64, i64)> = Default::default();
+    for (topic, due) in rows {
+        let entry = by_course.entry(topic).or_default();
+        entry.0 += 1;
+        entry.1 += i64::from(due.is_some());
+    }
+    Ok(by_course.values().filter(|(total, started)| *total >= 3 && started == total).count() as i64)
 }
 
 pub fn collect(conn: &mut Conn) -> Result<Stats> {
@@ -268,7 +308,7 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
         })
         .collect();
 
-    let achievements = evaluate_achievements(conn, &c, total, level, longest_streak)?;
+    let achievements = evaluate_achievements(conn, &c, longest_streak)?;
 
     Ok(Stats {
         day: today,
@@ -316,7 +356,7 @@ pub fn topic_progress(conn: &mut Conn) -> Result<Vec<TopicProgress>> {
                 total_words: course_words.count().get_result(conn)?,
                 seen_words: course_words.filter(course_words::id.eq_any(seen("word"))).count().get_result(conn)?,
                 mastered_words: course_words
-                    .filter(course_words::id.eq_any(seen("word").filter(reviews::reps.ge(MASTERY_REPS))))
+                    .filter(course_words::id.eq_any(seen("word").filter(reviews::interval.ge(MASTERY_INTERVAL))))
                     .count()
                     .get_result(conn)?,
                 total_sentences: course_sentences.count().get_result(conn)?,
@@ -343,34 +383,54 @@ struct Definition {
     target: i64,
 }
 
+/// What there is to earn — the habits and the milestones of this app:
+/// showing up, words that stick, and the deeper work (check-ins, writing,
+/// listening). Levels and raw XP are on the progress screen already.
 const DEFINITIONS: &[Definition] = &[
-    Definition { code: "first_day", title: "Dzień dobry", description: "Finish your first block", icon: "🌅", target: 1 },
-    Definition { code: "streak_3", title: "Three in a row", description: "Practise three days in a row", icon: "🔥", target: 3 },
-    Definition { code: "streak_7", title: "Full week", description: "Practise seven days in a row", icon: "📅", target: 7 },
-    Definition { code: "streak_30", title: "Miesiąc", description: "Practise thirty days in a row", icon: "🏅", target: 30 },
-    Definition { code: "streak_100", title: "Sto dni", description: "Practise a hundred days in a row", icon: "💯", target: 100 },
+    Definition { code: "first_day", title: "Dzień dobry", description: "Finish your first day", icon: "🌅", target: 1 },
+    Definition { code: "streak_3", title: "Three in a row", description: "A three-day streak", icon: "🔥", target: 3 },
+    Definition { code: "streak_7", title: "Full week", description: "A seven-day streak", icon: "📅", target: 7 },
+    Definition { code: "streak_30", title: "Miesiąc", description: "A thirty-day streak", icon: "🏅", target: 30 },
+    Definition { code: "streak_100", title: "Sto dni", description: "A hundred-day streak", icon: "💯", target: 100 },
     Definition { code: "words_50", title: "Fifty words", description: "Meet fifty Polish words", icon: "🌱", target: 50 },
     Definition { code: "words_250", title: "Getting by", description: "Meet 250 Polish words", icon: "🌿", target: 250 },
-    Definition { code: "words_1000", title: "Halfway", description: "Meet a thousand Polish words", icon: "🌳", target: 1000 },
-    Definition { code: "words_2000", title: "Whole vocabulary", description: "Meet every word in the app", icon: "🏆", target: 2000 },
-    Definition { code: "mastered_100", title: "Solid hundred", description: "Master a hundred words", icon: "💎", target: 100 },
+    // Its target is the words in your courses (see target_for).
+    Definition { code: "words_all", title: "Every word", description: "Meet every word in your courses", icon: "🌳", target: 0 },
+    Definition { code: "mastered_25", title: "Taking root", description: "25 words that stick for three weeks", icon: "🪴", target: 25 },
+    Definition { code: "mastered_100", title: "Solid hundred", description: "100 words that stick for three weeks", icon: "💎", target: 100 },
     Definition { code: "sentences_100", title: "Sentence builder", description: "Practise a hundred sentences", icon: "🧱", target: 100 },
     Definition { code: "all_dialogues", title: "Ten conversations", description: "Work through ten conversations", icon: "💬", target: 10 },
-    Definition { code: "level_5", title: "Level five", description: "Reach level five", icon: "⭐", target: 5 },
-    Definition { code: "level_10", title: "Level ten", description: "Reach level ten", icon: "🌟", target: 10 },
-    Definition { code: "xp_5000", title: "Five thousand", description: "Earn 5000 XP", icon: "⚡", target: 5000 },
+    Definition { code: "checkin_first", title: "Passed!", description: "Pass your first check-in", icon: "✅", target: 1 },
+    Definition { code: "checkins_25", title: "Top of the class", description: "Pass 25 check-ins", icon: "🎓", target: 25 },
+    Definition { code: "writing_first", title: "Got it across", description: "Pass a writing block", icon: "✍️", target: 1 },
+    Definition { code: "writing_10", title: "Pen pal", description: "Pass ten writing blocks", icon: "📝", target: 10 },
+    Definition { code: "listening_first", title: "An ear for it", description: "Pass a listening block", icon: "🎧", target: 1 },
+    Definition { code: "song_first", title: "First song", description: "Make a learning song", icon: "🎵", target: 1 },
+    Definition { code: "tutor_made", title: "Made to measure", description: "Have the tutor make a block for you", icon: "🛠️", target: 1 },
+    Definition { code: "course_done", title: "Course complete", description: "Start every block of a course", icon: "🏁", target: 1 },
 ];
 
-fn progress_value(def: &Definition, c: &Counts, xp: i64, level: i64, longest_streak: i64) -> i64 {
+fn target_for(def: &Definition, c: &Counts) -> i64 {
     match def.code {
-        "first_day" => i64::from(longest_streak > 0),
+        "words_all" => c.words_total.max(50),
+        _ => def.target,
+    }
+}
+
+fn progress_value(def: &Definition, c: &Counts, longest_streak: i64) -> i64 {
+    match def.code {
+        "first_day" => c.days_done,
         code if code.starts_with("streak_") => longest_streak,
         code if code.starts_with("words_") => c.words_seen,
-        "mastered_100" => c.words_mastered,
+        code if code.starts_with("mastered_") => c.words_mastered,
         "sentences_100" => c.sentences_seen,
         "all_dialogues" => c.dialogues_seen,
-        code if code.starts_with("level_") => level,
-        "xp_5000" => xp,
+        "checkin_first" | "checkins_25" => c.checkins_passed,
+        code if code.starts_with("writing_") => c.writing_passed,
+        "listening_first" => c.listening_passed,
+        "song_first" => c.songs_made,
+        "tutor_made" => c.tutor_blocks,
+        "course_done" => c.courses_finished,
         _ => 0,
     }
 }
@@ -378,8 +438,6 @@ fn progress_value(def: &Definition, c: &Counts, xp: i64, level: i64, longest_str
 fn evaluate_achievements(
     conn: &mut Conn,
     c: &Counts,
-    xp: i64,
-    level: i64,
     longest_streak: i64,
 ) -> Result<Vec<Achievement>> {
     let unlocked: std::collections::HashSet<String> =
@@ -389,8 +447,9 @@ fn evaluate_achievements(
     let mut result = Vec::with_capacity(DEFINITIONS.len());
 
     for def in DEFINITIONS {
-        let value = progress_value(def, c, xp, level, longest_streak);
-        let earned = value >= def.target;
+        let value = progress_value(def, c, longest_streak);
+        let target = target_for(def, c);
+        let earned = value >= target;
         if earned && !unlocked.contains(def.code) {
             diesel::insert_or_ignore_into(achievements::table)
                 .values((
@@ -406,7 +465,7 @@ fn evaluate_achievements(
             description: def.description.to_string(),
             icon: def.icon.to_string(),
             unlocked: earned || unlocked.contains(def.code),
-            progress: (value as f64 / def.target as f64).clamp(0.0, 1.0),
+            progress: (value as f64 / target as f64).clamp(0.0, 1.0),
         });
     }
     Ok(result)

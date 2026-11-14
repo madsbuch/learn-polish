@@ -92,7 +92,8 @@ The **Exercises** tab reads top to bottom: **today** (the XP ring and the next
 thing to do — a due block, or else the next unstarted one), **Due now** (blocks
 whose check-in has come), and **Courses**.
 
-Practising any block counts toward the day's streak.
+A day is **done** — for the goal ring and the streak alike — when the daily
+XP goal is reached, or when, having practised, nothing is left due.
 
 ### Scheduling
 
@@ -105,9 +106,23 @@ about diacritics and case — `czesc` counts as `cześć`.
 
 ### Gamification
 
-XP per answer (harder exercise types pay more, wrong answers pay nothing),
-levels on a widening curve, a daily XP goal ring, a streak that survives until
-the end of the following day, per-topic mastery, and fifteen achievements.
+It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
+
+- **XP** per answer — harder exercise types pay more, wrong answers nothing,
+  and cards that are only read (a new word, a dialogue) nothing either.
+  Check-ins pay by effort: 30/80/160 for low/medium/high (half for partial),
+  plus 10 per goal in a writing block.
+- **Extra practice**: a block that is not due can always be done again, at
+  half XP, without moving its schedule.
+- **The day** is done when the goal is reached (150 XP by default, about a
+  drill and a check-in) or nothing is left due. The **streak** counts done
+  days and survives until the end of the next one. Every seven-day run earns
+  a **streak freeze** (two at most), spent automatically on a missed day.
+- **Reminders** come once a day for the week ahead; today's is skipped once
+  the day is done, and says what is due.
+- **Mastered** means a word's review interval has reached three weeks.
+- **Achievements** for showing up, words that stick, and the deeper work:
+  check-ins, writing blocks, listening, songs, a finished course.
 
 ## The tutor (optional)
 

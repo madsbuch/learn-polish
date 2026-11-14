@@ -62,8 +62,8 @@ export function Progress({
       <StatGrid>
         <Stat value={stats.currentStreak} label="day streak" />
         <Stat value={stats.longestStreak} label="best streak" />
-        <Stat value={stats.totalXp} label="total XP" />
-        <Stat value={stats.level} label="level" />
+        <Stat value={stats.streakFreezes} label="streak freezes" />
+        <Stat value={stats.level} label={`level · ${stats.totalXp} XP`} />
       </StatGrid>
 
       <Section title="Last 18 weeks">
@@ -76,7 +76,12 @@ export function Progress({
         <Card>
           <Stack gap={4}>
             <Measure label="Words met" value={stats.wordsSeen} max={stats.wordsTotal} />
-            <Measure label="Words mastered" value={stats.wordsMastered} max={stats.wordsTotal} tone="mint" />
+            <Measure
+              label="Words that stick (3 weeks apart)"
+              value={stats.wordsMastered}
+              max={stats.wordsTotal}
+              tone="mint"
+            />
             <Measure label="Sentences practised" value={stats.sentencesSeen} max={stats.sentencesTotal} tone="gold" />
           </Stack>
         </Card>

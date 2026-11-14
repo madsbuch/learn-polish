@@ -56,7 +56,10 @@ export function Exercises({
   onOpenProgress: () => void;
   onOpenSearch: () => void;
 }) {
-  const goalPct = Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
+  // A done day (the goal reached, or everything due cleared) fills the ring.
+  const goalPct = stats.completedToday
+    ? 100
+    : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
   const upNext = overview.due[0] ?? overview.next[0] ?? null;
 
   return (
@@ -91,7 +94,15 @@ export function Exercises({
               </div>
             </div>
             <div className="grow">
-              <Text variant="eyebrow">Today</Text>
+              <Inline gap={2} wrap>
+                <Text variant="eyebrow">{stats.completedToday ? "Today is done ✓" : "Today"}</Text>
+                {stats.currentStreak > 0 ? <Badge>🔥 {stats.currentStreak}</Badge> : null}
+                {stats.streakFreezes > 0 ? (
+                  <Badge>
+                    🧊 {stats.streakFreezes}
+                  </Badge>
+                ) : null}
+              </Inline>
               <Text variant="title" as="h2">
                 {overview.due.length > 0
                   ? `${overview.due.length} check-in${overview.due.length === 1 ? "" : "s"} due`

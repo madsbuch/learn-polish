@@ -52,15 +52,16 @@ export function SessionSummary({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { stats, newlyUnlocked } = result;
-  const goalMet = stats.dayXp >= stats.dailyGoal;
+  // The day is done: the goal reached, or everything due cleared.
+  const goalMet = stats.completedToday;
 
   return (
     <Screen nav={false} header={<div />}>
       <Stack gap={2} align="center">
         <Text variant="display" className="pop">
-          {goalMet ? "🎉" : "👏"}
+          {result.firstCompletionToday ? "🎉" : "👏"}
         </Text>
-        <h1>{goalMet ? "Goal reached!" : "Nice work"}</h1>
+        <h1>{result.firstCompletionToday ? "Day done!" : "Nice work"}</h1>
         <Text tone="dim" align="center" as="p">
           {outcome?.extra
             ? `${outcome.title}: extra practice — half XP, and its schedule stays as it was.`
@@ -85,8 +86,14 @@ export function SessionSummary({
           ) : null}
           <Inline gap={2} justify="center">
             <Badge>🔥 {stats.currentStreak} day streak</Badge>
+            {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
             <Badge>Level {stats.level}</Badge>
           </Inline>
+          {goalMet ? null : (
+            <Text variant="small" tone="dim" align="center">
+              {Math.max(0, stats.dailyGoal - stats.dayXp)} XP to today's goal — or clear what is due.
+            </Text>
+          )}
         </Stack>
       </Hero>
 
