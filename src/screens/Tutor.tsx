@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, SendIcon } from "../components/icons";
+import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon } from "../components/icons";
+import { Composer } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
 import {
   Banner,
@@ -20,6 +21,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useAiStream } from "../lib/useAiStream";
+import { useDraft, writeDraft } from "../lib/drafts";
 import type { ChatMessage, Conversation, TutorAction } from "../lib/types";
 
 const STARTERS = [
@@ -54,43 +56,6 @@ type Shared = {
   onOpenMemories: () => void;
 };
 
-/** The box a message is typed in, with its send button. */
-function Composer({
-  draft,
-  setDraft,
-  disabled,
-  onSend,
-}: {
-  draft: string;
-  setDraft: (text: string) => void;
-  disabled?: boolean;
-  onSend: (text: string) => void;
-}) {
-  return (
-    <div className="composer">
-      <textarea
-        rows={1}
-        value={draft}
-        placeholder="Ask the tutor"
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            onSend(draft);
-          }
-        }}
-      />
-      <IconButton
-        variant="primary"
-        icon={<SendIcon />}
-        label="Send"
-        disabled={disabled || draft.trim().length === 0}
-        onClick={() => onSend(draft)}
-      />
-    </div>
-  );
-}
-
 /**
  * The Tutor tab: your conversations, newest first, with a box at the bottom
  * — writing in it starts a new conversation.
@@ -110,7 +75,7 @@ export function Tutor({
   const [open, setOpen] = useState<number | "new" | null>(null);
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useDraft("list");
   // The message a new conversation opens with, sent as soon as it shows.
   const [opening, setOpening] = useState<string | null>(null);
 
@@ -183,7 +148,7 @@ export function Tutor({
     <Screen
       title="Tutor"
       info={<TutorInfo />}
-      footer={<Composer draft={draft} setDraft={setDraft} onSend={start} />}
+      footer={<Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />}
     >
       {error ? <Banner tone="error">{error}</Banner> : null}
       {conversations === null ? (
@@ -241,7 +206,11 @@ function Chat({
   onDeleted: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
+  // What is being written survives leaving the conversation, and keeps
+  // going while the tutor answers.
+  const [draft, setDraft] = useDraft(conversationId === null ? "new" : String(conversationId));
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const stream = useAiStream();
   const sending = stream.streaming;
   const live = stream.text;
@@ -278,7 +247,9 @@ function Chat({
   async function send(text: string) {
     const message = text.trim();
     if (!message || sending) return;
-    setDraft("");
+    // Only clear the box if it still holds what is being sent (a starter or
+    // the opening message leave it alone).
+    if (draftRef.current.trim() === message) setDraft("");
     setError(null);
     // Show the learner's turn immediately; the backend persists both sides.
     setMessages((current) => [
@@ -290,10 +261,15 @@ function Chat({
       stream.reset();
       setMessages((current) => [...current, reply]);
       if (reply.actions.length > 0) onChanged();
-      if (conversationId === null) onStarted(reply.conversationId);
+      if (conversationId === null) {
+        // Whatever was written meanwhile goes with the conversation.
+        writeDraft(String(reply.conversationId), draftRef.current);
+        writeDraft("new", "");
+        onStarted(reply.conversationId);
+      }
     } else {
       setMessages((current) => current.slice(0, -1));
-      setDraft(message);
+      if (!draftRef.current.trim()) setDraft(message);
     }
   }
 
@@ -358,7 +334,15 @@ function Chat({
     <Screen
       title={title}
       onBack={onBack}
-      footer={<Composer draft={draft} setDraft={setDraft} disabled={sending} onSend={(text) => void send(text)} />}
+      footer={
+        <Composer
+          draft={draft}
+          setDraft={setDraft}
+          placeholder="Ask the tutor"
+          canSend={!sending}
+          onSend={(text) => void send(text)}
+        />
+      }
       actions={
         conversationId !== null ? (
           <IconButton icon={<MoreIcon />} label="Rename or delete" onClick={() => setManaging(true)} />

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { MemoryIcon, PlayerIcon, SendIcon } from "../components/icons";
+import { Composer } from "../components/Composer";
+import { MemoryIcon, PlayerIcon } from "../components/icons";
 import { playSong, useSongItem } from "../components/SongToListen";
 import { Markdown } from "../components/Markdown";
 import {
@@ -135,28 +136,14 @@ export function CheckIn({
             Done
           </Button>
         ) : (
-          <div className="composer">
-            <textarea
-              rows={1}
-              value={draft}
-              placeholder="Your answer"
-              disabled={checkinId === null}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void answer();
-                }
-              }}
-            />
-            <IconButton
-              variant="primary"
-              icon={<SendIcon />}
-              label="Send"
-              disabled={busy || draft.trim().length === 0}
-              onClick={answer}
-            />
-          </div>
+          <Composer
+            draft={draft}
+            setDraft={setDraft}
+            placeholder="Your answer"
+            disabled={checkinId === null}
+            canSend={!busy}
+            onSend={() => void answer()}
+          />
         )
       }
     >
