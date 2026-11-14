@@ -119,6 +119,8 @@ export interface SessionPlan {
   alreadyCompleted: boolean;
   /** The drill block this session practises. */
   blockId: number;
+  /** Done before and not due: extra practice — half XP, schedule unchanged. */
+  extra: boolean;
 }
 
 // ------------------------------------------------------------------ blocks
@@ -306,6 +308,8 @@ export interface SettingsPatch {
 export interface BlockFinished extends SessionResult {
   block: Block;
   result: BlockResult;
+  /** Extra practice: the schedule did not move. */
+  extra: boolean;
 }
 
 export interface SessionResult {

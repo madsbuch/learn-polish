@@ -81,7 +81,14 @@ pub struct SubmitAnswer {
     pub given: String,
     /// Optional override; normally derived from whether the answer was right.
     pub grade: Option<i64>,
+    /// Extra practice on a block that is not due: half XP.
+    #[serde(default)]
+    pub extra: bool,
 }
+
+/// Cards that are only read (a new word, a new sentence, a dialogue to read
+/// through): nothing is answered, so nothing is scored.
+pub const READING_KINDS: &[&str] = &["intro", "sentenceIntro", "dialogueRead"];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,9 +103,27 @@ pub struct AnswerResult {
 
 #[tauri::command]
 pub async fn submit_answer(db: State<'_, Db>, answer: SubmitAnswer) -> Result<AnswerResult> {
-    let mut guard = db.lock();
-    let conn = &mut *guard;
+    submit_answer_in(&mut db.lock(), answer)
+}
+
+/// The work behind [`submit_answer`], callable without Tauri (tests).
+pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     let today = db::today(conn);
+
+    // Reading a card is not answering it: no XP, no review, not counted in
+    // accuracy. (Seeing a new word must not move it toward "mastered".)
+    if READING_KINDS.contains(&answer.kind.as_str()) {
+        let total_xp = stats::total_xp(conn)?;
+        let day_xp = day_log::table.find(today).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+        return Ok(AnswerResult {
+            correct: true,
+            expected: answer.expected,
+            xp_gained: 0,
+            total_xp,
+            day_xp,
+            level: stats::level_from_xp(total_xp),
+        });
+    }
 
     let correct = answers_match(&answer.expected, &answer.given);
     let grade = answer
@@ -115,7 +140,10 @@ pub async fn submit_answer(db: State<'_, Db>, answer: SubmitAnswer) -> Result<An
         srs::save(conn, &answer.item_kind, answer.item_id, &next)?;
     }
 
-    let xp = stats::xp_for_answer(&answer.kind, correct, answer.is_new);
+    let mut xp = stats::xp_for_answer(&answer.kind, correct, answer.is_new);
+    if answer.extra {
+        xp = (xp + 1) / 2;
+    }
     stats::record_answer(conn, today, xp, correct)?;
 
     let total_xp = stats::total_xp(conn)?;
@@ -168,6 +196,8 @@ pub struct BlockFinished {
     pub block: blocks::Block,
     /// "pass" | "partial" | "fail"
     pub result: String,
+    /// Extra practice on a block that was not due: its schedule is unchanged.
+    pub extra: bool,
     #[serde(flatten)]
     pub session: SessionResult,
 }
@@ -176,22 +206,43 @@ pub struct BlockFinished {
 /// check-in, and the day counts toward the streak.
 #[tauri::command]
 pub async fn block_finish(db: State<'_, Db>, block_id: i64, correct: i64, total: i64) -> Result<BlockFinished> {
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    let before = unlocked_codes(conn)?;
-    let result = blocks::result_from_score(correct, total);
-    let block = blocks::record(conn, block_id, result)?;
-    let today = db::today(conn);
-    let first = stats::mark_practised(conn, today)?;
-    Ok(BlockFinished { block, result: result.into(), session: finish_up(conn, &before, first)? })
+    block_finish_in(&mut db.lock(), block_id, correct, total)
 }
 
-/// Stats after a study check-in, for the summary screen.
+/// The work behind [`block_finish`], callable without Tauri (tests).
+pub fn block_finish_in(conn: &mut Conn, block_id: i64, correct: i64, total: i64) -> Result<BlockFinished> {
+    let before = unlocked_codes(conn)?;
+    let result = blocks::result_from_score(correct, total);
+    let today = db::today(conn);
+    // Only a block that is due (or new) moves its schedule. Practising one
+    // early is extra practice: it counts for the day, but a pass must not
+    // push the next check-in further out — three quick replays would
+    // otherwise send it months away.
+    let current = blocks::load(conn, block_id)?;
+    let extra = blocks::is_extra_practice(&current, today);
+    let block = if extra { current } else { blocks::record(conn, block_id, result)? };
+    let first = stats::mark_practised(conn, today)?;
+    Ok(BlockFinished { block, result: result.into(), extra, session: finish_up(conn, &before, first)? })
+}
+
+/// Stats after a check-in, for the summary screen. What counts as newly
+/// unlocked is what was unlocked since the check-in began.
 #[tauri::command]
-pub async fn checkin_summary(db: State<'_, Db>, first_completion_today: bool) -> Result<SessionResult> {
+pub async fn checkin_summary(db: State<'_, Db>, checkin_id: i64, first_completion_today: bool) -> Result<SessionResult> {
     let mut guard = db.lock();
-    let conn = &mut *guard;
-    finish_up(conn, &Default::default(), first_completion_today)
+    checkin_summary_in(&mut guard, checkin_id, first_completion_today)
+}
+
+pub fn checkin_summary_in(conn: &mut Conn, checkin_id: i64, first_completion_today: bool) -> Result<SessionResult> {
+    use crate::schema::checkins;
+    let started: i64 = checkins::table.find(checkin_id).select(checkins::started_at).first(conn)?;
+    let before: std::collections::HashSet<String> = achievements::table
+        .filter(achievements::unlocked_at.lt(started))
+        .select(achievements::code)
+        .load::<String>(conn)?
+        .into_iter()
+        .collect();
+    finish_up(conn, &before, first_completion_today)
 }
 
 #[cfg(test)]

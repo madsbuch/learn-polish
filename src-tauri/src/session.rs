@@ -279,6 +279,7 @@ pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
         exercises,
         already_completed: false,
         block_id,
+        extra: crate::blocks::is_extra_practice(&block, today),
     })
 }
 

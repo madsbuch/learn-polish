@@ -62,7 +62,7 @@ type Overlay =
       kind: "summary";
       result: SessionResult;
       xp: number;
-      outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
+      outcome?: { title: string; result: BlockResult; nextDueDay: number | null; extra?: boolean };
       /** Where Done goes: wherever the block was started from. */
       back: Overlay;
     }
@@ -286,7 +286,12 @@ export default function App() {
               kind: "summary",
               result,
               xp: sessionXp,
-              outcome: { title: result.block.title, result: result.result, nextDueDay: result.block.dueDay },
+              outcome: {
+                title: result.block.title,
+                result: result.result,
+                nextDueDay: result.block.dueDay,
+                extra: result.extra,
+              },
               back: startedFrom(overlay.back),
             });
           }}
@@ -377,16 +382,24 @@ export default function App() {
             setOverlay(overlay.back);
             void refresh();
           }}
-          onFinished={async (first) => {
-            try {
-              const result = await api.checkinSummary(first);
-              setStats(result.stats);
-            } catch {
-              /* the summary is a nicety */
-            }
+          onFinished={async (first, checkinId, assessment) => {
             const back = startedFrom(overlay.back);
-            setOverlay(back);
-            if (back.kind === "none") setTab("exercises");
+            try {
+              // A check-in ends like a drill: on the summary, with what it
+              // earned and any achievement it unlocked.
+              const result = await api.checkinSummary(checkinId, first);
+              setStats(result.stats);
+              setOverlay({
+                kind: "summary",
+                result,
+                xp: assessment.xp,
+                outcome: { title: overlay.title, result: assessment.result, nextDueDay: assessment.nextDueDay },
+                back,
+              });
+            } catch {
+              setOverlay(back);
+              if (back.kind === "none") setTab("exercises");
+            }
             void refresh();
           }}
         />

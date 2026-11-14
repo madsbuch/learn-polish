@@ -266,9 +266,16 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     if !["pass", "partial", "fail"].contains(&assessment.result.as_str()) {
         assessment.result = "partial".into();
     }
-    let block = blocks::record(conn, block_id, &assessment.result)?;
     let today = db::today(conn);
+    // As with drills, only a due (or new) block moves its schedule; checking
+    // in early is extra practice at half XP.
+    let current = blocks::load(conn, block_id)?;
+    let extra = blocks::is_extra_practice(&current, today);
+    let block = if extra { current } else { blocks::record(conn, block_id, &assessment.result)? };
     assessment.xp = stats::xp_for_checkin(&block.complexity, &assessment.result);
+    if extra {
+        assessment.xp = (assessment.xp + 1) / 2;
+    }
     assessment.next_due_day = block.due_day.unwrap_or(today);
     stats::record_answer(conn, today, assessment.xp, assessment.result != "fail")?;
     let first = stats::mark_practised(conn, today)?;

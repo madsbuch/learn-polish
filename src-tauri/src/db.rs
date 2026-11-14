@@ -47,6 +47,11 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
     // Files whose owner is gone (a crash between deleting a row and its
     // file, say) are not kept.
     crate::files::collect_orphans(&mut conn)?;
+    // History left behind by items deleted before the triggers existed.
+    conn.batch_execute(
+        "DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words);
+         DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences);",
+    )?;
     match foreign_key_violations(&mut conn) {
         Ok(0) => {}
         Ok(n) => eprintln!("database integrity: {n} rows point at rows that do not exist"),
@@ -380,6 +385,15 @@ CREATE TABLE IF NOT EXISTS ai_costs (
 );
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
+
+-- A word or sentence takes its practice history with it, however it goes
+-- (with its block, its course, or edited out), so the counts on the
+-- progress screen only ever count what exists — and an id SQLite reuses
+-- never inherits someone else's history.
+CREATE TRIGGER IF NOT EXISTS words_take_their_reviews AFTER DELETE ON words
+BEGIN DELETE FROM reviews WHERE kind = 'word' AND item_id = OLD.id; END;
+CREATE TRIGGER IF NOT EXISTS sentences_take_their_reviews AFTER DELETE ON sentences
+BEGIN DELETE FROM reviews WHERE kind = 'sentence' AND item_id = OLD.id; END;
 
 -- Long-term memory the agents share: one fact about the learner per row.
 CREATE TABLE IF NOT EXISTS memories (

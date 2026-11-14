@@ -35,7 +35,13 @@ export function SessionSummary({
   result: SessionResult;
   sessionXp: number;
   /** The block's verdict and when it checks in next. */
-  outcome?: { title: string; result: BlockResult; nextDueDay: number | null };
+  outcome?: {
+    title: string;
+    result: BlockResult;
+    nextDueDay: number | null;
+    /** Extra practice: the schedule did not move. */
+    extra?: boolean;
+  };
   onDone: () => void;
 }) {
   useBackHandler(true, onDone);
@@ -56,7 +62,9 @@ export function SessionSummary({
         </Text>
         <h1>{goalMet ? "Goal reached!" : "Nice work"}</h1>
         <Text tone="dim" align="center" as="p">
-          {outcome
+          {outcome?.extra
+            ? `${outcome.title}: extra practice — half XP, and its schedule stays as it was.`
+            : outcome
             ? `${outcome.title}: ${OUTCOME[outcome.result]}.`
             : result.firstCompletionToday
               ? "Today's streak is safe."

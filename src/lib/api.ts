@@ -58,6 +58,8 @@ export const api = {
     isNew: boolean;
     expected: string;
     given: string;
+    /** Extra practice (the block is not due): half XP. */
+    extra?: boolean;
   }) => invoke<AnswerResult>("submit_answer", { answer }),
   blocksOverview: () => invoke<BlockOverview>("blocks_overview"),
   blocksForTopic: (topicId: number) => invoke<Block[]>("blocks_for_topic", { topicId }),
@@ -83,8 +85,9 @@ export const api = {
   /** Ends a writing conversation; the partner gives its verdict. */
   checkinEnd: (checkinId: number, streamId: string) =>
     invoke<CheckinTurn>("checkin_end", { checkinId, streamId }),
-  checkinSummary: (firstCompletionToday: boolean) =>
-    invoke<SessionResult>("checkin_summary", { firstCompletionToday }),
+  /** The summary after a check-in; new achievements are those since it began. */
+  checkinSummary: (checkinId: number, firstCompletionToday: boolean) =>
+    invoke<SessionResult>("checkin_summary", { checkinId, firstCompletionToday }),
 
   getStats: () => invoke<Stats>("get_stats"),
   getTopicProgress: () => invoke<TopicProgress[]>("get_topic_progress"),

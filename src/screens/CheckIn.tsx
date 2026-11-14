@@ -23,7 +23,6 @@ import { api } from "../lib/api";
 import { useAiStream } from "../lib/useAiStream";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
-import { playComplete } from "../lib/sounds";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/blocks";
 import type { Assessment } from "../lib/types";
@@ -67,7 +66,7 @@ export function CheckIn({
   title: string;
   onClose: () => void;
   /** The verdict is in; `first` is true when it earned today's streak. */
-  onFinished: (first: boolean) => void;
+  onFinished: (first: boolean, checkinId: number, assessment: Assessment) => void;
 }) {
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -99,7 +98,6 @@ export function CheckIn({
       ...turn.remembered.map((content) => ({ role: "memory" as const, content })),
     ]);
     if (turn.assessment) {
-      if (turn.assessment.result === "pass") playComplete();
       setAssessment(turn.assessment);
       setFirst(turn.firstCompletionToday);
     }
@@ -157,7 +155,7 @@ export function CheckIn({
       }
       footer={
         assessment ? (
-          <Button variant="primary" size="lg" block onClick={() => onFinished(first)}>
+          <Button variant="primary" size="lg" block onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}>
             Done
           </Button>
         ) : (

@@ -144,6 +144,7 @@ export function Session({
         isNew: exercise.isNew,
         expected: exercise.answer,
         given,
+        extra: plan.extra,
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);

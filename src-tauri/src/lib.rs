@@ -658,6 +658,84 @@ mod integration {
     }
 
     #[test]
+    fn gamification_counts_only_what_was_really_done() {
+        let mut conn = scratch_db("game-integrity");
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let drill = blocks::for_topic(&mut conn, basics)
+            .unwrap()
+            .into_iter()
+            .find(|b| b.kind == "drill" && b.format == "words")
+            .unwrap();
+        let word: i64 = t::words::table.filter(t::words::block_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
+        let answer = |kind: &str, extra: bool| practice::SubmitAnswer {
+            kind: kind.into(),
+            item_kind: "word".into(),
+            item_id: word,
+            is_new: true,
+            expected: "kot".into(),
+            given: "kot".into(),
+            grade: None,
+            extra,
+        };
+        let reviews_of_word = |conn: &mut db::Conn| -> i64 {
+            t::reviews::table.filter(t::reviews::kind.eq("word")).filter(t::reviews::item_id.eq(word)).count().get_result(conn).unwrap()
+        };
+
+        // Reading a new word's card earns nothing and is not a review.
+        let read = practice::submit_answer_in(&mut conn, answer("intro", false)).unwrap();
+        assert_eq!(read.xp_gained, 0);
+        assert_eq!(reviews_of_word(&mut conn), 0, "seeing a word is not reviewing it");
+        assert_eq!(stats::collect(&mut conn).unwrap().accuracy, 0.0, "nor an answer");
+
+        let answered = practice::submit_answer_in(&mut conn, answer("recognise", false)).unwrap();
+        assert_eq!(answered.xp_gained, 8);
+        assert_eq!(reviews_of_word(&mut conn), 1);
+
+        // The first time schedules the block; doing it again early does not
+        // push it further out, and pays half.
+        let first = practice::block_finish_in(&mut conn, drill.id, 10, 10).unwrap();
+        assert!(!first.extra);
+        let due = first.block.due_day;
+        let again = practice::block_finish_in(&mut conn, drill.id, 10, 10).unwrap();
+        assert!(again.extra);
+        assert_eq!(again.block.due_day, due, "extra practice leaves the schedule alone");
+        let half = practice::submit_answer_in(&mut conn, answer("recognise", true)).unwrap();
+        assert_eq!(half.xp_gained, 4);
+
+        // A word takes its history with it.
+        blocks::delete(&mut conn, drill.id).unwrap();
+        assert_eq!(reviews_of_word(&mut conn), 0, "no orphaned reviews");
+
+        // A check-in's summary lists only what unlocked since it began.
+        let study = blocks::for_topic(&mut conn, basics)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let now = db::now_secs();
+        diesel::insert_into(t::checkins::table)
+            .values((t::checkins::id.eq(77), t::checkins::block_id.eq(study.id), t::checkins::started_at.eq(now - 10)))
+            .execute(&mut conn)
+            .unwrap();
+        diesel::insert_into(t::achievements::table)
+            .values(vec![
+                (t::achievements::code.eq("first_day"), t::achievements::unlocked_day.eq(0), t::achievements::unlocked_at.eq(now - 100)),
+                (t::achievements::code.eq("streak_3"), t::achievements::unlocked_day.eq(0), t::achievements::unlocked_at.eq(now)),
+            ])
+            .on_conflict_do_nothing()
+            .execute(&mut conn)
+            .unwrap();
+        // The drill above unlocked first_day just now; it belongs to before.
+        diesel::update(t::achievements::table.filter(t::achievements::code.eq("first_day")))
+            .set(t::achievements::unlocked_at.eq(now - 100))
+            .execute(&mut conn)
+            .unwrap();
+        let summary = practice::checkin_summary_in(&mut conn, 77, false).unwrap();
+        let new: Vec<&str> = summary.newly_unlocked.iter().map(|a| a.code.as_str()).collect();
+        assert!(new.contains(&"streak_3") && !new.contains(&"first_day"), "{new:?}");
+    }
+
+    #[test]
     fn audio_cache_round_trips_and_is_keyed_by_voice() {
         let mut conn = scratch_db("audio");
         for (voice, bytes) in [("Kore", &[1u8, 2, 3][..]), ("Puck", &[9, 9][..])] {

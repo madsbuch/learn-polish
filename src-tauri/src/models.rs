@@ -135,6 +135,8 @@ pub struct SessionPlan {
     pub already_completed: bool,
     /// The drill block this session practises.
     pub block_id: i64,
+    /// Done before and not due: extra practice — half XP, schedule unchanged.
+    pub extra: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

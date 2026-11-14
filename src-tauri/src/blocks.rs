@@ -376,6 +376,12 @@ pub fn next_interval(result: &str, reps_before: i64, interval: i64, period: i64)
     }
 }
 
+/// Doing a block that has been done before and is not due yet is extra
+/// practice: it does not move the schedule.
+pub fn is_extra_practice(block: &Block, today: i64) -> bool {
+    block.reps > 0 && block.due_day.is_some_and(|due| due > today)
+}
+
 /// Records a check-in result and schedules the next one.
 pub fn record(conn: &mut Conn, block_id: i64, result: &str) -> Result<Block> {
     if !["pass", "partial", "fail"].contains(&result) {
