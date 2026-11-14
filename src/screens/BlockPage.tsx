@@ -4,6 +4,7 @@ import { BlockIcon } from "../components/BlockRow";
 import { CloseIcon, PlayerIcon, PlusIcon } from "../components/icons";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
+import { ArticleReader, Sources } from "../components/Sources";
 import { SongToListen } from "../components/SongToListen";
 import { SpeakButton } from "../components/ui";
 import {
@@ -36,7 +37,7 @@ import {
   kindName,
   minutes,
 } from "../lib/blocks";
-import type { BlockDetail, TopicProgress } from "../lib/types";
+import type { BlockDetail, TopicProgress, WikiSource } from "../lib/types";
 
 const RESULT_TEXT = { pass: "Passed", partial: "Partly there", fail: "Not yet" } as const;
 
@@ -64,6 +65,10 @@ export function BlockPage({
   const [revealAll, setRevealAll] = useState(false);
   /** The course picker: add the block to one, or move it there. */
   const [picking, setPicking] = useState<{ mode: "add" | "move"; courses: TopicProgress[] } | null>(null);
+  /** A source being read, in the app's reader. */
+  const [reading, setReading] = useState<WikiSource | null>(null);
+  /** Bumped when a source goes, so the list reloads. */
+  const [sourcesVersion, setSourcesVersion] = useState(0);
 
   const reload = () =>
     api.blockDetail(blockId).then(setBlock).catch((cause) => setError(errorMessage(cause)));
@@ -96,6 +101,19 @@ export function BlockPage({
       <Screen title="Block" onBack={onBack} nav={false}>
         {error ? <Banner tone="error">{error}</Banner> : <Spinner />}
       </Screen>
+    );
+  }
+
+  if (reading) {
+    return (
+      <ArticleReader
+        source={reading}
+        onBack={() => setReading(null)}
+        onRemoved={() => {
+          setReading(null);
+          setSourcesVersion((n) => n + 1);
+        }}
+      />
     );
   }
 
@@ -183,6 +201,7 @@ export function BlockPage({
               </div>
             </Card>
           </Section>
+          <Sources key={sourcesVersion} blockId={block.id} onRead={setReading} />
         </>
       ) : null}
 

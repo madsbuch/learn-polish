@@ -13,6 +13,8 @@ import type {
   AnswerResult,
   AudioCacheStats,
   AudioItem,
+  ArticleView,
+  WikiSource,
   TutorStarted,
   AudioOverview,
   AudioClip,
@@ -121,6 +123,11 @@ export const api = {
   tutorRetry: (conversationId: number) => invoke<void>("tutor_retry", { conversationId }),
   /** Whether the app is on screen: off screen, finished replies notify. */
   appVisibility: (visible: boolean) => invoke<void>("app_visibility", { visible }),
+  /** A study block's Wikipedia sources. */
+  blockSources: (blockId: number) => invoke<WikiSource[]>("block_sources", { blockId }),
+  /** A source's article, in its own language or in Polish. */
+  sourceArticle: (sourceId: number, polish: boolean) => invoke<ArticleView>("source_article", { sourceId, polish }),
+  sourceRemove: (sourceId: number) => invoke<void>("source_remove", { sourceId }),
   /** Draws a new picture for a course; returns its file id. */
   coursePicture: (topicId: number) => invoke<number>("course_picture", { topicId }),
   coursePictureDelete: (topicId: number) => invoke<void>("course_picture_delete", { topicId }),

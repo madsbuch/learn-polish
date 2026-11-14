@@ -441,6 +441,29 @@ export interface AudioItem {
   bytes: number;
 }
 
+/** A Wikipedia article a study block is built on. */
+export interface WikiSource {
+  id: number;
+  blockId: number;
+  lang: string;
+  title: string;
+  url: string;
+  summary: string;
+  imageFileId: number | null;
+  /** Polish Wikipedia has it too. */
+  polishTitle: string | null;
+  checkedAt: number;
+}
+
+/** A source's article, for the reader. */
+export interface ArticleView {
+  lang: string;
+  title: string;
+  url: string;
+  /** Markdown. */
+  content: string;
+}
+
 export interface CacheProgress {
   done: number;
   total: number;
