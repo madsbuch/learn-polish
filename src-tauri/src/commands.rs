@@ -370,9 +370,18 @@ pub async fn ai_test_key(db: State<'_, Db>) -> Result<String> {
     Ok(reply.text.trim().to_string())
 }
 
-/// Explains a word or sentence. Text arrives as `ai://stream` events.
+/// One turn of a short chat about a word or sentence (see
+/// [`ai::explain_prompt`]); `history` is the chat so far, empty to open it.
+/// Text arrives as `ai://stream` events.
 #[tauri::command]
-pub async fn ai_explain_stream( app: tauri::AppHandle, db: State<'_, Db>, item_kind: String, item_id: i64, stream_id: String, ) -> Result<String> {
+pub async fn ai_explain_stream(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    item_kind: String,
+    item_id: i64,
+    stream_id: String,
+    history: Option<Vec<ai::ChatTurn>>,
+) -> Result<String> {
     let messages = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -381,7 +390,7 @@ pub async fn ai_explain_stream( app: tauri::AppHandle, db: State<'_, Db>, item_k
             "sentence" => sentences::table.find(item_id).select((sentences::pl, sentences::en)).first(conn)?,
             other => return Err(Error::msg(format!("cannot explain a '{other}'"))),
         };
-        ai::explain_prompt(&polish, &gloss)
+        ai::explain_prompt(&polish, &gloss, &history.unwrap_or_default())
     };
     let agent = Agent {
         app: &app,

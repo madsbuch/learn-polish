@@ -815,3 +815,9 @@
   text-align: center;
   margin: var(--space-2) 0;
 }
+
+/* A chat about one word, in a sheet: its own scroll, above the message box. */
+.word-chat {
+  max-height: 55vh;
+  overflow-y: auto;
+}

@@ -975,20 +975,43 @@ mod tests {
 // Prompts
 // ---------------------------------------------------------------------------
 
-pub fn explain_prompt(polish: &str, meaning: &str) -> Vec<Wire> {
-    vec![
-        Wire::system(
-            "You explain Polish to an English-speaking beginner. Answer in English. \
-             Use short markdown sections and never exceed 200 words.",
-        ),
-        Wire::user(format!(
-            "Explain the Polish item below.\n\n\
-             Polish: {polish}\nEnglish: {meaning}\n\n\
-             Cover, briefly:\n\
-             1. What it literally means, word by word if it is a phrase.\n\
-             2. The grammar a learner needs here (case, aspect, gender) — only what applies.\n\
-             3. Pronunciation written for an English speaker.\n\
-             4. One extra example sentence with its translation."
+/// A turn in a chat about a word: who said it, and what.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatTurn {
+    /// "user" | "assistant"
+    pub role: String,
+    pub content: String,
+}
+
+/// A short conversation about one word or sentence the learner just
+/// practised: how it is really used, with the learner trying it out — not
+/// a dictionary entry. `history` is the chat so far; empty opens it.
+pub fn explain_prompt(polish: &str, meaning: &str, history: &[ChatTurn]) -> Vec<Wire> {
+    let mut wire = vec![
+        Wire::system(format!(
+            "You are a friendly Polish tutor having a short chat with a learner about something they \
+             just practised: \"{polish}\" ({meaning}).
+
+- Talk, don't lecture: two to four sentences a turn, no headings, no numbered sections, no \
+  dictionary entry.
+- Open with how and when people actually use it — a real situation and one natural example \
+  (Polish, with a translation) — then invite the learner to try: ask them to say something \
+  with it, or ask what they would say in a situation you describe.
+- When they answer, react like a person would. If their Polish has a slip, show the right form \
+  in passing and why, briefly. Then take it one step further: a related phrase, a different \
+  form, or another little situation to try.
+- Grammar only when it helps them say the next thing.
+- Reply in the language the learner writes in (English unless they write in another). Polish \
+  always comes with a translation. Markdown is rendered."
         )),
-    ]
+        Wire::user(format!("Let's talk about \"{polish}\".")),
+    ];
+    for turn in history {
+        wire.push(if turn.role == "user" {
+            Wire::user(turn.content.clone())
+        } else {
+            Wire::assistant(turn.content.clone())
+        });
+    }
+    wire
 }

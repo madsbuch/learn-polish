@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
-import { Markdown } from "../components/Markdown";
+import { WordChat } from "../components/WordChat";
 import { GapFill, Memory } from "../components/SetExercises";
 import { CloseIcon } from "../components/icons";
 import { SpeakButton } from "../components/ui";
@@ -13,16 +13,13 @@ import {
   EmptyState,
   Field,
   IconButton,
-  Inline,
   Progress,
-  Spinner,
   Stack,
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
-import { useAiStream } from "../lib/useAiStream";
 import type { AnswerResult, BlockFinished, Exercise, SessionPlan } from "../lib/types";
 import { playCorrect, playWrong } from "../lib/sounds";
 
@@ -57,8 +54,8 @@ export function Session({
   const [gapsFilled, setGapsFilled] = useState<(number | null)[]>([]);
   const [memoryTurns, setMemoryTurns] = useState<number | null>(null);
 
-  // The explanation streams in, so it can be read while it is still arriving.
-  const explanation = useAiStream();
+  // The chat about the current word, when open.
+  const [talking, setTalking] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,7 +72,7 @@ export function Session({
     setBuilt([]);
     setGapsFilled([]);
     setMemoryTurns(null);
-    explanation.reset();
+    setTalking(false);
     setError(null);
     bodyRef.current?.scrollTo({ top: 0 });
     if (exercise?.kind === "type") {
@@ -183,12 +180,6 @@ export function Session({
     }
   }
 
-  function explain() {
-    if (!exercise || explanation.streaming) return;
-    void explanation.run((streamId) =>
-      api.aiExplainStream(exercise.itemKind, exercise.itemId, streamId),
-    );
-  }
 
   if (!exercise) {
     return (
@@ -428,32 +419,18 @@ export function Session({
                 {exercise.itemKind === "dialogue" ? exercise.answer : `${exercise.pl} — ${exercise.meaning}`}
               </Text>
             ) : null}
-            {exercise.itemKind !== "dialogue" &&
-            exercise.itemKind !== "set" &&
-            !explanation.text &&
-            !explanation.streaming ? (
-              <Button size="sm" icon={<span aria-hidden="true">✨</span>} onClick={explain}>
-                Explain with AI
+            {exercise.itemKind !== "dialogue" && exercise.itemKind !== "set" ? (
+              <Button size="sm" icon={<span aria-hidden="true">✨</span>} onClick={() => setTalking(true)}>
+                Talk about it
               </Button>
             ) : null}
-            {explanation.streaming && !explanation.text ? (
-              <Inline gap={2}>
-                <Spinner />
-                <Text variant="small" tone="faint">
-                  Thinking…
-                </Text>
-              </Inline>
-            ) : null}
-            {explanation.text ? (
-              <div>
-                <Markdown text={explanation.text} />
-                {explanation.streaming ? <span className="caret" /> : null}
-              </div>
-            ) : null}
-            {explanation.error ? (
-              <Text variant="small" tone="bad">
-                {explanation.error}
-              </Text>
+            {talking ? (
+              <WordChat
+                itemKind={exercise.itemKind}
+                itemId={exercise.itemId}
+                title={exercise.pl}
+                onClose={() => setTalking(false)}
+              />
             ) : null}
           </div>
         ) : null}
