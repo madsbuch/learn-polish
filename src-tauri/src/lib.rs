@@ -24,6 +24,7 @@ mod srs;
 mod stats;
 mod text;
 mod tutor;
+mod wiki;
 mod work;
 
 use std::sync::Mutex;
@@ -94,6 +95,9 @@ pub fn run() {
             tutor::tutor_send,
             tutor::tutor_retry,
             pictures::course_picture,
+            wiki::block_sources,
+            wiki::source_article,
+            wiki::source_remove,
             pictures::course_picture_delete,
             tutor::app_visibility,
             tutor::tutor_conversations,
@@ -904,6 +908,70 @@ mod integration {
         assert_eq!(formats[2], "", "the first lesson once the first words are in: {path:?}");
         assert!(formats.contains(&"typing"), "every third batch of words is typed: {path:?}");
         assert_eq!(formats.iter().filter(|f| **f == "words" || **f == "typing").count(), 3);
+    }
+
+    #[test]
+    fn study_blocks_keep_their_wikipedia_sources() {
+        let mut conn = scratch_db("wiki-sources");
+        let study = blocks::create_study(
+            &mut conn,
+            blocks::NewStudy {
+                title: "Kraków".into(),
+                complexity: "low".into(),
+                lesson: "Kraków was Poland's capital until 1596.".into(),
+                objectives: vec!["Say what Kraków is known for".into()],
+                ..Default::default()
+            },
+            "tutor",
+        )
+        .unwrap();
+        let article = wiki::Article {
+            lang: "en".into(),
+            title: "Kraków".into(),
+            url: "https://en.wikipedia.org/wiki/Krak%C3%B3w".into(),
+            pageid: 16815,
+            revid: 1,
+            summary: "Kraków is the second-largest city in Poland.".into(),
+            content: "Kraków is the second-largest city in Poland.\n\n## History\nCapital until 1596.".into(),
+            thumbnail: None,
+            polish_title: Some("Kraków".into()),
+        };
+        let polish = wiki::Article {
+            lang: "pl".into(),
+            title: "Kraków".into(),
+            url: "https://pl.wikipedia.org/wiki/Krak%C3%B3w".into(),
+            content: "Kraków – miasto w Polsce.".into(),
+            ..article.clone()
+        };
+        let picture = Some(("image/jpeg".to_string(), vec![1u8, 2, 3]));
+        // Attached to an existing block — and again, which replaces it.
+        wiki::store(&mut conn, study.id, &article, Some(&polish), picture.clone()).unwrap();
+        let source = wiki::store(&mut conn, study.id, &wiki::Article { revid: 2, ..article.clone() }, Some(&polish), picture).unwrap();
+        assert_eq!(wiki::sources_of(&mut conn, study.id).unwrap().len(), 1, "one article, one source");
+        assert_eq!(t::files::table.count().get_result::<i64>(&mut conn).unwrap(), 1, "the old picture went");
+
+        // Drills take no sources.
+        let basics = db::require_topic_id(&mut conn, 1).unwrap();
+        let drill = blocks::for_topic(&mut conn, basics)
+            .unwrap()
+            .into_iter()
+            .find(|b| b.kind == "drill")
+            .unwrap();
+        assert!(wiki::store(&mut conn, drill.id, &article, None, None).is_err());
+
+        // The tutor sees it; the examiner reads it.
+        let got = tutor::run_tool_for_test(&mut conn, "get_block", serde_json::json!({ "block_id": study.id }));
+        assert_eq!(got["sources"][0]["in_polish_too"], true, "{got}");
+        let detail = blocks::detail(&mut conn, study.id).unwrap();
+        let prompt = examiner::system_prompt(&mut conn, &detail).unwrap();
+        assert!(prompt.contains("Capital until 1596") && prompt.contains("learner's language"), "{prompt}");
+
+        // Removed by the tutor, or with its block.
+        tutor::run_tool_for_test(&mut conn, "remove_source", serde_json::json!({ "source_id": source.id }));
+        assert!(wiki::sources_of(&mut conn, study.id).unwrap().is_empty());
+        wiki::store(&mut conn, study.id, &article, None, None).unwrap();
+        blocks::delete(&mut conn, study.id).unwrap();
+        assert_eq!(t::wiki_sources::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
     }
 
     #[test]

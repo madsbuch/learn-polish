@@ -248,7 +248,10 @@ CREATE TABLE IF NOT EXISTS blocks (
     reps          INTEGER NOT NULL DEFAULT 0,
     origin        TEXT    NOT NULL DEFAULT 'tutor', -- starter | tutor | you
     created_at    INTEGER NOT NULL,
-    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE -- listening blocks
+    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE, -- listening blocks
+    -- What the last fact check against the block's sources changed, and when.
+    fact_note       TEXT,
+    fact_checked_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS blocks_due ON blocks(due_day);
 
@@ -389,6 +392,29 @@ CREATE TABLE IF NOT EXISTS ai_costs (
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
 
+-- Wikipedia articles a study block is built on: its sources. The text is
+-- kept (offline reading, fact checks), with the revision it was read at;
+-- a Polish version alongside when there is one. They go with their block.
+CREATE TABLE IF NOT EXISTS wiki_sources (
+    id            INTEGER PRIMARY KEY,
+    block_id      INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    ord           INTEGER NOT NULL DEFAULT 0,
+    lang          TEXT    NOT NULL,     -- the article's Wikipedia: en, pl, …
+    title         TEXT    NOT NULL,
+    url           TEXT    NOT NULL,
+    pageid        INTEGER NOT NULL,
+    revid         INTEGER NOT NULL,
+    summary       TEXT    NOT NULL,     -- the lead section
+    content       TEXT    NOT NULL,     -- the whole article, as markdown
+    image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    pl_title      TEXT,                 -- the same article on Polish Wikipedia
+    pl_url        TEXT,
+    pl_content    TEXT,
+    fetched_at    INTEGER NOT NULL,
+    checked_at    INTEGER NOT NULL,     -- last compared with Wikipedia
+    UNIQUE (block_id, lang, pageid)
+);
+
 -- A word or sentence takes its practice history with it, however it goes
 -- (with its block, its course, or edited out), so the counts on the
 -- progress screen only ever count what exists — and an id SQLite reuses
@@ -434,6 +460,8 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "songs", "topic_id", "INTEGER REFERENCES topics(id) ON DELETE SET NULL")?;
     add_column(conn, "songs", "origin", "TEXT NOT NULL DEFAULT '{}'")?;
     add_column(conn, "day_log", "frozen", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "blocks", "fact_note", "TEXT")?;
+    add_column(conn, "blocks", "fact_checked_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_error", "TEXT")?;
     add_column(conn, "topics", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
@@ -1125,7 +1153,7 @@ mod tests {
         }
         check!(
             topics, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
-            files, speech_clips, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
+            files, speech_clips, wiki_sources, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
             playlist_tracks, ai_costs, memories,
         );

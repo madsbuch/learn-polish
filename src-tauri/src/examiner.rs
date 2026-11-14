@@ -38,6 +38,18 @@ fn question_plan(complexity: &str) -> &'static str {
 
 pub(crate) fn system_prompt(conn: &mut Conn, block: &blocks::BlockDetail) -> Result<String> {
     let previous = previous_feedback(conn, block.block.id)?;
+    // A lesson built on Wikipedia: its sources, to keep questions to what
+    // they say — and facts may be answered in the learner's own language.
+    let reading = crate::wiki::reading_for(conn, block.block.id, 6000)?;
+    let sources = if reading.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nThe lesson is built on these sources. Ask only about what the lesson and they say. \
+             Facts may be answered in English (or the learner's language); add one small Polish \
+             step to each check-in — a sentence with the place or word in it.\n{reading}\n"
+        )
+    };
     let song = match block.block.song_id {
         Some(id) => Some(crate::songs::load_song(conn, id)?),
         None => None,
@@ -92,13 +104,14 @@ Objectives:
 
 The lesson the learner studied:
 {lesson}
-{listening}{previous}{memory}",
+{listening}{sources}{previous}{memory}",
         plan = question_plan(&block.block.complexity),
         title = block.block.title,
         complexity = block.block.complexity,
         objectives = block.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
         lesson = block.lesson,
         listening = listening,
+        sources = sources,
         previous = previous
             .map(|feedback| format!("\nLast check-in's verdict, to follow up on: {feedback}"))
             .unwrap_or_default(),

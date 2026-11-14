@@ -79,6 +79,10 @@ The app:
   grammar the dialogue uses; and a writing block where the learner plays out the course's \
   situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
   To grow a course, add to it rather than making a new one.
+- Culture and facts (cities, history, customs): write the lesson from Wikipedia — wiki_search, \
+  wiki_read — and attach the article to the block with attach_source (existing blocks too). \
+  Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
+  language hook (the city in \"w Krakowie\", \"z Krakowa\").
 - Polish must be correct, with diacritics. Words in dictionary form, lowercase, with a short \
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
@@ -396,6 +400,57 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Writing\"" }
                 },
                 "required": ["title", "summary", "complexity", "scenario", "goals"]
+            }),
+        ),
+        tool(
+            "wiki_search",
+            "Searching Wikipedia…",
+            "Find Wikipedia articles, to write a lesson on culture or facts from a source.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "lang": { "type": "string", "description": "Wikipedia language code; default \"en\" (\"pl\" for Polish Wikipedia)" }
+                },
+                "required": ["query"]
+            }),
+        ),
+        tool(
+            "wiki_read",
+            "Reading Wikipedia…",
+            "Read a Wikipedia article: its lead and the list of its sections, or one section in full.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "lang": { "type": "string", "description": "Default \"en\"" },
+                    "section": { "type": "string", "description": "A section heading to read in full; leave out for the lead and the section list" }
+                },
+                "required": ["title"]
+            }),
+        ),
+        tool(
+            "attach_source",
+            "Attaching the article…",
+            "Attach a Wikipedia article to a study block (new or existing) as its source: the learner can read it in the app (in Polish too, when Polish Wikipedia has it), the examiner draws on it, and the lesson is checked against it every three months.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "block_id": { "type": "integer" },
+                    "title": { "type": "string" },
+                    "lang": { "type": "string", "description": "Default \"en\"" }
+                },
+                "required": ["block_id", "title"]
+            }),
+        ),
+        tool(
+            "remove_source",
+            "Removing the source…",
+            "Take a Wikipedia source off a block (its id is in get_block).",
+            json!({
+                "type": "object",
+                "properties": { "source_id": { "type": "integer" } },
+                "required": ["source_id"]
             }),
         ),
         tool(
@@ -814,6 +869,91 @@ struct OrderArgs {
 }
 
 #[derive(Deserialize)]
+struct SourceArg {
+    source_id: i64,
+}
+
+#[derive(Deserialize)]
+struct WikiArgs {
+    #[serde(default)]
+    query: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    lang: Option<String>,
+    #[serde(default)]
+    section: Option<String>,
+    #[serde(default)]
+    block_id: Option<i64>,
+}
+
+/// The Wikipedia tools that need the network, run without holding the lock.
+fn is_wiki_tool(name: &str) -> bool {
+    matches!(name, "wiki_search" | "wiki_read" | "attach_source")
+}
+
+async fn run_wiki_tool(db: &Db, name: &str, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = async {
+        let args: WikiArgs = parse(arguments)?;
+        let lang = args.lang.as_deref().filter(|l| !l.is_empty()).unwrap_or("en");
+        match name {
+            "wiki_search" => {
+                let hits = crate::wiki::search(lang, &args.query).await?;
+                Ok(Outcome::data(json!({ "results": hits })))
+            }
+            "wiki_read" => {
+                let article = crate::wiki::fetch(lang, &args.title).await?;
+                let sections: Vec<&str> = article
+                    .content
+                    .lines()
+                    .filter(|l| l.starts_with('#'))
+                    .map(|l| l.trim_start_matches('#').trim())
+                    .collect();
+                let text = match &args.section {
+                    Some(wanted) => section_text(&article.content, wanted)
+                        .ok_or_else(|| Error::msg(format!("No section “{wanted}”. Sections: {}", sections.join(", "))))?,
+                    None => article.summary.clone(),
+                };
+                Ok(Outcome::data(json!({
+                    "title": article.title,
+                    "url": article.url,
+                    "text": text.chars().take(8000).collect::<String>(),
+                    "sections": sections,
+                    "polish_title": article.polish_title,
+                })))
+            }
+            _ => {
+                let block_id = args.block_id.ok_or_else(|| Error::msg("attach_source needs a block_id."))?;
+                let source = crate::wiki::attach(db, block_id, lang, &args.title).await?;
+                Ok(Outcome::block(
+                    json!({ "attached": { "source_id": source.id, "title": source.title, "in_polish_too": source.polish_title.is_some() } }),
+                    "sourceAdded",
+                    format!("Attached “{}” from Wikipedia", source.title),
+                    block_id,
+                ))
+            }
+        }
+    }
+    .await;
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
+/// One section of an article's markdown, by its heading (sub-sections
+/// included).
+fn section_text(markdown: &str, wanted: &str) -> Option<String> {
+    let lines: Vec<&str> = markdown.lines().collect();
+    let start = lines.iter().position(|l| {
+        l.starts_with('#') && l.trim_start_matches('#').trim().eq_ignore_ascii_case(wanted.trim())
+    })?;
+    let level = lines[start].chars().take_while(|c| *c == '#').count();
+    let end = lines[start + 1..]
+        .iter()
+        .position(|l| l.starts_with('#') && l.chars().take_while(|c| *c == '#').count() <= level)
+        .map_or(lines.len(), |i| start + 1 + i);
+    Some(lines[start..end].join("\n"))
+}
+
+#[derive(Deserialize)]
 struct WritingArgs {
     #[serde(flatten)]
     writing: blocks::NewWriting,
@@ -1207,7 +1347,16 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 "words": detail.words.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
                 "sentences": detail.sentences.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
                 "last_checkin_feedback": detail.last_feedback,
+                "sources": crate::wiki::sources_of(conn, args.block_id)?
+                    .into_iter()
+                    .map(|s| json!({ "source_id": s.id, "title": s.title, "lang": s.lang, "url": s.url, "in_polish_too": s.polish_title.is_some() }))
+                    .collect::<Vec<_>>(),
             })))
+        }
+        "remove_source" => {
+            let args: SourceArg = parse(arguments)?;
+            crate::wiki::remove(conn, args.source_id)?;
+            Ok(Outcome::data(json!({ "removed": args.source_id })))
         }
         "update_block" => {
             let args: UpdateBlockArgs = parse(arguments)?;
@@ -2068,6 +2217,8 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                 let done = if call.function.name == "make_song" {
                     // The network twice (songwriter, then Suno): not under the lock.
                     make_song(app, db, &call.function.arguments).await
+                } else if is_wiki_tool(&call.function.name) {
+                    run_wiki_tool(db, &call.function.name, &call.function.arguments).await
                 } else {
                     let mut guard = db.lock();
                     let conn = &mut *guard;

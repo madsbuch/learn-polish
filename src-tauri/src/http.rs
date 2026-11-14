@@ -30,3 +30,13 @@ pub fn lan() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     build(&CLIENT, || reqwest::Client::builder().timeout(Duration::from_secs(6)).no_proxy())
 }
+
+/// Wikipedia. Wikimedia asks every client to say what it is.
+pub fn wikipedia() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    build(&CLIENT, || {
+        reqwest::Client::builder()
+            .user_agent(concat!("Polski/", env!("CARGO_PKG_VERSION"), " (language-learning app; reads articles for lessons)"))
+            .timeout(Duration::from_secs(30))
+    })
+}

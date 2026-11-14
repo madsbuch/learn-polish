@@ -109,6 +109,28 @@ diesel::table! {
 }
 
 diesel::table! {
+    /// Wikipedia articles a study block is built on (wiki.rs).
+    wiki_sources (id) {
+        id -> BigInt,
+        block_id -> BigInt,
+        ord -> BigInt,
+        lang -> Text,
+        title -> Text,
+        url -> Text,
+        pageid -> BigInt,
+        revid -> BigInt,
+        summary -> Text,
+        content -> Text,
+        image_file_id -> Nullable<BigInt>,
+        pl_title -> Nullable<Text>,
+        pl_url -> Nullable<Text>,
+        pl_content -> Nullable<Text>,
+        fetched_at -> BigInt,
+        checked_at -> BigInt,
+    }
+}
+
+diesel::table! {
     speech_clips (cache_key) {
         cache_key -> Text,
         model -> Text,
@@ -140,6 +162,8 @@ diesel::table! {
         origin -> Text,
         created_at -> BigInt,
         song_id -> Nullable<BigInt>,
+        fact_note -> Nullable<Text>,
+        fact_checked_at -> Nullable<BigInt>,
     }
 }
 
@@ -330,6 +354,7 @@ diesel::joinable!(checkin_messages -> checkins (checkin_id));
 diesel::joinable!(tutor_messages -> tutor_conversations (conversation_id));
 diesel::joinable!(song_tracks -> songs (song_id));
 diesel::joinable!(speech_clips -> files (file_id));
+diesel::joinable!(wiki_sources -> blocks (block_id));
 diesel::joinable!(blocks -> songs (song_id));
 diesel::joinable!(songs -> topics (topic_id));
 diesel::joinable!(playlist_tracks -> playlists (playlist_id));
@@ -346,6 +371,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     achievements,
     files,
     speech_clips,
+    wiki_sources,
     blocks,
     course_blocks,
     course_words,
