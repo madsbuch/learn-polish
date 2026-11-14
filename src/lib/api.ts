@@ -133,7 +133,10 @@ export const api = {
   previewVoice: (voice: string, text: string) =>
     invoke<AudioClip>("preview_voice", { voice, text }),
   speak: (text: string, gender?: string) => invoke<AudioClip>("speak", { text, gender }),
-  cacheAudio: (lines: SpeechLine[]) => invoke<CacheProgress>("cache_audio", { lines }),
+  /** `force` makes stored lines again too, replacing their clips. */
+  cacheAudio: (lines: SpeechLine[], force = false) => invoke<CacheProgress>("cache_audio", { lines, force }),
+  /** Makes one line's audio again, replacing the stored clip. */
+  respeak: (text: string, gender: string) => invoke<AudioClip>("respeak", { text, gender }),
   audioOverview: () => invoke<AudioOverview>("audio_overview"),
   courseAudio: (topicId: number) => invoke<AudioItem[]>("course_audio", { topicId }),
   /** Deletes clips no course uses; returns how many went. */

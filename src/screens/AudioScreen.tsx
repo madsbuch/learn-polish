@@ -15,11 +15,13 @@ import {
   Section,
   Segmented,
   SettingRow,
+  Sheet,
   Spinner,
   Stack,
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { playClip, speak } from "../lib/speech";
 import type { AudioItem, AudioOverview, CacheProgress, CourseAudio } from "../lib/types";
 
 export function megabytes(bytes: number): string {
@@ -268,6 +270,9 @@ function CourseAudioPage({
   const [items, setItems] = useState<AudioItem[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [busy, setBusy] = useState(false);
+  // The line whose sheet is open: play it, or make it again.
+  const [selected, setSelected] = useState<AudioItem | null>(null);
+  const [redoing, setRedoing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -332,6 +337,33 @@ function CourseAudioPage({
           >
             {missing.length === 0 ? "All downloaded" : `Download the missing ${missing.length}`}
           </Button>
+          {stored > 0 ? (
+            <ConfirmButton
+              label="Download the whole course again"
+              confirmLabel="Download again"
+              question={`Make all ${items.length} clips again, replacing the stored ones? Each costs a speech request.`}
+              block
+              onConfirm={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  const all = items.map(({ text, gender }) => ({ text, gender }));
+                  const result = await api.cacheAudio(all, true);
+                  if (result.error) setError(`Stopped after an error: ${result.error}`);
+                } catch (cause) {
+                  setError(errorMessage(cause));
+                } finally {
+                  setBusy(false);
+                  load();
+                  onChanged();
+                }
+              }}
+            />
+          ) : null}
+          <Text variant="small" tone="dim" as="p">
+            Tap a line to download it again — if it was read with the wrong accent, or says
+            something else.
+          </Text>
 
           <Segmented
             value={filter}
@@ -357,6 +389,8 @@ function CourseAudioPage({
                   )
                 }
                 title={item.text}
+                label={`${item.text}: play or download again`}
+                onClick={() => setSelected(item)}
                 subtitle={`${KIND_NAMES[item.kind]}${item.gender === "m" ? " · male voice" : ""}${
                   item.stored ? ` · ${megabytes(item.bytes)}` : " · not downloaded"
                 }`}
@@ -380,6 +414,47 @@ function CourseAudioPage({
           </List>
         </>
       )}
+
+      {selected ? (
+        <Sheet title={selected.text} onClose={() => setSelected(null)}>
+          <Stack gap={3}>
+            <Text variant="small" tone="dim" as="p">
+              {KIND_NAMES[selected.kind]}
+              {selected.gender === "m" ? " · male voice" : ""} ·{" "}
+              {selected.stored ? `downloaded, ${megabytes(selected.bytes)}` : "not downloaded"}
+            </Text>
+            <Button block icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => setError(errorMessage(cause)))}>
+              Play
+            </Button>
+            <Button
+              variant="primary"
+              block
+              icon={<PlayerIcon.download />}
+              loading={redoing}
+              onClick={async () => {
+                setRedoing(true);
+                setError(null);
+                try {
+                  const clip = await api.respeak(selected.text, selected.gender);
+                  playClip(clip).catch(() => {
+                    /* stored either way; playing it is a nicety */
+                  });
+                  setSelected({ ...selected, stored: true, bytes: Math.round((clip.base64.length * 3) / 4) });
+                  load();
+                  onChanged();
+                } catch (cause) {
+                  setError(errorMessage(cause));
+                  setSelected(null);
+                } finally {
+                  setRedoing(false);
+                }
+              }}
+            >
+              {selected.stored ? "Download again" : "Download"}
+            </Button>
+          </Stack>
+        </Sheet>
+      ) : null}
     </Screen>
   );
 }

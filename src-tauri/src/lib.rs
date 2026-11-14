@@ -107,6 +107,7 @@ pub fn run() {
             speech::audio_overview,
             speech::course_audio,
             speech::delete_unused_audio,
+            speech::respeak,
             commands::kie_set_key,
             commands::kie_clear_key,
             songs::kie_credits,
@@ -470,6 +471,7 @@ mod integration {
         db::set_setting(&mut conn, "tts_voice_male", "Charon").unwrap();
         assert_eq!(ai::voice_for(&mut conn, "f"), "Leda");
         assert_eq!(ai::voice_for(&mut conn, "m"), "Charon");
+        assert_eq!(ai::voice_for(&mut conn, ""), "Leda", "words and sentences use the chosen voice too");
 
         // A voice of the wrong gender, or one Gemini does not have, is ignored
         // rather than sent to the API to be rejected.

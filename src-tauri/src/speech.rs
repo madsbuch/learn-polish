@@ -191,6 +191,23 @@ pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>) -> R
     Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
 }
 
+/// Makes a line's audio again, replacing the stored clip — for one that came
+/// out wrong (an English accent, the wrong words).
+#[tauri::command]
+pub async fn respeak(db: State<'_, Db>, text: String, gender: Option<String>) -> Result<AudioClip> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err(Error::msg("Nothing to say."));
+    }
+    let config = speech_config(&mut db.lock(), &gender.unwrap_or_default())?;
+    let (mime, bytes) = ai::synthesize(&config.key, &config.model, &config.voice, &text, config.speed).await?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    record_speech(conn, &config.model, &text);
+    store_clip(conn, &audio_key(&config.model, &config.voice, &text), &config.model, &config.voice, &text, &mime, &bytes)?;
+    Ok(AudioClip { mime, base64: BASE64.encode(bytes), cached: false })
+}
+
 /// A line to synthesise, with the gender that decides which voice reads it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechLine {
@@ -202,7 +219,14 @@ pub struct SpeechLine {
 /// Generates and stores audio for a batch of lines, reporting progress as it
 /// goes. Used to warm a topic's sentences ahead of practice.
 #[tauri::command]
-pub async fn cache_audio( app: tauri::AppHandle, db: State<'_, Db>, lines: Vec<SpeechLine>, ) -> Result<CacheProgress> {
+pub async fn cache_audio(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    lines: Vec<SpeechLine>,
+    // Make them again even when stored (to replace clips that came out wrong).
+    force: Option<bool>,
+) -> Result<CacheProgress> {
+    let force = force.unwrap_or(false);
     // Drop duplicates and anything already stored before spending a request.
     // A line spoken by two genders is two clips, so the pair is the key.
     let mut pending: Vec<(SpeechConfig, String)> = Vec::new();
@@ -217,7 +241,7 @@ pub async fn cache_audio( app: tauri::AppHandle, db: State<'_, Db>, lines: Vec<S
             }
             let config = speech_config(conn, &line.gender)?;
             let key = audio_key(&config.model, &config.voice, &text);
-            if cached_clip(conn, &key)?.is_none() {
+            if force || cached_clip(conn, &key)?.is_none() {
                 pending.push((config, text));
             }
         }

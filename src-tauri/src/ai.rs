@@ -101,6 +101,9 @@ fn known_voice(name: &str, gender: &str) -> bool {
 /// The voice to read a line in. `gender` is "f" or "m"; anything else, and
 /// non-dialogue text, gets the female voice.
 pub fn voice_for(conn: &mut Conn, gender: &str) -> String {
+    // Words and sentences have no gender ("") and read in the female voice:
+    // the one chosen for it, not just the default.
+    let gender = if gender == "m" { "m" } else { "f" };
     let (key, fallback) = if gender == "m" {
         ("tts_voice_male", DEFAULT_MALE_VOICE)
     } else {
@@ -663,6 +666,17 @@ pub async fn synthesize(
     Err(error)
 }
 
+/// Gemini's speech model takes a prompt, not only a transcript: bare text
+/// that is also English ("transport") gets an American accent, and a lone
+/// word ("prom") can be taken as a cue to say something else entirely.
+/// Saying what the text is, and that nothing else is wanted, fixes both.
+pub fn speech_prompt(text: &str) -> String {
+    format!(
+        "Read the following Polish text aloud with native Polish pronunciation. It is Polish, \
+         not English. Say exactly this and nothing else: {text}"
+    )
+}
+
 async fn speech_request(
     key: &str,
     model: &str,
@@ -678,7 +692,7 @@ async fn speech_request(
         .header("X-Title", "Polski")
         .json(&SpeechRequest {
             model,
-            input: text,
+            input: &speech_prompt(text),
             response_format: format,
             voice,
             speed,
