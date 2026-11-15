@@ -60,7 +60,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 
 # Scanning another device's API-key QR code. The plugin only exists on phones.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-barcode-scanner = "2"
+tauri-plugin-barcode-scanner = "~2.4"
 
 [features]
 # This feature is used for production builds where `devUrl` points to the filesystem.
