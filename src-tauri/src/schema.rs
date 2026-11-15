@@ -357,6 +357,21 @@ diesel::joinable!(words -> blocks (block_id));
 diesel::joinable!(sentences -> blocks (block_id));
 diesel::joinable!(conversation_lines -> blocks (block_id));
 diesel::joinable!(course_blocks -> blocks (block_id));
+diesel::table! {
+    bench_runs (id) {
+        id -> BigInt,
+        model -> Text,
+        created_at -> BigInt,
+        score -> BigInt,
+        polish -> BigInt,
+        tools -> BigInt,
+        rules -> BigInt,
+        seconds -> Double,
+        cost_usd -> Nullable<Double>,
+        items -> Text,
+    }
+}
+
 diesel::joinable!(course_blocks -> topics (topic_id));
 diesel::joinable!(course_words -> topics (topic_id));
 diesel::joinable!(course_words -> blocks (block_id));
@@ -375,6 +390,7 @@ diesel::joinable!(playlist_tracks -> playlists (playlist_id));
 diesel::joinable!(playlist_tracks -> song_tracks (track_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    bench_runs,
     topics,
     words,
     sentences,

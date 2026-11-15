@@ -1,4 +1,5 @@
 import { ModelSetting } from "../components/ModelPicker";
+import { Benchmark } from "../components/Benchmark";
 import { useCallback, useEffect, useState } from "react";
 
 import { CostCenter } from "../components/CostCenter";
@@ -72,6 +73,7 @@ export function SettingsScreen({
     api.listVoices().then(setVoices).catch(() => setVoices(null));
   }, []);
 
+  const [benchmark, setBenchmark] = useState(false);
   // Every model row shares the starred models.
   const models = {
     favorites: settings.favoriteModels ?? [],
@@ -360,7 +362,13 @@ export function SettingsScreen({
             {...models}
             onChange={(model) => patch({ imageModel: model }, "image-model")}
           />
+          <ListItem
+            title="Benchmark"
+            subtitle="Test a model on this app's own jobs, and compare scores, speed and price"
+            onClick={() => setBenchmark(true)}
+          />
         </List>
+        {benchmark ? <Benchmark onClose={() => setBenchmark(false)} /> : null}
       </Section>
 
       <Section

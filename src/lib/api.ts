@@ -19,6 +19,7 @@ import type {
   TutorStarted,
   TalkAbout,
   FeatureUsage,
+  BenchRun,
   GoalHelp,
   AudioOverview,
   AudioClip,
@@ -117,6 +118,10 @@ export const api = {
   aiListModels: () => invoke<AiModel[]>("ai_list_models"),
   /** Tokens each feature used over the last 30 days. */
   aiUsage: () => invoke<FeatureUsage[]>("ai_usage"),
+  /** Runs the benchmark on a model (progress: `bench://progress`). */
+  benchRun: (model: string) => invoke<BenchRun>("bench_run", { model }),
+  benchRuns: () => invoke<BenchRun[]>("bench_runs"),
+  benchDelete: (id: number) => invoke<void>("bench_delete", { id }),
   /**
    * Opens the tutor conversation about a word or sentence — or carries on the
    * one already about it. A new one starts with the tutor talking.

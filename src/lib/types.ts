@@ -740,3 +740,28 @@ export interface FeatureUsage {
   /** Days the counts cover. */
   days: number;
 }
+
+/** One benchmark item's outcome. */
+export interface BenchItem {
+  part: "polish" | "tools" | "rules";
+  name: string;
+  /** 0–1. */
+  score: number;
+  note: string;
+  answer: string;
+}
+
+/** A benchmark run on one model. */
+export interface BenchRun {
+  id: number;
+  model: string;
+  createdAt: number;
+  score: number;
+  polish: number;
+  tools: number;
+  rules: number;
+  /** Average seconds per reply. */
+  seconds: number;
+  costUsd: number | null;
+  items: BenchItem[];
+}

@@ -15,7 +15,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { AiModel, FeatureUsage } from "../lib/types";
+import type { AiModel, BenchRun, FeatureUsage } from "../lib/types";
 import { StarIcon } from "./icons";
 
 // The catalogue is the same for every picker: fetched once per app run.
@@ -82,6 +82,16 @@ function loadUsage(): Promise<FeatureUsage[]> {
     return [];
   });
   return usageLoad;
+}
+
+// Benchmark scores, newest run per model.
+let benchLoad: Promise<BenchRun[]> | null = null;
+function loadBench(): Promise<BenchRun[]> {
+  benchLoad ??= api.benchRuns().catch(() => {
+    benchLoad = null;
+    return [];
+  });
+  return benchLoad;
 }
 
 /**
@@ -260,6 +270,11 @@ function ModelPicker({
 }) {
   const [models, setModels] = useState<AiModel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bench, setBench] = useState<BenchRun[]>([]);
+  useEffect(() => {
+    benchLoad = null;
+    void loadBench().then(setBench);
+  }, []);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"name" | "price">("name");
   // Acting in the app needs tool use: only those, unless asked for all.
@@ -294,6 +309,8 @@ function ModelPicker({
   function row(model: AiModel, why?: string) {
     const on = favorites.includes(model.id);
     const estimate = monthlyLine(monthly(model, job, usage));
+    // Runs come newest first: the first for a model is its latest.
+    const scored = bench.find((run) => run.model === model.id);
     return (
       <ListItem
         key={`${why ? "pick-" : ""}${model.id}`}
@@ -307,7 +324,7 @@ function ModelPicker({
                 <br />
               </>
             ) : null}
-            {[estimate, priceLine(model), estimate ? null : contextLine(model.contextLength)]
+            {[scored ? `Benchmark ${scored.score}` : null, estimate, priceLine(model), estimate ? null : contextLine(model.contextLength)]
               .filter(Boolean)
               .join(" · ")}
           </>

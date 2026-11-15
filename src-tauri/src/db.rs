@@ -423,6 +423,20 @@ CREATE TABLE IF NOT EXISTS ai_costs (
     tokens_out    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
+
+-- Benchmark runs (bench.rs): a model's scores on the app's own jobs.
+CREATE TABLE IF NOT EXISTS bench_runs (
+    id         INTEGER PRIMARY KEY,
+    model      TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    score      INTEGER NOT NULL,
+    polish     INTEGER NOT NULL,
+    tools      INTEGER NOT NULL,
+    rules      INTEGER NOT NULL,
+    seconds    REAL    NOT NULL,
+    cost_usd   REAL,
+    items      TEXT    NOT NULL   -- every item's outcome (JSON)
+);
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
 
 -- Wikipedia articles a study block is built on: its sources. The text is

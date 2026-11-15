@@ -29,6 +29,7 @@ pub const SONGWRITER: &str = "songwriter";
 pub const SONGS: &str = "songs";
 pub const SPEECH: &str = "speech";
 pub const KEY_TEST: &str = "key test";
+pub const BENCHMARK: &str = "benchmark";
 
 /// Logs one request. A failure to log must never fail the feature, so callers
 /// ignore the result; it is returned for tests.

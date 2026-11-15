@@ -40,7 +40,7 @@ const MAX_ROUNDS: usize = 8;
 // Prompt
 // ---------------------------------------------------------------------------
 
-const RULES: &str = "\
+pub(crate) const RULES: &str = "\
 You are the tutor in Polski, an app for learning Polish. You explain Polish, suggest what to \
 practise, and — when asked — change the app with your tools.
 
@@ -2316,7 +2316,7 @@ fn course_ids(conn: &mut Conn) -> HashSet<i64> {
 
 /// How a conversation about one word or sentence goes (\"Talk about it\"):
 /// a chat about using it, not a dictionary entry.
-fn word_chat_rules(about: &str) -> String {
+pub(crate) fn word_chat_rules(about: &str) -> String {
     format!(
         "This conversation is about one thing the learner just practised: {about}.
 - Talk, don't lecture: two to four sentences a turn, no headings, no dictionary entry.

@@ -1,5 +1,6 @@
 mod agent;
 mod ai;
+mod bench;
 mod blocks;
 mod cast;
 mod commands;
@@ -100,6 +101,9 @@ pub fn run() {
             tutor::tutor_talk_about,
             examiner::writing_scaffold,
             costs::ai_usage,
+            bench::bench_run,
+            bench::bench_runs,
+            bench::bench_delete,
             examiner::writing_hint,
             pictures::course_picture,
             wiki::block_sources,
