@@ -847,6 +847,32 @@ button.badge:active {
   flex-direction: column;
   gap: var(--space-4);
 }
+/* A sheet with a footer: only the body scrolls; the footer (a message box)
+   stays put — on top of the keyboard when it is up. */
+.sheet[data-footer] {
+  overflow: hidden;
+  gap: var(--space-3);
+}
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sheet-footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+[data-keyboard] .sheet[data-footer] {
+  /* The web view ends a navigation bar's height below the keyboard's top
+     (MainActivity.kt); the safe-area inset is that height. */
+  padding-bottom: calc(var(--safe-bottom) + var(--space-2));
+}
+[data-keyboard] .sheet-footer .sheet-note {
+  display: none;
+}
 .sheet-header {
   display: flex;
   align-items: center;

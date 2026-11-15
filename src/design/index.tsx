@@ -784,10 +784,16 @@ export function EmptyState({
 export function Sheet({
   title,
   onClose,
+  footer,
   children,
 }: {
   title: ReactNode;
   onClose: () => void;
+  /**
+   * Stays at the bottom while the rest scrolls — a chat's message box, so
+   * it sits on the keyboard instead of scrolling under it.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -810,6 +816,7 @@ export function Sheet({
     >
       <div
         className="sheet"
+        data-footer={footer ? true : undefined}
         role="dialog"
         aria-label={typeof title === "string" ? title : undefined}
         onClick={(event) => event.stopPropagation()}
@@ -818,7 +825,14 @@ export function Sheet({
           <h2>{title}</h2>
           <IconButton icon={<CloseIcon />} label="Close" onClick={onClose} />
         </div>
-        {children}
+        {footer ? (
+          <>
+            <div className="sheet-body">{children}</div>
+            <div className="sheet-footer">{footer}</div>
+          </>
+        ) : (
+          children
+        )}
       </div>
     </div>,
     document.body,

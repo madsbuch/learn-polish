@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Banner, Inline, Sheet, Spinner, Stack, Text } from "../design";
+import { Banner, Inline, Sheet, Spinner, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useTutorJob } from "../lib/tutorJob";
 import type { ChatMessage } from "../lib/types";
@@ -61,6 +61,12 @@ export function WordChat({
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, job.text]);
+  // The keyboard opening makes the sheet shorter: keep the newest in view.
+  useEffect(() => {
+    const keep = () => endRef.current?.scrollIntoView({ block: "end" });
+    window.addEventListener("resize", keep);
+    return () => window.removeEventListener("resize", keep);
+  }, []);
 
   async function send(text: string) {
     const message = text.trim();
@@ -81,45 +87,52 @@ export function WordChat({
   const shown = messages[0]?.role === "user" ? messages.slice(1) : messages;
 
   return (
-    <Sheet title={title} onClose={onClose}>
-      <Stack gap={3}>
-        <div className="chat word-chat">
-          {shown.map((message) => (
-            <div key={message.id} className="msg selectable" data-role={message.role}>
-              {message.role === "assistant" ? <Markdown text={message.content} /> : message.content}
-            </div>
-          ))}
-          {job.working ? (
-            <div className="msg" data-role="assistant">
-              {job.text ? (
-                <div>
-                  <Markdown text={job.text} />
-                  <span className="caret" />
-                </div>
-              ) : (
-                <Inline gap={2}>
-                  <Spinner />
-                  <Text variant="small" tone="faint">
-                    {job.status ?? "Thinking…"}
-                  </Text>
-                </Inline>
-              )}
-            </div>
-          ) : null}
-          <div ref={endRef} />
-        </div>
-        {error || job.error ? <Banner tone="error">{error ?? job.error}</Banner> : null}
-        <Composer
-          draft={draft}
-          setDraft={setDraft}
-          placeholder="Try it, or ask about it"
-          canSend={!job.working && conversationId !== null}
-          onSend={(text) => void send(text)}
-        />
-        <Text variant="small" tone="faint" align="center">
-          Saved in the Tutor tab, under Words.
-        </Text>
-      </Stack>
+    <Sheet
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          {error || job.error ? <Banner tone="error">{error ?? job.error}</Banner> : null}
+          <Composer
+            draft={draft}
+            setDraft={setDraft}
+            placeholder="Try it, or ask about it"
+            canSend={!job.working && conversationId !== null}
+            onSend={(text) => void send(text)}
+          />
+          <span className="sheet-note">
+            <Text variant="small" tone="faint" align="center" as="div">
+              Saved in the Tutor tab, under Words.
+            </Text>
+          </span>
+        </>
+      }
+    >
+      <div className="chat word-chat">
+        {shown.map((message) => (
+          <div key={message.id} className="msg selectable" data-role={message.role}>
+            {message.role === "assistant" ? <Markdown text={message.content} /> : message.content}
+          </div>
+        ))}
+        {job.working ? (
+          <div className="msg" data-role="assistant">
+            {job.text ? (
+              <div>
+                <Markdown text={job.text} />
+                <span className="caret" />
+              </div>
+            ) : (
+              <Inline gap={2}>
+                <Spinner />
+                <Text variant="small" tone="faint">
+                  {job.status ?? "Thinking…"}
+                </Text>
+              </Inline>
+            )}
+          </div>
+        ) : null}
+        <div ref={endRef} />
+      </div>
     </Sheet>
   );
 }
