@@ -64,7 +64,7 @@ export function SessionSummary({
         <h1>{result.firstCompletionToday ? "Day done!" : "Nice work"}</h1>
         <Text tone="dim" align="center" as="p">
           {outcome?.extra
-            ? `${outcome.title}: extra practice — half XP, and its schedule stays as it was.`
+            ? `${outcome.title}: already checked in today, so this is extra practice: half XP, and its schedule stays as it was.`
             : outcome
             ? `${outcome.title}: ${OUTCOME[outcome.result]}.`
             : result.firstCompletionToday

@@ -44,6 +44,7 @@ fn read_settings(conn: &mut Conn) -> Result<Settings> {
         songwriter_model: ai::stored_model(conn, "songwriter_model"),
         partner_model: ai::stored_model(conn, "partner_model"),
         word_chat_model: ai::stored_model(conn, "word_chat_model"),
+        review_floor_minutes: crate::plan::floor(conn),
         favorite_models: db::get_setting(conn, "favorite_models")?
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default(),
@@ -99,6 +100,7 @@ pub struct SettingsPatch {
     pub partner_model: Option<String>,
     pub word_chat_model: Option<String>,
     pub favorite_models: Option<Vec<String>>,
+    pub review_floor_minutes: Option<i64>,
     pub image_model: Option<String>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
@@ -157,6 +159,9 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.word_chat_model {
         db::set_setting(conn, "word_chat_model", model.trim())?;
+    }
+    if let Some(minutes) = patch.review_floor_minutes {
+        db::set_setting(conn, "review_floor_minutes", &minutes.clamp(1, 240).to_string())?;
     }
     if let Some(favorites) = patch.favorite_models {
         db::set_setting(conn, "favorite_models", &serde_json::to_string(&favorites)?)?;

@@ -127,7 +127,7 @@ export function SettingsScreen({
         <List>
           <SettingRow
             label="Daily goal"
-            description="Reach it — or clear everything due — and the day counts for your streak"
+            description="Reach it — or clear today's check-ins — and the day counts for your streak"
             value={`${settings.dailyGoal} XP`}
             stacked
             control={
@@ -139,6 +139,23 @@ export function SettingsScreen({
                 value={settings.dailyGoal}
                 aria-label="Daily goal"
                 onChange={(event) => patch({ dailyGoal: Number(event.target.value) }, "goal")}
+              />
+            }
+          />
+          <SettingRow
+            label="Check-ins on a quiet day"
+            description="Today's list follows what you usually do, but is never shorter than this. Keep going for more"
+            value={`${settings.reviewFloorMinutes ?? 10} min`}
+            stacked
+            control={
+              <input
+                type="range"
+                min={5}
+                max={60}
+                step={5}
+                value={settings.reviewFloorMinutes ?? 10}
+                aria-label="Check-ins on a quiet day, in minutes"
+                onChange={(event) => patch({ reviewFloorMinutes: Number(event.target.value) }, "floor")}
               />
             }
           />

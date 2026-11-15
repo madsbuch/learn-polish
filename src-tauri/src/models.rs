@@ -231,6 +231,8 @@ pub struct Settings {
     pub word_chat_model: String,
     /// Models starred in the model picker, shown first.
     pub favorite_models: Vec<String>,
+    /// The shortest a day's list of check-ins gets, in minutes.
+    pub review_floor_minutes: i64,
     /// Draws course pictures; empty means the default image model.
     pub image_model: String,
     pub has_kie_key: bool,

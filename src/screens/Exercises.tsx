@@ -60,7 +60,15 @@ export function Exercises({
   const goalPct = stats.completedToday
     ? 100
     : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
-  const upNext = overview.due[0] ?? overview.next[0] ?? null;
+  // Today's list first; once it's done, more for a big day; else something new.
+  const keepGoing = overview.due.length === 0 && overview.more.length > 0;
+  const upNext = overview.due[0] ?? overview.more[0] ?? overview.next[0] ?? null;
+  const balance =
+    overview.behindMinutes > 0
+      ? `About ${overview.behindMinutes} min more is due — it waits for another day, or keep going`
+      : overview.aheadMinutes > 0
+        ? `${overview.aheadMinutes} min ahead this week`
+        : null;
 
   return (
     <Screen
@@ -105,22 +113,35 @@ export function Exercises({
               </Inline>
               <Text variant="title" as="h2">
                 {overview.due.length > 0
-                  ? `${overview.due.length} check-in${overview.due.length === 1 ? "" : "s"} due`
-                  : "All caught up"}
+                  ? `${overview.due.length} check-in${overview.due.length === 1 ? "" : "s"} today`
+                  : overview.planTotal > 0
+                    ? "Today's list is done"
+                    : "All caught up"}
               </Text>
               <Text variant="small" tone="dim" as="div">
                 {overview.due.length > 0
-                  ? `About ${estimate(overview.due)} min`
+                  ? `About ${estimate(overview.due)} min${
+                      overview.planDone > 0 ? ` · ${overview.planDone} of ${overview.planTotal} done` : ""
+                    }`
                   : overview.doneToday > 0
                     ? `${overview.doneToday} block${overview.doneToday === 1 ? "" : "s"} done today`
                     : "Start something new below"}
               </Text>
+              {balance ? (
+                <Text variant="caption" tone="dim" as="div">
+                  {balance}
+                </Text>
+              ) : null}
             </div>
           </Inline>
           {upNext ? (
             <Stack gap={2}>
               <Button variant="inverse" size="lg" block onClick={() => onOpenBlock(upNext)}>
-                {overview.due.length > 0 ? "Start the first check-in" : "Start something new"}
+                {overview.due.length > 0
+                  ? "Start the first check-in"
+                  : keepGoing
+                    ? "Keep going"
+                    : "Start something new"}
               </Button>
               <Text variant="caption" tone="dim" align="center" as="div">
                 {upNext.title}
@@ -133,11 +154,42 @@ export function Exercises({
 
       {overview.due.length > 0 ? (
         <Section
-          title="Due now"
-          info={<p>Blocks you have done before whose check-in day has come. Clear these first.</p>}
+          title="Today's check-ins"
+          info={
+            <>
+              <p>
+                The blocks most at risk of being forgotten, as many as fit today. Clear these and
+                the day counts for your streak.
+              </p>
+              <p>
+                How much goes on the list follows what you usually do, never less than the quiet-day
+                minimum in Settings. Anything else that is due waits for another day without counting
+                as missed.
+              </p>
+            </>
+          }
         >
           <List>
             {overview.due.map((block) => (
+              <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
+            ))}
+          </List>
+        </Section>
+      ) : null}
+
+      {keepGoing ? (
+        <Section
+          title="Keep going"
+          info={
+            <p>
+              Today's list is done. These are next: the rest of what is due, then what comes due
+              soonest. Doing one early is a real check-in — it moves out from the time that has
+              passed, and comes off the day it was due.
+            </p>
+          }
+        >
+          <List>
+            {overview.more.map((block) => (
               <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
             ))}
           </List>

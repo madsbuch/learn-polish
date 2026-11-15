@@ -174,9 +174,19 @@ export interface BlockDetail extends Block {
 
 export interface BlockOverview {
   today: number;
+  /** Today's list, still to do: the most at risk first. */
   due: Block[];
   next: Block[];
   doneToday: number;
+  /** For a big day: the rest of what is due, then what is due soonest. */
+  more: Block[];
+  planTotal: number;
+  planDone: number;
+  budgetMinutes: number;
+  /** Due but not on today's list, in minutes. */
+  behindMinutes: number;
+  /** Done before their day this past week, in minutes. */
+  aheadMinutes: number;
 }
 
 export interface Assessment {
@@ -286,6 +296,8 @@ export interface Settings {
   wordChatModel: string;
   /** Models starred in the model picker, shown first. */
   favoriteModels: string[];
+  /** The shortest a day's list of check-ins gets, in minutes. */
+  reviewFloorMinutes: number;
   /** Draws course pictures; empty means the default image model. */
   imageModel: string;
   hasKieKey: boolean;
@@ -312,6 +324,7 @@ export interface SettingsPatch {
   partnerModel?: string;
   wordChatModel?: string;
   favoriteModels?: string[];
+  reviewFloorMinutes?: number;
   imageModel?: string;
   sunoModel?: string;
   songLength?: SongLength;

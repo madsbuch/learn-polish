@@ -220,7 +220,9 @@ pub fn block_finish_in(conn: &mut Conn, block_id: i64, correct: i64, total: i64)
     // otherwise send it months away.
     let current = blocks::load(conn, block_id)?;
     let extra = blocks::is_extra_practice(&current, today);
-    let block = if extra { current } else { blocks::record(conn, block_id, result)? };
+    // Nearly all right is an ace: the gap grows faster.
+    let ace = total > 0 && correct * 100 >= total * 95;
+    let block = if extra { current } else { blocks::record_graded(conn, block_id, result, ace)? };
     let first = stats::mark_practised(conn, today)?;
     Ok(BlockFinished { block, result: result.into(), extra, session: finish_up(conn, &before, first)? })
 }

@@ -182,7 +182,12 @@ CREATE TABLE IF NOT EXISTS day_log (
     -- The day is done: the daily goal reached, or nothing left due.
     completed INTEGER NOT NULL DEFAULT 0,
     -- Missed, but a streak freeze kept the run going.
-    frozen    INTEGER NOT NULL DEFAULT 0
+    frozen    INTEGER NOT NULL DEFAULT 0,
+    -- Minutes of scheduled check-ins done (by the blocks' size), and how
+    -- many of them were done before their day — the daily budget learns
+    -- from the first, the "ahead" balance shows the second.
+    minutes   INTEGER NOT NULL DEFAULT 0,
+    early_minutes INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -251,7 +256,10 @@ CREATE TABLE IF NOT EXISTS blocks (
     song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE, -- listening blocks
     -- What the last fact check against the block's sources changed, and when.
     fact_note       TEXT,
-    fact_checked_at INTEGER
+    fact_checked_at INTEGER,
+    -- How fast its gaps grow: up when check-ins go easily, down when they
+    -- don't (see plan.rs).
+    ease          REAL NOT NULL DEFAULT 2.5
 );
 CREATE INDEX IF NOT EXISTS blocks_due ON blocks(due_day);
 
@@ -467,6 +475,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "day_log", "frozen", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "blocks", "fact_note", "TEXT")?;
     add_column(conn, "blocks", "fact_checked_at", "INTEGER")?;
+    add_column(conn, "blocks", "ease", "REAL NOT NULL DEFAULT 2.5")?;
+    add_column(conn, "day_log", "minutes", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "day_log", "early_minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_error", "TEXT")?;
     add_column(conn, "tutor_conversations", "tag", "TEXT")?;

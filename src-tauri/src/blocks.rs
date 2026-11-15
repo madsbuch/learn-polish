@@ -96,6 +96,8 @@ pub struct Block {
     /// "pass" | "partial" | "fail"
     pub last_result: Option<String>,
     pub reps: i64,
+    /// How fast its gaps grow (see plan.rs).
+    pub ease: f64,
     pub items: i64,
     /// A listening block's song.
     pub song_id: Option<i64>,
@@ -130,10 +132,22 @@ pub struct BlockDetail {
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
     pub today: i64,
+    /// Today's list, still to do (see plan.rs).
     pub due: Vec<Block>,
     pub next: Vec<Block>,
     /// Blocks done today.
     pub done_today: i64,
+    /// More check-ins for a big day: the rest of what is due, then what is
+    /// due soonest.
+    pub more: Vec<Block>,
+    /// Today's list: how many, and how many done.
+    pub plan_total: usize,
+    pub plan_done: usize,
+    pub budget_minutes: i64,
+    /// Due but not on today's list, in minutes.
+    pub behind_minutes: i64,
+    /// Done before their day this past week, in minutes.
+    pub ahead_minutes: i64,
 }
 
 /// What a `blocks` row stores about a block itself.
@@ -153,6 +167,7 @@ struct BlockRow {
     last_day: Option<i64>,
     last_result: Option<String>,
     reps: i64,
+    ease: f64,
     song_id: Option<i64>,
 }
 
@@ -232,6 +247,7 @@ fn assemble(conn: &mut Conn, rows: Vec<BlockRow>) -> Result<Vec<Block>> {
                 last_day: row.last_day,
                 last_result: row.last_result,
                 reps: row.reps,
+                ease: row.ease,
                 song_id: row.song_id,
             }
         })
@@ -312,14 +328,9 @@ pub fn for_topic(conn: &mut Conn, topic_id: i64) -> Result<Vec<Block>> {
 /// The home screen: blocks due now, then a few to start.
 pub fn overview(conn: &mut Conn) -> Result<Overview> {
     let today = db::today(conn);
-    let rows = blocks::table.filter(blocks::due_day.le(today)).select(BlockRow::as_select()).load(conn)?;
-    let mut due = assemble(conn, rows)?;
-    let weight = |c: &str| match c {
-        "low" => 0,
-        "medium" => 1,
-        _ => 2,
-    };
-    due.sort_by_key(|b| (b.due_day, weight(&b.complexity), b.id));
+    let plan = crate::plan::plan(conn, today)?;
+    let due = load_in_order(conn, &plan.left)?;
+    let more = load_in_order(conn, &plan.more)?;
 
     // The next couple of blocks from each of the first few courses with
     // something left to start, in the order the course list shows them: the
@@ -351,7 +362,26 @@ pub fn overview(conn: &mut Conn) -> Result<Overview> {
     }
 
     let done_today = blocks::table.filter(blocks::last_day.eq(today)).count().get_result(conn)?;
-    Ok(Overview { today, due, next, done_today })
+    Ok(Overview {
+        today,
+        due,
+        next,
+        done_today,
+        more,
+        plan_total: plan.total,
+        plan_done: plan.done,
+        budget_minutes: plan.budget_minutes,
+        behind_minutes: plan.behind_minutes,
+        ahead_minutes: plan.ahead_minutes,
+    })
+}
+
+/// Blocks by id, in the order given.
+fn load_in_order(conn: &mut Conn, ids: &[i64]) -> Result<Vec<Block>> {
+    let rows = blocks::table.filter(blocks::id.eq_any(ids)).select(BlockRow::as_select()).load(conn)?;
+    let mut list = assemble(conn, rows)?;
+    list.sort_by_key(|b| ids.iter().position(|id| *id == b.id));
+    Ok(list)
 }
 
 // ---------------------------------------------------------------------------
@@ -373,40 +403,120 @@ pub fn result_from_score(correct: i64, total: i64) -> &'static str {
     }
 }
 
-/// The next interval after a check-in. Passing doubles it (never below the
-/// block's period); a partial pass repeats the period; failing means tomorrow.
-pub fn next_interval(result: &str, reps_before: i64, interval: i64, period: i64) -> i64 {
-    match result {
-        "pass" if reps_before == 0 => period,
-        "pass" => (interval * 2).max(period).min(MAX_INTERVAL),
-        "partial" => period.max(1),
-        _ => 1,
+/// How a check-in went, finer than its result: an ace is a pass with
+/// nothing to fix (a drill nearly all right, a check-in with nothing to
+/// review), and grows the gap faster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grade {
+    Ace,
+    Pass,
+    Partial,
+    Fail,
+}
+
+impl Grade {
+    pub fn of(result: &str, ace: bool) -> Grade {
+        match result {
+            "pass" if ace => Grade::Ace,
+            "pass" => Grade::Pass,
+            "partial" => Grade::Partial,
+            _ => Grade::Fail,
+        }
     }
 }
 
-/// Doing a block that has been done before and is not due yet is extra
-/// practice: it does not move the schedule.
-pub fn is_extra_practice(block: &Block, today: i64) -> bool {
-    block.reps > 0 && block.due_day.is_some_and(|due| due > today)
+const MIN_EASE: f64 = 1.3;
+const MAX_EASE: f64 = 3.0;
+
+/// The next gap and ease after a check-in.
+///
+/// The gap grows from the time that has actually passed since the last
+/// check-in (`elapsed`), times the block's ease: on time that is the old
+/// gap, early it is less (an early check-in is honest, not a shortcut), late
+/// it is more — remembering it after longer is worth more. An ace grows it
+/// faster and raises the ease; a partial repeats the block's period and
+/// lowers it; a fail means tomorrow and lowers it more. The first check-in
+/// starts from the period (an ace: three times it).
+pub fn next_gap(grade: Grade, reps_before: i64, interval: i64, period: i64, ease: f64, elapsed: i64) -> (i64, f64) {
+    let period = period.max(1);
+    let (ease, gap) = if reps_before == 0 {
+        match grade {
+            Grade::Ace => (ease + 0.15, period * 3),
+            Grade::Pass => (ease, period),
+            Grade::Partial => (ease - 0.15, period),
+            Grade::Fail => (ease - 0.2, 1),
+        }
+    } else {
+        // Late counts, but at most twice the gap: a block left for a year
+        // and still known is not proof of a decade.
+        let base = elapsed.clamp(1, (interval * 2).max(1)) as f64;
+        match grade {
+            Grade::Ace => {
+                let ease = ease + 0.15;
+                (ease, ((base * ease * 1.3).round() as i64).max(period).max(elapsed + 1))
+            }
+            Grade::Pass => (ease, ((base * ease).round() as i64).max(period).max(elapsed + 1)),
+            Grade::Partial => (ease - 0.15, period),
+            Grade::Fail => (ease - 0.2, 1),
+        }
+    };
+    (gap.min(MAX_INTERVAL), ease.clamp(MIN_EASE, MAX_EASE))
 }
 
-/// Records a check-in result and schedules the next one.
+/// Doing a block again on a day it was already checked in is extra
+/// practice: it counts for the day, but does not move the schedule (three
+/// quick replays must not send it months away). Doing one before its day
+/// is an early check-in, and does move it — see [`next_gap`].
+pub fn is_extra_practice(block: &Block, today: i64) -> bool {
+    block.reps > 0 && block.last_day == Some(today)
+}
+
+/// About how many minutes a block takes, by its kind and complexity: what
+/// the daily budget is counted in.
+pub fn minutes_for(kind: &str, complexity: &str) -> i64 {
+    match (kind, complexity) {
+        ("drill", "low") => 2,
+        ("drill", "medium") => 4,
+        ("drill", _) => 8,
+        (_, "low") => 5,
+        (_, "medium") => 10,
+        _ => 20,
+    }
+}
+
+/// Records a check-in and schedules the next one (`ace`: a pass with
+/// nothing to fix). An early pass never brings the next check-in closer
+/// than it already was.
+#[cfg(test)]
 pub fn record(conn: &mut Conn, block_id: i64, result: &str) -> Result<Block> {
+    record_graded(conn, block_id, result, false)
+}
+
+pub fn record_graded(conn: &mut Conn, block_id: i64, result: &str, ace: bool) -> Result<Block> {
     if !["pass", "partial", "fail"].contains(&result) {
         return Err(Error::msg(format!("Unknown result '{result}'.")));
     }
     let block = load(conn, block_id)?;
     let today = db::today(conn);
-    let interval = next_interval(result, block.reps, block.interval_days, block.period_days);
+    let grade = Grade::of(result, ace);
+    let elapsed = block.last_day.map_or(0, |last| today - last);
+    let (gap, ease) = next_gap(grade, block.reps, block.interval_days, block.period_days, block.ease, elapsed);
+    let mut due = crate::plan::spread(conn, today, gap, block_id)?;
+    let early = block.due_day.is_some_and(|d| d > today);
+    if early && matches!(grade, Grade::Ace | Grade::Pass) {
+        due = due.max(block.due_day.unwrap_or(due));
+    }
     diesel::update(blocks::table.find(block_id))
         .set((
-            blocks::interval_days.eq(interval),
-            blocks::due_day.eq(today + interval),
+            blocks::interval_days.eq(due - today),
+            blocks::due_day.eq(due),
             blocks::last_day.eq(today),
             blocks::last_result.eq(result),
             blocks::reps.eq(blocks::reps + 1),
+            blocks::ease.eq(ease),
         ))
         .execute(conn)?;
+    crate::plan::log_minutes(conn, today, minutes_for(&block.kind, &block.complexity), early)?;
     load(conn, block_id)
 }
 
@@ -848,11 +958,23 @@ mod tests {
 
     #[test]
     fn check_ins_spread_out_when_passed_and_come_back_when_failed() {
-        assert_eq!(next_interval("pass", 0, 0, 3), 3, "first pass: the period");
-        assert_eq!(next_interval("pass", 1, 3, 3), 6);
-        assert_eq!(next_interval("pass", 5, 100, 3), MAX_INTERVAL);
-        assert_eq!(next_interval("partial", 4, 24, 3), 3);
-        assert_eq!(next_interval("fail", 4, 24, 3), 1);
+        use Grade::*;
+        assert_eq!(next_gap(Pass, 0, 0, 3, 2.5, 0), (3, 2.5), "first pass: the period");
+        assert_eq!(next_gap(Ace, 0, 0, 2, 2.5, 0).0, 6, "first ace: three periods");
+        // On time: the gap times the ease.
+        assert_eq!(next_gap(Pass, 1, 4, 2, 2.5, 4).0, 10);
+        // Aced: faster, and the ease goes up.
+        let (gap, ease) = next_gap(Ace, 1, 4, 2, 2.5, 4);
+        assert_eq!(gap, 14);
+        assert!(ease > 2.5);
+        // Early: from the time that actually passed — but never no growth.
+        assert_eq!(next_gap(Pass, 2, 10, 2, 2.5, 7).0, 18);
+        assert_eq!(next_gap(Pass, 2, 10, 2, 1.3, 1).0, 2, "at least the period");
+        assert_eq!(next_gap(Pass, 5, 100, 3, 2.5, 100).0, MAX_INTERVAL);
+        let (gap, ease) = next_gap(Partial, 4, 24, 3, 2.5, 24);
+        assert_eq!(gap, 3);
+        assert!(ease < 2.5);
+        assert_eq!(next_gap(Fail, 4, 24, 3, 1.35, 24), (1, MIN_EASE), "ease has a floor");
     }
 
     #[test]

@@ -75,6 +75,8 @@ diesel::table! {
         topic_id -> Nullable<BigInt>,
         completed -> BigInt,
         frozen -> BigInt,
+        minutes -> BigInt,
+        early_minutes -> BigInt,
     }
 }
 
@@ -164,6 +166,7 @@ diesel::table! {
         song_id -> Nullable<BigInt>,
         fact_note -> Nullable<Text>,
         fact_checked_at -> Nullable<BigInt>,
+        ease -> Double,
     }
 }
 

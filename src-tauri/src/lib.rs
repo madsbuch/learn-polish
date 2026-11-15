@@ -13,6 +13,7 @@ mod examiner;
 mod http;
 mod memories;
 mod pictures;
+mod plan;
 mod practice;
 mod models;
 mod playlists;
@@ -699,8 +700,8 @@ mod integration {
         assert_eq!(answered.xp_gained, 8);
         assert_eq!(reviews_of_word(&mut conn), 1);
 
-        // The first time schedules the block; doing it again early does not
-        // push it further out, and pays half.
+        // The first time schedules the block; doing it again the same day
+        // does not push it further out, and pays half.
         let first = practice::block_finish_in(&mut conn, drill.id, 10, 10).unwrap();
         assert!(!first.extra);
         let due = first.block.due_day;
@@ -764,6 +765,70 @@ mod integration {
         assert_eq!(stats::xp_for_checkin("medium", "pass", 2), 100);
         assert_eq!(stats::xp_for_checkin("high", "partial", 0), 80);
         assert_eq!(stats::xp_for_checkin("low", "fail", 3), 0);
+    }
+
+    #[test]
+    fn todays_list_fits_the_budget_and_keep_going_pulls_forward() {
+        use diesel::prelude::*;
+        let mut conn = scratch_db("plan");
+        let today = db::today(&mut conn);
+        db::set_setting(&mut conn, "review_floor_minutes", "6").unwrap();
+        db::set_setting(&mut conn, "daily_goal", "100000").unwrap();
+        // Every block has been done before and is due today.
+        let all: Vec<i64> = schema::blocks::table.select(schema::blocks::id).load(&mut conn).unwrap();
+        assert!(all.len() > 5);
+        diesel::update(schema::blocks::table)
+            .set((
+                schema::blocks::due_day.eq(today),
+                schema::blocks::last_day.eq(today - 4),
+                schema::blocks::interval_days.eq(4),
+                schema::blocks::reps.eq(1),
+            ))
+            .execute(&mut conn)
+            .unwrap();
+
+        let first = plan::plan(&mut conn, today).unwrap();
+        assert!(!first.left.is_empty() && first.left.len() < all.len(), "the list is a few, not all");
+        assert!(first.behind_minutes > 0, "the rest waits");
+        assert_eq!(first.budget_minutes, 6);
+        assert_eq!(plan::plan(&mut conn, today).unwrap().left, first.left, "kept for the day");
+
+        // Clearing the list clears the day.
+        stats::add_xp(&mut conn, today, 10).unwrap();
+        assert!(!stats::day_is_done(&mut conn, today).unwrap());
+        for id in &first.left {
+            blocks::record_graded(&mut conn, *id, "pass", true).unwrap();
+        }
+        let after = plan::plan(&mut conn, today).unwrap();
+        assert!(after.left.is_empty());
+        assert_eq!(after.done, first.total);
+        assert!(stats::day_is_done(&mut conn, today).unwrap(), "today's list is done");
+        assert!(!after.more.is_empty(), "keep going offers more");
+
+        // An aced block went well out; doing it again today is extra practice.
+        let aced = blocks::load(&mut conn, first.left[0]).unwrap();
+        assert!(aced.due_day.unwrap() >= today + 10, "{:?}", aced.due_day);
+        assert!(blocks::is_extra_practice(&aced, today));
+
+        // Pulling one forward from next week is a real check-in, counted ahead.
+        let later = *all.iter().find(|id| !first.left.contains(id)).unwrap();
+        diesel::update(schema::blocks::table.find(later))
+            .set((schema::blocks::due_day.eq(today + 2), schema::blocks::last_day.eq(today - 8), schema::blocks::interval_days.eq(10)))
+            .execute(&mut conn)
+            .unwrap();
+        let moved = blocks::record_graded(&mut conn, later, "pass", false).unwrap();
+        assert!(moved.due_day.unwrap() > today + 2, "an early pass still moves it out");
+        assert!(plan::plan(&mut conn, today).unwrap().ahead_minutes > 0);
+
+        // A new check-in lands on the lightest nearby day.
+        let crowded = today + 20;
+        diesel::update(schema::blocks::table.filter(schema::blocks::id.ne(later)))
+            .set(schema::blocks::due_day.eq(crowded))
+            .execute(&mut conn)
+            .unwrap();
+        let day = plan::spread(&mut conn, today, 20, later).unwrap();
+        assert_ne!(day, crowded);
+        assert!((day - crowded).abs() <= 2);
     }
 
     #[test]

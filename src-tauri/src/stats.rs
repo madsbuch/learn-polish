@@ -111,8 +111,9 @@ pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
     if xp >= db::get_setting_i64(conn, "daily_goal", DEFAULT_DAILY_GOAL) {
         return Ok(true);
     }
-    let due: i64 = blocks::table.filter(blocks::due_day.le(day)).count().get_result(conn)?;
-    Ok(xp > 0 && due == 0)
+    // Clearing today's list, not everything due: with many blocks, that is
+    // what a day can hold (see plan.rs).
+    Ok(xp > 0 && crate::plan::remaining(conn, day)? == 0)
 }
 
 /// After a block: marks today done if it now is. Returns true the moment the
@@ -241,7 +242,7 @@ fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
         dialogues_total: dialogues.count().get_result(conn)?,
         dialogues_seen: dialogues.filter(blocks::reps.gt(0)).count().get_result(conn)?,
         // What is due is counted in blocks, not single words.
-        due_today: blocks::table.filter(blocks::due_day.le(today)).count().get_result(conn)?,
+        due_today: crate::plan::remaining(conn, today)?,
         days_done: day_log::table.filter(day_log::completed.eq(1)).count().get_result(conn)?,
         checkins_passed: passed(conn, None)?,
         writing_passed: passed(conn, Some("writing"))?,

@@ -284,7 +284,9 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     // in early is extra practice at half XP.
     let current = blocks::load(conn, block_id)?;
     let extra = blocks::is_extra_practice(&current, today);
-    let block = if extra { current } else { blocks::record(conn, block_id, &assessment.result)? };
+    // A pass with nothing left to review is an ace: the gap grows faster.
+    let ace = assessment.result == "pass" && assessment.to_review.is_empty();
+    let block = if extra { current } else { blocks::record_graded(conn, block_id, &assessment.result, ace)? };
     let writing_goals = if block.format == "writing" { blocks::detail(conn, block_id)?.objectives.len() } else { 0 };
     assessment.xp = stats::xp_for_checkin(&block.complexity, &assessment.result, writing_goals);
     if extra {
