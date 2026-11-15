@@ -3,6 +3,7 @@ import { Benchmark } from "../components/Benchmark";
 import { useCallback, useEffect, useState } from "react";
 
 import { CostCenter } from "../components/CostCenter";
+import { KeyShare } from "../components/KeyShare";
 import { megabytes } from "./AudioScreen";
 import { MemoryIcon, PlayerIcon } from "../components/icons";
 import {
@@ -470,6 +471,8 @@ export function SettingsScreen({
           </Card>
         )}
       </Section>
+
+      <KeyShare settings={settings} onSettings={onSettings} />
 
       <Section
         title="Polish voices"

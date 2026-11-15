@@ -942,3 +942,55 @@ body:has(.session-foot) .conversation-control {
   padding-top: var(--space-2);
   border-top: 1px solid var(--bad-line);
 }
+
+/* ------------------------------------------------- API keys as a QR code */
+/* The SVG carries its own black-on-white, whatever the theme. */
+.key-qr {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.key-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* While the camera scans it sits behind the web view: the page turns
+   see-through and only the scan overlay stays. */
+html.scanning,
+html.scanning body,
+html.scanning #root {
+  background: transparent;
+}
+html.scanning #root {
+  visibility: hidden;
+}
+.scan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-sheet);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.scan-overlay__frame {
+  width: min(70vw, 280px);
+  aspect-ratio: 1;
+  border: 3px solid var(--on-brand);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 100vmax var(--scrim);
+}
+.scan-overlay__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--gutter) calc(var(--safe-bottom) + var(--space-6));
+  background: var(--bg);
+}

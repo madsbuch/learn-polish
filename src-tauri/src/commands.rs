@@ -17,6 +17,7 @@ use crate::costs;
 use crate::db::{self, Conn, Db};
 use crate::schema::{blocks, course_sentences, course_words};
 use crate::error::{Error, Result};
+use crate::keyshare;
 use crate::models::*;
 use crate::songs;
 use crate::stats;
@@ -361,6 +362,22 @@ pub async fn kie_set_key(db: State<'_, Db>, key: String) -> Result<Settings> {
         return Err(Error::msg("The API key cannot be empty."));
     }
     db::set_setting(conn, "kie_api_key", key)?;
+    read_settings(conn)
+}
+
+/// The API keys saved here, as a QR code (SVG) another device can scan.
+#[tauri::command]
+pub async fn keys_share_qr(db: State<'_, Db>) -> Result<String> {
+    let mut guard = db.lock();
+    keyshare::qr_svg(&mut guard)
+}
+
+/// Saves the API keys from a QR code scanned off another device.
+#[tauri::command]
+pub async fn keys_import(db: State<'_, Db>, payload: String) -> Result<Settings> {
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    keyshare::import(conn, &payload)?;
     read_settings(conn)
 }
 

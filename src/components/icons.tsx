@@ -359,3 +359,25 @@ export function StarIcon({ on }: { on?: boolean }) {
     </svg>
   );
 }
+
+/** A QR code: showing something for another device to scan. */
+export function QrIcon() {
+  return (
+    <Glyph>
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18v2M18 14h2" />
+    </Glyph>
+  );
+}
+
+/** A viewfinder: scanning a code with the camera. */
+export function ScanIcon() {
+  return (
+    <Glyph>
+      <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+      <path d="M7 12h10" />
+    </Glyph>
+  );
+}

@@ -201,6 +201,10 @@ export const api = {
   kieSetKey: (key: string) => invoke<Settings>("kie_set_key", { key }),
   kieClearKey: () => invoke<Settings>("kie_clear_key"),
   kieCredits: () => invoke<number>("kie_credits"),
+  /** The saved API keys as a QR code (SVG markup) for another device to scan. */
+  keysShareQr: () => invoke<string>("keys_share_qr"),
+  /** Saves the API keys from a QR code scanned off another device. */
+  keysImport: (payload: string) => invoke<Settings>("keys_import", { payload }),
   songsList: () => invoke<Song[]>("songs_list"),
   songDraft: (request: DraftRequest) => invoke<SongDraft>("song_draft", { request }),
   songCreate: (draft: SongDraft) => invoke<Song>("song_create", { draft }),

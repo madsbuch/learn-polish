@@ -15,6 +15,7 @@ mod examples;
 mod files;
 mod examiner;
 mod http;
+mod keyshare;
 mod memories;
 mod pictures;
 mod plan;
@@ -38,6 +39,17 @@ use tauri::Manager;
 
 use db::Db;
 
+#[cfg(mobile)]
+fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri_plugin_barcode_scanner::init()
+}
+
+/// Desktops have no scanner; they show their QR code for a phone to read.
+#[cfg(not(mobile))]
+fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("barcode-scanner-none").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -47,6 +59,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_songplayer::init())
+        // Scanning another device's API keys off a QR code (phones only).
+        .plugin(barcode_scanner())
         // Every file the webview shows or plays — pictures, covers, songs —
         // by id, straight from the files table: media://localhost/<id>.
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
@@ -149,6 +163,8 @@ pub fn run() {
             speech::prefetch_audio,
             commands::kie_set_key,
             commands::kie_clear_key,
+            commands::keys_share_qr,
+            commands::keys_import,
             songs::kie_credits,
             songs::songs_list,
             songs::song_draft,
