@@ -319,6 +319,7 @@ export function SettingsScreen({
         <List>
           <ModelSetting
             label="Tutor"
+            job="tutor"
             value={settings.aiModel}
             need="tools"
             {...models}
@@ -326,6 +327,7 @@ export function SettingsScreen({
           />
           <ModelSetting
             label="Songwriter"
+            job="songwriter"
             value={settings.songwriterModel}
             fallback="Same as the tutor"
             {...models}
@@ -333,6 +335,7 @@ export function SettingsScreen({
           />
           <ModelSetting
             label="Writing partner"
+            job="partner"
             value={settings.partnerModel}
             fallback="Same as the tutor"
             need="tools"
@@ -341,6 +344,7 @@ export function SettingsScreen({
           />
           <ModelSetting
             label="Talk about it"
+            job="word chat"
             value={settings.wordChatModel}
             fallback="Same as the tutor"
             need="tools"
@@ -349,6 +353,7 @@ export function SettingsScreen({
           />
           <ModelSetting
             label="Course pictures"
+            job="pictures"
             value={settings.imageModel}
             fallback="Default (Gemini 2.5 Flash Image)"
             need="images"

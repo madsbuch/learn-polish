@@ -93,7 +93,17 @@ The app:
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
   to sort older ones, read their lyrics with get_song and move their block with move_block.";
 
+/// The whole prompt in one string, for tests.
+#[cfg(test)]
 pub(crate) fn system_prompt(conn: &mut Conn) -> Result<String> {
+    Ok(format!("{RULES}\n\n{}", learner_state(conn)?))
+}
+
+/// What changes from turn to turn: the learner's numbers, what is due, the
+/// courses and lessons, songs, memories. Sent with the newest message rather
+/// than in the system prompt, so the prompt and the conversation before it
+/// stay the same from turn to turn and can be cached (cheaper, faster).
+pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let stats = stats::collect(conn)?;
     let overview = blocks::overview(conn)?;
     let line = |b: &blocks::Block| {
@@ -164,7 +174,7 @@ pub(crate) fn system_prompt(conn: &mut Conn) -> Result<String> {
 
     let none = || "  (none)".to_string();
     Ok(format!(
-        "{RULES}\n\nThe learner right now:\n\
+        "The learner right now:\n\
          - Level {level}, {xp} XP, streak {streak} days{done}, {seen} of {total} words met.\n\
          - Due now ({due_count}):\n{due}\n\
          - Study blocks:\n{lessons}\n\
@@ -2210,7 +2220,8 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     let (wire, model, word_chat) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let mut prompt = system_prompt(conn)?;
+        let mut prompt = RULES.to_string();
+        let state = learner_state(conn)?;
         // A chat about one word: talk about it, don't lecture.
         let about: Option<String> = tutor_conversations::table
             .find(conversation_id)
@@ -2228,7 +2239,12 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
         }
         let mut wire = vec![Wire::system(crate::ai::with_say_player(prompt))];
         // The question is already stored, so it is the end of the history.
-        wire.extend(recent_history(conn, conversation_id)?);
+        let mut history = recent_history(conn, conversation_id)?;
+        // The learner's current state goes just before the question: the
+        // system prompt and everything before stay cacheable.
+        let at = history.len().saturating_sub(1);
+        history.insert(at, Wire::user(format!("(The app, for context — not the learner writing:)\n{state}")));
+        wire.extend(history);
         (wire, model, word_chat)
     };
 

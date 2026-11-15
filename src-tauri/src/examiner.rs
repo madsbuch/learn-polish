@@ -548,7 +548,7 @@ pub async fn writing_scaffold(db: State<'_, Db>, block_id: i64) -> Result<Vec<Go
         .ok_or_else(|| Error::msg("The word bank came back unreadable. Try again."))?;
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let _ = crate::costs::record(conn, crate::costs::PARTNER, "openrouter", &model, reply.cost, "word bank");
+    let _ = crate::costs::record_tokens(conn, crate::costs::PARTNER, &model, reply.cost, "word bank", reply.tokens);
     diesel::update(crate::schema::blocks::table.find(block_id))
         .set(crate::schema::blocks::scaffold.eq(serde_json::to_string(&bank.goals)?))
         .execute(conn)?;
@@ -588,7 +588,7 @@ pub async fn writing_hint(db: State<'_, Db>, checkin_id: i64) -> Result<String> 
         if chat.is_empty() { "(nothing yet)".into() } else { chat },
     );
     let reply = crate::ai::complete(&key, &model, &[Wire::user(prompt)]).await?;
-    let _ = crate::costs::record(&mut db.lock(), crate::costs::PARTNER, "openrouter", &model, reply.cost, "hint");
+    let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::PARTNER, &model, reply.cost, "hint", reply.tokens);
     Ok(reply.text.trim().to_string())
 }
 

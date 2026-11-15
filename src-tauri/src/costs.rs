@@ -43,6 +43,83 @@ pub fn record(
     record_once(conn, feature, provider, model, cost_usd, detail, None)
 }
 
+/// [`record`], with the tokens the request took.
+pub fn record_tokens(
+    conn: &mut Conn,
+    feature: &str,
+    model: &str,
+    cost_usd: Option<f64>,
+    detail: &str,
+    tokens: crate::ai::Tokens,
+) -> Result<()> {
+    let day = db::today(conn);
+    diesel::insert_into(ai_costs::table)
+        .values((
+            ai_costs::day.eq(day),
+            ai_costs::feature.eq(feature),
+            ai_costs::provider.eq("openrouter"),
+            ai_costs::model.eq(model),
+            ai_costs::cost_usd.eq(cost_usd.filter(|c| c.is_finite() && *c >= 0.0)),
+            ai_costs::detail.eq(detail),
+            ai_costs::created_at.eq(db::now_secs()),
+            ai_costs::tokens_in.eq(tokens.input),
+            ai_costs::tokens_cached.eq(tokens.cached),
+            ai_costs::tokens_out.eq(tokens.output),
+        ))
+        .execute(conn)?;
+    Ok(())
+}
+
+/// Tokens one feature used over the last `days` days: what a month with
+/// another model is estimated from.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureUsage {
+    pub feature: String,
+    pub requests: i64,
+    pub tokens_in: i64,
+    pub tokens_cached: i64,
+    pub tokens_out: i64,
+    /// Days the counts cover (since tokens were first logged, at most `days`).
+    pub days: i64,
+}
+
+pub fn usage(conn: &mut Conn, days: i64) -> Result<Vec<FeatureUsage>> {
+    let today = db::today(conn);
+    let rows: Vec<(String, i64, i64, i64, i64)> = ai_costs::table
+        .filter(ai_costs::day.gt(today - days))
+        .filter(ai_costs::tokens_in.gt(0))
+        .select((ai_costs::feature, ai_costs::day, ai_costs::tokens_in, ai_costs::tokens_cached, ai_costs::tokens_out))
+        .load(conn)?;
+    let mut out: Vec<FeatureUsage> = Vec::new();
+    for (feature, day, tin, tcached, tout) in rows {
+        let covered = today - day + 1;
+        match out.iter_mut().find(|u| u.feature == feature) {
+            Some(u) => {
+                u.requests += 1;
+                u.tokens_in += tin;
+                u.tokens_cached += tcached;
+                u.tokens_out += tout;
+                u.days = u.days.max(covered);
+            }
+            None => out.push(FeatureUsage {
+                feature,
+                requests: 1,
+                tokens_in: tin,
+                tokens_cached: tcached,
+                tokens_out: tout,
+                days: covered,
+            }),
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn ai_usage(db: tauri::State<'_, crate::db::Db>) -> Result<Vec<FeatureUsage>> {
+    usage(&mut db.lock(), 30)
+}
+
 /// [`record`], but a second entry with the same `reference` is ignored.
 pub fn record_once(
     conn: &mut Conn,

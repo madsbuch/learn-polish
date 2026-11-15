@@ -169,7 +169,7 @@ impl<'a> Agent<'a> {
                     break;
                 }
             };
-            let _ = crate::costs::record(&mut self.db.lock(), self.name, "openrouter", &model, turn.cost, "");
+            let _ = crate::costs::record_tokens(&mut self.db.lock(), self.name, &model, turn.cost, "", turn.tokens);
 
             let text = turn.text.trim();
             if !text.is_empty() {

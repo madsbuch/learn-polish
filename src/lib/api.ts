@@ -18,6 +18,7 @@ import type {
   WikiSource,
   TutorStarted,
   TalkAbout,
+  FeatureUsage,
   GoalHelp,
   AudioOverview,
   AudioClip,
@@ -114,6 +115,8 @@ export const api = {
   aiClearKey: () => invoke<Settings>("ai_clear_key"),
   aiTestKey: () => invoke<string>("ai_test_key"),
   aiListModels: () => invoke<AiModel[]>("ai_list_models"),
+  /** Tokens each feature used over the last 30 days. */
+  aiUsage: () => invoke<FeatureUsage[]>("ai_usage"),
   /**
    * Opens the tutor conversation about a word or sentence — or carries on the
    * one already about it. A new one starts with the tutor talking.

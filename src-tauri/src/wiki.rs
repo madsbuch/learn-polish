@@ -523,7 +523,7 @@ async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
     let reply = crate::ai::complete_with(&key, &model, &messages, 0.1, 4000).await?;
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let _ = crate::costs::record(conn, crate::costs::FACT_CHECK, "openrouter", &model, reply.cost, "");
+    let _ = crate::costs::record_tokens(conn, crate::costs::FACT_CHECK, &model, reply.cost, "", reply.tokens);
     let verdict = parse_verdict(&reply.text)?;
     let Some((changes, corrected)) = verdict else { return Ok(None) };
     let today = crate::commands::civil_date(db::today(conn));

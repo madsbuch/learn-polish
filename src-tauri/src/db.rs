@@ -415,7 +415,12 @@ CREATE TABLE IF NOT EXISTS ai_costs (
     cost_usd   REAL,
     detail     TEXT NOT NULL DEFAULT '',
     ref        TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Tokens read (of them, from the provider's cache) and written, when
+    -- reported: what the model picker estimates a month with another model from.
+    tokens_in     INTEGER NOT NULL DEFAULT 0,
+    tokens_cached INTEGER NOT NULL DEFAULT 0,
+    tokens_out    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
@@ -502,6 +507,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
         conn.batch_execute("UPDATE blocks SET passed = 1 WHERE last_result = 'pass' OR reps > 1")?;
     }
     add_column(conn, "day_log", "minutes", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "ai_costs", "tokens_in", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "ai_costs", "tokens_cached", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "ai_costs", "tokens_out", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "day_log", "early_minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
     add_column(conn, "tutor_conversations", "job_error", "TEXT")?;

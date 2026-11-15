@@ -1294,14 +1294,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (messages, length) = messages;
     // A long song needs room for its lyrics in the answer.
     let reply = ai::complete_with(&key, &model, &messages, 0.8, 5000).await?;
-    let _ = crate::costs::record(
-        &mut db.lock(),
-        crate::costs::SONGWRITER,
-        "openrouter",
-        &model,
-        reply.cost,
-        "",
-    );
+    let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::SONGWRITER, &model, reply.cost, "", reply.tokens);
     let mut draft = parse_draft(&reply.text)?;
     if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));

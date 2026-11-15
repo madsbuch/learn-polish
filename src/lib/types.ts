@@ -448,6 +448,10 @@ export interface AiModel {
   promptPrice: string;
   /** Dollars per output token. */
   completionPrice: string;
+  /** Dollars per input token read from the provider's cache; "" when not reported. */
+  cacheReadPrice: string;
+  /** When it was added to OpenRouter (seconds since the epoch). */
+  created: number;
   /** Non-empty for speech models: the voice names the model accepts. */
   voices: string[];
   /** Can call tools — the tutor needs this to act in the app. */
@@ -724,4 +728,15 @@ export interface GoalHelp {
   goal: string;
   starter: Phrase;
   words: Phrase[];
+}
+
+/** Tokens one feature used lately: what a month with another model is estimated from. */
+export interface FeatureUsage {
+  feature: string;
+  requests: number;
+  tokensIn: number;
+  tokensCached: number;
+  tokensOut: number;
+  /** Days the counts cover. */
+  days: number;
 }

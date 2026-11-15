@@ -99,6 +99,7 @@ pub fn run() {
             tutor::tutor_retry,
             tutor::tutor_talk_about,
             examiner::writing_scaffold,
+            costs::ai_usage,
             examiner::writing_hint,
             pictures::course_picture,
             wiki::block_sources,

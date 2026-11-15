@@ -311,6 +311,11 @@ pub struct AiModel {
     pub prompt_price: String,
     /// Dollars per output token.
     pub completion_price: String,
+    /// Dollars per input token read from the provider's cache; empty when
+    /// not reported.
+    pub cache_read_price: String,
+    /// When it was added to OpenRouter (seconds since the epoch).
+    pub created: i64,
     /// Non-empty for speech models: the voice names the model accepts.
     pub voices: Vec<String>,
     /// True when the model can call tools, which the tutor needs to act in

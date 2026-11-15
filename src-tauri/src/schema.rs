@@ -336,6 +336,9 @@ diesel::table! {
         #[sql_name = "ref"]
         reference -> Nullable<Text>,
         created_at -> BigInt,
+        tokens_in -> BigInt,
+        tokens_cached -> BigInt,
+        tokens_out -> BigInt,
     }
 }
 

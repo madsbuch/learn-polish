@@ -207,7 +207,9 @@ pub fn voice_for(conn: &mut Conn, gender: &str) -> String {
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
-    messages: &'a [Wire],
+    /// The messages, as JSON: with cache marks where the provider needs them
+    /// (see [`cached_messages`]).
+    messages: serde_json::Value,
     temperature: f32,
     max_tokens: u32,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -229,6 +231,37 @@ struct UsageRequest {
 struct Usage {
     #[serde(default)]
     cost: Option<f64>,
+    #[serde(default)]
+    prompt_tokens: Option<i64>,
+    #[serde(default)]
+    completion_tokens: Option<i64>,
+    #[serde(default)]
+    prompt_tokens_details: Option<PromptDetails>,
+}
+
+#[derive(Deserialize, Default)]
+struct PromptDetails {
+    #[serde(default)]
+    cached_tokens: Option<i64>,
+}
+
+/// How many tokens a request read and wrote; `cached` of the read ones came
+/// from the provider's cache (billed at a fraction).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Tokens {
+    pub input: i64,
+    pub output: i64,
+    pub cached: i64,
+}
+
+impl Usage {
+    fn tokens(&self) -> Tokens {
+        Tokens {
+            input: self.prompt_tokens.unwrap_or(0),
+            output: self.completion_tokens.unwrap_or(0),
+            cached: self.prompt_tokens_details.as_ref().and_then(|d| d.cached_tokens).unwrap_or(0),
+        }
+    }
 }
 
 /// A finished, non-streamed answer and what it cost, when reported.
@@ -236,6 +269,46 @@ struct Usage {
 pub struct Reply {
     pub text: String,
     pub cost: Option<f64>,
+    pub tokens: Tokens,
+}
+
+/// Whether a model's provider caches only what is marked (`cache_control`).
+/// OpenAI, DeepSeek and others cache a repeated prefix on their own.
+fn needs_cache_marks(model: &str) -> bool {
+    model.starts_with("anthropic/") || model.starts_with("google/gemini")
+}
+
+/// The messages as JSON, with cache marks for providers that need them: on
+/// the system prompt (the same every turn) and on the newest text message
+/// (so the next request — the next tool round or the next turn — reads
+/// everything up to it from the cache). Repeated input then costs a fraction.
+pub fn cached_messages(model: &str, messages: &[Wire]) -> serde_json::Value {
+    let mut list = serde_json::to_value(messages).unwrap_or_else(|_| serde_json::json!([]));
+    if !needs_cache_marks(model) {
+        return list;
+    }
+    let Some(items) = list.as_array_mut() else { return list };
+    let mark = |item: &mut serde_json::Value| {
+        if let Some(text) = item.get("content").and_then(|c| c.as_str()).map(str::to_string) {
+            item["content"] = serde_json::json!([
+                { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
+            ]);
+        }
+    };
+    if let Some(first) = items.first_mut().filter(|m| m["role"] == "system") {
+        mark(first);
+    }
+    // The newest plain user or assistant message (tool results and tool
+    // requests carry no plain text to mark).
+    if let Some(last) = items
+        .iter_mut()
+        .skip(1)
+        .rev()
+        .find(|m| (m["role"] == "user" || m["role"] == "assistant") && m["content"].is_string())
+    {
+        mark(last);
+    }
+    list
 }
 
 /// One message on the wire. `content` is null on an assistant turn that only
@@ -350,7 +423,7 @@ pub async fn complete_with(
         .header("X-Title", "Polski")
         .json(&ChatRequest {
             model,
-            messages,
+            messages: cached_messages(model, messages),
             temperature,
             max_tokens,
             stream: false,
@@ -377,6 +450,7 @@ pub async fn complete_with(
         return Err(Error::msg(format!("OpenRouter returned HTTP {status}")));
     }
 
+    let tokens = parsed.usage.as_ref().map(Usage::tokens).unwrap_or_default();
     let cost = parsed.usage.and_then(|u| u.cost);
     parsed
         .choices
@@ -384,7 +458,7 @@ pub async fn complete_with(
         .next()
         .and_then(|c| c.message.content)
         .filter(|text| !text.trim().is_empty())
-        .map(|text| Reply { text, cost })
+        .map(|text| Reply { text, cost, tokens })
         .ok_or_else(|| Error::msg("OpenRouter returned an empty answer."))
 }
 
@@ -447,8 +521,9 @@ pub enum SseItem {
         name: Option<String>,
         arguments: String,
     },
-    /// What the whole request cost, in USD credits.
-    Cost(f64),
+    /// What the whole request cost (USD credits, when reported) and how
+    /// many tokens it took.
+    Usage { cost: Option<f64>, tokens: Tokens },
     Done,
     Failed(String),
 }
@@ -492,8 +567,11 @@ impl SseParser {
                 items.push(SseItem::Failed(error.message));
                 continue;
             }
-            if let Some(cost) = parsed.usage.and_then(|u| u.cost) {
-                items.push(SseItem::Cost(cost));
+            if let Some(usage) = parsed.usage {
+                let tokens = usage.tokens();
+                if usage.cost.is_some() || tokens != Tokens::default() {
+                    items.push(SseItem::Usage { cost: usage.cost, tokens });
+                }
             }
             for choice in parsed.choices {
                 match choice.delta.content {
@@ -521,6 +599,7 @@ pub struct Turn {
     pub tool_calls: Vec<ToolCall>,
     /// What the request cost, when OpenRouter reported it.
     pub cost: Option<f64>,
+    pub tokens: Tokens,
 }
 
 /// Collects tool-call fragments, keyed by the index the model gives them.
@@ -586,7 +665,7 @@ where
         .header("Accept", "text/event-stream")
         .json(&ChatRequest {
             model,
-            messages,
+            messages: cached_messages(model, messages),
             temperature: 0.4,
             // Room for a whole course's worth of tool arguments.
             max_tokens: if tools.is_some() { 8000 } else { 1200 },
@@ -612,6 +691,7 @@ where
     let mut text = String::new();
     let mut calls = ToolCallAssembler::default();
     let mut cost = None;
+    let mut tokens = Tokens::default();
 
     'read: while let Some(chunk) = stream.next().await {
         for item in parser.push(&String::from_utf8_lossy(&chunk?)) {
@@ -623,7 +703,10 @@ where
                 SseItem::ToolCall { index, id, name, arguments } => {
                     calls.push(index, id, name, &arguments)
                 }
-                SseItem::Cost(value) => cost = Some(value),
+                SseItem::Usage { cost: value, tokens: used } => {
+                    cost = value.or(cost);
+                    tokens = used;
+                }
                 SseItem::Done => break 'read,
                 SseItem::Failed(message) => {
                     return Err(Error::msg(format!("OpenRouter: {message}")))
@@ -636,7 +719,7 @@ where
     if text.trim().is_empty() && tool_calls.is_empty() {
         return Err(Error::msg("OpenRouter returned an empty answer."));
     }
-    Ok(Turn { text, tool_calls, cost })
+    Ok(Turn { text, tool_calls, cost, tokens })
 }
 
 #[derive(Deserialize)]
@@ -660,6 +743,9 @@ struct ModelEntry {
     supported_parameters: Option<Vec<String>>,
     #[serde(default)]
     architecture: Option<Architecture>,
+    /// When it was added to OpenRouter (seconds): newest models first.
+    #[serde(default)]
+    created: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -674,6 +760,8 @@ struct Pricing {
     prompt: Option<String>,
     #[serde(default)]
     completion: Option<String>,
+    #[serde(default)]
+    input_cache_read: Option<String>,
 }
 
 async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
@@ -693,7 +781,9 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
             name: m.name.clone().unwrap_or_else(|| m.id.clone()),
             context_length: m.context_length.unwrap_or(0),
             prompt_price: m.pricing.as_ref().and_then(|p| p.prompt.clone()).unwrap_or_default(),
-            completion_price: m.pricing.and_then(|p| p.completion).unwrap_or_default(),
+            completion_price: m.pricing.as_ref().and_then(|p| p.completion.clone()).unwrap_or_default(),
+            cache_read_price: m.pricing.and_then(|p| p.input_cache_read).unwrap_or_default(),
+            created: m.created.unwrap_or(0),
             voices: m.supported_voices.unwrap_or_default(),
             tools: m
                 .supported_parameters
@@ -941,10 +1031,31 @@ mod tests {
             parser.push(
                 "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"cost\":0.00042}}\n"
             ),
-            vec![SseItem::Cost(0.00042)]
+            vec![SseItem::Usage { cost: Some(0.00042), tokens: Tokens { input: 10, output: 0, cached: 0 } }]
         );
-        // Usage without a price says nothing.
-        assert!(parser.push("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10}}\n").is_empty());
+        // Tokens without a price still count.
+        assert_eq!(
+            parser.push("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"prompt_tokens_details\":{\"cached_tokens\":8}}}\n"),
+            vec![SseItem::Usage { cost: None, tokens: Tokens { input: 10, output: 3, cached: 8 } }]
+        );
+    }
+
+    #[test]
+    fn cache_marks_go_on_the_system_prompt_and_the_newest_message() {
+        let messages = vec![
+            Wire::system("rules"),
+            Wire::user("first"),
+            Wire::assistant("answer"),
+            Wire::user("second"),
+            Wire::tool_result("call_1", "{}"),
+        ];
+        let marked = cached_messages("anthropic/claude-x", &messages);
+        assert_eq!(marked[0]["content"][0]["cache_control"]["type"], "ephemeral");
+        assert!(marked[1]["content"].is_string());
+        assert_eq!(marked[3]["content"][0]["text"], "second");
+        assert!(marked[4]["content"].is_string(), "tool results stay as they are");
+        // Providers that cache on their own get the messages untouched.
+        assert!(cached_messages("openai/gpt-x", &messages)[0]["content"].is_string());
     }
 
     #[test]
