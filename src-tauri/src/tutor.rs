@@ -2207,7 +2207,7 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
 /// Runs one reply to the conversation's last message and stores it.
 async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<ChatMessage> {
     let stream_id = job_stream(conversation_id);
-    let (wire, model) = {
+    let (wire, model, word_chat) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let mut prompt = system_prompt(conn)?;
@@ -2218,6 +2218,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
             .first(conn)?;
         // A word chat can run on its own, smaller and faster model.
         let mut model = None;
+        let word_chat = about.is_some();
         if let Some(about) = about {
             prompt.push_str(&format!("\n\n{}", word_chat_rules(&about)));
             let own = crate::ai::stored_model(conn, "word_chat_model");
@@ -2228,13 +2229,14 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
         let mut wire = vec![Wire::system(crate::ai::with_say_player(prompt))];
         // The question is already stored, so it is the end of the history.
         wire.extend(recent_history(conn, conversation_id)?);
-        (wire, model)
+        (wire, model, word_chat)
     };
 
     let agent = Agent {
         app,
         db,
-        name: crate::costs::TUTOR,
+        // Word chats are counted on their own in the cost overview.
+        name: if word_chat { crate::costs::WORD_CHAT } else { crate::costs::TUTOR },
         stream_id: &stream_id,
         tools: Some(tool_definitions()),
         max_rounds: MAX_ROUNDS,

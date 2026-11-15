@@ -26,7 +26,9 @@ const FEATURES: Record<string, string> = {
   "fact check": "Fact checks",
   songwriter: "Song lyrics",
   songs: "Song audio",
-  explain: "Explanations",
+  "word chat": "Talk about it",
+  // Before word chats were saved tutor conversations.
+  explain: "Talk about it (earlier)",
   speech: "Speech",
   "key test": "Key test",
 };
