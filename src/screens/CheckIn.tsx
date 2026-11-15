@@ -19,7 +19,9 @@ import {
   Stack,
   Text,
 } from "../design";
-import { api } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
+import { toast } from "../lib/toast";
+import { WordBank } from "../components/WordBank";
 import { useAiStream } from "../lib/useAiStream";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
@@ -32,7 +34,11 @@ import type { Assessment } from "../lib/types";
 export interface Writing {
   situation: string;
   goals: string[];
+  /** 0 guided (word bank, hints), 1 supported (hints), 2 free. */
+  supportLevel: number;
 }
+
+const SUPPORT = ["Guided", "Supported", "Free"] as const;
 
 const VERDICT = {
   pass: { title: "Passed", tone: "mint", line: "You know this." },
@@ -41,8 +47,11 @@ const VERDICT = {
 } as const;
 
 interface Line {
-  /** "memory": something the examiner saved to long-term memory. */
-  role: "user" | "assistant" | "memory";
+  /**
+   * "memory": something the examiner saved to long-term memory. "hint": a
+   * writing hint, for the learner only.
+   */
+  role: "user" | "assistant" | "memory" | "hint";
   content: string;
 }
 
@@ -124,6 +133,26 @@ export function CheckIn({
     }
   }
 
+  // Writing help: a hint for the next message (guided and supported).
+  const [hinting, setHinting] = useState(false);
+  async function hint() {
+    if (checkinId === null || hinting) return;
+    setHinting(true);
+    try {
+      const text = await api.writingHint(checkinId);
+      setLines((current) => [...current, { role: "hint", content: text }]);
+      scroll.follow();
+    } catch (cause) {
+      toast(errorMessage(cause), "error");
+    } finally {
+      setHinting(false);
+    }
+  }
+  /** Adds a word or a hint's sentence to the message being written. */
+  function use(text: string) {
+    setDraft((current) => (current && !/\s$/.test(current) ? `${current} ${text}` : `${current}${text}`));
+  }
+
   async function end() {
     if (busy || checkinId === null) return;
     await exchange((streamId) => api.checkinEnd(checkinId, streamId));
@@ -134,15 +163,22 @@ export function CheckIn({
   return (
     <Screen
       title={title}
-      subtitle={writing ? "Writing" : "Check-in"}
+      subtitle={writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Check-in"}
       onClose={onClose}
       nav={false}
       actions={
         writing ? (
           !assessment && checkinId !== null ? (
-            <Button size="sm" disabled={busy} onClick={() => void end()}>
-              End
-            </Button>
+            <Inline gap={1}>
+              {writing.supportLevel < 2 ? (
+                <Button size="sm" variant="plain" loading={hinting} disabled={busy} onClick={() => void hint()}>
+                  💡 Hint
+                </Button>
+              ) : null}
+              <Button size="sm" disabled={busy} onClick={() => void end()}>
+                End
+              </Button>
+            </Inline>
           ) : undefined
         ) : song ? (
           <IconButton
@@ -193,10 +229,23 @@ export function CheckIn({
           </Stack>
         </Card>
       ) : null}
+      {writing && writing.supportLevel === 0 && !assessment ? <WordBank blockId={blockId} onUse={use} /> : null}
 
       <div className="chat">
         {lines.map((line, i) =>
-          line.role === "memory" ? (
+          line.role === "hint" ? (
+            <button
+              key={i}
+              className="writing-hint"
+              aria-label="Use this hint"
+              onClick={() => setDraft(line.content.split("(")[0].trim())}
+            >
+              <Text variant="caption" tone="dim">
+                💡 Hint — tap to start from it
+              </Text>
+              <span>{line.content}</span>
+            </button>
+          ) : line.role === "memory" ? (
             <div key={i} className="tutor-action">
               <Inline gap={2} align="top">
                 <span className="tone-ok">

@@ -112,7 +112,11 @@ CREATE TABLE IF NOT EXISTS topics (
     summary_en TEXT    NOT NULL,
     created_at INTEGER NOT NULL DEFAULT 0,
     -- A picture of what the course is about (pictures.rs).
-    image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL
+    image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    -- When it was first completed and first mastered (courses::milestones),
+    -- so each is celebrated once.
+    completed_at INTEGER,
+    mastered_at  INTEGER
 );
 
 -- Words, sentences and dialogue lines belong to a block — the drill that
@@ -259,7 +263,18 @@ CREATE TABLE IF NOT EXISTS blocks (
     fact_checked_at INTEGER,
     -- How fast its gaps grow: up when check-ins go easily, down when they
     -- don't (see plan.rs).
-    ease          REAL NOT NULL DEFAULT 2.5
+    ease          REAL NOT NULL DEFAULT 2.5,
+    -- Writing blocks: how much help the learner gets — 0 guided (word bank,
+    -- hints, simple questions), 1 supported (hints), 2 free. Moves with
+    -- their results.
+    support_level INTEGER NOT NULL DEFAULT 0,
+    -- Writing blocks: the word bank, made once (JSON).
+    scaffold      TEXT,
+    -- Beyond the course's level: not needed to complete the course, only to
+    -- master it.
+    challenge     INTEGER NOT NULL DEFAULT 0,
+    -- Passed at least once.
+    passed        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS blocks_due ON blocks(due_day);
 
@@ -476,6 +491,16 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "blocks", "fact_note", "TEXT")?;
     add_column(conn, "blocks", "fact_checked_at", "INTEGER")?;
     add_column(conn, "blocks", "ease", "REAL NOT NULL DEFAULT 2.5")?;
+    add_column(conn, "blocks", "support_level", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "topics", "completed_at", "INTEGER")?;
+    add_column(conn, "topics", "mastered_at", "INTEGER")?;
+    add_column(conn, "blocks", "scaffold", "TEXT")?;
+    add_column(conn, "blocks", "challenge", "INTEGER NOT NULL DEFAULT 0")?;
+    if add_column(conn, "blocks", "passed", "INTEGER NOT NULL DEFAULT 0")? {
+        // Before this was kept: a block last passed, or done more than once,
+        // has been passed.
+        conn.batch_execute("UPDATE blocks SET passed = 1 WHERE last_result = 'pass' OR reps > 1")?;
+    }
     add_column(conn, "day_log", "minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "day_log", "early_minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "tutor_conversations", "job_started_at", "INTEGER")?;
@@ -930,7 +955,8 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
     result
 }
 
-fn add_column(conn: &mut Conn, table: &str, column: &str, definition: &str) -> Result<()> {
+/// Adds a column if it is missing; true when it was just added.
+fn add_column(conn: &mut Conn, table: &str, column: &str, definition: &str) -> Result<bool> {
     let exists = diesel::sql_query(format!("SELECT name FROM pragma_table_info('{table}')"))
         .load::<legacy::Name>(conn)?
         .iter()
@@ -938,7 +964,7 @@ fn add_column(conn: &mut Conn, table: &str, column: &str, definition: &str) -> R
     if !exists {
         conn.batch_execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"))?;
     }
-    Ok(())
+    Ok(!exists)
 }
 
 /// The starter content (the ten topics and the lessons in `content/`) is

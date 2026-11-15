@@ -352,6 +352,7 @@ pub fn topic_progress(conn: &mut Conn) -> Result<Vec<TopicProgress>> {
             let listed = course_blocks::table.filter(course_blocks::topic_id.eq(id));
             let image_file_id: Option<i64> = topics::table.find(id).select(topics::image_file_id).first(conn)?;
             Ok(TopicProgress {
+                status: crate::courses::status(conn, id)?,
                 image_file_id,
                 topic,
                 total_words: course_words.count().get_result(conn)?,

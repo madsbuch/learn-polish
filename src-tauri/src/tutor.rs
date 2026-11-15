@@ -79,6 +79,11 @@ The app:
   grammar the dialogue uses; and a writing block where the learner plays out the course's \
   situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
   To grow a course, add to it rather than making a new one.
+- Courses are made to be finished: the learner completes one by passing each block once, and \
+  masters it when everything holds at long gaps (writing done without help). Keep the core at \
+  the learner's level; a block clearly beyond it (a free conversation in a beginner course, a \
+  deep lesson) is a challenge — set challenge with update_block. Challenges count for mastering, \
+  not completing. Writing blocks start guided (word bank, hints) and step up as they pass.
 - Culture and facts (cities, history, customs): write the lesson from Wikipedia — wiki_search, \
   wiki_read — and attach the article to the block with attach_source (existing blocks too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
@@ -533,7 +538,9 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "update_block",
             "Updating the block…",
-            "Change a block: title, summary, complexity, lesson, objectives or check-in period.",
+            "Change a block: title, summary, complexity, lesson, objectives, check-in period, or \
+             whether it is a challenge (beyond the course's level: needed to master the course, \
+             not to complete it).",
             json!({
                 "type": "object",
                 "properties": {
@@ -543,7 +550,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
                     "lesson": { "type": "string" },
                     "objectives": { "type": "array", "items": { "type": "string" } },
-                    "period_days": { "type": "integer" }
+                    "period_days": { "type": "integer" },
+                    "challenge": { "type": "boolean" }
                 },
                 "required": ["block_id"]
             }),
@@ -1020,6 +1028,9 @@ fn block_json(block: &blocks::Block) -> Value {
         "last_result": block.last_result,
         "due_in_days": block.due_day.map(|due| due - block.last_day.unwrap_or(due)),
         "made_by": block.origin,
+        "challenge": block.challenge,
+        "passed": block.passed,
+        "writing_support": (block.format == "writing").then(|| ["guided", "supported", "free"][block.support_level.clamp(0, 2) as usize]),
     })
 }
 

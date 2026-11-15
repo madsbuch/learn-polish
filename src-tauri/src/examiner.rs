@@ -119,6 +119,32 @@ The lesson the learner studied:
     ))
 }
 
+/// How much the partner helps, by the block's support level (it moves with
+/// the learner's results; see [`next_support_level`]).
+fn support_rules(level: i64) -> &'static str {
+    match level {
+        0 => "- The learner is a beginner, writing with a word bank and hints beside the chat. Take \
+  the goals one at a time and ask a simple, direct question that invites each (\"Jakie pokoje \
+  masz?\"). A short answer — even two or three words — that gets a goal across counts. Be \
+  warm and patient; if they are stuck, ask the question again more simply. Using the word bank \
+  and hints is expected at this stage: it does not make a pass partial.",
+        1 => "- The learner has hints if they need them. Ask questions that lead toward the goals, \
+  but let them say more on their own.",
+        _ => "- The learner writes on their own: let the conversation flow naturally; steer \
+  only when a goal has not come up.",
+    }
+}
+
+/// The support level after a writing check-in: a pass takes away a layer of
+/// help next time, a fail adds one back, a partial stays.
+pub fn next_support_level(level: i64, result: &str) -> i64 {
+    match result {
+        "pass" => (level + 1).min(2),
+        "fail" => (level - 1).max(0),
+        _ => level,
+    }
+}
+
 /// How simply the partner writes, by complexity.
 fn partner_level(complexity: &str) -> &'static str {
     match complexity {
@@ -148,6 +174,7 @@ How to play it:
 - Stay in character as the other person in the situation. Write only in Polish, at level \
   {level}. One or two sentences per message, like a chat. Never translate, never explain \
   grammar, never switch to English.
+{support}
 - You understand only Polish. If the learner writes in English or any other language — even a \
   single word of it in place of Polish — you don't understand that part: say so in Polish, \
   in character (\"Przepraszam, nie rozumiem…\", \"Co to znaczy?\") and wait for Polish. \
@@ -166,7 +193,12 @@ How to play it:
 {previous}",
         scenario = block.lesson,
         goals = block.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
-        level = partner_level(&block.block.complexity),
+        level = if block.block.support_level == 0 {
+            "A1: very short, simple sentences, the most common words, present tense"
+        } else {
+            partner_level(&block.block.complexity)
+        },
+        support = support_rules(block.block.support_level),
         previous = previous_feedback(conn, block.block.id)?
             .map(|feedback| format!("\nLast time's verdict, for your judgement only: {feedback}"))
             .unwrap_or_default(),
@@ -288,6 +320,12 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     let ace = assessment.result == "pass" && assessment.to_review.is_empty();
     let block = if extra { current } else { blocks::record_graded(conn, block_id, &assessment.result, ace)? };
     let writing_goals = if block.format == "writing" { blocks::detail(conn, block_id)?.objectives.len() } else { 0 };
+    if block.format == "writing" {
+        // Help follows how it went, even on a replay the same day.
+        diesel::update(crate::schema::blocks::table.find(block_id))
+            .set(crate::schema::blocks::support_level.eq(next_support_level(block.support_level, &assessment.result)))
+            .execute(conn)?;
+    }
     assessment.xp = stats::xp_for_checkin(&block.complexity, &assessment.result, writing_goals);
     if extra {
         assessment.xp = (assessment.xp + 1) / 2;
@@ -447,9 +485,127 @@ pub async fn checkin_send(
     turn(&app, &db, checkin_id, Some(message), &stream_id).await
 }
 
+// ---------------------------------------------------------------------------
+// Help for writing: a word bank, and a hint when stuck
+// ---------------------------------------------------------------------------
+
+/// A phrase with its meaning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Phrase {
+    pub pl: String,
+    pub en: String,
+}
+
+/// What helps with one goal: a way to start, and words to use.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalHelp {
+    pub goal: String,
+    pub starter: Phrase,
+    #[serde(default)]
+    pub words: Vec<Phrase>,
+}
+
+/// The JSON object in a model's reply (it may wrap it in prose or fences).
+fn json_in(text: &str) -> Option<&str> {
+    let (start, end) = (text.find('{')?, text.rfind('}')?);
+    (start < end).then(|| &text[start..=end])
+}
+
+/// A writing block's word bank: for each goal, a sentence starter and a few
+/// words to use. Made once by the partner's model, then kept.
+#[tauri::command]
+pub async fn writing_scaffold(db: State<'_, Db>, block_id: i64) -> Result<Vec<GoalHelp>> {
+    let (detail, stored, key, model) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let stored: Option<String> = crate::schema::blocks::table
+            .find(block_id)
+            .select(crate::schema::blocks::scaffold)
+            .first(conn)?;
+        (blocks::detail(conn, block_id)?, stored, crate::ai::api_key(conn)?, crate::ai::partner_model(conn)?)
+    };
+    if let Some(help) = stored.and_then(|json| serde_json::from_str::<Vec<GoalHelp>>(&json).ok()) {
+        return Ok(help);
+    }
+    let prompt = format!(
+        "A beginner learning Polish is about to write a short chat in Polish. The situation:\n{}\n\n\
+         Their goals:\n{}\n\n\
+         For each goal give a simple sentence starter they can finish, and 4–6 useful words or \
+         short phrases (in the form they would use them in the sentence), each with its English \
+         meaning. Simple, correct, everyday Polish (A1). Reply with only JSON: \
+         {{\"goals\": [{{\"goal\": \"…\", \"starter\": {{\"pl\": \"Mam…\", \"en\": \"I have…\"}}, \
+         \"words\": [{{\"pl\": \"…\", \"en\": \"…\"}}]}}]}}",
+        detail.lesson,
+        detail.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
+    );
+    let reply = crate::ai::complete(&key, &model, &[Wire::user(prompt)]).await?;
+    #[derive(Deserialize)]
+    struct Bank {
+        goals: Vec<GoalHelp>,
+    }
+    let bank: Bank = json_in(&reply.text)
+        .and_then(|json| serde_json::from_str(json).ok())
+        .ok_or_else(|| Error::msg("The word bank came back unreadable. Try again."))?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    let _ = crate::costs::record(conn, crate::costs::PARTNER, "openrouter", &model, reply.cost, "word bank");
+    diesel::update(crate::schema::blocks::table.find(block_id))
+        .set(crate::schema::blocks::scaffold.eq(serde_json::to_string(&bank.goals)?))
+        .execute(conn)?;
+    Ok(bank.goals)
+}
+
+/// A hint for what to write next in a writing conversation: a sentence with
+/// a blank or two for a goal not reached yet, with its meaning. Not sent to
+/// the partner.
+#[tauri::command]
+pub async fn writing_hint(db: State<'_, Db>, checkin_id: i64) -> Result<String> {
+    let (detail, past, key, model) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let block_id: i64 = checkins::table.find(checkin_id).select(checkins::block_id).first(conn)?;
+        let past: Vec<(String, String)> = checkin_messages::table
+            .filter(checkin_messages::checkin_id.eq(checkin_id))
+            .order(checkin_messages::id)
+            .select((checkin_messages::role, checkin_messages::content))
+            .load(conn)?;
+        (blocks::detail(conn, block_id)?, past, crate::ai::api_key(conn)?, crate::ai::partner_model(conn)?)
+    };
+    let chat = past
+        .iter()
+        .filter(|(_, content)| !content.starts_with("(The app:"))
+        .map(|(role, content)| format!("{}: {content}", if role == "user" { "Learner" } else { "Partner" }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt = format!(
+        "A beginner is writing a chat in Polish. Goals:\n{}\n\nThe chat so far:\n{}\n\n\
+         Give one hint for their next message: a short, simple Polish sentence that answers the \
+         partner and moves toward a goal not reached yet, with one or two key words left as \
+         blanks (___) for them to fill in, then the English meaning in parentheses, then the \
+         missing words' English in brackets. One line, nothing else. Example: \
+         Mam ___ i ___. (I have a kitchen and a bedroom.) [kitchen, bedroom]",
+        detail.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
+        if chat.is_empty() { "(nothing yet)".into() } else { chat },
+    );
+    let reply = crate::ai::complete(&key, &model, &[Wire::user(prompt)]).await?;
+    let _ = crate::costs::record(&mut db.lock(), crate::costs::PARTNER, "openrouter", &model, reply.cost, "hint");
+    Ok(reply.text.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writing_help_steps_down_as_the_learner_passes() {
+        assert_eq!(next_support_level(0, "pass"), 1);
+        assert_eq!(next_support_level(1, "pass"), 2);
+        assert_eq!(next_support_level(2, "pass"), 2);
+        assert_eq!(next_support_level(1, "partial"), 1);
+        assert_eq!(next_support_level(1, "fail"), 0);
+        assert_eq!(next_support_level(0, "fail"), 0);
+        assert_eq!(json_in("Here: ```json\n{\"a\": 1}\n```"), Some("{\"a\": 1}"));
+    }
 
     #[test]
     fn harder_blocks_get_longer_interviews() {

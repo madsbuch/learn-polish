@@ -21,7 +21,7 @@ export function TopicList({
             backdrop={entry.imageFileId !== null ? fileUrl(entry.imageFileId) : null}
             leading={
               entry.imageFileId !== null ? undefined : (
-                <Avatar muted={entry.startedBlocks === 0}>
+                <Avatar muted={entry.startedBlocks === 0 && entry.status === "active"}>
                   {(entry.topic.titlePl || entry.topic.title).charAt(0).toUpperCase()}
                 </Avatar>
               )
@@ -30,9 +30,17 @@ export function TopicList({
             subtitle={
               <Stack gap={2}>
                 <span>
-                  {entry.topic.titlePl} · {entry.startedBlocks}/{entry.totalBlocks} blocks started
+                  {entry.status === "mastered"
+                    ? `🏆 Mastered · ${entry.topic.titlePl}`
+                    : entry.status === "completed"
+                      ? `✓ Completed · ${entry.topic.titlePl}${
+                          entry.challenges > 0 ? ` · ${entry.challenges} challenge${entry.challenges === 1 ? "" : "s"}` : ""
+                        }`
+                      : `${entry.topic.titlePl} · ${entry.passedCore}/${entry.coreBlocks} passed`}
                 </span>
-                <Progress value={entry.startedBlocks} max={entry.totalBlocks} size="sm" />
+                {entry.status === "active" ? (
+                  <Progress value={entry.passedCore} max={Math.max(1, entry.coreBlocks)} size="sm" />
+                ) : null}
               </Stack>
             }
             onClick={() => onOpen(entry)}

@@ -1,4 +1,5 @@
 import {
+  Banner,
   Avatar,
   Badge,
   Button,
@@ -72,6 +73,14 @@ export function SessionSummary({
               : "Extra practice always counts."}
         </Text>
       </Stack>
+
+      {(result.milestones ?? []).map((milestone) => (
+        <Banner key={`${milestone.topicId}-${milestone.mastered}`} tone="ok">
+          {milestone.mastered
+            ? `🏆 You mastered “${milestone.title}” — everything in it holds.`
+            : `🎉 You completed “${milestone.title}”! It moves to your completed courses; its blocks still come back now and then.`}
+        </Banner>
+      ))}
 
       <Hero>
         <Stack gap={3} align="center">

@@ -18,6 +18,7 @@ import type {
   WikiSource,
   TutorStarted,
   TalkAbout,
+  GoalHelp,
   AudioOverview,
   AudioClip,
   CacheProgress,
@@ -75,6 +76,9 @@ export const api = {
   blockSetPeriod: (blockId: number, periodDays: number) =>
     invoke<Block>("block_set_period", { blockId, periodDays }),
   blockDelete: (blockId: number) => invoke<void>("block_delete", { blockId }),
+  /** A challenge: needed to master its courses, not to complete them. */
+  blockSetChallenge: (blockId: number, challenge: boolean) =>
+    invoke<Block>("block_set_challenge", { blockId, challenge }),
   blockAddToCourse: (blockId: number, topicId: number) =>
     invoke<void>("block_add_to_course", { blockId, topicId }),
   /** True when it was the block's last course, so the block was deleted. */
@@ -89,6 +93,10 @@ export const api = {
   /** Ends a writing conversation; the partner gives its verdict. */
   checkinEnd: (checkinId: number, streamId: string) =>
     invoke<CheckinTurn>("checkin_end", { checkinId, streamId }),
+  /** A writing block's word bank (made once, then kept). */
+  writingScaffold: (blockId: number) => invoke<GoalHelp[]>("writing_scaffold", { blockId }),
+  /** A hint for the next message in a writing conversation. */
+  writingHint: (checkinId: number) => invoke<string>("writing_hint", { checkinId }),
   /** The summary after a check-in; new achievements are those since it began. */
   checkinSummary: (checkinId: number, firstCompletionToday: boolean) =>
     invoke<SessionResult>("checkin_summary", { checkinId, firstCompletionToday }),

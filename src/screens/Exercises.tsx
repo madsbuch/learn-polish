@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { BlockRow } from "../components/BlockRow";
 import { Logo, SearchIcon } from "../components/icons";
@@ -60,7 +60,11 @@ export function Exercises({
   const goalPct = stats.completedToday
     ? 100
     : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
-  // Today's list first; once it's done, more for a big day; else something new.
+  // Finished courses leave the list for their own shelf.
+  const active = topics.filter((t) => t.status === "active");
+  const finished = topics.filter((t) => t.status !== "active");
+  const [showFinished, setShowFinished] = useState(false);
+    // Today's list first; once it's done, more for a big day; else something new.
   const keepGoing = overview.due.length === 0 && overview.more.length > 0;
   const upNext = overview.due[0] ?? overview.more[0] ?? overview.next[0] ?? null;
   const balance =
@@ -237,7 +241,7 @@ export function Exercises({
           </List>
         ) : (
           <Stack gap={3}>
-            <TopicList entries={topics} onOpen={onOpenTopic} />
+            <TopicList entries={active} onOpen={onOpenTopic} />
             <List>
               <ListItem
                 leading={<Avatar>✨</Avatar>}
@@ -249,6 +253,35 @@ export function Exercises({
           </Stack>
         )}
       </Section>
+
+      {finished.length > 0 ? (
+        <Section
+          title="Completed"
+          info={
+            <p>
+              Courses where every block is passed. Their blocks still come back in today's
+              check-ins now and then; keep them up and a course becomes mastered 🏆.
+            </p>
+          }
+        >
+          {showFinished ? (
+            <TopicList entries={finished} onOpen={onOpenTopic} />
+          ) : (
+            <List>
+              <ListItem
+                leading={<Avatar>✓</Avatar>}
+                title={`${finished.length} completed course${finished.length === 1 ? "" : "s"}`}
+                subtitle={
+                  finished.filter((t) => t.status === "mastered").length > 0
+                    ? `${finished.filter((t) => t.status === "mastered").length} mastered 🏆`
+                    : "Tap to see them"
+                }
+                onClick={() => setShowFinished(true)}
+              />
+            </List>
+          )}
+        </Section>
+      ) : null}
     </Screen>
   );
 }

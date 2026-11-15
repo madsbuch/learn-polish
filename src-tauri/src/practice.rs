@@ -165,6 +165,8 @@ pub struct SessionResult {
     pub first_completion_today: bool,
     pub newly_unlocked: Vec<Achievement>,
     pub stats: Stats,
+    /// Courses this completed or mastered.
+    pub milestones: Vec<crate::courses::Milestone>,
 }
 
 /// Achievements unlocked by whatever just happened, with fresh stats.
@@ -177,7 +179,8 @@ fn finish_up(conn: &mut Conn, before: &std::collections::HashSet<String>, first:
         .filter(|a| a.unlocked && !before.contains(&a.code))
         .cloned()
         .collect();
-    Ok(SessionResult { first_completion_today: first, newly_unlocked, stats })
+    let milestones = crate::courses::milestones(conn)?;
+    Ok(SessionResult { first_completion_today: first, newly_unlocked, stats, milestones })
 }
 
 fn unlocked_codes(conn: &mut Conn) -> Result<std::collections::HashSet<String>> {

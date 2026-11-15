@@ -17,6 +17,8 @@ diesel::table! {
         summary_en -> Text,
         created_at -> BigInt,
         image_file_id -> Nullable<BigInt>,
+        completed_at -> Nullable<BigInt>,
+        mastered_at -> Nullable<BigInt>,
     }
 }
 
@@ -167,6 +169,10 @@ diesel::table! {
         fact_note -> Nullable<Text>,
         fact_checked_at -> Nullable<BigInt>,
         ease -> Double,
+        support_level -> BigInt,
+        scaffold -> Nullable<Text>,
+        challenge -> BigInt,
+        passed -> BigInt,
     }
 }
 

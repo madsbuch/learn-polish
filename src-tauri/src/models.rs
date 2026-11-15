@@ -177,6 +177,9 @@ pub struct TopicProgress {
     pub started_blocks: i64,
     /// The course's picture: a file id, shown through the media protocol.
     pub image_file_id: Option<i64>,
+    /// Active, completed or mastered, and how far along.
+    #[serde(flatten)]
+    pub status: crate::courses::CourseStatus,
 }
 
 #[derive(Debug, Clone, Serialize)]

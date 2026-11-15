@@ -13,6 +13,7 @@ import {
   ListEmpty,
   ListItem,
   Screen,
+  Progress,
   Section,
   Segmented,
   Sheet,
@@ -150,16 +151,41 @@ export function TopicDetail({
         </Text>
       ) : null}
 
+      {blocks && blocks.length > 0 ? <CourseProgress blocks={blocks} /> : null}
+
       {tabs.length > 1 ? <Segmented value={shown} onChange={setTab} options={tabs} /> : null}
 
       {shown === "blocks" ? (
         blocks ? (
-          <List>
-            {blocks.map((block) => (
-              <BlockRow key={block.id} block={block} today={today} onOpen={(b) => onOpenBlock(b.id)} />
-            ))}
-            {blocks.length === 0 ? <ListEmpty>No blocks yet. Ask the tutor to add some.</ListEmpty> : null}
-          </List>
+          <Stack gap={4}>
+            <List>
+              {blocks
+                .filter((block) => !block.challenge)
+                .map((block) => (
+                  <BlockRow key={block.id} block={block} today={today} onOpen={(b) => onOpenBlock(b.id)} />
+                ))}
+              {blocks.length === 0 ? <ListEmpty>No blocks yet. Ask the tutor to add some.</ListEmpty> : null}
+            </List>
+            {blocks.some((block) => block.challenge) ? (
+              <Section
+                title="Challenges"
+                info={
+                  <p>
+                    Beyond this course's level: not needed to complete it, but needed to master it.
+                    Come back when the rest feels easy.
+                  </p>
+                }
+              >
+                <List>
+                  {blocks
+                    .filter((block) => block.challenge)
+                    .map((block) => (
+                      <BlockRow key={block.id} block={block} today={today} onOpen={(b) => onOpenBlock(b.id)} />
+                    ))}
+                </List>
+              </Section>
+            ) : null}
+          </Stack>
         ) : (
           <Spinner />
         )
@@ -282,5 +308,32 @@ export function TopicDetail({
         </Sheet>
       ) : null}
     </Screen>
+  );
+}
+
+/**
+ * How far the course is: passing each core block once completes it; keeping
+ * everything up (challenges too) masters it.
+ */
+function CourseProgress({ blocks }: { blocks: Block[] }) {
+  const core = blocks.filter((block) => !block.challenge);
+  const passed = core.filter((block) => block.passed).length;
+  const completed = core.length > 0 && passed === core.length;
+  const mastered =
+    completed &&
+    blocks.every(
+      (block) => block.passed && block.intervalDays >= 30 && (block.format !== "writing" || block.supportLevel >= 2),
+    );
+  return (
+    <Stack gap={2}>
+      <Text variant="small" tone="dim" as="div">
+        {mastered
+          ? "🏆 Mastered — everything holds."
+          : completed
+            ? "✓ Completed. Keep its blocks up in your check-ins to master it."
+            : `${passed} of ${core.length} blocks passed — pass each once to complete the course.`}
+      </Text>
+      {completed ? null : <Progress value={passed} max={Math.max(1, core.length)} size="sm" />}
+    </Stack>
   );
 }

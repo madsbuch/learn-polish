@@ -151,6 +151,12 @@ export interface Block {
   lastDay: number | null;
   lastResult: BlockResult | null;
   reps: number;
+  /** Writing blocks: 0 guided (word bank, hints), 1 supported (hints), 2 free. */
+  supportLevel: number;
+  /** Beyond the course's level: needed to master it, not to complete it. */
+  challenge: boolean;
+  /** Passed at least once. */
+  passed: boolean;
   items: number;
   /** A listening block's song. */
   songId: number | null;
@@ -247,6 +253,19 @@ export interface TopicProgress {
   startedBlocks: number;
   /** The course's picture: a file id, loaded with fileUrl(). */
   imageFileId: number | null;
+  /** Completed: every core block passed once. Mastered: everything holds, challenges too. */
+  status: "active" | "completed" | "mastered";
+  /** Blocks needed to complete it (not challenges), and how many are passed. */
+  coreBlocks: number;
+  passedCore: number;
+  challenges: number;
+}
+
+/** A course just completed or mastered. */
+export interface Milestone {
+  topicId: number;
+  title: string;
+  mastered: boolean;
 }
 
 export interface Stats {
@@ -343,6 +362,8 @@ export interface SessionResult {
   firstCompletionToday: boolean;
   newlyUnlocked: Achievement[];
   stats: Stats;
+  /** Courses this completed or mastered. */
+  milestones: Milestone[];
 }
 
 export interface TutorAction {
@@ -690,4 +711,17 @@ export interface Memory {
 export interface MemoryOverview {
   enabled: boolean;
   memories: Memory[];
+}
+
+/** A phrase with its meaning. */
+export interface Phrase {
+  pl: string;
+  en: string;
+}
+
+/** A writing goal's help: a way to start, and words to use. */
+export interface GoalHelp {
+  goal: string;
+  starter: Phrase;
+  words: Phrase[];
 }

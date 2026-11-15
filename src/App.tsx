@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { NavIcon } from "./components/icons";
-import { Banner, Loading, Stack } from "./design";
+import { Banner, Stack } from "./design";
+import { Startup, type BootStep } from "./components/Startup";
 import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
@@ -120,11 +121,30 @@ export default function App() {
     setTopics(nextTopics);
   }, []);
 
+  // Starting up, step by step, shown on the loading screen so a stall says
+  // where it stalled.
+  const [bootSteps, setBootSteps] = useState<BootStep[]>([]);
+  const [bootRun, setBootRun] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    const track = async <T,>(label: string, command: string, run: () => Promise<T>): Promise<T> => {
+      const startedAt = Date.now();
+      setBootSteps((steps) => [...steps.filter((s) => s.command !== command), { label, command, state: "pending", startedAt }]);
+      const settle = (patch: Partial<BootStep>) =>
+        !cancelled && setBootSteps((steps) => steps.map((s) => (s.command === command ? { ...s, ...patch, ms: Date.now() - startedAt } : s)));
+      try {
+        const value = await run();
+        settle({ state: "done" });
+        return value;
+      } catch (cause) {
+        settle({ state: "failed", error: errorMessage(cause) });
+        throw cause;
+      }
+    };
+    setBootSteps([]);
     (async () => {
       try {
-        const loaded = await api.init();
+        const loaded = await track("Opening your data", "init_app", () => api.init());
         if (cancelled) return;
         setSettings(loaded);
         // Display preferences live in the database; adopt them (or seed them).
@@ -132,7 +152,15 @@ export default function App() {
         syncRepeatFromSettings(loaded.playerRepeat);
         // A speaker may still be playing from before a reload.
         resumeCast();
-        await refresh();
+        const [nextOverview, nextStats, nextTopics] = await Promise.all([
+          track("Today's check-ins", "blocks_overview", () => api.blocksOverview()),
+          track("Your stats", "get_stats", () => api.getStats()),
+          track("Your courses", "get_topic_progress", () => api.getTopicProgress()),
+        ]);
+        if (cancelled) return;
+        setOverview(nextOverview);
+        setStats(nextStats);
+        setTopics(nextTopics);
       } catch (cause) {
         if (!cancelled) setError(errorMessage(cause));
       }
@@ -140,7 +168,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [refresh]);
+  }, [bootRun]);
 
   const applySettings = useCallback(
     (next: Settings) => {
@@ -301,7 +329,15 @@ export default function App() {
   }
 
   if (!settings || !overview || !stats) {
-    return <Loading label="Przygotowuję…" />;
+    return (
+      <Startup
+        steps={bootSteps}
+        onRetry={() => {
+          setError(null);
+          setBootRun((n) => n + 1);
+        }}
+      />
+    );
   }
 
   if (overlay.kind === "session") {
@@ -390,7 +426,7 @@ export default function App() {
               songId: detail?.songId ?? null,
               writing:
                 detail?.format === "writing"
-                  ? { situation: detail.lesson, goals: detail.objectives }
+                  ? { situation: detail.lesson, goals: detail.objectives, supportLevel: detail.supportLevel }
                   : null,
               back: overlay,
             });

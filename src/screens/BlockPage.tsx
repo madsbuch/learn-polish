@@ -22,6 +22,7 @@ import {
   Screen,
   Section,
   SettingRow,
+  Switch,
   Sheet,
   Spinner,
   Stack,
@@ -159,6 +160,7 @@ export function BlockPage({
             {complexityName(block.complexity)} · {minutes(block.complexity)}
           </Badge>
           {started ? <Badge>{dueLabel(block, today)}</Badge> : null}
+          {block.challenge ? <Badge tone="gold">Challenge</Badge> : null}
         </Inline>
         {block.summary ? (
           <Text tone="dim" as="p">
@@ -199,7 +201,12 @@ export function BlockPage({
           {writing ? (
             <Text variant="small" tone="dim" as="p">
               Write only in Polish — your partner doesn't understand anything else. The
-              conversation ends when you've got every goal across.
+              conversation ends when you've got every goal across.{" "}
+              {block.supportLevel === 0
+                ? "Guided: a word bank and hints help you, and your partner asks simple questions. Pass it and the help steps back."
+                : block.supportLevel === 1
+                  ? "Supported: hints if you need them. Pass it and you write on your own."
+                  : "Free: you write on your own."}
             </Text>
           ) : null}
           <Section title={writing ? "Goals" : "You will be able to"}>
@@ -393,6 +400,26 @@ export function BlockPage({
       ) : null}
 
       <Section title="Manage">
+        <List>
+          <SettingRow
+            label="Challenge"
+            description="Beyond the course's level: not needed to complete it, only to master it"
+            control={
+              <Switch
+                label="Challenge"
+                checked={block.challenge}
+                onChange={async (challenge) => {
+                  try {
+                    await api.blockSetChallenge(block.id, challenge);
+                    await reload();
+                  } catch (cause) {
+                    setError(errorMessage(cause));
+                  }
+                }}
+              />
+            }
+          />
+        </List>
         <ConfirmButton
           label="Delete block"
           confirmLabel="Delete"

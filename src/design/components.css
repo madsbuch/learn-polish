@@ -1112,3 +1112,88 @@ button.badge:active {
 .md-say strong {
   margin-right: 2px;
 }
+
+/* A guided writing block's word bank: tap a word to add it to the message. */
+.word-bank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+}
+.word-bank__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.word-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--tint);
+  border: 1px solid var(--line-soft);
+  font-size: var(--font-small);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+  text-align: left;
+}
+.word-chip > span {
+  font-size: var(--font-caption);
+  font-weight: var(--weight-medium);
+  color: var(--text-faint);
+}
+.word-chip[data-starter] {
+  background: var(--brand-tint);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+.word-chip:active {
+  transform: scale(0.97);
+}
+/* A hint in a writing chat: for the learner only, not sent. */
+.writing-hint {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--brand);
+  background: var(--brand-tint);
+  text-align: left;
+  color: var(--text);
+}
+
+/* The startup steps on the loading screen (components/Startup.tsx). */
+.boot-steps {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--font-small);
+  color: var(--text-dim);
+  text-align: left;
+}
+.boot-step {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.boot-step[data-state="failed"] {
+  color: var(--crimson-ink);
+}
+.boot-step code {
+  font-size: var(--font-caption);
+  color: var(--text-faint);
+}
+.boot-step__error {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--font-caption);
+  user-select: text;
+  -webkit-user-select: text;
+}

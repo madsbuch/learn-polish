@@ -741,3 +741,78 @@ mod tests {
         assert_eq!(normalize_pos(""), "");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Finishing a course
+// ---------------------------------------------------------------------------
+
+/// A course's gap at which a block counts as held for good.
+pub const MASTERED_GAP: i64 = 30;
+
+/// Where a course stands: active, completed (every core block passed once)
+/// or mastered (everything — challenges too — passed and holding at long
+/// gaps, writing done without help).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseStatus {
+    /// "active" | "completed" | "mastered"
+    pub status: String,
+    /// Core blocks (not challenges), and how many have been passed.
+    pub core_blocks: i64,
+    pub passed_core: i64,
+    pub challenges: i64,
+}
+
+pub fn status(conn: &mut Conn, topic_id: i64) -> Result<CourseStatus> {
+    let list: Vec<(i64, i64, i64, String, i64)> = course_blocks::table
+        .inner_join(blocks::table)
+        .filter(course_blocks::topic_id.eq(topic_id))
+        .select((blocks::challenge, blocks::passed, blocks::interval_days, blocks::format, blocks::support_level))
+        .load(conn)?;
+    let core: Vec<_> = list.iter().filter(|b| b.0 == 0).collect();
+    let passed_core = core.iter().filter(|b| b.1 == 1).count() as i64;
+    let completed = !core.is_empty() && passed_core == core.len() as i64;
+    let mastered = completed
+        && list.iter().all(|(_, passed, gap, format, support)| {
+            *passed == 1 && *gap >= MASTERED_GAP && (format != "writing" || *support >= 2)
+        });
+    Ok(CourseStatus {
+        status: if mastered { "mastered" } else if completed { "completed" } else { "active" }.into(),
+        core_blocks: core.len() as i64,
+        passed_core,
+        challenges: (list.len() - core.len()) as i64,
+    })
+}
+
+/// A course just completed or mastered, to celebrate.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Milestone {
+    pub topic_id: i64,
+    pub title: String,
+    pub mastered: bool,
+}
+
+/// Courses that have reached completed or mastered since last asked: each
+/// is noted, so it is celebrated once.
+pub fn milestones(conn: &mut Conn) -> Result<Vec<Milestone>> {
+    let open: Vec<(i64, String, Option<i64>, Option<i64>)> = topics::table
+        .filter(topics::completed_at.is_null().or(topics::mastered_at.is_null()))
+        .select((topics::id, topics::title_en, topics::completed_at, topics::mastered_at))
+        .load(conn)?;
+    let mut reached = Vec::new();
+    for (id, title, completed_at, mastered_at) in open {
+        let status = status(conn, id)?.status;
+        let now = db::now_secs();
+        if status == "mastered" && mastered_at.is_none() {
+            diesel::update(topics::table.find(id))
+                .set((topics::mastered_at.eq(now), topics::completed_at.eq(completed_at.unwrap_or(now))))
+                .execute(conn)?;
+            reached.push(Milestone { topic_id: id, title, mastered: true });
+        } else if status != "active" && completed_at.is_none() {
+            diesel::update(topics::table.find(id)).set(topics::completed_at.eq(now)).execute(conn)?;
+            reached.push(Milestone { topic_id: id, title, mastered: false });
+        }
+    }
+    Ok(reached)
+}

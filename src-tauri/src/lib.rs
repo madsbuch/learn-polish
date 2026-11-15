@@ -78,6 +78,7 @@ pub fn run() {
             practice::block_session,
             practice::block_finish,
             blocks::commands::block_set_period,
+            blocks::commands::block_set_challenge,
             blocks::commands::block_delete,
             blocks::commands::block_for_song,
             practice::checkin_summary,
@@ -97,6 +98,8 @@ pub fn run() {
             tutor::tutor_send,
             tutor::tutor_retry,
             tutor::tutor_talk_about,
+            examiner::writing_scaffold,
+            examiner::writing_hint,
             pictures::course_picture,
             wiki::block_sources,
             wiki::source_article,
@@ -829,6 +832,65 @@ mod integration {
         let day = plan::spread(&mut conn, today, 20, later).unwrap();
         assert_ne!(day, crowded);
         assert!((day - crowded).abs() <= 2);
+    }
+
+    #[test]
+    fn courses_complete_then_master_and_challenges_only_count_for_mastery() {
+        let mut conn = scratch_db("course-status");
+        let course = db::require_topic_id(&mut conn, 1).unwrap();
+        let ids: Vec<i64> = blocks::for_topic(&mut conn, course).unwrap().iter().map(|b| b.id).collect();
+        assert!(ids.len() >= 2);
+        let set = |conn: &mut db::Conn, id: i64, passed: i64, gap: i64| {
+            diesel::update(t::blocks::table.find(id))
+                .set((t::blocks::passed.eq(passed), t::blocks::interval_days.eq(gap), t::blocks::support_level.eq(2)))
+                .execute(conn)
+                .unwrap();
+        };
+        courses::milestones(&mut conn).unwrap();
+        assert_eq!(courses::status(&mut conn, course).unwrap().status, "active");
+
+        // The last block is a challenge: not passed, and still the course completes.
+        let (challenge, core) = ids.split_last().unwrap();
+        blocks::update(&mut conn, *challenge, blocks::BlockChanges { challenge: Some(true), ..Default::default() }).unwrap();
+        for id in core {
+            set(&mut conn, *id, 1, 3);
+        }
+        let status = courses::status(&mut conn, course).unwrap();
+        assert_eq!(status.status, "completed");
+        assert_eq!((status.passed_core, status.challenges), (core.len() as i64, 1));
+        let first = courses::milestones(&mut conn).unwrap();
+        assert!(first.iter().any(|m| m.topic_id == course && !m.mastered), "{first:?}");
+        assert!(courses::milestones(&mut conn).unwrap().iter().all(|m| m.topic_id != course), "celebrated once");
+
+        // Mastered: everything, challenge too, passed and holding at long gaps.
+        for id in core {
+            set(&mut conn, *id, 1, 40);
+        }
+        assert_eq!(courses::status(&mut conn, course).unwrap().status, "completed", "the challenge is not done");
+        set(&mut conn, *challenge, 1, 40);
+        assert_eq!(courses::status(&mut conn, course).unwrap().status, "mastered");
+        assert!(courses::milestones(&mut conn).unwrap().iter().any(|m| m.topic_id == course && m.mastered));
+
+        // Passing a block marks it passed.
+        diesel::update(t::blocks::table.find(core[0])).set(t::blocks::passed.eq(0)).execute(&mut conn).unwrap();
+        blocks::record(&mut conn, core[0], "pass").unwrap();
+        assert!(blocks::load(&mut conn, core[0]).unwrap().passed);
+    }
+
+    #[test]
+    fn an_install_from_before_the_daily_plan_upgrades_and_starts() {
+        let Ok(old) = std::env::var("OLD_DB") else { return };
+        let path = std::env::temp_dir().join("learn-polish-tests").join(format!("old-{}.db", std::process::id()));
+        std::fs::copy(old, &path).unwrap();
+        let mut conn = db::open(&path).expect("upgrade");
+        let today = db::today(&mut conn);
+        diesel::update(t::blocks::table)
+            .set((t::blocks::due_day.eq(today - 1), t::blocks::last_day.eq(today - 5), t::blocks::reps.eq(2)))
+            .execute(&mut conn)
+            .unwrap();
+        blocks::overview(&mut conn).expect("overview");
+        stats::collect(&mut conn).expect("stats");
+        stats::topic_progress(&mut conn).expect("courses");
     }
 
     #[test]

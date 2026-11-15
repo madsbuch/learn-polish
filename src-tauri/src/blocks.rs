@@ -98,6 +98,13 @@ pub struct Block {
     pub reps: i64,
     /// How fast its gaps grow (see plan.rs).
     pub ease: f64,
+    /// Writing blocks: 0 guided, 1 supported, 2 free.
+    pub support_level: i64,
+    /// Beyond the course's level: needed to master the course, not to
+    /// complete it.
+    pub challenge: bool,
+    /// Passed at least once.
+    pub passed: bool,
     pub items: i64,
     /// A listening block's song.
     pub song_id: Option<i64>,
@@ -168,6 +175,9 @@ struct BlockRow {
     last_result: Option<String>,
     reps: i64,
     ease: f64,
+    support_level: i64,
+    challenge: i64,
+    passed: i64,
     song_id: Option<i64>,
 }
 
@@ -248,6 +258,9 @@ fn assemble(conn: &mut Conn, rows: Vec<BlockRow>) -> Result<Vec<Block>> {
                 last_result: row.last_result,
                 reps: row.reps,
                 ease: row.ease,
+                support_level: row.support_level,
+                challenge: row.challenge == 1,
+                passed: row.passed == 1,
                 song_id: row.song_id,
             }
         })
@@ -345,6 +358,7 @@ pub fn overview(conn: &mut Conn) -> Result<Overview> {
             .inner_join(blocks::table)
             .filter(course_blocks::topic_id.eq(course))
             .filter(blocks::due_day.is_null())
+            .filter(blocks::challenge.eq(0))
             .order((course_blocks::ord, blocks::id))
             .limit(2)
             .select(BlockRow::as_select())
@@ -516,6 +530,9 @@ pub fn record_graded(conn: &mut Conn, block_id: i64, result: &str, ace: bool) ->
             blocks::ease.eq(ease),
         ))
         .execute(conn)?;
+    if result == "pass" {
+        diesel::update(blocks::table.find(block_id)).set(blocks::passed.eq(1)).execute(conn)?;
+    }
     crate::plan::log_minutes(conn, today, minutes_for(&block.kind, &block.complexity), early)?;
     load(conn, block_id)
 }
@@ -770,6 +787,9 @@ pub struct BlockChanges {
     pub objectives: Option<Vec<String>>,
     #[serde(default)]
     pub period_days: Option<i64>,
+    /// Beyond the course's level: needed to master it, not to complete it.
+    #[serde(default)]
+    pub challenge: Option<bool>,
 }
 
 /// The columns an edit may change; `None` leaves one as it is.
@@ -782,6 +802,10 @@ struct BlockEdit {
     complexity: Option<String>,
     lesson: Option<String>,
     objectives: Option<String>,
+    challenge: Option<i64>,
+    /// A writing block's word bank goes stale when its situation or goals
+    /// change: Some(None) clears it.
+    scaffold: Option<Option<String>>,
 }
 
 pub fn update(conn: &mut Conn, id: i64, changes: BlockChanges) -> Result<Block> {
@@ -800,7 +824,13 @@ pub fn update(conn: &mut Conn, id: i64, changes: BlockChanges) -> Result<Block> 
             .map(|list| list.iter().map(|o| clean(o)).filter(|o| !o.is_empty()).collect::<Vec<_>>())
             .map(|list| serde_json::to_string(&list))
             .transpose()?,
+        challenge: changes.challenge.map(i64::from),
+        scaffold: None,
     };
+    let mut edit = edit;
+    if edit.lesson.is_some() || edit.objectives.is_some() {
+        edit.scaffold = Some(None);
+    }
     if edit != BlockEdit::default() {
         diesel::update(blocks::table.find(id)).set(&edit).execute(conn)?;
     }
@@ -938,6 +968,12 @@ pub mod commands {
             block_id,
             super::BlockChanges { period_days: Some(period_days), ..Default::default() },
         )
+    }
+
+    /// The learner marks a block as a challenge (or back into the course).
+    #[tauri::command]
+    pub async fn block_set_challenge(db: State<'_, Db>, block_id: i64, challenge: bool) -> Result<super::Block> {
+        super::update(&mut db.lock(), block_id, super::BlockChanges { challenge: Some(challenge), ..Default::default() })
     }
 
     /// The listening block for a song, made on first ask.
