@@ -97,8 +97,10 @@ pub const SAY_PLAYER: &str = "\
 Audio: write [[say: rozgrzewka]] to give the learner a small player for Polish — they can hear \
 it normally and slowly. Use it for the Polish words and example sentences in your reply, in \
 place of italics: [[say: Siedzę przy kominku.]] (\"I'm sitting by the fireplace.\"). Polish \
-only, one word, phrase or sentence per tag; keep the translation outside it. For a man's voice: \
-[[say:m: Dzień dobry]].";
+only, one word, phrase or sentence per tag; keep the translation outside it. Only whole words: \
+never tag syllables or pieces of a word (a voice can't say \"grzew\" on its own) — write a \
+breakdown as plain text (roz-grzew-ka) and give the whole word a player; its slow version says \
+every syllable clearly. For a man's voice: [[say:m: Dzień dobry]].";
 
 /// Text with each `[[say: …]]` player reduced to its words, for places that
 /// show plain text (previews, notifications).
