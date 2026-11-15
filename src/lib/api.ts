@@ -126,8 +126,8 @@ export const api = {
    * Opens the tutor conversation about a word or sentence — or carries on the
    * one already about it. A new one starts with the tutor talking.
    */
-  tutorTalkAbout: (itemKind: string, itemId: number) =>
-    invoke<TalkAbout>("tutor_talk_about", { itemKind, itemId }),
+  tutorTalkAbout: (itemKind: string, itemId: number, polish?: string, meaning?: string) =>
+    invoke<TalkAbout>("tutor_talk_about", { itemKind, itemId, polish: polish ?? null, meaning: meaning ?? null }),
 
   /**
    * Stores the message and starts the reply in the background; `conversationId`

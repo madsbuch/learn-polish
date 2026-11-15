@@ -2349,6 +2349,9 @@ pub async fn tutor_talk_about(
     db: State<'_, Db>,
     item_kind: String,
     item_id: i64,
+    // For a line of a conversation: its Polish and meaning.
+    polish: Option<String>,
+    meaning: Option<String>,
 ) -> Result<TalkAbout> {
     let conversation_id = {
         let mut guard = db.lock();
@@ -2362,6 +2365,10 @@ pub async fn tutor_talk_about(
                 .find(item_id)
                 .select((crate::schema::sentences::pl, crate::schema::sentences::en))
                 .first(conn)?,
+            "line" => match (polish, meaning) {
+                (Some(pl), Some(en)) if !pl.trim().is_empty() => (pl.trim().to_string(), en.trim().to_string()),
+                _ => return Err(Error::msg("A line needs its Polish and meaning.")),
+            },
             other => return Err(Error::msg(format!("Cannot talk about a '{other}'."))),
         };
         let about = format!("{polish} — {meaning}");
@@ -2378,7 +2385,14 @@ pub async fn tutor_talk_about(
         diesel::update(tutor_conversations::table.find(id))
             .set((tutor_conversations::tag.eq("word"), tutor_conversations::about.eq(&about)))
             .execute(conn)?;
-        append(conn, id, "user", &format!("Let's talk about “{polish}”."), &[])?;
+        let opening = if item_kind == "line" {
+            format!(
+                "Let's talk about this line from a conversation I practised: “{polish}” ({meaning}). Why is it said like this?"
+            )
+        } else {
+            format!("Let's talk about “{polish}”.")
+        };
+        append(conn, id, "user", &opening, &[])?;
         id
     };
     start_job(&app, &db, conversation_id)?;

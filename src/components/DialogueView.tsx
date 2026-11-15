@@ -14,6 +14,7 @@ import {
 import type { DialogueLine } from "../lib/types";
 import { CloseIcon, PlayerIcon } from "./icons";
 import { SlowButton, SpeakButton } from "./ui";
+import { WordChat } from "./WordChat";
 
 function toSpeech(lines: DialogueLine[]) {
   return lines.map((line) => ({ text: line.pl, gender: line.gender }));
@@ -32,6 +33,8 @@ function useThisConversation(lines: DialogueLine[]) {
  */
 export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; revealAll?: boolean }) {
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  // A line being talked about with the tutor ("why is it said like this?").
+  const [talking, setTalking] = useState<DialogueLine | null>(null);
   // The first speaker sits on the left, everyone else on the right.
   const firstSpeaker = lines[0]?.speaker;
   // While the conversation is read out, its line now is marked and kept in view.
@@ -80,9 +83,20 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
                   {line.pl}
                 </Text>
                 {isOpen ? (
-                  <Text variant="small" tone="dim" as="div" className="fade-in">
-                    {line.meaning}
-                  </Text>
+                  <div className="fade-in">
+                    <Text variant="small" tone="dim" as="div">
+                      {line.meaning}
+                    </Text>
+                    <button
+                      className="line-talk"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setTalking(line);
+                      }}
+                    >
+                      ✨ Talk about it
+                    </button>
+                  </div>
                 ) : null}
               </div>
               <span className="line-audio">
@@ -93,6 +107,15 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
           </div>
         );
       })}
+      {talking ? (
+        <WordChat
+          itemKind="line"
+          itemId={0}
+          title={talking.pl}
+          meaning={talking.meaning}
+          onClose={() => setTalking(null)}
+        />
+      ) : null}
     </div>
   );
 }

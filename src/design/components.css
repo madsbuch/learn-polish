@@ -1207,3 +1207,14 @@ button.badge:active {
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* Under a revealed conversation line: ask the tutor about it. */
+.line-talk {
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--font-small);
+  font-weight: var(--weight-bold);
+  color: var(--brand-ink);
+}

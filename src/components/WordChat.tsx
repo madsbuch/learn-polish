@@ -18,12 +18,15 @@ export function WordChat({
   itemKind,
   itemId,
   title,
+  meaning,
   onClose,
 }: {
   itemKind: string;
   itemId: number;
   /** The Polish, shown as the sheet's title. */
   title: string;
+  /** For a line of a conversation (itemKind "line"): what it means. */
+  meaning?: string;
   onClose: () => void;
 }) {
   const [conversationId, setConversationId] = useState<number | null>(null);
@@ -39,7 +42,7 @@ export function WordChat({
     if (opened.current) return;
     opened.current = true;
     api
-      .tutorTalkAbout(itemKind, itemId)
+      .tutorTalkAbout(itemKind, itemId, itemKind === "line" ? title : undefined, meaning)
       .then((talk) => {
         if (!talk.existing) job.begin();
         setConversationId(talk.conversationId);
