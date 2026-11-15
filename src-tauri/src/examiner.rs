@@ -333,7 +333,7 @@ async fn turn(
         } else {
             (system_prompt(conn, &detail)?, "I'm ready for the check-in.", None)
         };
-        let mut wire = vec![Wire::system(prompt)];
+        let mut wire = vec![Wire::system(crate::ai::with_say_player(prompt))];
         let past = history(conn, checkin_id)?;
         if past.is_empty() {
             wire.push(Wire::user(opening));

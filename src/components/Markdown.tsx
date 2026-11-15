@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
+import { SlowButton, SpeakButton } from "./ui";
+
 /**
  * A small markdown renderer for AI answers.
  *
@@ -253,6 +255,10 @@ function parseBlocks(source: string): Block[] {
 
 /** Ordered so that longer markers are tried before their prefixes. */
 const INLINE = [
+  // A small player the agents can offer: [[say: rozgrzewka]], or
+  // [[say:m: Dzień dobry]] for a man's voice. First, so nothing inside it
+  // is taken for emphasis.
+  { pattern: /\[\[say:\s*([^\]\n]+?)\s*\]\]/, render: (body: string, key: number) => <Say key={key} body={body} /> },
   { pattern: /`([^`]+)`/, render: (body: string, key: number) => <code key={key} className="md-code">{body}</code> },
   // Inline math. `$` must hug its content ("$3 + 5$"), so prices like "$5 or
   // $6" stay text.
@@ -314,4 +320,18 @@ function MathTex({ tex, display = false }: { tex: string; display?: boolean }) {
   if (mathml === null) return <code className="md-code">{tex}</code>;
   const Tag = display ? "div" : "span";
   return <Tag className={display ? "md-math md-math-display" : "md-math"} dangerouslySetInnerHTML={{ __html: mathml }} />;
+}
+
+/** `[[say: …]]`: the Polish, with buttons to hear it normally and slowly. */
+function Say({ body }: { body: string }) {
+  const voice = /^([fm]):\s*(.+)$/.exec(body);
+  const gender = voice ? voice[1] : undefined;
+  const text = (voice ? voice[2] : body).trim();
+  return (
+    <span className="md-say">
+      <strong>{text}</strong>
+      <SpeakButton text={text} gender={gender} size="sm" label={`Listen to ${text}`} />
+      <SlowButton text={text} gender={gender} size="sm" />
+    </span>
+  );
 }

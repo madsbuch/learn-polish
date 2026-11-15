@@ -1070,3 +1070,19 @@ button.badge:active {
 .model-star:active {
   background: var(--surface-sunken);
 }
+
+/* [[say: …]] in an AI reply: the word with 🔊 and 🐢, kept together. */
+.md-say {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px 0 var(--space-2);
+  margin: 2px 0;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.md-say strong {
+  margin-right: 2px;
+}

@@ -1997,7 +1997,10 @@ pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
                 error,
                 tag,
                 // Markdown marks would show as stray symbols in a one-line preview.
-                preview: crate::text::clean(&last.replace(['*', '_', '#', '`'], "")).chars().take(120).collect(),
+                preview: crate::text::clean(&crate::ai::unsay(&last).replace(['*', '_', '#', '`'], ""))
+                    .chars()
+                    .take(120)
+                    .collect(),
             })
         })
         .collect()
@@ -2177,7 +2180,7 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
         .unwrap_or_else(|_| "The tutor".into());
     let body = match (&done.message, &done.error) {
         (Some(message), _) => {
-            let text = crate::text::clean(&message.content.replace(['*', '_', '#', '`'], ""));
+            let text = crate::text::clean(&crate::ai::unsay(&message.content).replace(['*', '_', '#', '`'], ""));
             let mut short: String = text.chars().take(140).collect();
             if text.chars().count() > 140 {
                 short.push('…');
@@ -2211,7 +2214,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                 model = Some(own);
             }
         }
-        let mut wire = vec![Wire::system(prompt)];
+        let mut wire = vec![Wire::system(crate::ai::with_say_player(prompt))];
         // The question is already stored, so it is the end of the history.
         wire.extend(recent_history(conn, conversation_id)?);
         (wire, model)

@@ -90,6 +90,41 @@ pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(Str
     Ok((mime, bytes, cost))
 }
 
+/// What every agent the learner writes with is told about the audio player
+/// it can put in a reply: `[[say: …]]` shows the Polish with 🔊 (normal) and
+/// 🐢 (slow) buttons.
+pub const SAY_PLAYER: &str = "\
+Audio: write [[say: rozgrzewka]] to give the learner a small player for a Polish word or short \
+phrase — they can hear it normally and slowly. Use it when sound matters: they ask how to say \
+something, or a word is hard to pronounce. Polish only, one word or phrase per tag, a few per \
+reply at most. For a man's voice: [[say:m: Dzień dobry]].";
+
+/// Text with each `[[say: …]]` player reduced to its words, for places that
+/// show plain text (previews, notifications).
+pub fn unsay(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("[[say:") {
+        let Some(end) = rest[start..].find("]]") else { break };
+        out.push_str(&rest[..start]);
+        let body = rest[start + 6..start + end].trim();
+        let body = body
+            .strip_prefix("m:")
+            .or_else(|| body.strip_prefix("f:"))
+            .map(str::trim)
+            .unwrap_or(body);
+        out.push_str(body);
+        rest = &rest[start + end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Adds [`SAY_PLAYER`] to a system prompt.
+pub fn with_say_player(prompt: String) -> String {
+    format!("{prompt}\n\n{SAY_PLAYER}")
+}
+
 /// The writing partner's model: its own setting (a small, fast model suits
 /// it), else the main model.
 pub fn partner_model(conn: &mut Conn) -> Result<String> {

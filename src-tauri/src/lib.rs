@@ -1684,4 +1684,13 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         drop(conn);
         db::open(&path).expect("second open");
     }
+
+    #[test]
+    fn say_players_read_as_plain_text() {
+        assert_eq!(ai::unsay("Say [[say: rozgrzewka]] slowly"), "Say rozgrzewka slowly");
+        assert_eq!(ai::unsay("[[say:m: Dzień dobry]]!"), "Dzień dobry!");
+        assert_eq!(ai::unsay("broken [[say: x"), "broken [[say: x");
+        assert!(ai::with_say_player("p".into()).contains("[[say:"));
+    }
+
 }
