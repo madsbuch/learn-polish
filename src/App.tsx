@@ -7,7 +7,7 @@ import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
 import { toast } from "./lib/toast";
-import { resumeCast, syncRepeatFromSettings } from "./lib/player";
+import { keepScreenAwake, resumeCast, syncRepeatFromSettings } from "./lib/player";
 import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
@@ -95,6 +95,13 @@ export default function App() {
   const [topics, setTopics] = useState<TopicProgress[]>([]);
   const [tab, setTab] = useState<Tab>("exercises");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
+
+  // Studying a block — its page, its drill, its check-in — often means pen
+  // and paper, not touching the phone: keep the screen on meanwhile.
+  const studying = overlay.kind === "block" || overlay.kind === "session" || overlay.kind === "checkin";
+  useEffect(() => {
+    keepScreenAwake(studying, "study");
+  }, [studying]);
   const [error, setError] = useState<string | null>(null);
   /** A song the player asked the music tab to show. */
   const [musicSong, setMusicSong] = useState<number | null>(null);

@@ -351,12 +351,23 @@ if (typeof document !== "undefined") {
   });
 }
 
+// Who wants the screen on: the lyrics player, an open block… It stays on
+// while anyone does, so one letting go doesn't switch it off for another.
+const awakeHolders = new Set<string>();
+
 /**
- * Keeps the screen from going to standby, e.g. while the learner follows the
- * lyrics. Android sets the window flag natively; desktops use the browser's
- * wake lock. Only ever applies while the app is in front.
+ * Keeps the screen from going to standby while `holder` wants it — following
+ * the lyrics, studying a block with pen and paper. Android sets the window
+ * flag natively; desktops use the browser's wake lock. Only ever applies
+ * while the app is in front.
  */
-export function keepScreenAwake(enabled: boolean) {
+export function keepScreenAwake(enabled: boolean, holder = "player") {
+  if (enabled) awakeHolders.add(holder);
+  else awakeHolders.delete(holder);
+  applyAwake(awakeHolders.size > 0);
+}
+
+function applyAwake(enabled: boolean) {
   if (enabled === wantAwake) return;
   wantAwake = enabled;
   if (isAndroid) {
