@@ -12,6 +12,7 @@ use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Text};
 
+#[cfg(test)]
 use crate::content::{self, Conversation};
 use crate::error::{Error, Result};
 use crate::schema::{blocks, course_blocks, settings, song_tracks, topics, tutor_conversations, tutor_messages};
@@ -43,7 +44,7 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
          PRAGMA busy_timeout = 5000;",
     )?;
     migrate(&mut conn)?;
-    seed(&mut conn)?;
+    initialize_courses(&mut conn)?;
     // Files whose owner is gone (a crash between deleting a row and its
     // file, say) are not kept.
     crate::files::collect_orphans(&mut conn)?;
@@ -989,14 +990,6 @@ fn add_column(conn: &mut Conn, table: &str, column: &str, definition: &str) -> R
     Ok(!exists)
 }
 
-/// The starter content (the ten topics and the lessons in `content/`) is
-/// written once. After that it is ordinary data: courses and blocks the
-/// learner and the tutor can change or delete, never seeded over again.
-///
-/// Installs from before this had the content as read-only built-ins: they are
-/// converted to courses first, and the starter content is then written over
-/// them by its natural keys (it could not have been changed), which keeps row
-/// ids and so review history.
 /// Rows whose foreign keys point at nothing — none, in a healthy database.
 pub fn foreign_key_violations(conn: &mut Conn) -> Result<i64> {
     Ok(diesel::sql_query("SELECT count(*) AS n FROM pragma_foreign_key_check")
@@ -1004,22 +997,26 @@ pub fn foreign_key_violations(conn: &mut Conn) -> Result<i64> {
         .n)
 }
 
-fn seed(conn: &mut Conn) -> Result<()> {
-    if get_setting(conn, "starter_seeded")?.is_some() {
-        return Ok(());
+fn initialize_courses(conn: &mut Conn) -> Result<()> {
+    if get_setting(conn, "starter_seeded")?.is_none() {
+        // Retain migrations for old user-owned data, without adding curriculum.
+        unify_courses(conn)?;
+        diesel::delete(settings::table.filter(settings::key.eq_any(["content_version", "lesson_index", "focus_topic_id"])))
+            .execute(conn)?;
+        set_setting(conn, "starter_seeded", "1")?;
     }
-    unify_courses(conn)?;
-    seed_starter(conn)?;
-    unify_courses(conn)?;
-    // Settings of models the app no longer has: the content version (the
-    // starter content is no longer re-seeded) and the old daily session's place.
-    diesel::delete(settings::table.filter(settings::key.eq_any(["content_version", "lesson_index", "focus_topic_id"])))
-        .execute(conn)?;
-    set_setting(conn, "starter_seeded", "1")?;
-    Ok(())
+    crate::starter_retirement::run(conn)?;
+    crate::demo_course::seed_once(conn)
 }
 
-fn seed_starter(conn: &mut Conn) -> Result<()> {
+/// Historical release data used only by regression tests, never on app startup.
+#[cfg(test)]
+pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
+    // Historical regression fixtures model the release before the small demo.
+    let demo = topics::table.filter(topics::slug.eq(crate::demo_course::SLUG)).select(topics::id).first::<i64>(conn).optional()?;
+    if let Some(demo) = demo {
+        crate::courses::delete(conn, demo)?;
+    }
     for (index, topic) in content::TOPICS.iter().enumerate() {
         let convo: Conversation = serde_json::from_str(topic.conversation)?;
         if convo.slug != topic.slug {

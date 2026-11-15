@@ -1,5 +1,6 @@
-//! The whole curriculum is compiled into the binary, so a fresh install works
-//! offline and the seed can never drift from the code that reads it.
+//! Historical curriculum fixtures, compiled only for tests.
+//! They validate retirement of the exact courses shipped before the small demo.
+//! Production builds do not contain this old curriculum.
 
 use serde::Deserialize;
 
@@ -14,9 +15,9 @@ macro_rules! topic {
     ($slug:literal, $file:literal) => {
         TopicFiles {
             slug: $slug,
-            words: include_str!(concat!("../content/words/", $file, ".tsv")),
-            sentences: include_str!(concat!("../content/sentences/", $file, ".tsv")),
-            conversation: include_str!(concat!("../content/conversations/", $file, ".json")),
+            words: include_str!(concat!("../test-fixtures/retired-courses/words/", $file, ".tsv")),
+            sentences: include_str!(concat!("../test-fixtures/retired-courses/sentences/", $file, ".tsv")),
+            conversation: include_str!(concat!("../test-fixtures/retired-courses/conversations/", $file, ".json")),
         }
     };
 }
@@ -36,13 +37,13 @@ pub const TOPICS: &[TopicFiles] = &[
 
 /// The starter lessons, written once on a fresh install.
 pub const LESSONS: &[&str] = &[
-    include_str!("../content/lessons/01-byc.md"),
-    include_str!("../content/lessons/02-miec.md"),
-    include_str!("../content/lessons/07-ty-pan.md"),
-    include_str!("../content/lessons/03-czasowniki-ac.md"),
-    include_str!("../content/lessons/05-rodzaj.md"),
-    include_str!("../content/lessons/04-czasowniki-e-isz.md"),
-    include_str!("../content/lessons/06-przypadki.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/01-byc.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/02-miec.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/07-ty-pan.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/03-czasowniki-ac.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/05-rodzaj.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/04-czasowniki-e-isz.md"),
+    include_str!("../test-fixtures/retired-courses/lessons/06-przypadki.md"),
 ];
 
 #[derive(Debug, Deserialize)]

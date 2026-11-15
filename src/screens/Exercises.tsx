@@ -87,7 +87,7 @@ export function Exercises({
         </header>
       }
     >
-      <Hero>
+      {topics.length > 0 ? <Hero>
         <Stack gap={4}>
           <Inline gap={4}>
             <div
@@ -154,7 +154,7 @@ export function Exercises({
             </Stack>
           ) : null}
         </Stack>
-      </Hero>
+      </Hero> : null}
 
       {overview.due.length > 0 ? (
         <Section
@@ -200,7 +200,7 @@ export function Exercises({
         </Section>
       ) : null}
 
-      <List>
+      {topics.length > 0 || stats.totalXp > 0 ? <List>
         <ListItem
           leading={<Avatar>📈</Avatar>}
           title="Your progress"
@@ -213,7 +213,7 @@ export function Exercises({
           chevron
           onClick={onOpenProgress}
         />
-      </List>
+      </List> : null}
 
       <Section
         title="Courses"
@@ -229,14 +229,14 @@ export function Exercises({
           <List>
             <EmptyState
               icon="✨"
-              title="No courses yet"
+              title="Build your first Polish course"
               action={
                 <Button variant="primary" size="sm" onClick={onOpenTutor}>
-                  Ask the tutor
+                  Create a course
                 </Button>
               }
             >
-              Ask the tutor for a course on anything — “colours”, “numbers”, “at the airport”.
+              Tell the tutor what you want to learn — everyday conversation, life in Poland, or a topic you enjoy.
             </EmptyState>
           </List>
         ) : (

@@ -303,9 +303,12 @@ pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Se
 
 #[tauri::command]
 pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
+    reset_progress_in(&mut db.lock())
+}
+
+pub(crate) fn reset_progress_in(conn: &mut Conn) -> Result<()> {
     use crate::schema::{achievements, checkins, day_log, reviews, tutor_conversations, tutor_messages};
-    let mut guard = db.lock();
-    guard.transaction::<_, Error, _>(|conn| {
+    conn.transaction::<_, Error, _>(|conn| {
         diesel::delete(reviews::table).execute(conn)?;
         diesel::delete(day_log::table).execute(conn)?;
         diesel::delete(achievements::table).execute(conn)?;

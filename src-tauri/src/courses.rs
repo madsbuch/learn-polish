@@ -6,8 +6,8 @@
 //! taking it out of the last one deletes it, with everything it owns.
 //!
 //! Giving a course words, sentences or a dialogue cuts them into drills: the
-//! dialogue, words in eights, sentences in fives. The starter courses a fresh
-//! install comes with and the ones the tutor makes are the same thing.
+//! dialogue, words in eights, sentences in fives. Courses are created by the
+//! learner or their tutor; a fresh install has one small demo course.
 
 use std::collections::HashSet;
 

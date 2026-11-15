@@ -849,6 +849,7 @@ pub fn delete(conn: &mut Conn, id: i64) -> Result<String> {
 // Starter lessons
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 pub struct LessonFile {
     pub slug: String,
     pub title: String,
@@ -861,6 +862,7 @@ pub struct LessonFile {
 
 /// Reads a lesson: a `---` front matter block of `key: value` lines (and a
 /// `- ` list under `objectives:`), then the markdown lesson.
+#[cfg(test)]
 pub fn parse_lesson(text: &str) -> Result<LessonFile> {
     let rest = text
         .strip_prefix("---\n")
@@ -904,6 +906,7 @@ pub fn parse_lesson(text: &str) -> Result<LessonFile> {
 
 /// Writes the starter lessons, on a fresh install (filed in a course by
 /// `db::unify_courses`).
+#[cfg(test)]
 pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
     for (ord, text) in crate::content::LESSONS.iter().enumerate() {
         let lesson = parse_lesson(text)?;

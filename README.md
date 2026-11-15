@@ -2,8 +2,8 @@
 
 A Polish learning app for English speakers. Everything is a small block —
 a quick drill or a short lesson with a check-in — filed in courses: the
-starter courses the app comes with, and courses on any theme you like, built
-for you by the tutor.
+small First steps demo, and courses on any theme you like, built for you by
+the tutor.
 
 Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 **Android** app. (Tauri can also build it for macOS locally; CI no longer does.)
@@ -12,20 +12,19 @@ Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 
 ## What's in it
 
-| | |
-|---|---|
-| **2007 words** | Across ten starter courses, each with an English gloss and a part of speech |
-| **200 sentences** | Twenty per topic, with their English translation |
-| **10 conversations** | 207 lines of natural dialogue, one per topic |
+The app starts with one small **First steps / Pierwsze kroki** demo course:
+12 essential words and phrases, four simple sentences, and a six-line
+introduction dialogue, arranged into four short drills. It works offline
+without an API key.
 
-The ten starter courses: basics & greetings · family & people · food & restaurant ·
-shopping & money · travel & directions · home & daily life · work & study ·
-health & body · time, weather & nature · leisure, media & technology.
+The demo is installed once and belongs to you: rename, edit or delete it.
+Deleting it is permanent; the app never refills it. Ask the tutor for more
+courses on topics you choose.
 
-All of it is compiled into the binary and written once, on a fresh install,
-as ordinary courses (plus *Grammar essentials*, holding the starter lessons).
-From then on it is your data like anything else: add to it, rename, edit or
-delete any course or block — nothing is re-seeded over your changes.
+Upgrading removes unchanged courses from the previous default collection.
+Edited, extended or shared courses are preserved, along with user-created
+courses, XP and settings. Historical course data exists only as regression
+test fixtures and is excluded from production builds.
 
 ## Blocks
 
@@ -77,10 +76,8 @@ dialogue, words in eights, sentences in fives — skipping anything the course
 already teaches. A block can be listed in **several courses** (one block, one
 schedule, shown in each); it can be moved between courses, and taking it out
 of its last course deletes it, with its words and their history. On a block's
-page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it. The starter lessons (`src-tauri/content/lessons/`: być, mieć,
-the three present-tense patterns, gender, the seven cases, ty vs. Pan/Pani)
-are in *Grammar essentials*, and a lesson the tutor writes without a better
-home goes in *Lessons*. A song remembers the course whose words it uses, and
+page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it.
+A lesson the tutor writes without a better home goes in *Lessons*. A song remembers the course whose words it uses, and
 its listening block is filed there; like any block it can be moved or shared
 afterwards. The tutor files songs itself: it picks the course a new song fits,
 and reads the lyrics of songs left in *Listening* to move them where they
@@ -160,7 +157,7 @@ button to ask again.
 | `create_study_block`, `create_drill_block`, `create_listening_block`, `create_writing_block` | Writes a lesson with objectives, one drill in a chosen format, a listening block for a song, or a writing situation with goals |
 | `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study blocks (new or existing) |
 | `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
-| `add_to_course`, `edit_course`, `delete_course` | Changes any course, starter ones included |
+| `add_to_course`, `edit_course`, `delete_course` | Changes any course, the demo included |
 | `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |
 | `update_practice_settings` | Daily XP goal |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
@@ -345,9 +342,9 @@ instantly, for free, offline. Changing voice does not serve stale audio.
 - Starting a session pre-fetches that day's lines in the background — dialogue
   lines in the voice that will actually read them — so no tap ever waits on
   the network. Toggleable in Settings.
-- *Download every sentence and dialogue* warms all 200 sentences and all ten
-  conversations in one pass, with progress reported line by line.
-- Settings shows how many of the 200 sentences are stored and how much disk
+- *Download every sentence and dialogue* warms the sentences and
+  conversations in your courses in one pass, with progress reported line by line.
+- Settings shows how many sentences are stored and how much disk
   they take, with a button to clear them.
 
 ## AI costs
@@ -433,7 +430,7 @@ belongs to the app as a whole.
 ```
 src-tauri/src/
   schema.rs      every table and view as Rust types (Diesel): queries are checked against it
-  db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), starter content
+  db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), one-time demo setup
   courses.rs     courses: the folders blocks are listed in; cutting items into drills; moving blocks
   blocks.rs      blocks: what they own, their check-in schedule, the home screen's lists
   session.rs     a drill's exercises, by format
@@ -508,17 +505,14 @@ dialogue is on that drill's page. Two screens open from it rather than taking a 
 
 ### Editing the curriculum
 
-The files under `src-tauri/content/` are the source of truth. Word lists are
-`polish⇥english⇥part-of-speech`; sentences drop the last column;
-conversations are JSON with a `speakers` map giving each speaker's gender.
-They are the *starter* content: written once on a fresh install
-(`seed_starter` in `src-tauri/src/db.rs`) and never re-seeded, since after
-that the courses belong to the learner. Databases from before courses were
-unified are converted by `unify_courses`: built-in topics and programmes
-become courses, loose lessons are filed, and review history is kept.
+The small demo is defined in `src-tauri/src/demo_course.rs`; everything else
+is created in the app and stored in its database. The demo is seeded once and
+never overwrites edits or returns after deletion.
 
-`cargo test` fails if two topics define the same headword, if a topic drops
-below 190 words, or if a dialogue has a speaker with no gender.
+The former collection is kept under `src-tauri/test-fixtures/retired-courses/`
+only for regression tests. Production builds exclude it. Tests verify that
+fresh installs have exactly one demo, deleting it is respected, and upgrading
+removes only unchanged default courses while preserving customized data.
 
 ---
 
