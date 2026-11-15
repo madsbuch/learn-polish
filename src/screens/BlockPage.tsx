@@ -68,6 +68,8 @@ export function BlockPage({
   const [picking, setPicking] = useState<{ mode: "add" | "move"; courses: TopicProgress[] } | null>(null);
   /** A source being read, in the app's reader. */
   const [reading, setReading] = useState<WikiSource | null>(null);
+  /** Adding audio players to the lesson's Polish. */
+  const [addingPlayers, setAddingPlayers] = useState(false);
   /** Bumped when a source goes, so the list reloads. */
   const [sourcesVersion, setSourcesVersion] = useState(0);
 
@@ -222,6 +224,24 @@ export function BlockPage({
                 <Markdown text={block.lesson} />
               </div>
             </Card>
+            {!writing && !listening && block.lesson && !block.lesson.includes("[[say:") ? (
+              <Button
+                block
+                loading={addingPlayers}
+                onClick={async () => {
+                  setAddingPlayers(true);
+                  try {
+                    setBlock(await api.lessonAddPlayers(block.id));
+                  } catch (cause) {
+                    setError(errorMessage(cause));
+                  } finally {
+                    setAddingPlayers(false);
+                  }
+                }}
+              >
+                🔊 Add players to the Polish
+              </Button>
+            ) : null}
           </Section>
           <Sources
             key={sourcesVersion}

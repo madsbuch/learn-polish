@@ -105,6 +105,7 @@ pub fn run() {
             bench::bench_runs,
             bench::bench_delete,
             examiner::writing_hint,
+            examiner::lesson_add_players,
             pictures::course_picture,
             wiki::block_sources,
             wiki::source_article,

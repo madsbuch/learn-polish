@@ -302,7 +302,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                                 "title": { "type": "string" },
                                 "summary": { "type": "string", "description": "One sentence" },
                                 "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
-                                "lesson": { "type": "string", "description": "The lesson in markdown: short, with a small table or examples" },
+                                "lesson": { "type": "string", "description": "The lesson in markdown: short, with a small table or examples. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
                                 "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–4 things the learner can then do" }
                             },
                             "required": ["title", "summary", "complexity", "lesson", "objectives"]
@@ -479,7 +479,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "title": { "type": "string", "description": "Short, e.g. \"Iść — to go (on foot)\"" },
                     "summary": { "type": "string", "description": "One sentence: what the block covers" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "By how hard the subject is: low ≈ 1–2 min, medium ≈ 5–10 min, high ≈ 20+ min" },
-                    "lesson": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only." },
+                    "lesson": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
                     "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–5 things the learner should be able to do afterwards" },
                     "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
                     "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Lessons\"" }

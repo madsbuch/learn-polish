@@ -99,6 +99,8 @@ export const api = {
   writingScaffold: (blockId: number) => invoke<GoalHelp[]>("writing_scaffold", { blockId }),
   /** A hint for the next message in a writing conversation. */
   writingHint: (checkinId: number) => invoke<string>("writing_hint", { checkinId }),
+  /** Adds audio players to a lesson's Polish examples (its text otherwise unchanged). */
+  lessonAddPlayers: (blockId: number) => invoke<BlockDetail>("lesson_add_players", { blockId }),
   /** The summary after a check-in; new achievements are those since it began. */
   checkinSummary: (checkinId: number, firstCompletionToday: boolean) =>
     invoke<SessionResult>("checkin_summary", { checkinId, firstCompletionToday }),

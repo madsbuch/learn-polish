@@ -486,6 +486,52 @@ pub async fn checkin_send(
 }
 
 // ---------------------------------------------------------------------------
+// Players in a lesson
+// ---------------------------------------------------------------------------
+
+/// Text compared for "nothing but the tags changed": players reduced to
+/// their words, whitespace ignored.
+fn bare(text: &str) -> String {
+    crate::ai::unsay(text).split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Puts audio players ([[say: …]]) around the Polish examples of a lesson
+/// written before lessons had them. A small model does the tagging; the
+/// result is kept only if, with the tags taken out, the lesson is exactly
+/// what it was — so nothing else can change.
+#[tauri::command]
+pub async fn lesson_add_players(db: State<'_, Db>, block_id: i64) -> Result<blocks::BlockDetail> {
+    let (lesson, key, model) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let detail = blocks::detail(conn, block_id)?;
+        (detail.lesson, crate::ai::api_key(conn)?, crate::ai::partner_model(conn)?)
+    };
+    if lesson.contains("[[say:") {
+        return Ok(blocks::detail(&mut db.lock(), block_id)?);
+    }
+    let prompt = format!(
+        "Below is a Polish lesson in markdown. Wrap every Polish word, phrase or example sentence in \
+         [[say: …]] — for example **Poproszę bułkę.** becomes **[[say: Poproszę bułkę.]]** — so the \
+         learner can hear it. Change nothing else at all: not one character of the text, the \
+         English, the markdown or the line breaks. Leave English, single letters and word endings \
+         (like -ę) untagged, and never tag inside a table header. Reply with only the lesson.\n\n{lesson}"
+    );
+    let reply = crate::ai::complete_with(&key, &model, &[Wire::user(prompt)], 0.0, 8000).await?;
+    let tagged = reply.text.trim().trim_start_matches("```markdown").trim_start_matches("```").trim_end_matches("```").trim().to_string();
+    let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::PARTNER, &model, reply.cost, "lesson players", reply.tokens);
+    if bare(&tagged) != bare(&lesson) {
+        return Err(Error::msg("The lesson came back changed, so it was left as it was. Try again, or with another model."));
+    }
+    if !tagged.contains("[[say:") {
+        return Err(Error::msg("No Polish was found to add players to."));
+    }
+    let mut guard = db.lock();
+    blocks::update(&mut guard, block_id, blocks::BlockChanges { lesson: Some(tagged), ..Default::default() })?;
+    blocks::detail(&mut guard, block_id)
+}
+
+// ---------------------------------------------------------------------------
 // Help for writing: a word bank, and a hint when stuck
 // ---------------------------------------------------------------------------
 
@@ -604,6 +650,8 @@ mod tests {
         assert_eq!(next_support_level(1, "partial"), 1);
         assert_eq!(next_support_level(1, "fail"), 0);
         assert_eq!(next_support_level(0, "fail"), 0);
+        assert_eq!(bare("**[[say: Poproszę bułkę.]]** (A roll)"), bare("**Poproszę bułkę.** (A roll)"));
+        assert_ne!(bare("[[say: Poproszę bułki.]]"), bare("Poproszę bułkę."));
         assert_eq!(json_in("Here: ```json\n{\"a\": 1}\n```"), Some("{\"a\": 1}"));
     }
 
