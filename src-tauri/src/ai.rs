@@ -94,10 +94,11 @@ pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(Str
 /// it can put in a reply: `[[say: …]]` shows the Polish with 🔊 (normal) and
 /// 🐢 (slow) buttons.
 pub const SAY_PLAYER: &str = "\
-Audio: write [[say: rozgrzewka]] to give the learner a small player for a Polish word or short \
-phrase — they can hear it normally and slowly. Use it when sound matters: they ask how to say \
-something, or a word is hard to pronounce. Polish only, one word or phrase per tag, a few per \
-reply at most. For a man's voice: [[say:m: Dzień dobry]].";
+Audio: write [[say: rozgrzewka]] to give the learner a small player for Polish — they can hear \
+it normally and slowly. Use it for the Polish words and example sentences in your reply, in \
+place of italics: [[say: Siedzę przy kominku.]] (\"I'm sitting by the fireplace.\"). Polish \
+only, one word, phrase or sentence per tag; keep the translation outside it. For a man's voice: \
+[[say:m: Dzień dobry]].";
 
 /// Text with each `[[say: …]]` player reduced to its words, for places that
 /// show plain text (previews, notifications).

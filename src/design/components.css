@@ -1112,6 +1112,16 @@ button.badge:active {
 .md-say strong {
   margin-right: 2px;
 }
+/* A whole sentence wraps like the text around it, with 🔊 🐢 after it. */
+.md-say[data-sentence] {
+  display: inline;
+  padding: 0;
+  background: none;
+  white-space: normal;
+}
+.md-say[data-sentence] .icon-button {
+  vertical-align: middle;
+}
 
 /* A guided writing block's word bank: tap a word to add it to the message. */
 .word-bank {

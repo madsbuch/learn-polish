@@ -327,9 +327,12 @@ function Say({ body }: { body: string }) {
   const voice = /^([fm]):\s*(.+)$/.exec(body);
   const gender = voice ? voice[1] : undefined;
   const text = (voice ? voice[2] : body).trim();
+  // A sentence flows with the text, its buttons after it; a word or short
+  // phrase is a pill.
+  const sentence = text.split(/\s+/).length > 3;
   return (
-    <span className="md-say">
-      <strong>{text}</strong>
+    <span className="md-say" data-sentence={sentence || undefined}>
+      {sentence ? <em>{text}</em> : <strong>{text}</strong>}
       <SpeakButton text={text} gender={gender} size="sm" label={`Listen to ${text}`} />
       <SlowButton text={text} gender={gender} size="sm" />
     </span>
