@@ -128,6 +128,7 @@ export function Screen({
   nav = true,
   footer,
   backdrop,
+  width = "reading",
   children,
 }: {
   /**
@@ -135,6 +136,8 @@ export function Screen({
    * background; it drifts and fades as the page scrolls. Not with `footer`.
    */
   backdrop?: string | null;
+  /** Wide dashboards use the tablet canvas; lessons and chat stay readable. */
+  width?: "reading" | "wide";
   title?: ReactNode;
   subtitle?: ReactNode;
   /** An explanation behind an ⓘ next to the title. */
@@ -179,7 +182,7 @@ export function Screen({
   );
   if (!footer) {
     return (
-      <div className="screen" data-nav={nav} data-backdrop={Boolean(backdrop)}>
+      <div className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)}>
         {backdrop ? <Backdrop src={backdrop} /> : null}
         {head}
         <div className="screen-body">{children}</div>
@@ -190,11 +193,11 @@ export function Screen({
   // so Back and the input are always in reach.
   return (
     <>
-      <div className="screen-top">{head}</div>
-      <div className="screen" data-nav={nav} data-footer="true">
+      <div className="screen-top" data-width={width}>{head}</div>
+      <div className="screen" data-width={width} data-nav={nav} data-footer="true">
         <div className="screen-body">{children}</div>
       </div>
-      <div className="screen-footer" data-nav={nav}>
+      <div className="screen-footer" data-width={width} data-nav={nav}>
         {footer}
       </div>
     </>

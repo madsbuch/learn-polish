@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { NavIcon } from "./components/icons";
+import { Logo, NavIcon } from "./components/icons";
 import { Banner, Stack } from "./design";
 import { Startup, type BootStep } from "./components/Startup";
 import { useBackHandler } from "./lib/back";
@@ -532,7 +532,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app app-tabs">
       {tab === "exercises" ? (
         <Exercises
           overview={overview}
@@ -591,7 +591,11 @@ export default function App() {
       ) : null}
 
 
-      <nav className="nav">
+      <nav className="nav" aria-label="Main navigation">
+        <div className="nav-brand" aria-hidden="true">
+          <Logo size={40} />
+          <span>Polski</span>
+        </div>
         {TABS.map((entry) => {
           const Icon = NavIcon[entry.icon];
           return (

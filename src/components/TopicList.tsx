@@ -14,7 +14,7 @@ export function TopicList({
   onOpen: (progress: TopicProgress) => void;
 }) {
   return (
-    <Stack gap={3}>
+    <div className="course-grid">
       {entries.map((entry) => (
         <List key={entry.topic.id}>
           <ListItem
@@ -47,6 +47,6 @@ export function TopicList({
           />
         </List>
       ))}
-    </Stack>
+    </div>
   );
 }

@@ -22,6 +22,7 @@
   --font-small: 13.5px;
   --leading-small: 19px;
   --font-body: 15px;
+  --font-input: 16px;
   --leading-body: 22px;
   --font-lead: 17px;
   --leading-lead: 24px;
@@ -66,9 +67,15 @@
 
   /* ---- Shell */
   --nav-height: 64px;
+  --nav-rail-width: 96px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --max-width: 620px;
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --max-width: 1440px;
+  --reading-width: 760px;
+  --sheet-width: 560px;
+  --course-card-width: 280px;
 
   /* ---- Colours that read the same in both themes (they sit on the brand
      gradient, or are the brand itself). */

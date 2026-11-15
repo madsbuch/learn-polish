@@ -385,7 +385,8 @@ Requires [Bun](https://bun.sh) and a Rust toolchain.
 
 ```bash
 bun install
-bun tauri dev          # desktop
+bun run app:dev         # native desktop app
+bun run app:dev:tablet  # tablet-sized window; resize to test the phone layout
 bun tauri android dev  # on a device or emulator
 ```
 

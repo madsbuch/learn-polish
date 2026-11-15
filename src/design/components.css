@@ -8,18 +8,39 @@
 .app {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: var(--app-height, 100%);
+  min-height: 0;
+  width: 100%;
   max-width: var(--max-width);
   margin: 0 auto;
   position: relative;
+  top: var(--app-offset-top, 0px);
+}
+.app:not(.app-tabs) {
+  --nav-height: 0px;
 }
 
 .screen {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: calc(var(--safe-top) + var(--space-4)) var(--gutter)
-    calc(var(--nav-height) + var(--safe-bottom) + var(--space-7));
+  padding: calc(var(--safe-top) + var(--space-4)) calc(var(--gutter) + var(--safe-right))
+    calc(var(--nav-height) + var(--safe-bottom) + var(--space-7)) calc(var(--gutter) + var(--safe-left));
+}
+.screen > .screen-header,
+.screen > .screen-body,
+.screen-top > .screen-header,
+.screen-footer > * {
+  width: 100%;
+  max-width: var(--reading-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+[data-width="wide"] > .screen-header,
+[data-width="wide"] > .screen-body {
+  max-width: none;
 }
 .screen[data-nav="false"] {
   padding-bottom: calc(var(--safe-bottom) + var(--space-8));
@@ -32,6 +53,8 @@
 .screen-top {
   flex: none;
   padding: var(--safe-top) var(--gutter) 0;
+  padding-left: calc(var(--gutter) + var(--safe-left));
+  padding-right: calc(var(--gutter) + var(--safe-right));
   border-bottom: 1px solid var(--line-soft);
 }
 .screen-top .screen-header {
@@ -49,6 +72,8 @@
 .screen-footer {
   flex: none;
   padding: var(--space-2) var(--gutter);
+  padding-left: calc(var(--gutter) + var(--safe-left));
+  padding-right: calc(var(--gutter) + var(--safe-right));
   margin-bottom: calc(var(--nav-height) + var(--safe-bottom));
   background: var(--bg);
   border-top: 1px solid var(--line-soft);
@@ -102,6 +127,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .nav {
@@ -110,7 +137,7 @@
   left: 0;
   right: 0;
   height: calc(var(--nav-height) + var(--safe-bottom));
-  padding: var(--space-2) 0 var(--safe-bottom);
+  padding: var(--space-2) var(--safe-right) var(--safe-bottom) var(--safe-left);
   /* One equal column per tab, however many tabs there are. */
   display: grid;
   grid-auto-flow: column;
@@ -121,7 +148,12 @@
   border-top: 1px solid var(--line-soft);
   z-index: var(--z-raised);
 }
+.nav-brand {
+  display: none;
+}
 .nav button {
+  min-height: var(--control-md);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -165,6 +197,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  min-width: 0;
 }
 .section-header {
   display: flex;
@@ -352,13 +385,15 @@ button.list-item__main:active {
   justify-content: center;
   gap: var(--space-2);
   min-height: var(--control-md);
-  padding: 0 var(--space-4);
+  padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-size: var(--font-body);
   line-height: 1.2;
   font-weight: var(--weight-bold);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
   transition: transform var(--duration-fast), opacity var(--duration-fast),
     background var(--duration-fast);
 }
@@ -375,12 +410,12 @@ button.list-item__main:active {
 }
 .button[data-size="sm"] {
   min-height: var(--control-sm);
-  padding: 0 var(--space-3);
+  padding: var(--space-1) var(--space-3);
   font-size: var(--font-small);
 }
 .button[data-size="lg"] {
   min-height: var(--control-lg);
-  padding: 0 var(--space-5);
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-lg);
 }
 .button[data-block="true"] {
@@ -619,8 +654,9 @@ button.list-item__main:active {
 }
 .segmented button {
   flex: 1;
-  min-height: calc(var(--control-sm) - 2px);
-  padding: 0 var(--space-2);
+  min-width: 0;
+  min-height: var(--control-md);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   font-size: var(--font-small);
   font-weight: var(--weight-medium);
@@ -827,6 +863,9 @@ button.badge:active {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
+  top: var(--app-offset-top, 0px);
+  bottom: auto;
+  height: var(--app-height, 100%);
   z-index: var(--z-sheet);
   background: var(--scrim);
   display: flex;
@@ -835,13 +874,17 @@ button.badge:active {
 }
 .sheet {
   width: 100%;
-  max-width: var(--max-width);
+  max-width: var(--sheet-width);
   max-height: 85%;
   overflow-y: auto;
   background: var(--bg);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   border: 1px solid var(--line-soft);
   padding: var(--space-2) var(--gutter) calc(var(--safe-bottom) + var(--space-6));
+  padding-left: calc(var(--gutter) + var(--safe-left));
+  padding-right: calc(var(--gutter) + var(--safe-right));
+  min-width: 0;
+  overflow-wrap: anywhere;
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
@@ -881,6 +924,7 @@ button.badge:active {
 }
 .sheet-header > h2 {
   flex: 1;
+  min-width: 0;
   font-size: var(--font-lead);
   line-height: var(--leading-lead);
 }
@@ -1034,9 +1078,11 @@ button.badge:active {
    message is seen however far down the page is scrolled. A tap closes one. */
 .toaster {
   position: fixed;
-  top: calc(var(--safe-top) + var(--space-2));
+  top: calc(var(--app-offset-top, 0px) + var(--safe-top) + var(--space-2));
   left: var(--gutter);
   right: var(--gutter);
+  max-width: var(--sheet-width);
+  margin: 0 auto;
   z-index: calc(var(--z-sheet) + 1);
   display: flex;
   flex-direction: column;
@@ -1217,4 +1263,82 @@ button.badge:active {
   font-size: var(--font-small);
   font-weight: var(--weight-bold);
   color: var(--brand-ink);
+}
+
+/* Tablet windows (including split view) adapt from their available width. */
+@media (min-width: 768px) {
+  :root {
+    --gutter: var(--space-6);
+  }
+  .app-tabs {
+    padding-left: calc(var(--nav-rail-width) + env(safe-area-inset-left, 0px));
+    --safe-left: 0px;
+  }
+  .app-tabs > .screen,
+  .app-tabs > .screen-top,
+  .app-tabs > .screen-footer {
+    --nav-height: 0px;
+  }
+  .app-tabs > .screen-footer {
+    margin-bottom: 0;
+    padding-bottom: calc(var(--safe-bottom) + var(--space-3));
+  }
+  .nav {
+    right: auto;
+    top: 0;
+    bottom: 0;
+    height: auto;
+    width: calc(var(--nav-rail-width) + env(safe-area-inset-left, 0px));
+    padding: calc(var(--safe-top) + var(--space-6)) var(--space-2)
+      calc(var(--safe-bottom) + var(--space-3)) calc(var(--space-2) + env(safe-area-inset-left, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    border-top: none;
+    border-right: 1px solid var(--line-soft);
+    overflow-y: auto;
+  }
+  .nav-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding-bottom: var(--space-5);
+    font-size: var(--font-small);
+    font-weight: var(--weight-bold);
+  }
+  .nav button {
+    flex: none;
+    min-height: var(--nav-height);
+    border-radius: var(--radius-lg);
+  }
+  .nav button:last-child {
+    margin-top: auto;
+  }
+  [data-keyboard] .nav {
+    display: flex;
+  }
+  .sheet-backdrop {
+    align-items: center;
+    padding: calc(var(--safe-top) + var(--space-6)) calc(var(--safe-right) + var(--space-6))
+      calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
+  }
+  .sheet {
+    max-height: 100%;
+    border-radius: var(--radius-xl);
+    padding: var(--space-4) var(--space-6) var(--space-6);
+  }
+}
+
+/* Keep controls and scrollable content usable on short landscape/IME views. */
+@media (max-height: 540px) {
+  .sheet {
+    max-height: calc(100% - var(--safe-top) - var(--space-2));
+  }
+  .nav-brand {
+    display: none;
+  }
+  .nav {
+    gap: var(--space-1);
+  }
 }

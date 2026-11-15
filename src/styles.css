@@ -835,3 +835,101 @@ body:has(.session-foot) .conversation-control {
   flex: none;
   gap: var(--space-1);
 }
+
+/* Home becomes a dashboard on a tablet; reading screens stay one column. */
+.practice-layout,
+.practice-today,
+.practice-courses {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-6);
+}
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--course-card-width)), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+.course-grid > .list {
+  display: flex;
+}
+.course-grid .list-item {
+  height: 100%;
+}
+@media (min-width: 1000px) {
+  .practice-layout:has(.practice-today) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    align-items: start;
+  }
+}
+
+/* Practice is comfortable to read on tablets and remains scrollable with IME. */
+.session {
+  min-height: 0;
+  width: 100%;
+  max-width: calc(var(--reading-width) + var(--gutter) * 2 + var(--safe-left) + var(--safe-right));
+  margin: 0 auto;
+}
+.session-body {
+  min-height: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.session-top,
+.session-body,
+.session-foot {
+  padding-left: calc(var(--gutter) + var(--safe-left));
+  padding-right: calc(var(--gutter) + var(--safe-right));
+}
+.bubble {
+  min-width: 0;
+  max-width: calc(100% - var(--control-md));
+  overflow-wrap: anywhere;
+  flex-wrap: wrap;
+}
+.bubble > .grow {
+  flex-basis: 140px;
+}
+.line-audio {
+  margin-left: auto;
+}
+.msg,
+.composer,
+.composer textarea,
+.song-head > * {
+  min-width: 0;
+}
+.conversation-control {
+  max-width: calc(100% - var(--safe-left) - var(--safe-right) - var(--space-4));
+  white-space: normal;
+}
+/* The containing sheet already supplies the scroll area. */
+.sheet-body .word-chat {
+  max-height: none;
+  overflow-y: visible;
+}
+@media (min-width: 768px) {
+  .memory-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 359px) {
+  .hero {
+    padding: var(--space-4);
+  }
+  .goal-ring {
+    width: 76px;
+    height: 76px;
+  }
+  .goal-ring > div {
+    width: 64px;
+    height: 64px;
+  }
+  .transport {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2);
+  }
+}

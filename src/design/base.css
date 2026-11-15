@@ -16,6 +16,7 @@ body,
 }
 
 body {
+  overflow: hidden;
   font-family: var(--font-family);
   font-size: var(--font-body);
   line-height: var(--leading-body);
@@ -59,7 +60,9 @@ button:disabled {
 input,
 select,
 textarea {
+  min-width: 0;
   font: inherit;
+  font-size: var(--font-input);
   color: var(--text);
   background: var(--surface-sunken);
   border: 1px solid var(--line);
@@ -193,10 +196,12 @@ h3,
 .stack {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .inline {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 .inline.wrap {
   flex-wrap: wrap;

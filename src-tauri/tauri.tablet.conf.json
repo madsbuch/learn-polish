@@ -1,0 +1,15 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "Polski",
+        "width": 1100,
+        "height": 820,
+        "minWidth": 320,
+        "minHeight": 360,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  }
+}

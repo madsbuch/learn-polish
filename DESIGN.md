@@ -55,6 +55,15 @@ light and dark mode without trying.
 
 ## Screens
 
+The layout follows the available window width, including tablet split view.
+Below 768px the main tabs sit at the bottom; from 768px they form a left
+navigation rail. From 1000px the practice dashboard puts today's work beside
+the course library. `Screen` defaults to a 760px reading width; use
+`width="wide"` for dashboards. Sheets become centered dialogs on tablets.
+Keep all scrolling inside the screen or sheet body so headers, composers and
+practice controls stay reachable when the keyboard opens. Respect all four
+safe-area insets, and allow text and actions to wrap on narrow phones.
+
 Every screen is a `Screen`:
 
 ```tsx

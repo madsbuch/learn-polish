@@ -13,7 +13,8 @@
     "app:build": "tauri build",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build --apk"
+    "android:build": "tauri android build --apk",
+    "app:dev:tablet": "tauri dev --config src-tauri/tauri.tablet.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
