@@ -60,9 +60,9 @@ struct Item {
 }
 
 const FILL: &str = "Fill in the blank with the correct Polish form of the word in brackets. Reply \
-with only the missing word, nothing else.";
-const FIX: &str = "The Polish sentence has one grammar mistake. Reply with only the corrected \
-sentence, nothing else.";
+with one line and nothing else, exactly in this form:\nANSWER: <the missing word>";
+const FIX: &str = "The Polish sentence has one grammar mistake. Reply with one line and nothing \
+else, exactly in this form:\nANSWER: <the corrected sentence>";
 
 fn items() -> Vec<Item> {
     use Check::*;
@@ -170,6 +170,8 @@ fn clean(answer: &str) -> String {
 }
 
 fn short(text: &str) -> String {
+    // Shown as plain text: markdown marks would only be noise.
+    let text = text.replace("**", "");
     let text = text.trim();
     if text.chars().count() > 300 {
         format!("{}…", text.chars().take(300).collect::<String>())
@@ -178,22 +180,60 @@ fn short(text: &str) -> String {
     }
 }
 
-fn score_text(check: &Check, answer: &str) -> (f64, String) {
+/// The text after the last "ANSWER:" line, markdown marks removed.
+fn answer_line(reply: &str) -> Option<String> {
+    reply
+        .lines()
+        .rev()
+        .find_map(|line| {
+            let plain = line.replace(['*', '_', '`'], "");
+            let at = plain.to_uppercase().find("ANSWER:")?;
+            Some(plain[at + "ANSWER:".len()..].trim().to_string())
+        })
+        .filter(|answer| !answer.is_empty())
+}
+
+/// The words a rambling reply put forward as its answer: its first line,
+/// and anything in bold.
+fn candidates(reply: &str) -> Vec<String> {
+    let mut found: Vec<String> = reply.split("**").skip(1).step_by(2).map(clean).collect();
+    if let Some(first) = reply.lines().find(|l| !l.trim().is_empty()) {
+        found.push(clean(&first.replace(['*', '_', '`'], "")));
+    }
+    found
+}
+
+/// A known-answer item. The answer is read from the "ANSWER:" line it was
+/// asked for; a right answer that had to be dug out of an explanation counts
+/// half — the app needs models that do what they are told.
+fn score_text(check: &Check, reply: &str) -> (f64, String) {
+    let marked = answer_line(reply);
     match check {
         Check::Exactly(accepted) => {
-            let got = clean(answer);
-            if accepted.contains(&got.as_str()) {
-                (1.0, String::new())
-            } else {
-                (0.0, format!("expected “{}”", accepted[0]))
+            let right = |text: &str| accepted.contains(&clean(text).as_str());
+            match &marked {
+                Some(answer) if right(answer) => (1.0, String::new()),
+                Some(_) => (0.0, format!("expected “{}”", accepted[0])),
+                None if candidates(reply).iter().any(|c| accepted.contains(&c.as_str())) => {
+                    (0.5, "right, but not in the answer form asked for".into())
+                }
+                None => (0.0, format!("expected “{}” (and no ANSWER: line)", accepted[0])),
             }
         }
         Check::Contains(any) => {
-            let got = answer.to_lowercase();
-            if any.iter().any(|a| got.contains(a)) {
-                (1.0, String::new())
-            } else {
-                (0.0, format!("expected it to contain “{}”", any[0]))
+            let right = |text: &str| {
+                let text = text.to_lowercase();
+                any.iter().any(|a| text.contains(a))
+            };
+            match &marked {
+                Some(answer) if right(answer) => (1.0, String::new()),
+                Some(_) => (0.0, format!("expected it to contain “{}”", any[0])),
+                // The translation item asks for plain Polish, no answer line.
+                None if right(reply) && reply.lines().filter(|l| !l.trim().is_empty()).count() <= 2 => {
+                    (1.0, String::new())
+                }
+                None if right(reply) => (0.5, "right, but buried in an explanation".into()),
+                None => (0.0, format!("expected it to contain “{}”", any[0])),
             }
         }
         _ => (0.0, String::new()),
@@ -487,10 +527,15 @@ mod tests {
 
     #[test]
     fn answers_are_scored_by_rules() {
-        assert_eq!(score_text(&Check::Exactly(&["krakowie"]), " Krakowie.").0, 1.0);
-        assert_eq!(score_text(&Check::Exactly(&["krakowie"]), "Kraków").0, 0.0);
-        assert_eq!(score_text(&Check::Exactly(&["mamą"]), "mama").0, 0.0, "diacritics count");
-        assert_eq!(score_text(&Check::Contains(&["dwie córki"]), "Ona ma dwie córki.").0, 1.0);
+        assert_eq!(score_text(&Check::Exactly(&["krakowie"]), "ANSWER: Krakowie.").0, 1.0);
+        assert_eq!(score_text(&Check::Exactly(&["krakowie"]), "**ANSWER:** **Krakowie**").0, 1.0);
+        assert_eq!(score_text(&Check::Exactly(&["krakowie"]), "ANSWER: Kraków").0, 0.0);
+        assert_eq!(score_text(&Check::Exactly(&["mamą"]), "ANSWER: mama").0, 0.0, "diacritics count");
+        // Right, but in an explanation instead of the answer line: half.
+        assert_eq!(score_text(&Check::Exactly(&["krakowie"]), "**Krakowie**. *Note: the locative…*").0, 0.5);
+        assert_eq!(score_text(&Check::Exactly(&["czasu"]), "Nie mam **czasu**. However…").0, 0.5);
+        assert_eq!(score_text(&Check::Contains(&["dwie córki"]), "ANSWER: Ona ma dwie córki.").0, 1.0);
+        assert_eq!(score_text(&Check::Contains(&["kawę"]), "Poproszę kawę.").0, 1.0);
 
         assert_eq!(score_tools(ToolTask::NoTool, &turn("It means thank you.", None)).0, 1.0);
         assert_eq!(score_tools(ToolTask::NoTool, &turn("", Some(("create_course", "{}")))).0, 0.0);
