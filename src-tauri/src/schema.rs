@@ -290,6 +290,10 @@ diesel::table! {
         course_id -> Nullable<BigInt>,
         /// JSON: how the song came about (songs::SongOrigin).
         origin -> Text,
+        /// "song" (sung by Suno) or "podcast" (spoken, sentence by sentence).
+        kind -> Text,
+        /// JSON: how a podcast's audio is put together (podcasts::PodcastAudio).
+        podcast -> Text,
     }
 }
 
@@ -305,6 +309,8 @@ diesel::table! {
         aligned_words -> Nullable<Text>,
         audio_file_id -> Nullable<BigInt>,
         image_file_id -> Nullable<BigInt>,
+        /// JSON: lines with exact times, for audio the app put together itself.
+        timed_lines -> Nullable<Text>,
     }
 }
 

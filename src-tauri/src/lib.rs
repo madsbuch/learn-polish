@@ -25,6 +25,7 @@ mod playlists;
 mod schema;
 mod session;
 mod songs;
+mod podcasts;
 mod speech;
 mod srs;
 mod stats;
@@ -169,6 +170,10 @@ pub fn run() {
             commands::keys_import,
             songs::kie_credits,
             songs::songs_list,
+            podcasts::podcast_topics,
+            podcasts::podcast_draft,
+            podcasts::podcast_create,
+            podcasts::podcast_rerender,
             songs::song_draft,
             songs::song_create,
             songs::song_retry,
@@ -1314,6 +1319,8 @@ mod integration {
             vocal_gender: "f".into(),
             course_id: None,
             origin: songs::SongOrigin { brief: "Ordering coffee".into(), ..Default::default() },
+            kind: String::new(),
+            podcast: None,
             sections: vec![songs::SongSection {
                 kind: "chorus".into(),
                 lines: vec![songs::SongLine { en: "A coffee, please".into(), pl: "Poproszę kawę".into() }],

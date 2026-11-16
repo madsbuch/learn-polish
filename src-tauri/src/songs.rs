@@ -80,6 +80,10 @@ pub struct SongDraft {
     /// How the song came about: what was asked and with what. Saved with the
     /// song, so it can be made again or varied later.
     pub origin: SongOrigin,
+    /// "podcast" for a spoken episode; empty or "song" for a song.
+    pub kind: String,
+    /// For a podcast: how its audio is put together.
+    pub podcast: Option<crate::podcasts::PodcastAudio>,
 }
 
 /// Everything that went into making a song, besides the lyrics and style it
@@ -99,6 +103,21 @@ pub struct SongOrigin {
     pub songwriter_model: String,
     /// Changes asked for while refining the draft, in order.
     pub revisions: Vec<String>,
+    /// What a podcast was written from — its Wikipedia article, and the same
+    /// article in Polish when there is one — kept so it can be read later.
+    pub sources: Vec<Source>,
+    /// The article's picture, used as the episode's cover.
+    pub source_image: String,
+}
+
+/// An article a podcast was written from.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Source {
+    pub title: String,
+    pub url: String,
+    /// The Wikipedia language: "en" or "pl".
+    pub lang: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,7 +140,7 @@ pub struct SongTrack {
 }
 
 /// One sung line with when it is sung, for lyrics that follow the music.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TimedLine {
     pub start: f64,
@@ -166,6 +185,10 @@ pub struct Song {
     /// The Suno model that sang it.
     pub suno_model: String,
     pub origin: SongOrigin,
+    /// "song" or "podcast".
+    pub kind: String,
+    /// For a podcast: how its audio is put together.
+    pub podcast: Option<crate::podcasts::PodcastAudio>,
 }
 
 /// What the songwriter is asked for.
@@ -363,11 +386,11 @@ Reply with ONLY a JSON object, no prose, in exactly this shape:
 }"#;
 
 pub(crate) struct SongContext {
-    course: Option<String>,
-    words: Vec<String>,
-    sentences: Vec<String>,
-    weak_words: Vec<String>,
-    existing_choruses: Vec<String>,
+    pub(crate) course: Option<String>,
+    pub(crate) words: Vec<String>,
+    pub(crate) sentences: Vec<String>,
+    pub(crate) weak_words: Vec<String>,
+    pub(crate) existing_choruses: Vec<String>,
 }
 
 pub(crate) fn gather_context(conn: &mut Conn, course_id: Option<i64>) -> Result<SongContext> {
@@ -418,7 +441,12 @@ pub(crate) fn gather_context(conn: &mut Conn, course_id: Option<i64>) -> Result<
             .limit(10)
             .select(words::pl)
             .load(conn)?,
-        existing_choruses: songs::table.order(songs::id.desc()).limit(30).select(songs::chorus_pl).load(conn)?,
+        existing_choruses: songs::table
+            .filter(songs::kind.eq("song"))
+            .order(songs::id.desc())
+            .limit(30)
+            .select(songs::chorus_pl)
+            .load(conn)?,
     })
 }
 
@@ -720,7 +748,7 @@ async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)
 
 /// Downloads a file and returns its bytes and type; the caller stores them in
 /// the files table.
-async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
+pub(crate) async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
     let response = crate::http::downloads().get(url).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(Error::msg(format!("Could not download the song ({}).", response.status())));
@@ -739,7 +767,7 @@ async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
 }
 
 /// A MIME type from a file extension, when the server did not say.
-fn mime_for(ext: &str, fallback: &str) -> String {
+pub(crate) fn mime_for(ext: &str, fallback: &str) -> String {
     match ext {
         "mp3" => "audio/mpeg",
         "wav" => "audio/wav",
@@ -752,7 +780,7 @@ fn mime_for(ext: &str, fallback: &str) -> String {
     .to_string()
 }
 
-fn extension(url: &str, fallback: &str) -> String {
+pub(crate) fn extension(url: &str, fallback: &str) -> String {
     let path = url.split(['?', '#']).next().unwrap_or("");
     path.rsplit_once('.')
         .map(|(_, ext)| ext.to_lowercase())
@@ -952,6 +980,7 @@ struct TrackRow {
     duration: f64,
     play_count: i64,
     aligned_words: Option<String>,
+    timed_lines: Option<String>,
 }
 
 fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
@@ -977,11 +1006,16 @@ fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Resul
             image_path: path(row.image_file_id),
             duration: row.duration,
             play_count: row.play_count,
+            // A podcast knows its timings exactly; a song's come from Suno.
             lines: row
-                .aligned_words
-                .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
-                .filter(|words| !words.is_empty())
-                .map(|words| timed_lines(&words, sections)),
+                .timed_lines
+                .and_then(|json| serde_json::from_str::<Vec<TimedLine>>(&json).ok())
+                .or_else(|| {
+                    row.aligned_words
+                        .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
+                        .filter(|words| !words.is_empty())
+                        .map(|words| timed_lines(&words, sections))
+                }),
         })
         .collect())
 }
@@ -1003,6 +1037,8 @@ struct SongRow {
     course_id: Option<i64>,
     suno_model: String,
     origin: String,
+    kind: String,
+    podcast: String,
 }
 
 fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
@@ -1022,10 +1058,16 @@ fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
         course_id: row.course_id,
         suno_model: row.suno_model,
         origin: serde_json::from_str(&row.origin).unwrap_or_default(),
+        podcast: if row.kind == "podcast" {
+            Some(serde_json::from_str(&row.podcast).unwrap_or_default())
+        } else {
+            None
+        },
+        kind: row.kind,
     })
 }
 
-pub fn load_song(conn: &mut Conn, id: i64) -> Result<Song> {
+pub(crate) fn load_song(conn: &mut Conn, id: i64) -> Result<Song> {
     let row = songs::table
         .find(id)
         .select(SongRow::as_select())
@@ -1060,12 +1102,17 @@ pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Resu
             songs::created_at.eq(db::now_secs()),
             songs::course_id.eq(course_id),
             songs::origin.eq(serde_json::to_string(&draft.origin)?),
+            songs::kind.eq(if draft.kind == "podcast" { "podcast" } else { "song" }),
+            songs::podcast.eq(match &draft.podcast {
+                Some(audio) => serde_json::to_string(audio)?,
+                None => "{}".to_string(),
+            }),
         ))
         .returning(songs::id)
         .get_result(conn)?)
 }
 
-fn set_status(conn: &mut Conn, id: i64, status: &str, error: Option<&str>) -> Result<()> {
+pub(crate) fn set_status(conn: &mut Conn, id: i64, status: &str, error: Option<&str>) -> Result<()> {
     diesel::update(songs::table.find(id)).set((songs::status.eq(status), songs::error.eq(error))).execute(conn)?;
     Ok(())
 }
@@ -1081,10 +1128,12 @@ fn draft_of(song: &Song) -> SongDraft {
         // Only for generation, which does not file anything.
         course_id: None,
         origin: song.origin.clone(),
+        kind: song.kind.clone(),
+        podcast: song.podcast.clone(),
     }
 }
 
-fn notify(app: &AppHandle, song_id: i64) {
+pub(crate) fn notify(app: &AppHandle, song_id: i64) {
     let _ = app.emit("songs://changed", SongsChanged { song_id });
 }
 
@@ -1248,14 +1297,22 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
 
 /// Resumes songs that were still being made when the app last closed.
 pub fn resume_pending(app: &AppHandle) {
-    let pending: Vec<i64> = {
+    let pending: Vec<(i64, String)> = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
         let conn = &mut *guard;
-        songs::table.filter(songs::status.eq("generating")).select(songs::id).load(conn).unwrap_or_default()
+        songs::table
+            .filter(songs::status.eq("generating"))
+            .select((songs::id, songs::kind))
+            .load(conn)
+            .unwrap_or_default()
     };
-    for id in pending {
-        spawn_generation(app.clone(), id);
+    for (id, kind) in pending {
+        if kind == "podcast" {
+            crate::podcasts::spawn_render(app.clone(), id);
+        } else {
+            spawn_generation(app.clone(), id);
+        }
     }
 }
 
@@ -1319,6 +1376,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
             length: length.clone(),
             songwriter_model: model.clone(),
             revisions: Vec::new(),
+            ..Default::default()
         },
     };
     // The learner's explicit choices beat the model's.
@@ -1358,6 +1416,10 @@ pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
 
 #[tauri::command]
 pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Result<Song> {
+    let kind: String = songs::table.find(song_id).select(songs::kind).first(&mut *db.lock())?;
+    if kind == "podcast" {
+        return crate::podcasts::rerender(&app, &db, song_id, None);
+    }
     {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -1421,7 +1483,10 @@ pub async fn song_track_lyrics(
         let conn = &mut *guard;
         song_tracks::table
             .find(track_id)
-            .select((song_tracks::song_id, song_tracks::aligned_words.is_not_null()))
+            .select((
+                song_tracks::song_id,
+                song_tracks::aligned_words.is_not_null().or(song_tracks::timed_lines.is_not_null()),
+            ))
             .first::<(i64, bool)>(conn)
             .optional()?
             .ok_or_else(|| Error::msg("That song no longer exists."))?
@@ -1452,6 +1517,8 @@ mod tests {
             vocal_gender: "".into(),
             course_id: None,
             origin: SongOrigin::default(),
+            kind: String::new(),
+            podcast: None,
             sections: vec![
                 SongSection {
                     kind: "verse".into(),

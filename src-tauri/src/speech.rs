@@ -175,6 +175,48 @@ async fn clip(db: &Db, text: &str, gender: &str, force: bool, slow: bool) -> Res
     Ok((mime, bytes, false))
 }
 
+/// How a podcast line is read.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Delivery {
+    English,
+    Polish,
+    PolishSlow,
+}
+
+/// A podcast line's clip as raw audio (WAV), so clips can be joined into an
+/// episode. Stored apart from the lessons' clips, which may be MP3; making an
+/// episode's audio again reuses every line it already has.
+pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Delivery) -> Result<Vec<u8>> {
+    let (key, model) = {
+        let mut guard = db.lock();
+        (ai::api_key(&mut guard)?, ai::SPEECH_MODEL.to_string())
+    };
+    let variant = match delivery {
+        Delivery::English => format!("{voice}/en/pcm"),
+        Delivery::Polish => format!("{voice}/pcm"),
+        Delivery::PolishSlow => format!("{voice}/slow/pcm"),
+    };
+    let cache_key = audio_key(&model, &variant, text);
+    let lock = clip_lock(&cache_key);
+    let _making = lock.lock().await;
+    if let Some((mime, bytes)) = cached_clip(&mut db.lock(), &cache_key)? {
+        if mime == "audio/wav" {
+            return Ok(bytes);
+        }
+    }
+    let prompt = match delivery {
+        Delivery::English => ai::english_speech_prompt(text),
+        Delivery::Polish => ai::speech_prompt(text, false),
+        Delivery::PolishSlow => ai::speech_prompt(text, true),
+    };
+    let (mime, bytes) = ai::synthesize_pcm(&key, &model, voice, &prompt).await?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    record_speech(conn, &model, text);
+    store_clip(conn, &cache_key, &model, &variant, text, &mime, &bytes)?;
+    Ok(bytes)
+}
+
 /// Speaks a line of Polish, generating it only the first time.
 #[tauri::command]
 pub async fn speak(db: State<'_, Db>, text: String, gender: Option<String>, slow: Option<bool>) -> Result<AudioClip> {

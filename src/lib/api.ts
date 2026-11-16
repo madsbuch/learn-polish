@@ -32,6 +32,9 @@ import type {
   Conversation,
   DraftRequest,
   Playlist,
+  PodcastAudio,
+  PodcastRequest,
+  TopicIdea,
   Song,
   SongDraft,
   TimedLine,
@@ -216,6 +219,12 @@ export const api = {
   songDelete: (songId: number) => invoke<void>("song_delete", { songId }),
   songTrackDelete: (trackId: number) => invoke<void>("song_track_delete", { trackId }),
   songTrackPlayed: (trackId: number) => invoke<void>("song_track_played", { trackId }),
+  podcastTopics: () => invoke<TopicIdea[]>("podcast_topics"),
+  podcastDraft: (request: PodcastRequest) => invoke<SongDraft>("podcast_draft", { request }),
+  podcastCreate: (draft: SongDraft) => invoke<Song>("podcast_create", { draft }),
+  /** Puts an episode's audio together again, with new settings if given. */
+  podcastRerender: (songId: number, audio?: PodcastAudio) =>
+    invoke<Song>("podcast_rerender", { songId, audio: audio ?? null }),
   songTrackLyrics: (trackId: number) =>
     invoke<TimedLine[] | null>("song_track_lyrics", { trackId }),
 

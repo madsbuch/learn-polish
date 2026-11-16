@@ -586,6 +586,10 @@ export interface SongDraft {
   courseId?: number | null;
   /** How it came about — kept with the song; pass it back unchanged. */
   origin?: SongOrigin;
+  /** "podcast" for a spoken episode; "song" (or absent) for a song. */
+  kind?: "song" | "podcast" | "";
+  /** For a podcast: how its audio is put together. */
+  podcast?: PodcastAudio | null;
 }
 
 /** Everything that went into making a song, besides its lyrics and style. */
@@ -597,6 +601,51 @@ export interface SongOrigin {
   length: string;
   songwriterModel: string;
   revisions: string[];
+  /** What a podcast was written from: its Wikipedia article (and the Polish one). */
+  sources?: PodcastSource[];
+  sourceImage?: string;
+}
+
+/** An article a podcast was written from. */
+export interface PodcastSource {
+  title: string;
+  url: string;
+  /** "en" or "pl". */
+  lang: string;
+}
+
+/** How a podcast episode's audio is put together. */
+export interface PodcastAudio {
+  /** Seconds of silence after the English, before the Polish. */
+  pause: number;
+  /** How many times the Polish is said. */
+  repeats: number;
+  /** The Polish read slowly. */
+  slow: boolean;
+  /** "two" voices (English and Polish apart) or "one". */
+  voices: "one" | "two";
+}
+
+/** "pairs": everyday sentence pairs; "slow": very simple sentences, read slowly. */
+export type PodcastFormat = "pairs" | "slow";
+
+export interface PodcastRequest {
+  topic?: string;
+  /** An English Wikipedia article title to write from. */
+  article?: string;
+  format?: PodcastFormat;
+  length?: SongLength;
+  courseId?: number | null;
+  vocalGender?: string;
+  previous?: SongDraft;
+  feedback?: string;
+}
+
+/** A subject the learner might like an episode about. */
+export interface TopicIdea {
+  topic: string;
+  article: string;
+  why: string;
 }
 
 export interface SongTrack {

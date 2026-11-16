@@ -1,13 +1,16 @@
 import { sectionLabel } from "../lib/lyrics";
 import type { SongSection } from "../lib/types";
 
-/** A song's lyrics: English then Polish in the verses, Polish first in the chorus. */
-export function Lyrics({ sections }: { sections: SongSection[] }) {
+/**
+ * A song's lyrics: English then Polish in the verses, Polish first in the
+ * chorus. A podcast's script names its sections as parts.
+ */
+export function Lyrics({ sections, parts = false }: { sections: SongSection[]; parts?: boolean }) {
   return (
     <div className="lyrics selectable">
       {sections.map((section, i) => (
         <div key={i} className="lyric-section" data-kind={section.kind}>
-          <div className="t-eyebrow">{sectionLabel(section.kind)}</div>
+          <div className="t-eyebrow">{parts ? `Part ${i + 1}` : sectionLabel(section.kind)}</div>
           {section.lines.map((line, j) =>
             section.kind === "chorus" ? (
               <div key={j}>

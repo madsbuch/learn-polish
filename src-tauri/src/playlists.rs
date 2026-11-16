@@ -297,9 +297,9 @@ pub async fn song_track_save(app: AppHandle, db: State<'_, Db>, track_id: i64) -
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
-        .set_title("Save song")
+        .set_title("Save audio")
         .set_file_name(&name)
-        .add_filter("MP3 audio", &["mp3"])
+        .add_filter(if name.ends_with(".wav") { "WAV audio" } else { "MP3 audio" }, &[if name.ends_with(".wav") { "wav" } else { "mp3" }])
         .save_file(move |path| {
             let _ = sender.send(path);
         });

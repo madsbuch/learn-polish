@@ -607,6 +607,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "tutor_conversations", "about", "TEXT")?;
     add_column(conn, "courses", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
     add_column(conn, "courses", "closed_at", "INTEGER")?;
+    add_column(conn, "songs", "kind", "TEXT NOT NULL DEFAULT 'song'")?;
+    add_column(conn, "songs", "podcast", "TEXT NOT NULL DEFAULT '{}'")?;
+    add_column(conn, "song_tracks", "timed_lines", "TEXT")?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }

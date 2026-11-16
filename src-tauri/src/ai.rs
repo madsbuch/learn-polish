@@ -872,14 +872,15 @@ pub type Clip = (String, Vec<u8>);
 /// speak PCM (Gemini), and finally without `speed`, which not every model
 /// honours. The original error is what surfaces if none of it works.
 pub async fn synthesize(key: &str, model: &str, voice: &str, text: &str, slow: bool) -> Result<Clip> {
-    let first = speech_request(key, model, voice, text, slow, "mp3").await;
+    let prompt = speech_prompt(text, slow);
+    let first = speech_request(key, model, voice, &prompt, "mp3").await;
     let error = match first {
         Ok(clip) => return Ok(clip),
         Err(error) => error,
     };
     // Some providers only speak PCM, and say so when asked for MP3.
     if error.to_string().to_lowercase().contains("pcm") {
-        if let Ok(clip) = speech_request(key, model, voice, text, slow, "pcm").await {
+        if let Ok(clip) = speech_request(key, model, voice, &prompt, "pcm").await {
             return Ok(clip);
         }
     }
@@ -906,14 +907,30 @@ pub fn speech_prompt(text: &str, slow: bool) -> String {
     }
 }
 
-async fn speech_request(
-    key: &str,
-    model: &str,
-    voice: &str,
-    text: &str,
-    slow: bool,
-    format: &str,
-) -> Result<Clip> {
+/// Speech as raw audio (a WAV clip), never MP3: a podcast episode is clips
+/// joined end to end with silence between them, which only works on samples.
+/// `prompt` is the whole instruction: see `speech_prompt` and
+/// `english_speech_prompt`.
+pub async fn synthesize_pcm(key: &str, model: &str, voice: &str, prompt: &str) -> Result<Clip> {
+    let clip = speech_request(key, model, voice, prompt, "pcm").await?;
+    if clip.0 != "audio/wav" {
+        return Err(Error::msg(format!(
+            "The speech model sent {} instead of raw audio, so the clips cannot be joined.",
+            clip.0
+        )));
+    }
+    Ok(clip)
+}
+
+/// English read aloud, for the English half of a podcast's sentence pairs.
+pub fn english_speech_prompt(text: &str) -> String {
+    format!(
+        "Read the following English text aloud in a calm, friendly narrator's voice, clearly and \
+         at a relaxed pace. Say exactly this and nothing else: {text}"
+    )
+}
+
+async fn speech_request(key: &str, model: &str, voice: &str, prompt: &str, format: &str) -> Result<Clip> {
     let response = crate::http::api()
         .post(format!("{BASE_URL}/audio/speech"))
         .bearer_auth(key)
@@ -921,7 +938,7 @@ async fn speech_request(
         .header("X-Title", "Polski")
         .json(&SpeechRequest {
             model,
-            input: &speech_prompt(text, slow),
+            input: prompt,
             response_format: format,
             voice,
             // Playback sets the speed (the app's speaking-speed setting);
@@ -987,7 +1004,7 @@ fn content_type_param(content_type: &str, name: &str) -> Option<u32> {
 }
 
 /// Wraps signed 16-bit little-endian PCM in a minimal WAV container.
-fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
+pub(crate) fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
     const BITS: u16 = 16;
     let lesson_align = channels * BITS / 8;
     let byte_rate = sample_rate * u32::from(lesson_align);

@@ -34,11 +34,14 @@ export function SongComposer({
   courses,
   onCancel,
   onCreated,
+  onSwitch,
 }: {
   settings: Settings;
   courses: CourseProgress[];
   onCancel: () => void;
   onCreated: () => void;
+  /** Makes a podcast instead. */
+  onSwitch: () => void;
 }) {
   const [brief, setBrief] = useState("");
   const [courseId, setCourseId] = useState<number | null>(null);
@@ -94,9 +97,21 @@ export function SongComposer({
     <Screen title={draft ? "Your song" : "New song"} onBack={onCancel}>
       {error ? <Banner tone="error">{error}</Banner> : null}
       {!songwriter ? <Banner tone="info">Pick a songwriter model in Settings.</Banner> : null}
+      {!settings.hasKieKey ? (
+        <Banner tone="info">Songs need a kie.ai key in Settings. Podcasts work without one.</Banner>
+      ) : null}
 
       {!draft ? (
         <>
+          <Segmented
+            value="song"
+            onChange={(value) => value === "podcast" && onSwitch()}
+            options={[
+              { value: "song", label: "Song" },
+              { value: "podcast", label: "Podcast" },
+            ]}
+          />
+
           <Section title="What it is about">
             <Card>
               <Stack gap={4}>
@@ -188,7 +203,7 @@ export function SongComposer({
               size="lg"
               wide
               loading={busy === "draft"}
-              disabled={busy !== null || !songwriter || (chorusChoice === "custom" && !chorus)}
+              disabled={busy !== null || !songwriter || !settings.hasKieKey || (chorusChoice === "custom" && !chorus)}
               onClick={() =>
                 run("draft", async () =>
                   accept(await api.songDraft({ brief, courseId, chorusPl: chorus, style, vocalGender, length })),

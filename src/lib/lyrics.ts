@@ -33,11 +33,12 @@ function kindOf(label: string): SongSectionKind {
   return "verse";
 }
 
-export function sectionsToText(sections: SongSection[]): string {
+/** `label` names every section alike (a podcast's "Part"); songs name each by its kind. */
+export function sectionsToText(sections: SongSection[], label?: string): string {
   return sections
     .map(
       (section) =>
-        `[${sectionLabel(section.kind)}]\n` +
+        `[${label ?? sectionLabel(section.kind)}]\n` +
         section.lines.map((line) => `${line.en} | ${line.pl}`).join("\n"),
     )
     .join("\n\n");
