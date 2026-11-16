@@ -4,6 +4,7 @@ import { Composer } from "../components/Composer";
 import { MemoryIcon, PlayerIcon } from "../components/icons";
 import { playSong, useSongItem } from "../components/SongToListen";
 import { Markdown } from "../components/Markdown";
+import { ReadAloud, unsay } from "../components/ReadAloud";
 import {
   Badge,
   Banner,
@@ -195,14 +196,17 @@ export function CheckIn({
             Done
           </Button>
         ) : (
-          <Composer
-            draft={draft}
-            setDraft={setDraft}
-            placeholder={writing ? "Write in Polish" : "Your answer"}
-            disabled={checkinId === null}
-            canSend={!busy}
-            onSend={() => void answer()}
-          />
+          <Stack gap={2}>
+            {writing && writing.supportLevel === 0 ? <WordBank blockId={blockId} draft={draft} onUse={use} /> : null}
+            <Composer
+              draft={draft}
+              setDraft={setDraft}
+              placeholder={writing ? "Write in Polish" : "Your answer"}
+              disabled={checkinId === null}
+              canSend={!busy}
+              onSend={() => void answer()}
+            />
+          </Stack>
         )
       }
     >
@@ -229,7 +233,6 @@ export function CheckIn({
           </Stack>
         </Card>
       ) : null}
-      {writing && writing.supportLevel === 0 && !assessment ? <WordBank blockId={blockId} onUse={use} /> : null}
 
       <div className="chat">
         {lines.map((line, i) =>
@@ -258,7 +261,18 @@ export function CheckIn({
             </div>
           ) : (
             <div key={i} className="msg selectable" data-role={line.role}>
-              {line.role === "assistant" ? <Markdown text={line.content} /> : line.content}
+              {line.role !== "assistant" ? (
+                line.content
+              ) : writing ? (
+                // The partner writes only Polish: one button reads the whole
+                // message, instead of a player after every sentence.
+                <>
+                  <Markdown text={unsay(line.content)} />
+                  <ReadAloud text={line.content} />
+                </>
+              ) : (
+                <Markdown text={line.content} />
+              )}
             </div>
           ),
         )}
@@ -266,7 +280,7 @@ export function CheckIn({
           <div className="msg" data-role="assistant">
             {live ? (
               <div>
-                <Markdown text={live} />
+                <Markdown text={writing ? unsay(live) : live} />
                 <span className="caret" />
               </div>
             ) : (

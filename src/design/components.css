@@ -1169,33 +1169,73 @@ button.badge:active {
   vertical-align: middle;
 }
 
-/* A guided writing block's word bank: tap a word to add it to the message. */
+/* A guided writing block's word bank, docked above the message box: one
+   goal at a time, its words in a row that scrolls sideways. */
 .word-bank {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-sunken);
   border: 1px solid var(--line-soft);
+  min-width: 0;
+  overflow: hidden;
+}
+.word-bank__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  color: var(--text-dim);
+}
+.word-bank__goals {
+  display: flex;
+  gap: var(--space-1);
+}
+.word-bank__goal {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-bold);
+}
+.word-bank__goal[aria-selected="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
 }
 .word-bank__chips {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--space-3));
+  padding: var(--space-1) var(--space-3);
+  scroll-padding: 0 var(--space-3);
+}
+.word-bank__chips::-webkit-scrollbar {
+  display: none;
 }
 .word-chip {
+  flex: none;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--tint);
+  background: var(--surface);
   border: 1px solid var(--line-soft);
   font-size: var(--font-small);
   font-weight: var(--weight-bold);
   color: var(--text);
-  text-align: left;
+  white-space: nowrap;
 }
 .word-chip > span {
   font-size: var(--font-caption);
@@ -1207,8 +1247,18 @@ button.badge:active {
   border-color: var(--brand);
   color: var(--brand-ink);
 }
+.word-chip[data-used] {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+}
 .word-chip:active {
   transform: scale(0.97);
+}
+/* One pair of buttons under a partner's message reads all of it. */
+.read-aloud {
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: calc(-1 * var(--space-1));
+  margin-left: calc(-1 * var(--space-2));
 }
 /* A hint in a writing chat: for the learner only, not sent. */
 .writing-hint {
