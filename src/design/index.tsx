@@ -204,6 +204,39 @@ export function Screen({
   );
 }
 
+/** The window width from which list screens show what is open beside them. */
+const SPLIT_MIN_WIDTH = 1000;
+
+/** True on a window wide enough for two panes (a tablet in landscape). */
+export function useWideLayout(): boolean {
+  const query = `(min-width: ${SPLIT_MIN_WIDTH}px)`;
+  const [wide, setWide] = useState(() => window.matchMedia?.(query).matches ?? false);
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return;
+    const changed = () => setWide(media.matches);
+    changed();
+    media.addEventListener("change", changed);
+    return () => media.removeEventListener("change", changed);
+  }, [query]);
+  return wide;
+}
+
+/**
+ * Two screens side by side on a wide window: a list, and what is open in it.
+ * Each pane is a whole <Screen> with its own header, scrolling and footer.
+ * Use it only when useWideLayout() is true; narrower windows show one
+ * screen at a time.
+ */
+export function SplitView({ list, detail }: { list: ReactNode; detail: ReactNode }) {
+  return (
+    <div className="split">
+      <div className="split-list">{list}</div>
+      <div className="split-detail">{detail}</div>
+    </div>
+  );
+}
+
 /**
  * The picture behind a screen's top. It follows the scroll at a fraction of
  * the speed and fades out, so the page seems to slide over it.

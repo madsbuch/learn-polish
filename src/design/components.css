@@ -1380,6 +1380,36 @@ button.badge:active {
   }
 }
 
+/* Two panes on a wide window (SplitView): a list and what is open in it.
+   Only used beside the navigation rail, so neither pane leaves room for a
+   tab bar. */
+.split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.split-list,
+.split-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  --nav-height: 0px;
+}
+.split-list {
+  flex: 0 0 clamp(320px, 38%, 440px);
+  border-right: 1px solid var(--line-soft);
+  --safe-right: 0px;
+}
+.split-detail {
+  flex: 1;
+  --safe-left: 0px;
+}
+.split .screen-footer {
+  margin-bottom: 0;
+  padding-bottom: calc(var(--safe-bottom) + var(--space-3));
+}
+
 /* Keep controls and scrollable content usable on short landscape/IME views. */
 @media (max-height: 540px) {
   .sheet {

@@ -28,8 +28,10 @@ import {
   Section,
   Segmented,
   Spinner,
+  SplitView,
   Stack,
   Text,
+  useWideLayout,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
@@ -167,8 +169,14 @@ export function Music({
     setError(null);
   };
 
+  // On a wide window the library stays on the left and what is open in it
+  // shows beside it, without a way back (the library is in view).
+  const wide = useWideLayout();
+  const onBack = wide ? undefined : back;
+
+  let detail: ReactNode = null;
   if (view.kind === "compose") {
-    return (
+    detail = (
       <SongComposer
         settings={settings}
         courses={courses}
@@ -189,8 +197,8 @@ export function Music({
 
   if (view.kind === "song") {
     const song = songs?.find((entry) => entry.id === view.songId);
-    return (
-      <Screen title="Song" onBack={back}>
+    detail = (
+      <Screen title="Song" onBack={onBack}>
         {feedback}
         {song ? (
           <SongPage
@@ -221,8 +229,8 @@ export function Music({
 
   if (view.kind === "playlist") {
     const playlist = playlists?.find((entry) => entry.id === view.playlistId);
-    return (
-      <Screen title={playlist?.name ?? "Playlist"} onBack={back}>
+    detail = (
+      <Screen title={playlist?.name ?? "Playlist"} onBack={onBack}>
         {feedback}
         {playlist ? (
           <PlaylistPage
@@ -249,8 +257,9 @@ export function Music({
   }
 
   const ready = settings.hasKieKey && settings.hasApiKey;
+  if (detail !== null && !wide) return detail;
 
-  return (
+  const library = (
     <Screen
       title="Music"
       info={
@@ -319,6 +328,7 @@ export function Music({
         <PlaylistList
           playlists={playlists}
           tracks={tracks}
+          current={wide && view.kind === "playlist" ? view.playlistId : undefined}
           onOpen={(playlistId) => setView({ kind: "playlist", playlistId })}
           onCreated={(playlist) => {
             setPlaylists((current) => [playlist, ...(current ?? [])]);
@@ -328,6 +338,21 @@ export function Music({
         />
       )}
     </Screen>
+  );
+  if (!wide) return library;
+  return (
+    <SplitView
+      list={library}
+      detail={
+        detail ?? (
+          <Screen>
+            <EmptyState icon="🎵" title="Pick a song or a playlist">
+              It opens here, beside your library{ready ? " — or make a new song with +" : ""}.
+            </EmptyState>
+          </Screen>
+        )
+      }
+    />
   );
 }
 
@@ -760,12 +785,15 @@ function playlistItems(playlist: Playlist, tracks: Map<number, QueueItem>) {
 function PlaylistList({
   playlists,
   tracks,
+  current,
   onOpen,
   onCreated,
   onError,
 }: {
   playlists: Playlist[] | null;
   tracks: Map<number, QueueItem>;
+  /** The playlist open beside the list (wide windows). */
+  current?: number;
   onOpen: (playlistId: number) => void;
   onCreated: (playlist: Playlist) => void;
   onError: (message: string) => void;
@@ -818,6 +846,7 @@ function PlaylistList({
                 leading={<Cover fileId={items[0]?.item.track.imageFileId ?? null} size={48} />}
                 title={playlist.name}
                 subtitle={`${plural(items.length, "song")}${seconds > 0 ? ` · ${formatTime(seconds)}` : ""}`}
+                selected={playlist.id === current}
                 onClick={() => onOpen(playlist.id)}
               />
             );

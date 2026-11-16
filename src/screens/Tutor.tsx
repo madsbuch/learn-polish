@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon } from "../components/icons";
+import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon } from "../components/icons";
 import { Composer } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
 import {
@@ -19,8 +19,10 @@ import {
   Section,
   Segmented,
   Spinner,
+  SplitView,
   Stack,
   Text,
+  useWideLayout,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useDraft, writeDraft } from "../lib/drafts";
@@ -86,6 +88,7 @@ export function Tutor({
   const [opening, setOpening] = useState<string | null>(null);
   // All conversations, or only the ones about a word ("Talk about it").
   const [filter, setFilter] = useState<"all" | "word">("all");
+  const wide = useWideLayout();
 
   function start(text: string) {
     const message = text.trim();
@@ -130,25 +133,30 @@ export function Tutor({
     );
   }
 
-  if (open !== null) {
-    const conversation =
-      open === "new" ? null : (conversations?.find((entry) => entry.id === open) ?? null);
+  // A conversation: on its own screen, or beside the list (`inSplit`), where
+  // it has no way back because the list stays in view.
+  const chat = (target: number | "new", inSplit: boolean) => {
+    const conversation = target === "new" ? null : (conversations?.find((entry) => entry.id === target) ?? null);
     return (
       <Chat
-        key={open}
-        conversationId={open === "new" ? null : open}
+        key={target}
+        conversationId={target === "new" ? null : target}
         title={conversation?.title ?? "New conversation"}
-        firstMessage={open === "new" ? opening : null}
+        firstMessage={target === "new" ? opening : null}
         onStarted={(id) => {
           setOpening(null);
           setOpen(id);
           refresh();
         }}
-        onBack={() => {
-          setOpening(null);
-          setOpen(null);
-          refresh();
-        }}
+        onBack={
+          inSplit
+            ? undefined
+            : () => {
+                setOpening(null);
+                setOpen(null);
+                refresh();
+              }
+        }
         onRenamed={refresh}
         onDeleted={() => {
           setOpen(null);
@@ -157,64 +165,97 @@ export function Tutor({
         {...shared}
       />
     );
-  }
+  };
 
-  return (
-    <Screen
-      title="Tutor"
-      info={<TutorInfo />}
-      footer={<Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />}
-    >
-      {error ? <Banner tone="error">{error}</Banner> : null}
-      {conversations === null ? (
-        <Spinner />
-      ) : conversations.length === 0 ? (
-        <Section title="Try asking">
-          <List>
-            {STARTERS.map((starter) => (
-              <ListItem key={starter} title={starter} onClick={() => start(starter)} />
-            ))}
-          </List>
-        </Section>
-      ) : (
-        <Section title="Conversations">
-          {conversations.some((c) => c.tag === "word") ? (
-            <Segmented
-              value={filter}
-              options={[
-                { value: "all", label: "All" },
-                { value: "word", label: "Words" },
-              ]}
-              onChange={setFilter}
+  // A tablet in landscape: the list, and the open conversation beside it —
+  // a new one when none is open.
+  if (wide) {
+    const current = open ?? "new";
+    return <SplitView list={list(current)} detail={chat(current, true)} />;
+  }
+  if (open !== null) return chat(open, false);
+  return list(null);
+
+  /** The conversations; `current` is the one open beside them (wide windows). */
+  function list(current: number | "new" | null) {
+    const inSplit = current !== null;
+    return (
+      <Screen
+        title="Tutor"
+        info={<TutorInfo />}
+        footer={
+          inSplit ? undefined : <Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />
+        }
+        actions={
+          inSplit ? (
+            <IconButton
+              variant={current === "new" ? "primary" : undefined}
+              icon={<PlusIcon />}
+              label="New conversation"
+              onClick={() => {
+                setOpening(null);
+                setOpen("new");
+              }}
             />
-          ) : null}
-          <List>
-            {conversations
-              .filter((c) => filter === "all" || c.tag === filter)
-              .map((conversation) => (
-              <ListItem
-                key={conversation.id}
-                oneLine
-                title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
-                subtitle={
-                  conversation.working
-                    ? "The tutor is writing…"
-                    : [
-                        conversation.tag === "word" ? "Word" : null,
-                        when(conversation.updatedAt),
-                        conversation.error ? "didn't finish" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
-                }
-                onClick={() => setOpen(conversation.id)}
+          ) : null
+        }
+      >
+        {error ? <Banner tone="error">{error}</Banner> : null}
+        {conversations === null ? (
+          <Spinner />
+        ) : conversations.length === 0 && inSplit ? (
+          <Text variant="small" tone="dim">
+            No conversations yet — ask anything on the right.
+          </Text>
+        ) : conversations.length === 0 ? (
+          <Section title="Try asking">
+            <List>
+              {STARTERS.map((starter) => (
+                <ListItem key={starter} title={starter} onClick={() => start(starter)} />
+              ))}
+            </List>
+          </Section>
+        ) : (
+          <Section title="Conversations">
+            {conversations.some((c) => c.tag === "word") ? (
+              <Segmented
+                value={filter}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "word", label: "Words" },
+                ]}
+                onChange={setFilter}
               />
-            ))}
-          </List>
-        </Section>
-      )}
-    </Screen>
-  );
+            ) : null}
+            <List>
+              {conversations
+                .filter((c) => filter === "all" || c.tag === filter)
+                .map((conversation) => (
+                <ListItem
+                  key={conversation.id}
+                  oneLine
+                  title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
+                  subtitle={
+                    conversation.working
+                      ? "The tutor is writing…"
+                      : [
+                          conversation.tag === "word" ? "Word" : null,
+                          when(conversation.updatedAt),
+                          conversation.error ? "didn't finish" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                  }
+                  selected={current === conversation.id}
+                  onClick={() => setOpen(conversation.id)}
+                />
+              ))}
+            </List>
+          </Section>
+        )}
+      </Screen>
+    );
+  }
 }
 
 function Chat({
@@ -237,7 +278,8 @@ function Chat({
   firstMessage: string | null;
   /** The first reply arrived; the conversation now exists with this id. */
   onStarted: (id: number) => void;
-  onBack: () => void;
+  /** Back to the list; left out beside it, where the list stays in view. */
+  onBack?: () => void;
   onRenamed: () => void;
   onDeleted: () => void;
 }) {
