@@ -875,7 +875,13 @@ mod integration {
                 .unwrap();
         };
         courses::milestones(&mut conn).unwrap();
-        assert_eq!(courses::status(&mut conn, course).unwrap().status, "active");
+        let fresh = courses::status(&mut conn, course).unwrap();
+        assert_eq!(fresh.status, "active");
+        let first_title = lessons::load(&mut conn, ids[0]).unwrap().title;
+        assert_eq!(fresh.next_lesson.as_deref(), Some(first_title.as_str()), "the next is the first not passed");
+        set(&mut conn, ids[0], 1, 3);
+        let second_title = lessons::load(&mut conn, ids[1]).unwrap().title;
+        assert_eq!(courses::status(&mut conn, course).unwrap().next_lesson, Some(second_title));
 
         // The last lesson is a challenge: not passed, and still the course completes.
         let (challenge, core) = ids.split_last().unwrap();
@@ -886,6 +892,7 @@ mod integration {
         let status = courses::status(&mut conn, course).unwrap();
         assert_eq!(status.status, "completed");
         assert_eq!((status.passed_core, status.challenges), (core.len() as i64, 1));
+        assert_eq!((status.holding, status.next_lesson), (0, None), "passed, but not yet a month apart");
         let first = courses::milestones(&mut conn).unwrap();
         assert!(first.iter().any(|m| m.course_id == course && !m.mastered), "{first:?}");
         assert!(courses::milestones(&mut conn).unwrap().iter().all(|m| m.course_id != course), "celebrated once");
@@ -894,7 +901,9 @@ mod integration {
         for id in core {
             set(&mut conn, *id, 1, 40);
         }
-        assert_eq!(courses::status(&mut conn, course).unwrap().status, "completed", "the challenge is not done");
+        let status = courses::status(&mut conn, course).unwrap();
+        assert_eq!(status.status, "completed", "the challenge is not done");
+        assert_eq!(status.holding, core.len() as i64);
         set(&mut conn, *challenge, 1, 40);
         assert_eq!(courses::status(&mut conn, course).unwrap().status, "mastered");
         assert!(courses::milestones(&mut conn).unwrap().iter().any(|m| m.course_id == course && m.mastered));

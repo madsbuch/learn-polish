@@ -259,6 +259,10 @@ export interface CourseProgress {
   coreLessons: number;
   passedCore: number;
   challenges: number;
+  /** Lessons, challenges too, that already hold the way mastering needs. */
+  holding: number;
+  /** The first core lesson, in the course's order, not passed yet. */
+  nextLesson: string | null;
 }
 
 /** A course just completed or mastered. */

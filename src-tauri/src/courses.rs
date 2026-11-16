@@ -764,26 +764,44 @@ pub struct CourseStatus {
     pub core_lessons: i64,
     pub passed_core: i64,
     pub challenges: i64,
+    /// Lessons, challenges too, that already hold the way mastering needs.
+    pub holding: i64,
+    /// The first core lesson, in the course's order, not passed yet.
+    pub next_lesson: Option<String>,
+}
+
+/// Whether a lesson holds the way mastering a course needs: passed, at a gap
+/// of a month or more, and — for writing — done without help.
+pub fn holds(passed: bool, gap: i64, format: &str, support_level: i64) -> bool {
+    passed && gap >= MASTERED_GAP && (format != "writing" || support_level >= 2)
 }
 
 pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
-    let list: Vec<(i64, i64, i64, String, i64)> = course_lessons::table
+    let list: Vec<(i64, i64, i64, String, i64, String)> = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
-        .select((lessons::challenge, lessons::passed, lessons::interval_days, lessons::format, lessons::support_level))
+        .order((course_lessons::ord, lessons::id))
+        .select((
+            lessons::challenge,
+            lessons::passed,
+            lessons::interval_days,
+            lessons::format,
+            lessons::support_level,
+            lessons::title,
+        ))
         .load(conn)?;
-    let core: Vec<_> = list.iter().filter(|b| b.0 == 0).collect();
-    let passed_core = core.iter().filter(|b| b.1 == 1).count() as i64;
+    let core: Vec<_> = list.iter().filter(|l| l.0 == 0).collect();
+    let passed_core = core.iter().filter(|l| l.1 == 1).count() as i64;
     let completed = !core.is_empty() && passed_core == core.len() as i64;
-    let mastered = completed
-        && list.iter().all(|(_, passed, gap, format, support)| {
-            *passed == 1 && *gap >= MASTERED_GAP && (format != "writing" || *support >= 2)
-        });
+    let holding = list.iter().filter(|(_, passed, gap, format, support, _)| holds(*passed == 1, *gap, format, *support)).count();
+    let mastered = completed && holding == list.len();
     Ok(CourseStatus {
         status: if mastered { "mastered" } else if completed { "completed" } else { "active" }.into(),
         core_lessons: core.len() as i64,
         passed_core,
         challenges: (list.len() - core.len()) as i64,
+        holding: holding as i64,
+        next_lesson: core.iter().find(|l| l.1 == 0).map(|l| l.5.clone()),
     })
 }
 

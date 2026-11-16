@@ -2,8 +2,19 @@ import { Avatar, List, ListItem, Progress, Stack } from "../design";
 import { fileUrl } from "../lib/files";
 import type { CourseProgress } from "../lib/types";
 
+/** Where a course stands, in a line: what is left, and what comes next. */
+function courseLine(entry: CourseProgress): string {
+  if (entry.status === "mastered") return `🏆 Mastered · ${entry.course.titlePl}`;
+  if (entry.status === "completed") {
+    return `✓ Completed · mastery ${entry.holding} of ${entry.coreLessons + entry.challenges}`;
+  }
+  const left = entry.coreLessons - entry.passedCore;
+  if (entry.coreLessons === 0) return entry.course.titlePl;
+  return `${left} to pass${entry.nextLesson ? ` · next: ${entry.nextLesson}` : ""}`;
+}
+
 /**
- * Courses, each with how many of its lessons have been started. Each is a card
+ * Courses, each with where it stands. Each is a card
  * of its own, so their pictures do not run into each other.
  */
 export function CourseList({
@@ -29,17 +40,11 @@ export function CourseList({
             title={entry.course.title}
             subtitle={
               <Stack gap={2}>
-                <span>
-                  {entry.status === "mastered"
-                    ? `🏆 Mastered · ${entry.course.titlePl}`
-                    : entry.status === "completed"
-                      ? `✓ Completed · ${entry.course.titlePl}${
-                          entry.challenges > 0 ? ` · ${entry.challenges} challenge${entry.challenges === 1 ? "" : "s"}` : ""
-                        }`
-                      : `${entry.course.titlePl} · ${entry.passedCore}/${entry.coreLessons} passed`}
-                </span>
+                <span>{courseLine(entry)}</span>
                 {entry.status === "active" ? (
                   <Progress value={entry.passedCore} max={Math.max(1, entry.coreLessons)} size="sm" />
+                ) : entry.status === "completed" ? (
+                  <Progress value={entry.holding} max={Math.max(1, entry.coreLessons + entry.challenges)} size="sm" tone="gold" />
                 ) : null}
               </Stack>
             }

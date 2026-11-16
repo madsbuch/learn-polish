@@ -245,16 +245,19 @@ export function Section({
   title,
   info,
   action,
+  id,
   children,
 }: {
   title?: ReactNode;
   info?: ReactNode;
   /** A single plain button at the right of the label, e.g. "Select". */
   action?: ReactNode;
+  /** For scrolling to it. */
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="section">
+    <section className="section" id={id}>
       {title || action ? (
         <div className="section-header">
           <h2 className="t-eyebrow with-info">

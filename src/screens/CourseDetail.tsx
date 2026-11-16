@@ -5,6 +5,7 @@ import { LessonRow } from "../components/LessonRow";
 import { SparkIcon } from "../components/icons";
 import { SlowButton, SpeakButton } from "../components/ui";
 import {
+  Badge,
   Banner,
   Button,
   ConfirmButton,
@@ -24,6 +25,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
+import { holds, standing, standingText, writingStep } from "../lib/lessons";
 import type { Lesson, Sentence, CourseProgress, Word } from "../lib/types";
 
 export type CourseSection = "lessons" | "words" | "sentences";
@@ -151,41 +153,29 @@ export function CourseDetail({
         </Text>
       ) : null}
 
-      {lessons && lessons.length > 0 ? <CourseStanding lessons={lessons} /> : null}
+      {lessons && lessons.length > 0 ? (
+        <CourseStanding
+          lessons={lessons}
+          onShowLeft={() => {
+            setTab("lessons");
+            window.requestAnimationFrame(() =>
+              document.getElementById("to-pass")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+            );
+          }}
+        />
+      ) : null}
 
       {tabs.length > 1 ? <Segmented value={shown} onChange={setTab} options={tabs} /> : null}
 
       {shown === "lessons" ? (
         lessons ? (
-          <Stack gap={4}>
+          lessons.length === 0 ? (
             <List>
-              {lessons
-                .filter((lesson) => !lesson.challenge)
-                .map((lesson) => (
-                  <LessonRow key={lesson.id} lesson={lesson} today={today} onOpen={(b) => onOpenLesson(b.id)} />
-                ))}
-              {lessons.length === 0 ? <ListEmpty>No lessons yet. Ask the tutor to add some.</ListEmpty> : null}
+              <ListEmpty>No lessons yet. Ask the tutor to add some.</ListEmpty>
             </List>
-            {lessons.some((lesson) => lesson.challenge) ? (
-              <Section
-                title="Challenges"
-                info={
-                  <p>
-                    Beyond this course's level: not needed to complete it, but needed to master it.
-                    Come back when the rest feels easy.
-                  </p>
-                }
-              >
-                <List>
-                  {lessons
-                    .filter((lesson) => lesson.challenge)
-                    .map((lesson) => (
-                      <LessonRow key={lesson.id} lesson={lesson} today={today} onOpen={(b) => onOpenLesson(b.id)} />
-                    ))}
-                </List>
-              </Section>
-            ) : null}
-          </Stack>
+          ) : (
+            <CourseLessons lessons={lessons} today={today} onOpen={onOpenLesson} />
+          )
         ) : (
           <Spinner />
         )
@@ -312,28 +302,142 @@ export function CourseDetail({
 }
 
 /**
- * How far the course is: passing each core lesson once completes it; keeping
- * everything up (challenges too) masters it.
+ * How far the course is. Passing each core lesson once completes it, and the
+ * header counts that; after that it counts towards mastering — everything,
+ * challenges too, holding at long gaps — and says what stands in the way.
  */
-function CourseStanding({ lessons }: { lessons: Lesson[] }) {
+function CourseStanding({ lessons, onShowLeft }: { lessons: Lesson[]; onShowLeft: () => void }) {
   const core = lessons.filter((lesson) => !lesson.challenge);
   const passed = core.filter((lesson) => lesson.passed).length;
-  const completed = core.length > 0 && passed === core.length;
-  const mastered =
-    completed &&
-    lessons.every(
-      (lesson) => lesson.passed && lesson.intervalDays >= 30 && (lesson.format !== "writing" || lesson.supportLevel >= 2),
+  const left = core.length - passed;
+  const holding = lessons.filter(holds).length;
+  if (left > 0 || core.length === 0) {
+    return (
+      <Stack gap={2}>
+        <Inline justify="between" gap={2}>
+          <Text variant="small" tone="dim">
+            {`${passed} of ${core.length} passed · ${left} to go`}
+          </Text>
+          {left > 0 ? (
+            <Button size="sm" onClick={onShowLeft}>
+              {`See the ${left} to pass`}
+            </Button>
+          ) : null}
+        </Inline>
+        <Progress value={passed} max={Math.max(1, core.length)} size="sm" />
+      </Stack>
     );
+  }
+  if (holding === lessons.length) {
+    return (
+      <Text variant="small" tone="dim" as="div">
+        🏆 Mastered — everything holds.
+      </Text>
+    );
+  }
+  // What stands in the way of mastering: a writing lesson still done with
+  // help, a challenge not passed; the rest only needs time.
+  const blockers = [
+    ...lessons.filter((lesson) => lesson.passed && writingStep(lesson)).map((l) => `“${l.title}”: ${writingStep(l)} once.`),
+    ...lessons.filter((lesson) => lesson.challenge && !lesson.passed).map((l) => `Challenge “${l.title}”: pass it once.`),
+  ];
   return (
     <Stack gap={2}>
       <Text variant="small" tone="dim" as="div">
-        {mastered
-          ? "🏆 Mastered — everything holds."
-          : completed
-            ? "✓ Completed. Keep its lessons up in your check-ins to master it."
-            : `${passed} of ${core.length} lessons passed — pass each once to complete the course.`}
+        {`✓ Completed · mastery: ${holding} of ${lessons.length} holding`}
       </Text>
-      {completed ? null : <Progress value={passed} max={Math.max(1, core.length)} size="sm" />}
+      <Progress value={holding} max={lessons.length} size="sm" tone="gold" />
+      {blockers.slice(0, 3).map((line) => (
+        <Text key={line} variant="small" as="div">
+          {line}
+        </Text>
+      ))}
+      {blockers.length === 0 ? (
+        <Text variant="small" tone="dim" as="div">
+          The rest needs only time: each check-in you pass spaces a lesson out further, until it comes back
+          a month apart.
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
+/**
+ * A course's lessons by what is left: to pass (what completing needs), passed
+ * and being kept up, holding for good — then the challenges.
+ */
+function CourseLessons({
+  lessons,
+  today,
+  onOpen,
+}: {
+  lessons: Lesson[];
+  today: number;
+  onOpen: (lessonId: number) => void;
+}) {
+  const core = lessons.filter((lesson) => !lesson.challenge);
+  const challenges = lessons.filter((lesson) => lesson.challenge);
+  const toPass = core.filter((lesson) => standing(lesson) === "toPass");
+  const passed = core.filter((lesson) => standing(lesson) === "passed");
+  const holdingNow = core.filter((lesson) => standing(lesson) === "holding");
+  const row = (lesson: Lesson) => {
+    const where = standing(lesson);
+    return (
+      <LessonRow
+        key={lesson.id}
+        lesson={lesson}
+        today={today}
+        status={standingText(lesson, today)}
+        trailing={
+          where === "holding" ? (
+            <Badge tone="gold">✓ Holds</Badge>
+          ) : where === "passed" ? (
+            <Badge tone="mint">✓ Passed</Badge>
+          ) : undefined
+        }
+        onOpen={(l) => onOpen(l.id)}
+      />
+    );
+  };
+  return (
+    <Stack gap={4}>
+      {toPass.length > 0 ? (
+        <Section id="to-pass" title={`To pass · ${toPass.length}`}>
+          <List>{toPass.map(row)}</List>
+        </Section>
+      ) : null}
+      {passed.length > 0 ? (
+        <Section
+          title={`Passed — keep it up · ${passed.length}`}
+          info={
+            <p>
+              Passed once, and coming back in your check-ins further apart each time. A lesson holds
+              for good once it comes back a month apart (writing: done without the word bank and
+              hints).
+            </p>
+          }
+        >
+          <List>{passed.map(row)}</List>
+        </Section>
+      ) : null}
+      {holdingNow.length > 0 ? (
+        <Section title={`Holding · ${holdingNow.length}`}>
+          <List>{holdingNow.map(row)}</List>
+        </Section>
+      ) : null}
+      {challenges.length > 0 ? (
+        <Section
+          title={`Challenges · ${challenges.length}`}
+          info={
+            <p>
+              Beyond this course's level: not needed to complete it, but needed to master it. Come
+              back when the rest feels easy.
+            </p>
+          }
+        >
+          <List>{challenges.map(row)}</List>
+        </Section>
+      ) : null}
     </Stack>
   );
 }

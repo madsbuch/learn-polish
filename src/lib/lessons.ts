@@ -42,6 +42,43 @@ export function dueLabel(lesson: Lesson, today: number): string {
   return `in ${Math.round(days / 30)} months`;
 }
 
+/** The gap, in days, at which a lesson holds for mastering (courses.rs). */
+export const MASTERED_GAP = 30;
+
+/**
+ * Whether a lesson holds the way mastering its course needs: passed, at a gap
+ * of a month or more, and — for writing — done without help.
+ */
+export function holds(lesson: Lesson): boolean {
+  return (
+    lesson.passed && lesson.intervalDays >= MASTERED_GAP && (lesson.format !== "writing" || lesson.supportLevel >= 2)
+  );
+}
+
+/** Where a lesson stands in its course: still to pass, passed, or holding. */
+export type Standing = "toPass" | "passed" | "holding";
+
+export function standing(lesson: Lesson): Standing {
+  return !lesson.passed ? "toPass" : holds(lesson) ? "holding" : "passed";
+}
+
+/** What a writing lesson still needs before it can hold, or null. */
+export function writingStep(lesson: Lesson): string | null {
+  if (lesson.format !== "writing" || lesson.supportLevel >= 2) return null;
+  return lesson.supportLevel === 0 ? "write it without the word bank" : "write it without hints";
+}
+
+/** A lesson's standing in words, for a course's list. */
+export function standingText(lesson: Lesson, today: number): string {
+  if (!lesson.passed) return lesson.reps === 0 ? "Not tried yet" : "Needs another go";
+  const due = dueLabel(lesson, today);
+  const back = due === "due now" ? "due now" : `back ${due}`;
+  if (holds(lesson)) return `Holds · ${back}`;
+  const step = writingStep(lesson);
+  if (step) return `Next: ${step} · ${back}`;
+  return `${Math.min(lesson.intervalDays, MASTERED_GAP)} of ${MASTERED_GAP} days apart · ${back}`;
+}
+
 /** Day number (days since the epoch, local) to a short date. */
 export function dayToDate(day: number): string {
   return new Date(day * 86_400_000).toLocaleDateString(undefined, {
