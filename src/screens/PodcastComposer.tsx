@@ -163,7 +163,7 @@ export function PodcastComposer({
             Facts come from English Wikipedia articles — up to five. Pick them, or leave the list
             empty to use the best match for the subject. The articles are kept with the episode, so
             you can read them afterwards in the app (in Polish too). Today's news comes from the
-            headlines of Polish outlets (through GDELT), told only as far as they go. A story is
+            news feeds of TVN24, Polsat News and RMF24, told only as far as the headlines and summaries go. A story is
             made up, from no articles.
           </p>
         }
@@ -181,8 +181,8 @@ export function PodcastComposer({
             />
             {news ? (
               <Text variant="small" tone="dim">
-                What's going on in Poland: the day's headlines from Polish outlets (the last week's, for
-                a subject), with Wikipedia for background. The stories are listed with the episode.
+                What's going on in Poland: the latest stories from TVN24, Polsat News and RMF24, with
+                Wikipedia for background. The stories are listed with the episode.
               </Text>
             ) : story ? (
               <Text variant="small" tone="dim">

@@ -333,9 +333,9 @@ fn cast_of(cast: &str, story: bool) -> &'static str {
     }
 }
 
-const NEWS_PICKER: &str = r#"You pick stories for a short news podcast for an adult learning Polish. You are given today's Polish headlines, numbered.
+const NEWS_PICKER: &str = r#"You pick stories for a short news podcast for an adult learning Polish. You are given the latest headlines from Polish news outlets, numbered, newest first, some with the start of a summary.
 
-Choose 4–6 different stories worth telling: a mix (politics, society, the economy, culture, science, sport, something light) rather than all crime or accidents, and nothing graphic. When several headlines are the same story, group their numbers. Where there is a choice, prefer stories that touch what the learner cares about. If the learner asked for a subject, choose stories about it.
+Choose 4–6 different stories worth telling: a mix (politics, society, the economy, culture, science, sport, something light) rather than all crime or accidents, and nothing graphic. When several headlines are the same story, group their numbers. Prefer the last day's news; where there is a choice, prefer stories that touch what the learner cares about. If the learner asked for a subject (perhaps in English — the headlines are Polish), choose only stories about it, as few as there are; if none are, reply {"stories": []}.
 
 For each story name 0–2 English Wikipedia articles that give useful background — the people, places or organisations it is about — by their exact titles, only articles that surely exist.
 
@@ -349,13 +349,9 @@ const BACKGROUND_LIMIT: usize = 5;
 /// two headlines, with their pages' summaries) and Wikipedia articles for
 /// background.
 async fn gather_news(db: &Db, subject: &str) -> Result<(Vec<wiki::Article>, Vec<Vec<news::Headline>>)> {
-    let headlines = news::headlines(subject).await?;
+    let headlines = news::headlines().await?;
     if headlines.is_empty() {
-        return Err(Error::msg(if subject.trim().is_empty() {
-            "No news came back from the news index just now. Try again in a little while.".to_string()
-        } else {
-            format!("No recent news about “{}”. Try a broader subject, or none.", subject.trim())
-        }));
+        return Err(Error::msg("The news feeds had no stories just now. Try again in a little while."));
     }
     let (key, model, brief) = {
         let mut guard = db.lock();
@@ -370,7 +366,12 @@ async fn gather_news(db: &Db, subject: &str) -> Result<(Vec<wiki::Article>, Vec<
         }
         brief.push_str("Headlines:\n");
         for (i, h) in headlines.iter().enumerate() {
-            brief.push_str(&format!("{i}. {} ({})\n", h.title, h.outlet));
+            let gist: String = h.summary.chars().take(140).collect();
+            if gist.is_empty() {
+                brief.push_str(&format!("{i}. {} ({}, {})\n", h.title, h.outlet, h.date));
+            } else {
+                brief.push_str(&format!("{i}. {} — {gist} ({}, {})\n", h.title, h.outlet, h.date));
+            }
         }
         (ai::api_key(conn)?, songs::songwriter_model(conn)?, brief)
     };
@@ -379,16 +380,22 @@ async fn gather_news(db: &Db, subject: &str) -> Result<(Vec<wiki::Article>, Vec<
     let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::SONGWRITER, &model, reply.cost, "news", reply.tokens);
     let (picked, background) = parse_picks(&reply.text, headlines.len());
     if picked.is_empty() {
-        return Err(Error::msg("No stories could be chosen from today's news. Try again."));
+        return Err(Error::msg(if subject.trim().is_empty() {
+            "No stories could be chosen from today's news. Try again.".to_string()
+        } else {
+            format!("Nothing in the latest news is about “{}”. Try a broader subject, or none.", subject.trim())
+        }));
     }
 
-    // Each story's page summary: read side by side, a page at a time each.
+    // A story the feed gives no summary of: the page's own, read side by side.
     let mut stories: Vec<Vec<news::Headline>> =
         picked.iter().map(|ids| ids.iter().map(|&i| headlines[i].clone()).collect()).collect();
     let pages: Vec<(usize, usize, String)> = stories
         .iter()
         .enumerate()
-        .flat_map(|(s, story)| story.iter().enumerate().map(move |(h, head)| (s, h, head.url.clone())))
+        .flat_map(|(s, story)| {
+            story.iter().enumerate().filter(|(_, head)| head.summary.is_empty()).map(move |(h, head)| (s, h, head.url.clone()))
+        })
         .collect();
     let summaries = futures_util::future::join_all(pages.iter().map(|(_, _, url)| news::summary(url))).await;
     for ((s, h, _), summary) in pages.iter().zip(summaries) {

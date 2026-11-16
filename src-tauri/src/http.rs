@@ -41,7 +41,7 @@ pub fn wikipedia() -> &'static reqwest::Client {
     })
 }
 
-/// GDELT's news index, and the news pages its headlines point to (only their
+/// News outlets' RSS feeds, and the pages their stories point to (only their
 /// short summaries are read). Pages are given little time: a slow site is
 /// simply left without a summary.
 pub fn news() -> &'static reqwest::Client {

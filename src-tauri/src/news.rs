@@ -1,133 +1,197 @@
-//! Today's news in Polish, for news podcasts: headlines from GDELT's free
-//! news index (no key), and each chosen story's own short summary, read from
-//! the page it points to.
+//! Today's news in Polish, for news podcasts: the latest stories from the
+//! RSS feeds of Polish news outlets, and each chosen story's own short
+//! summary.
 //!
-//! GDELT gives a headline, a link, the outlet, when it was seen and a
-//! picture — not the article. The summary publishers put in every page (for
-//! link previews, even behind a paywall) adds a sentence or two. That is all
-//! an episode is written from, besides Wikipedia for background: the articles
-//! themselves belong to their publishers and are only linked to.
+//! A feed gives a headline, a link, when it was published, usually a picture,
+//! and sometimes a summary. Where it has none, the summary the page gives of
+//! itself (for link previews, even behind a paywall) adds a sentence or two.
+//! That is all an episode is written from, besides Wikipedia for background:
+//! the articles themselves belong to their outlets and are only linked to.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::error::{Error, Result};
 
 /// The country, as episodes name it.
 pub const PLACE: &str = "Poland";
-/// GDELT's names for where the news comes from and the language it is in.
-const COUNTRY: &str = "poland";
-const LANGUAGE: &str = "polish";
-/// If GDELT will not take a query of filters alone: words nearly every
-/// Polish news story contains.
-const FALLBACK_TERMS: &str = r#"("polska" OR "polski" OR "polskie")"#;
 
-const API: &str = "https://api.gdeltproject.org/api/v2/doc/doc";
-/// How many headlines the writer chooses from.
-const HEADLINES: usize = 75;
+/// The feeds read, as (outlet, address). Several sections of one outlet
+/// give a broader mix; the same story in two of them is told once. A feed
+/// that does not answer is left out.
+const FEEDS: &[(&str, &str)] = &[
+    ("tvn24.pl", "https://tvn24.pl/najnowsze.xml"),
+    ("polsatnews.pl", "https://www.polsatnews.pl/rss/wszystkie.xml"),
+    ("rmf24.pl", "https://www.rmf24.pl/feed"),
+];
+
+/// How many headlines the writer chooses from, newest first.
+const HEADLINES: usize = 120;
 /// The most of a page read for its summary: the summary is in the head.
 const PAGE_LIMIT: usize = 400_000;
+/// A feed's "summary" shorter than this (or the headline again) is none.
+const SUMMARY_MIN: usize = 40;
 
-/// A news story's headline, as GDELT has it.
+/// A news story, as its outlet's feed has it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Headline {
     pub title: String,
     pub url: String,
-    /// The outlet's address, e.g. "pap.pl".
+    /// The outlet, e.g. "tvn24.pl".
     pub outlet: String,
-    /// When GDELT saw it: "2026-11-16".
+    /// When it was published: "2026-11-16".
     pub date: String,
     /// The story's picture, if it has one.
     pub image: String,
-    /// The page's own short summary, once read.
+    /// A sentence or two on the story: the feed's, or the page's own.
     pub summary: String,
+    /// When it was published, for putting the newest first (seconds since
+    /// 1970, roughly: the zone is ignored).
+    #[serde(skip)]
+    pub sort_key: i64,
 }
 
-/// GDELT's search: the outlet's country and language, and the subject's
-/// words when there is a subject. A subject in several words is a phrase.
-fn query(subject: &str, fallback: bool) -> String {
-    let mut parts = vec![format!("sourcecountry:{COUNTRY}"), format!("sourcelang:{LANGUAGE}")];
-    let subject = subject.trim().replace('"', "");
-    if !subject.is_empty() {
-        parts.push(if subject.contains(' ') { format!("\"{subject}\"") } else { subject });
-    } else if fallback {
-        parts.push(FALLBACK_TERMS.to_string());
+/// The latest stories from every feed, newest first, each once. The subject
+/// (if any) is for the writer to choose by: feeds cannot be searched.
+pub async fn headlines() -> Result<Vec<Headline>> {
+    let pages = futures_util::future::join_all(FEEDS.iter().map(|(outlet, url)| async move {
+        let response = crate::http::news().get(*url).send().await.ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        let body = response.text().await.ok()?;
+        Some(parse_feed(&body, outlet))
+    }))
+    .await;
+    if pages.iter().all(Option::is_none) {
+        return Err(Error::msg("None of the news feeds answered. Check the connection and try again."));
     }
-    parts.join(" ")
+    Ok(merge(pages.into_iter().flatten().collect()))
 }
 
-/// The latest headlines from Polish outlets, about `subject` if one is given
-/// (over the last week then; else the last day).
-pub async fn headlines(subject: &str) -> Result<Vec<Headline>> {
-    let timespan = if subject.trim().is_empty() { "1d" } else { "7d" };
-    match fetch_headlines(&query(subject, false), timespan).await {
-        Ok(found) if !found.is_empty() => Ok(found),
-        // Filters alone may be refused, or find nothing: try with words.
-        _ if subject.trim().is_empty() => fetch_headlines(&query(subject, true), timespan).await,
-        other => other,
-    }
-}
-
-async fn fetch_headlines(query: &str, timespan: &str) -> Result<Vec<Headline>> {
-    let max = HEADLINES.to_string();
-    let request = || {
-        crate::http::news().get(API).query(&[
-            ("query", query),
-            ("mode", "artlist"),
-            ("format", "json"),
-            ("maxrecords", max.as_str()),
-            ("timespan", timespan),
-            ("sort", "hybridrel"),
-        ])
-    };
-    let unreachable = |e: reqwest::Error| Error::msg(format!("Could not reach the news index (GDELT): {e}"));
-    let mut body = request().send().await.map_err(unreachable)?.text().await.map_err(unreachable)?;
-    // GDELT asks for a pause between requests, and says so in plain text.
-    if body.to_lowercase().contains("limit requests") {
-        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
-        body = request().send().await.map_err(unreachable)?.text().await.map_err(unreachable)?;
-    }
-    parse_headlines(&body)
-}
-
-/// GDELT's answer: JSON with the articles, or (for a query it will not
-/// take) a sentence saying why.
-pub fn parse_headlines(body: &str) -> Result<Vec<Headline>> {
-    let trimmed = body.trim();
-    if trimmed.is_empty() || trimmed == "{}" {
-        return Ok(Vec::new());
-    }
-    let value: Value = serde_json::from_str(trimmed).map_err(|_| {
-        Error::msg(format!("The news index said: {}", trimmed.chars().take(200).collect::<String>()))
-    })?;
+/// Every feed's stories as one list: newest first, the same headline once.
+fn merge(feeds: Vec<Vec<Headline>>) -> Vec<Headline> {
+    let mut all: Vec<Headline> = feeds.into_iter().flatten().collect();
+    all.sort_by(|a, b| b.sort_key.cmp(&a.sort_key));
     let mut seen: Vec<String> = Vec::new();
+    all.retain(|h| {
+        let key: String = h.title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+        let fresh = !seen.contains(&key);
+        if fresh {
+            seen.push(key);
+        }
+        fresh && !h.url.is_empty()
+    });
+    // One story can be in two sections under one address.
+    let mut urls: Vec<String> = Vec::new();
+    all.retain(|h| {
+        let fresh = !urls.contains(&h.url);
+        urls.push(h.url.clone());
+        fresh
+    });
+    all.truncate(HEADLINES);
+    all
+}
+
+/// The stories in an RSS feed.
+pub fn parse_feed(xml: &str, outlet: &str) -> Vec<Headline> {
     let mut out = Vec::new();
-    for article in value["articles"].as_array().into_iter().flatten() {
-        let title = crate::text::clean(&decode_entities(article["title"].as_str().unwrap_or_default()));
-        let url = article["url"].as_str().unwrap_or_default().to_string();
-        // The same story from two outlets, or twice from one: once.
-        let key: String = title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
-        if title.is_empty() || !url.starts_with("http") || seen.contains(&key) {
+    let mut from = 0;
+    while let Some(at) = xml[from..].find("<item") {
+        let start = from + at;
+        let Some(end) = xml[start..].find("</item>").map(|e| start + e) else { break };
+        let item = &xml[start..end];
+        from = end + 7;
+
+        let title = crate::text::clean(&strip_tags(&decode_entities(&element(item, "title").unwrap_or_default())));
+        let url = decode_entities(&element(item, "link").unwrap_or_default()).trim().to_string();
+        if title.is_empty() || !url.starts_with("http") {
             continue;
         }
-        seen.push(key);
-        let seen_at = article["seendate"].as_str().unwrap_or_default();
-        let date = if seen_at.len() >= 8 && seen_at.is_ascii() {
-            format!("{}-{}-{}", &seen_at[0..4], &seen_at[4..6], &seen_at[6..8])
-        } else {
+        let description = element(item, "description").map(|d| decode_entities(&d)).unwrap_or_default();
+        let summary = crate::text::clean(&strip_tags(&description));
+        let summary = if summary.chars().count() < SUMMARY_MIN || summary.starts_with(&title) {
             String::new()
+        } else {
+            summary.chars().take(600).collect()
         };
-        out.push(Headline {
-            title,
-            url,
-            outlet: article["domain"].as_str().unwrap_or_default().to_string(),
-            date,
-            image: article["socialimage"].as_str().filter(|s| s.starts_with("https://")).unwrap_or_default().to_string(),
-            summary: String::new(),
-        });
+        let image = attribute_of(item, "media:content", "url")
+            .or_else(|| attribute_of(item, "enclosure", "url"))
+            .or_else(|| attribute_of(&description, "img", "src"))
+            .map(|u| decode_entities(&u))
+            .filter(|u| u.starts_with("https://"))
+            .unwrap_or_default();
+        let (date, sort_key) = element(item, "pubDate").and_then(|d| published(&d)).unwrap_or_default();
+        out.push(Headline { title, url, outlet: outlet.to_string(), date, image, summary, sort_key });
     }
-    Ok(out)
+    out
+}
+
+/// An element's text in an item, without its CDATA wrapping.
+fn element(item: &str, name: &str) -> Option<String> {
+    let open = format!("<{name}");
+    let mut at = 0;
+    // `<title` must not match `<titleSomething`.
+    let start = loop {
+        let found = at + item[at..].find(&open)?;
+        let next = item[found + open.len()..].chars().next()?;
+        if next == '>' || next == ' ' || next == '\n' || next == '\t' {
+            break found;
+        }
+        at = found + open.len();
+    };
+    let body = start + item[start..].find('>')? + 1;
+    if item[..body].ends_with("/>") {
+        return None;
+    }
+    let end = body + item[body..].find(&format!("</{name}>"))?;
+    let text = item[body..end].trim();
+    let text = text.strip_prefix("<![CDATA[").and_then(|t| t.strip_suffix("]]>")).unwrap_or(text);
+    Some(text.trim().to_string())
+}
+
+/// An attribute of the first tag of that name: `<enclosure url="…">`.
+fn attribute_of(text: &str, tag: &str, name: &str) -> Option<String> {
+    let start = text.find(&format!("<{tag} "))?;
+    let end = start + text[start..].find('>')?;
+    let lower = text[start..end].to_ascii_lowercase();
+    attribute(&text[start..end], &lower, name)
+}
+
+/// Text without its markup.
+fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut inside = false;
+    for c in html.chars() {
+        match c {
+            '<' => inside = true,
+            '>' if inside => {
+                inside = false;
+                out.push(' ');
+            }
+            _ if !inside => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// "Mon, 16 Nov 2026 15:20:05 GMT" as "2026-11-16", and a key that orders
+/// it (the zone is ignored: an hour either way does not matter here).
+fn published(text: &str) -> Option<(String, i64)> {
+    let parts: Vec<&str> = text.split_whitespace().collect();
+    // The weekday is optional.
+    let parts = if parts.first()?.ends_with(',') { &parts[1..] } else { &parts[..] };
+    let day: i64 = parts.first()?.parse().ok()?;
+    let month = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+        .iter()
+        .position(|m| parts.get(1).is_some_and(|p| p.to_ascii_lowercase().starts_with(m)))? as i64
+        + 1;
+    let year: i64 = parts.get(2)?.parse().ok()?;
+    let mut clock = parts.get(3).unwrap_or(&"0:0:0").split(':').map(|n| n.parse::<i64>().unwrap_or(0));
+    let (h, m, s) = (clock.next().unwrap_or(0), clock.next().unwrap_or(0), clock.next().unwrap_or(0));
+    let key = ((((year * 12 + month) * 31 + day) * 24 + h) * 60 + m) * 60 + s;
+    Some((format!("{year}-{month:02}-{day:02}"), key))
 }
 
 /// The short summary a page gives of itself (for link previews), if it has
@@ -258,37 +322,73 @@ pub fn decode_entities(text: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Reads the real feeds: `cargo test live_feeds -- --ignored --nocapture`.
     #[test]
-    fn the_query_asks_for_polish_outlets_and_the_subject() {
-        assert_eq!(query("", false), format!("sourcecountry:{COUNTRY} sourcelang:{LANGUAGE}"));
-        assert!(query("", true).ends_with(FALLBACK_TERMS));
-        assert!(query("rowery", false).ends_with(" rowery"));
-        assert!(query("the \"royal\" family", false).ends_with(" \"the royal family\""), "{}", query("the \"royal\" family", false));
+    #[ignore]
+    fn live_feeds() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let found = runtime.block_on(headlines()).unwrap();
+        for h in found.iter().take(8) {
+            println!("{} | {} | {} | img={} | {}", h.date, h.outlet, h.title, !h.image.is_empty(), h.summary.chars().take(60).collect::<String>());
+        }
+        println!("{} stories", found.len());
+        assert!(found.len() >= 20);
+        let page = runtime.block_on(summary(&found[0].url));
+        println!("page summary of the first: {page:?}");
     }
 
     #[test]
-    fn headlines_are_read_once_each_with_their_date() {
-        let body = r#"{"articles": [
-            {"url": "https://www.dr.dk/nyheder/a", "title": "Rząd &amp; pogoda", "seendate": "20261116T081500Z",
-             "socialimage": "https://www.dr.dk/a.jpg", "domain": "dr.dk", "language": "Polish", "sourcecountry": "Poland"},
-            {"url": "https://tv2.dk/a", "title": "Rząd & pogoda!", "seendate": "20261116T090000Z", "domain": "tv2.dk"},
-            {"url": "not a link", "title": "Broken", "seendate": ""},
-            {"url": "https://politiken.dk/b", "title": "Nowy most w Krakowie", "seendate": "20261115T120000Z",
-             "socialimage": "http://insecure/x.jpg", "domain": "politiken.dk"}
-        ]}"#;
-        let found = parse_headlines(body).unwrap();
+    fn feeds_give_their_stories_with_dates_pictures_and_summaries() {
+        let feed = r#"<?xml version="1.0"?><rss><channel><title>TVN24</title>
+            <item>
+              <title><![CDATA[Rząd &amp; pogoda]]></title>
+              <link>https://tvn24.pl/a</link>
+              <pubDate>Mon, 16 Nov 2026 15:20:05 GMT</pubDate>
+              <media:content url="https://tvn24.pl/a.jpg?im=x&amp;y=1" medium="image"/>
+            </item>
+            <item>
+              <title>Nowy most w Krakowie</title>
+              <description><![CDATA[<p><img src="https://x.pl/b.jpg" alt="" />Most ma być gotowy w 2030 roku, powiedział dziś minister.</p>]]></description>
+              <link>https://polsatnews.pl/b</link>
+              <pubDate>16 Nov 2026 16:01:00 +0100</pubDate>
+            </item>
+            <item><title>Bez linku</title></item>
+            <item>
+              <title>Krótko</title><link>https://rmf24.pl/c</link>
+              <description>Krótko</description>
+              <enclosure url="http://insecure/c.jpg" type="image/jpeg"/>
+            </item>
+          </channel></rss>"#;
+        let found = parse_feed(feed, "tvn24.pl");
         let shape: Vec<(&str, &str, &str, &str)> =
-            found.iter().map(|h| (h.title.as_str(), h.outlet.as_str(), h.date.as_str(), h.image.as_str())).collect();
+            found.iter().map(|h| (h.title.as_str(), h.date.as_str(), h.image.as_str(), h.summary.as_str())).collect();
         assert_eq!(
             shape,
             [
-                ("Rząd & pogoda", "dr.dk", "2026-11-16", "https://www.dr.dk/a.jpg"),
-                ("Nowy most w Krakowie", "politiken.dk", "2026-11-15", ""),
+                ("Rząd & pogoda", "2026-11-16", "https://tvn24.pl/a.jpg?im=x&y=1", ""),
+                ("Nowy most w Krakowie", "2026-11-16", "https://x.pl/b.jpg", "Most ma być gotowy w 2030 roku, powiedział dziś minister."),
+                ("Krótko", "", "", ""),
             ]
         );
-        assert!(parse_headlines("{}").unwrap().is_empty());
-        let refused = parse_headlines("Your search contained no keywords.").unwrap_err();
-        assert!(refused.to_string().contains("no keywords"));
+        assert!(found[1].sort_key > found[0].sort_key);
+    }
+
+    #[test]
+    fn stories_from_every_feed_are_merged_newest_first_once_each() {
+        let story = |title: &str, url: &str, key: i64| Headline {
+            title: title.into(),
+            url: url.into(),
+            sort_key: key,
+            ..Default::default()
+        };
+        let merged = merge(vec![
+            vec![story("Old news", "https://a/1", 1), story("Big story", "https://a/2", 5)],
+            vec![story("Big story!", "https://b/2", 6), story("Other", "https://a/1", 3), story("Fresh", "https://b/3", 9)],
+        ]);
+        let titles: Vec<&str> = merged.iter().map(|h| h.title.as_str()).collect();
+        assert_eq!(titles, ["Fresh", "Big story!", "Other"], "same headline once, same link once");
+        assert_eq!(published("Mon, 16 Nov 2026 15:20:05 GMT").unwrap().0, "2026-11-16");
+        assert_eq!(published("nonsense"), None);
     }
 
     #[test]
