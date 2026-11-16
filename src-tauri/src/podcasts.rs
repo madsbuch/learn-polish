@@ -358,8 +358,13 @@ pub fn normalize_episode(mut draft: SongDraft) -> Result<SongDraft> {
 /// Asks the writer for a script, or a revision of one.
 #[tauri::command]
 pub async fn podcast_draft(db: State<'_, Db>, request: PodcastRequest) -> Result<SongDraft> {
+    write_episode(&db, request).await
+}
+
+/// The writer at work: used by the composer and by the tutor.
+pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft> {
     if let Some(previous) = &request.previous {
-        return revise(&db, previous, &request.feedback).await;
+        return revise(db, previous, &request.feedback).await;
     }
     let format = if FORMATS.contains(&request.format.as_str()) { request.format.as_str() } else { DEFAULT_FORMAT };
     let length = if songs::SONG_LENGTHS.contains(&request.length.as_str()) { request.length.as_str() } else { "medium" };
@@ -472,6 +477,12 @@ async fn revise(db: &Db, previous: &SongDraft, feedback: &str) -> Result<SongDra
 /// as `songs://changed` events, like a song's.
 #[tauri::command]
 pub async fn podcast_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft) -> Result<Song> {
+    let id = start_episode(&app, &db, draft)?;
+    songs::load_song(&mut db.lock(), id)
+}
+
+/// Saves a finished script and starts reading it in the background.
+pub fn start_episode(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
     let draft = normalize_episode(draft)?;
     let id = {
         let mut guard = db.lock();
@@ -480,8 +491,8 @@ pub async fn podcast_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft)
         songs::insert_song(conn, &draft, ai::SPEECH_MODEL)?
     };
     spawn_render(app.clone(), id);
-    songs::notify(&app, id);
-    songs::load_song(&mut db.lock(), id)
+    songs::notify(app, id);
+    Ok(id)
 }
 
 /// Puts the episode's audio together again, with new settings if given.
