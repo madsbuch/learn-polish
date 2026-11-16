@@ -14,7 +14,7 @@ use tauri::State;
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
 use crate::files;
-use crate::schema::{lessons, wiki_sources};
+use crate::schema::{lessons, songs, wiki_sources};
 
 /// How often a lesson's lesson is compared with its sources again.
 pub const CHECK_EVERY_DAYS: i64 = 90;
@@ -36,6 +36,9 @@ pub struct Article {
     pub thumbnail: Option<String>,
     /// The same article's title on Polish Wikipedia.
     pub polish_title: Option<String>,
+    /// The article as Wikipedia lays it out (HTML), for the reader; fetched
+    /// only by `fetch_with_layout`.
+    pub html: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -182,7 +185,39 @@ pub async fn fetch(lang: &str, title: &str) -> Result<Article> {
         content,
         thumbnail: page.pointer("/thumbnail/source").and_then(Value::as_str).map(str::to_string),
         polish_title: page.pointer("/langlinks/0/title").and_then(Value::as_str).map(str::to_string),
+        html: None,
     })
+}
+
+/// The article as Wikipedia lays it out: its HTML, with sections, lists,
+/// tables, the infobox and figures. The reader turns it into the app's own
+/// elements (it is never inserted as HTML).
+pub async fn fetch_html(lang: &str, title: &str) -> Result<String> {
+    let body = get(
+        lang,
+        &[
+            ("action", "parse"),
+            ("page", title),
+            ("redirects", "1"),
+            ("prop", "text"),
+            ("disableeditsection", "1"),
+            ("disabletoc", "1"),
+        ],
+    )
+    .await?;
+    body.pointer("/parse/text")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|html| !html.trim().is_empty())
+        .ok_or_else(|| Error::msg("Wikipedia sent the article without its text."))
+}
+
+/// An article with its layout. The layout is a nicety: without it the reader
+/// shows the plain text.
+pub async fn fetch_with_layout(lang: &str, title: &str) -> Result<Article> {
+    let mut article = fetch(lang, title).await?;
+    article.html = fetch_html(lang, &article.title).await.ok();
+    Ok(article)
 }
 
 /// The article's current revision, without its text: is it still the same?
@@ -198,12 +233,22 @@ pub async fn current_revision(lang: &str, title: &str) -> Result<i64> {
 // Sources of a lesson
 // ---------------------------------------------------------------------------
 
-/// A source as the lesson page shows it.
+/// Whose source it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Owner {
+    /// A study lesson, which is written from it and checked against it.
+    Lesson(i64),
+    /// A podcast episode, which is written from it.
+    Song(i64),
+}
+
+/// A source as a lesson's or an episode's page shows it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
     pub id: i64,
-    pub lesson_id: i64,
+    pub lesson_id: Option<i64>,
+    pub song_id: Option<i64>,
     pub lang: String,
     pub title: String,
     pub url: String,
@@ -214,20 +259,20 @@ pub struct Source {
     pub checked_at: i64,
 }
 
-type SourceRow = (i64, i64, String, String, String, String, Option<i64>, Option<String>, i64);
+type SourceRow = (i64, Option<i64>, Option<i64>, String, String, String, String, Option<i64>, Option<String>, i64);
 
 fn source_from(row: SourceRow) -> Source {
-    let (id, lesson_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
-    Source { id, lesson_id, lang, title, url, summary, image_file_id, polish_title, checked_at }
+    let (id, lesson_id, song_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
+    Source { id, lesson_id, song_id, lang, title, url, summary, image_file_id, polish_title, checked_at }
 }
 
-pub fn sources_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<Source>> {
-    Ok(wiki_sources::table
-        .filter(wiki_sources::lesson_id.eq(lesson_id))
+fn owned_by(conn: &mut Conn, owner: Owner) -> Result<Vec<Source>> {
+    let query = wiki_sources::table
         .order((wiki_sources::ord, wiki_sources::id))
         .select((
             wiki_sources::id,
             wiki_sources::lesson_id,
+            wiki_sources::song_id,
             wiki_sources::lang,
             wiki_sources::title,
             wiki_sources::url,
@@ -236,10 +281,20 @@ pub fn sources_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<Source>> {
             wiki_sources::pl_title,
             wiki_sources::checked_at,
         ))
-        .load::<SourceRow>(conn)?
-        .into_iter()
-        .map(source_from)
-        .collect())
+        .into_boxed();
+    let query = match owner {
+        Owner::Lesson(id) => query.filter(wiki_sources::lesson_id.eq(id)),
+        Owner::Song(id) => query.filter(wiki_sources::song_id.eq(id)),
+    };
+    Ok(query.load::<SourceRow>(conn)?.into_iter().map(source_from).collect())
+}
+
+pub fn sources_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<Source>> {
+    owned_by(conn, Owner::Lesson(lesson_id))
+}
+
+pub fn sources_of_song(conn: &mut Conn, song_id: i64) -> Result<Vec<Source>> {
+    owned_by(conn, Owner::Song(song_id))
 }
 
 /// Stores an article as a source of a study lesson (replacing an earlier
@@ -251,15 +306,40 @@ pub fn store(
     polish: Option<&Article>,
     picture: Option<(String, Vec<u8>)>,
 ) -> Result<Source> {
-    let kind: String = lessons::table
-        .find(lesson_id)
-        .select(lessons::kind)
-        .first(conn)
-        .optional()?
-        .ok_or_else(|| Error::msg("That lesson no longer exists."))?;
-    if kind != "study" {
-        return Err(Error::msg("Only study lessons take sources."));
-    }
+    store_for(conn, Owner::Lesson(lesson_id), article, polish, picture)
+}
+
+/// Stores an article as a source of a lesson or an episode.
+pub fn store_for(
+    conn: &mut Conn,
+    owner: Owner,
+    article: &Article,
+    polish: Option<&Article>,
+    picture: Option<(String, Vec<u8>)>,
+) -> Result<Source> {
+    let (lesson_id, song_id) = match owner {
+        Owner::Lesson(id) => {
+            let kind: String = lessons::table
+                .find(id)
+                .select(lessons::kind)
+                .first(conn)
+                .optional()?
+                .ok_or_else(|| Error::msg("That lesson no longer exists."))?;
+            if kind != "study" {
+                return Err(Error::msg("Only study lessons take sources."));
+            }
+            (Some(id), None)
+        }
+        Owner::Song(id) => {
+            songs::table
+                .find(id)
+                .select(songs::id)
+                .first::<i64>(conn)
+                .optional()?
+                .ok_or_else(|| Error::msg("That podcast no longer exists."))?;
+            (None, Some(id))
+        }
+    };
     let image = match picture {
         Some((mime, bytes)) => Some(files::store(
             conn,
@@ -271,12 +351,11 @@ pub fn store(
         None => None,
     };
     let now = db::now_secs();
-    let ord: i64 = wiki_sources::table
-        .filter(wiki_sources::lesson_id.eq(lesson_id))
-        .count()
-        .get_result(conn)?;
+    let siblings = owned_by(conn, owner)?;
+    let ord = siblings.len() as i64;
     let existing: Option<(i64, Option<i64>)> = wiki_sources::table
-        .filter(wiki_sources::lesson_id.eq(lesson_id))
+        .filter(wiki_sources::lesson_id.is(lesson_id))
+        .filter(wiki_sources::song_id.is(song_id))
         .filter(wiki_sources::lang.eq(&article.lang))
         .filter(wiki_sources::pageid.eq(article.pageid))
         .select((wiki_sources::id, wiki_sources::image_file_id))
@@ -308,6 +387,7 @@ pub fn store(
         None => diesel::insert_into(wiki_sources::table)
             .values((
                 wiki_sources::lesson_id.eq(lesson_id),
+                wiki_sources::song_id.eq(song_id),
                 wiki_sources::ord.eq(ord),
                 wiki_sources::lang.eq(&article.lang),
                 wiki_sources::pageid.eq(article.pageid),
@@ -316,23 +396,36 @@ pub fn store(
             .returning(wiki_sources::id)
             .get_result(conn)?,
     };
-    Ok(sources_of(conn, lesson_id)?.into_iter().find(|s| s.id == id).expect("just stored"))
+    // The layout is kept unless a new one came with the article.
+    if let Some(html) = &article.html {
+        diesel::update(wiki_sources::table.find(id)).set(wiki_sources::html.eq(html)).execute(conn)?;
+    }
+    if let Some(html) = polish.and_then(|p| p.html.as_ref()) {
+        diesel::update(wiki_sources::table.find(id)).set(wiki_sources::pl_html.eq(html)).execute(conn)?;
+    }
+    Ok(owned_by(conn, owner)?.into_iter().find(|s| s.id == id).expect("just stored"))
 }
 
 /// Fetches an article and attaches it to a study lesson: the tutor's
 /// attach_source, for new and existing lessons alike.
 pub async fn attach(db: &Db, lesson_id: i64, lang: &str, title: &str) -> Result<Source> {
-    let article = fetch(lang, title).await?;
+    attach_to(db, Owner::Lesson(lesson_id), lang, title).await
+}
+
+/// Fetches an article with its layout, its Polish version and its picture,
+/// and keeps it as a lesson's or an episode's source.
+pub async fn attach_to(db: &Db, owner: Owner, lang: &str, title: &str) -> Result<Source> {
+    let article = fetch_with_layout(lang, title).await?;
     // Reading practice: the Polish version, when there is one.
     let polish = match (&article.polish_title, lang) {
-        (Some(pl), l) if l != "pl" => fetch("pl", pl).await.ok(),
+        (Some(pl), l) if l != "pl" => fetch_with_layout("pl", pl).await.ok(),
         _ => None,
     };
     let picture = match &article.thumbnail {
         Some(url) => download_picture(url).await.ok(),
         None => None,
     };
-    store(&mut db.lock(), lesson_id, &article, polish.as_ref(), picture)
+    store_for(&mut db.lock(), owner, &article, polish.as_ref(), picture)
 }
 
 async fn download_picture(url: &str) -> Result<(String, Vec<u8>)> {
@@ -406,10 +499,14 @@ pub struct FactCheck {
 
 /// Lessons whose sources have not been compared with Wikipedia for three months.
 pub fn lessons_due(conn: &mut Conn, now: i64) -> Result<Vec<i64>> {
+    // Only lessons are checked: an episode is recorded once, as it was written.
     let mut ids: Vec<i64> = wiki_sources::table
         .filter(wiki_sources::checked_at.lt(now - CHECK_EVERY_DAYS * 86_400))
         .select(wiki_sources::lesson_id)
-        .load(conn)?;
+        .load::<Option<i64>>(conn)?
+        .into_iter()
+        .flatten()
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
@@ -465,9 +562,9 @@ pub async fn fact_check(db: &Db, lesson_id: i64, force: bool) -> Result<FactChec
             continue;
         }
         changed = true;
-        let article = fetch(lang, article_title).await?;
+        let article = fetch_with_layout(lang, article_title).await?;
         let polish = match (&article.polish_title, lang.as_str()) {
-            (Some(pl), l) if l != "pl" => fetch("pl", pl).await.ok(),
+            (Some(pl), l) if l != "pl" => fetch_with_layout("pl", pl).await.ok(),
             _ => None,
         };
         store(&mut db.lock(), lesson_id, &article, polish.as_ref(), None)?;
@@ -567,30 +664,67 @@ pub struct ArticleView {
     pub lang: String,
     pub title: String,
     pub url: String,
+    /// The plain text, as markdown: shown when there is no layout.
     pub content: String,
+    /// The article as Wikipedia lays it out (HTML), when it is known.
+    pub html: Option<String>,
 }
 
 #[tauri::command]
 pub async fn source_article(db: State<'_, Db>, source_id: i64, polish: bool) -> Result<ArticleView> {
-    let row: (String, String, String, String, Option<String>, Option<String>, Option<String>) = wiki_sources::table
+    type Row = (String, String, String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    let row: Row = wiki_sources::table
         .find(source_id)
         .select((
             wiki_sources::lang,
             wiki_sources::title,
             wiki_sources::url,
             wiki_sources::content,
+            wiki_sources::html,
             wiki_sources::pl_title,
             wiki_sources::pl_url,
             wiki_sources::pl_content,
+            wiki_sources::pl_html,
         ))
         .first(&mut *db.lock())
         .optional()?
         .ok_or_else(|| Error::msg("That source no longer exists."))?;
-    let (lang, title, url, content, pl_title, pl_url, pl_content) = row;
-    Ok(match (polish, pl_title, pl_url, pl_content) {
-        (true, Some(title), Some(url), Some(content)) => ArticleView { lang: "pl".into(), title, url, content },
-        _ => ArticleView { lang, title, url, content },
-    })
+    let (lang, title, url, content, html, pl_title, pl_url, pl_content, pl_html) = row;
+    let (mut view, in_polish) = match (polish, pl_title, pl_url, pl_content) {
+        (true, Some(title), Some(url), Some(content)) => {
+            (ArticleView { lang: "pl".into(), title, url, content, html: pl_html }, true)
+        }
+        _ => (ArticleView { lang, title, url, content, html }, false),
+    };
+    // Sources kept before the reader showed layouts get theirs the first
+    // time they are read online; offline, the plain text does.
+    if view.html.is_none() {
+        if let Ok(html) = fetch_html(&view.lang, &view.title).await {
+            let row = diesel::update(wiki_sources::table.find(source_id));
+            let _ = if in_polish {
+                row.set(wiki_sources::pl_html.eq(&html)).execute(&mut *db.lock())
+            } else {
+                row.set(wiki_sources::html.eq(&html)).execute(&mut *db.lock())
+            };
+            view.html = Some(html);
+        }
+    }
+    Ok(view)
+}
+
+/// An episode's sources, for its page.
+#[tauri::command]
+pub async fn song_sources(db: State<'_, Db>, song_id: i64) -> Result<Vec<Source>> {
+    sources_of_song(&mut db.lock(), song_id)
+}
+
+/// Finds English Wikipedia articles, for choosing what a podcast is written from.
+#[tauri::command]
+pub async fn wiki_find(query: String) -> Result<Vec<SearchHit>> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    search("en", query.trim()).await
 }
 
 /// Checks one lesson against its sources now, whatever the date.

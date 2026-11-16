@@ -35,6 +35,7 @@ import type {
   PodcastAudio,
   PodcastRequest,
   TopicIdea,
+  WikiHit,
   Song,
   SongDraft,
   TimedLine,
@@ -222,6 +223,10 @@ export const api = {
   podcastTopics: () => invoke<TopicIdea[]>("podcast_topics"),
   podcastDraft: (request: PodcastRequest) => invoke<SongDraft>("podcast_draft", { request }),
   podcastCreate: (draft: SongDraft) => invoke<Song>("podcast_create", { draft }),
+  /** Makes a whole episode in the background: written, then recorded. */
+  podcastMake: (request: PodcastRequest) => invoke<Song>("podcast_make", { request }),
+  songSources: (songId: number) => invoke<WikiSource[]>("song_sources", { songId }),
+  wikiFind: (query: string) => invoke<WikiHit[]>("wiki_find", { query }),
   /** Puts an episode's audio together again, with new settings if given. */
   podcastRerender: (songId: number, audio?: PodcastAudio) =>
     invoke<Song>("podcast_rerender", { songId, audio: audio ?? null }),

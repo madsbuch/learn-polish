@@ -96,11 +96,12 @@ The app:
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
   to sort older ones, read their lyrics with get_song and move their lesson with move_lesson.
-- The Music tab also holds podcasts: short spoken episodes, each sentence in English and then in \
-  Polish, written from a Wikipedia article on a subject the learner likes (make_podcast); \
-  set_podcast_sound changes the pause before the Polish, repeats, slow Polish and voices. They \
-  need only the OpenRouter key, not kie.ai. list_songs and get_song cover them too (kind \
-  \"podcast\"); get_song gives the articles they were written from.";
+- The Music tab also holds podcasts (make_podcast): short spoken episodes on a subject the \
+  learner likes, written from Wikipedia articles (0–5) or as a made-up story. Two kinds: pairs \
+  (each sentence in English, then in Polish) and immersion (only Polish, simpler sentences). \
+  set_podcast_sound changes the pause before the Polish, repeats, slow Polish, voices and whether \
+  the English is said. They need only the OpenRouter key, not kie.ai. list_songs and get_song \
+  cover them too (kind \"podcast\"); get_song gives the articles they were written from.";
 
 /// The whole prompt in one string, for tests.
 #[cfg(test)]
@@ -705,24 +706,30 @@ pub fn tool_definitions() -> Vec<Tool> {
             "make_podcast",
             "Writing the podcast…",
             "Have a short learning podcast written and recorded: every sentence is said in English, \
-             then in Polish. It is written from an English Wikipedia article on the subject (found \
-             by search, or the one named) and saved with the article as its source; it appears in \
-             the Music tab within a minute or two and costs only OpenRouter speech. Choose subjects \
-             the learner cares about (their memories).",
+             then in Polish. It is written from English Wikipedia articles — the ones named (up to \
+             five; look them up with wiki_search), or else the best match for the subject — which \
+             are kept with it for the learner to read; or it is a short made-up story from none. \
+             It appears in the Music tab within a minute or two and costs only OpenRouter speech. \
+             Choose subjects the learner cares about (their memories).",
             json!({
                 "type": "object",
                 "properties": {
                     "about": { "type": "string", "description": "The subject, in English" },
-                    "article": { "type": "string", "description": "An exact English Wikipedia article title to write from; leave out to search for the subject" },
+                    "articles": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Exact English Wikipedia article titles to write from (0–5); leave out to use the best match for the subject"
+                    },
+                    "story": { "type": "boolean", "description": "A short made-up story, written from no articles" },
                     "format": {
                         "type": "string",
-                        "enum": ["pairs", "slow"],
-                        "description": "pairs: everyday sentence pairs (default); slow: very simple sentences, the Polish read slowly and twice"
+                        "enum": ["pairs", "immersion"],
+                        "description": "pairs: each sentence in English, then in Polish (default); immersion: only Polish is spoken, in simpler sentences (the English meaning shows with the lyrics)"
                     },
                     "length": {
                         "type": "string",
                         "enum": ["short", "medium", "long"],
-                        "description": "short ≈ 20 sentences, medium ≈ 35, long ≈ 55 (fewer for slow). Default medium."
+                        "description": "pairs: short ≈ 20 sentences, medium ≈ 35, long ≈ 55; immersion: 30, 50, 80. Default medium."
                     },
                     "course_id": { "type": "integer", "description": "Work in vocabulary from this course; its listening lesson is filed there too" },
                     "voice": { "type": "string", "enum": ["f", "m"], "description": "The Polish voice; the English uses the other" },
@@ -743,7 +750,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "pause": { "type": "number", "description": "Seconds of silence after the English, before the Polish (0–6): time to say it yourself first" },
                     "repeats": { "type": "integer", "description": "How many times the Polish is said (1–3)" },
                     "slow": { "type": "boolean", "description": "Read the Polish slowly" },
-                    "voices": { "type": "string", "enum": ["one", "two"], "description": "two: English and Polish in different voices" }
+                    "voices": { "type": "string", "enum": ["one", "two"], "description": "two: English and Polish in different voices" },
+                    "english": { "type": "boolean", "description": "Say the English before each Polish sentence; off: only Polish is heard" }
                 },
                 "required": ["podcast_id"]
             }),
@@ -1178,7 +1186,12 @@ fn yes() -> bool {
 struct PodcastArgs {
     about: String,
     #[serde(default)]
+    articles: Vec<String>,
+    /// One article, as a model may still name it.
+    #[serde(default)]
     article: String,
+    #[serde(default)]
+    story: bool,
     #[serde(default)]
     format: String,
     #[serde(default)]
@@ -1198,6 +1211,7 @@ struct PodcastSoundArgs {
     repeats: Option<u32>,
     slow: Option<bool>,
     voices: Option<String>,
+    english: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -2007,27 +2021,26 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
 
 /// make_podcast reads Wikipedia and asks the writer, so it cannot run under
 /// the database lock either.
-async fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
-    let result: Result<Outcome> = async {
+fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = (|| {
         let args: PodcastArgs = parse(arguments)?;
-        crate::ai::api_key(&mut db.lock())?;
-        let draft = crate::podcasts::write_episode(
-            db,
-            crate::podcasts::PodcastRequest {
-                topic: args.about,
-                article: args.article,
-                format: args.format,
-                length: args.length,
-                course_id: args.course_id,
-                vocal_gender: args.voice,
-                ..Default::default()
+        let request = crate::podcasts::PodcastRequest {
+            topic: args.about.clone(),
+            articles: if args.article.trim().is_empty() {
+                args.articles
+            } else {
+                std::iter::once(args.article).chain(args.articles).collect()
             },
-        )
-        .await?;
-        let title = draft.title.clone();
-        let sources: Vec<String> = draft.origin.sources.iter().map(|s| s.url.clone()).collect();
-        let sentences: usize = draft.sections.iter().map(|s| s.lines.len()).sum();
-        let song_id = crate::podcasts::start_episode(app, db, draft)?;
+            story: args.story,
+            format: args.format,
+            length: args.length,
+            course_id: args.course_id,
+            vocal_gender: args.voice,
+            ..Default::default()
+        };
+        // Written and recorded in the background; the episode is in the
+        // library already, as "being made".
+        let song_id = crate::podcasts::start_from_request(app, db, request)?;
         let lesson = if args.listening_lesson {
             Some(lessons::create_listening(&mut db.lock(), song_id, None, None, args.course_id, "tutor")?)
         } else {
@@ -2036,18 +2049,14 @@ async fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outco
         Ok(Outcome::song(
             json!({
                 "podcast_id": song_id,
-                "title": title,
-                "sentences": sentences,
-                "sources": sources,
-                "status": "being recorded now; ready in a minute or two in the Music tab",
+                "status": "being written and recorded in the background; ready in a few minutes in the Music tab",
                 "listening_lesson_id": lesson.as_ref().map(|b| b.id),
             }),
             "songStarted",
-            format!("Recording the podcast “{title}”"),
+            format!("Making a podcast about {}", args.about.trim()),
             Some(song_id),
         ))
-    }
-    .await;
+    })();
     result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
 }
 
@@ -2070,6 +2079,9 @@ fn set_podcast_sound(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcom
         }
         if let Some(voices) = args.voices {
             audio.voices = voices;
+        }
+        if let Some(english) = args.english {
+            audio.english = english;
         }
         let audio = audio.clean();
         crate::podcasts::rerender(app, db, song.id, Some(audio.clone()))?;
@@ -2486,7 +2498,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                     // The network twice (songwriter, then Suno): not under the lock.
                     make_song(app, db, &arguments).await
                 } else if name == "make_podcast" {
-                    make_podcast(app, db, &arguments).await
+                    make_podcast(app, db, &arguments)
                 } else if name == "set_podcast_sound" {
                     // Starts work in the background, which takes the lock itself.
                     set_podcast_sound(app, db, &arguments)

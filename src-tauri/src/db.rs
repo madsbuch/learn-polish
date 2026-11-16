@@ -509,7 +509,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT
 -- a Polish version alongside when there is one. They go with their lesson.
 CREATE TABLE IF NOT EXISTS wiki_sources (
     id            INTEGER PRIMARY KEY,
-    lesson_id      INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+    -- Whose source it is: a study lesson's or a podcast episode's.
+    lesson_id     INTEGER REFERENCES lessons(id) ON DELETE CASCADE,
+    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE,
     ord           INTEGER NOT NULL DEFAULT 0,
     lang          TEXT    NOT NULL,     -- the article's Wikipedia: en, pl, …
     title         TEXT    NOT NULL,
@@ -522,9 +524,12 @@ CREATE TABLE IF NOT EXISTS wiki_sources (
     pl_title      TEXT,                 -- the same article on Polish Wikipedia
     pl_url        TEXT,
     pl_content    TEXT,
+    html          TEXT,                 -- the article as Wikipedia lays it out, for the reader
+    pl_html       TEXT,
     fetched_at    INTEGER NOT NULL,
     checked_at    INTEGER NOT NULL,     -- last compared with Wikipedia
-    UNIQUE (lesson_id, lang, pageid)
+    UNIQUE (lesson_id, lang, pageid),
+    UNIQUE (song_id, lang, pageid)
 );
 
 -- A word or sentence takes its practice history with it, however it goes
@@ -610,6 +615,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "songs", "kind", "TEXT NOT NULL DEFAULT 'song'")?;
     add_column(conn, "songs", "podcast", "TEXT NOT NULL DEFAULT '{}'")?;
     add_column(conn, "song_tracks", "timed_lines", "TEXT")?;
+    if !column_exists(conn, "wiki_sources", "song_id")? {
+        upgrade_sources_for_podcasts(conn)?;
+    }
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }
@@ -666,6 +674,53 @@ fn upgrade_to_lessons_and_courses(conn: &mut Conn) -> Result<()> {
 /// the file on disk, for takes from before bytes were stored) into it and
 /// reference it by id; the old speech cache is dropped — clips are made
 /// again, with the current voices, as lines are played.
+/// Sources used to belong only to study lessons; podcast episodes have them
+/// too now, and every source keeps the article's layout for the reader. SQLite
+/// cannot make a column nullable in place, so the table is rebuilt, ids intact.
+fn upgrade_sources_for_podcasts(conn: &mut Conn) -> Result<()> {
+    conn.batch_execute("PRAGMA foreign_keys = OFF")?;
+    let result = conn.batch_execute(
+        r#"
+        BEGIN;
+        CREATE TABLE wiki_sources_v7 (
+            id            INTEGER PRIMARY KEY,
+            lesson_id     INTEGER REFERENCES lessons(id) ON DELETE CASCADE,
+            song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE,
+            ord           INTEGER NOT NULL DEFAULT 0,
+            lang          TEXT    NOT NULL,
+            title         TEXT    NOT NULL,
+            url           TEXT    NOT NULL,
+            pageid        INTEGER NOT NULL,
+            revid         INTEGER NOT NULL,
+            summary       TEXT    NOT NULL,
+            content       TEXT    NOT NULL,
+            image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+            pl_title      TEXT,
+            pl_url        TEXT,
+            pl_content    TEXT,
+            html          TEXT,
+            pl_html       TEXT,
+            fetched_at    INTEGER NOT NULL,
+            checked_at    INTEGER NOT NULL,
+            UNIQUE (lesson_id, lang, pageid),
+            UNIQUE (song_id, lang, pageid)
+        );
+        INSERT INTO wiki_sources_v7 (id, lesson_id, ord, lang, title, url, pageid, revid, summary, content,
+                                     image_file_id, pl_title, pl_url, pl_content, fetched_at, checked_at)
+            SELECT id, lesson_id, ord, lang, title, url, pageid, revid, summary, content,
+                   image_file_id, pl_title, pl_url, pl_content, fetched_at, checked_at FROM wiki_sources;
+        DROP TABLE wiki_sources;
+        ALTER TABLE wiki_sources_v7 RENAME TO wiki_sources;
+        COMMIT;
+        "#,
+    );
+    if result.is_err() {
+        let _ = conn.batch_execute("ROLLBACK");
+    }
+    conn.batch_execute("PRAGMA foreign_keys = ON")?;
+    Ok(result?)
+}
+
 fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
     #[derive(diesel::QueryableByName)]
     struct OldTake {

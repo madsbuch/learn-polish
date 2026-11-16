@@ -233,6 +233,16 @@ export function SearchIcon() {
   );
 }
 
+/** Opens something outside the app (a web page). */
+export function ExternalIcon() {
+  return (
+    <Glyph>
+      <path d="M14 4h6v6M20 4l-9 9" />
+      <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+    </Glyph>
+  );
+}
+
 export function PlusIcon() {
   return (
     <Glyph>

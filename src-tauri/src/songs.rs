@@ -108,6 +108,10 @@ pub struct SongOrigin {
     pub sources: Vec<Source>,
     /// The article's picture, used as the episode's cover.
     pub source_image: String,
+    /// For a podcast: the articles asked for, and whether it is a story —
+    /// kept so the episode can be written again if writing it failed.
+    pub requested_articles: Vec<String>,
+    pub story: bool,
 }
 
 /// An article a podcast was written from.

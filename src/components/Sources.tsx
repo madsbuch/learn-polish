@@ -1,12 +1,38 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { Avatar, Button, Inline, List, ListItem, Screen, Section, Segmented, Spinner, Stack, Text } from "../design";
+import { Avatar, Button, IconButton, Inline, List, ListItem, Screen, Section, Segmented, Spinner, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
 import type { ArticleView, WikiSource } from "../lib/types";
+import { ExternalIcon } from "./icons";
 import { Markdown } from "./Markdown";
+import { WikiArticle } from "./WikiArticle";
+
+/** Sources as rows: picture, title and lead, each opening the article. */
+export function SourceList({ sources, onRead }: { sources: WikiSource[]; onRead: (source: WikiSource) => void }) {
+  return (
+    <List>
+      {sources.map((source) => (
+        <ListItem
+          key={source.id}
+          leading={
+            source.imageFileId !== null ? (
+              <img className="source-thumb" src={fileUrl(source.imageFileId)} alt="" />
+            ) : (
+              <Avatar>W</Avatar>
+            )
+          }
+          title={source.title}
+          subtitle={<span className="clamp-2">{source.summary}</span>}
+          label={`Read “${source.title}”`}
+          onClick={() => onRead(source)}
+        />
+      ))}
+    </List>
+  );
+}
 
 /**
  * A study lesson's Wikipedia sources: a card each, opening the article in the
@@ -51,24 +77,7 @@ export function Sources({
           Updated from Wikipedia — {factNote}
         </Text>
       ) : null}
-      <List>
-        {sources.map((source) => (
-          <ListItem
-            key={source.id}
-            leading={
-              source.imageFileId !== null ? (
-                <img className="source-thumb" src={fileUrl(source.imageFileId)} alt="" />
-              ) : (
-                <Avatar>W</Avatar>
-              )
-            }
-            title={source.title}
-            subtitle={<span className="clamp-2">{source.summary}</span>}
-            label={`Read “${source.title}”`}
-            onClick={() => onRead(source)}
-          />
-        ))}
-      </List>
+      <SourceList sources={sources} onRead={onRead} />
       <Inline gap={2} justify="between">
         <Text variant="caption" tone="faint">
           {factCheckedAt ? `Checked ${new Date(factCheckedAt * 1000).toLocaleDateString()}` : "Not checked yet"} ·
@@ -100,8 +109,10 @@ export function Sources({
 }
 
 /**
- * A source's article, read in the app: in its own language or in Polish,
- * with where it comes from (Wikipedia's licence asks for that).
+ * A source's article, read in the app: in its own language or in Polish, laid
+ * out as on Wikipedia (sections, lists, tables, the infobox, figures), with
+ * where it comes from (Wikipedia's licence asks for that) and a way to open
+ * it on Wikipedia.
  */
 export function ArticleReader({
   source,
@@ -110,7 +121,8 @@ export function ArticleReader({
 }: {
   source: WikiSource;
   onBack: () => void;
-  onRemoved: () => void;
+  /** Lessons can drop a source; an episode keeps what it was written from. */
+  onRemoved?: () => void;
 }) {
   const [polish, setPolish] = useState(false);
   const [article, setArticle] = useState<ArticleView | null>(null);
@@ -122,8 +134,17 @@ export function ArticleReader({
       .catch((cause) => toast(errorMessage(cause), "error"));
   }, [source.id, polish]);
 
+  const url = article?.url ?? source.url;
+  const openExternally = () => void openUrl(url).catch(() => toast("Could not open the browser.", "error"));
+
   return (
-    <Screen title={article?.title ?? source.title} subtitle="Wikipedia" onBack={onBack} nav={false}>
+    <Screen
+      title={article?.title ?? source.title}
+      subtitle="Wikipedia"
+      onBack={onBack}
+      nav={false}
+      actions={<IconButton icon={<ExternalIcon />} label="Open on Wikipedia" onClick={openExternally} />}
+    >
       {source.polishTitle && source.lang !== "pl" ? (
         <Segmented
           value={polish ? "pl" : "own"}
@@ -134,13 +155,19 @@ export function ArticleReader({
           ]}
         />
       ) : null}
-      {source.imageFileId !== null && !polish ? (
-        <img className="source-picture" src={fileUrl(source.imageFileId)} alt="" />
-      ) : null}
       {article ? (
-        <div className="selectable">
-          <Markdown text={article.content} />
-        </div>
+        article.html ? (
+          <WikiArticle html={article.html} />
+        ) : (
+          <>
+            {source.imageFileId !== null && !polish ? (
+              <img className="source-picture" src={fileUrl(source.imageFileId)} alt="" />
+            ) : null}
+            <div className="selectable">
+              <Markdown text={article.content} />
+            </div>
+          </>
+        )
       ) : (
         <Spinner />
       )}
@@ -150,24 +177,26 @@ export function ArticleReader({
             From Wikipedia, the free encyclopedia — “{article.title}”, available under the Creative
             Commons Attribution-ShareAlike 4.0 licence.
           </Text>
-          <Button wide onClick={() => void openUrl(article.url).catch(() => toast("Could not open the browser.", "error"))}>
+          <Button wide icon={<ExternalIcon />} onClick={openExternally}>
             Open on Wikipedia
           </Button>
-          <Button
-            variant="plain"
-            wide
-            onClick={async () => {
-              try {
-                await api.sourceRemove(source.id);
-                toast(`Removed “${source.title}” from the sources`);
-                onRemoved();
-              } catch (cause) {
-                toast(errorMessage(cause), "error");
-              }
-            }}
-          >
-            Remove this source
-          </Button>
+          {onRemoved ? (
+            <Button
+              variant="plain"
+              wide
+              onClick={async () => {
+                try {
+                  await api.sourceRemove(source.id);
+                  toast(`Removed “${source.title}” from the sources`);
+                  onRemoved();
+                } catch (cause) {
+                  toast(errorMessage(cause), "error");
+                }
+              }}
+            >
+              Remove this source
+            </Button>
+          ) : null}
         </Stack>
       ) : null}
     </Screen>

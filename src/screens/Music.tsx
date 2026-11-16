@@ -45,8 +45,9 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { Playlist, Settings, Song, CourseProgress } from "../lib/types";
-import { PodcastSound, PodcastSources } from "../components/Podcast";
+import type { Playlist, Settings, Song, CourseProgress, WikiSource } from "../lib/types";
+import { EpisodeSources, PodcastSound } from "../components/Podcast";
+import { ArticleReader } from "../components/Sources";
 import { PodcastComposer } from "./PodcastComposer";
 import { SongComposer } from "./SongComposer";
 
@@ -59,13 +60,20 @@ type View =
   | { kind: "library" }
   | { kind: "song"; songId: number }
   | { kind: "playlist"; playlistId: number }
-  | { kind: "compose"; what: "song" | "podcast" };
+  | { kind: "compose"; what: "song" | "podcast" }
+  | { kind: "article"; songId: number; source: WikiSource };
 
 /** Every downloaded take, in library order. */
 function allTakes(songs: Song[]): QueueItem[] {
   return songs
     .filter((song) => song.status === "ready")
     .flatMap((song) => song.tracks.map((track) => ({ song, track })));
+}
+
+/** What a song or episode still being made is doing. */
+function making(song: Song): string {
+  if (song.kind !== "podcast") return "Suno is singing… (2–4 min)";
+  return song.sections.length === 0 ? "Writing the script…" : "Recording…";
 }
 
 /** A row's subtitle: a song's chorus, or that it is a podcast. */
@@ -235,6 +243,7 @@ export function Music({
                 toast(errorMessage(cause), "error");
               }
             }}
+            onRead={(source) => setView({ kind: "article", songId: song.id, source })}
           />
         ) : songs === null ? (
           <Spinner />
@@ -242,6 +251,13 @@ export function Music({
           <EmptyState title="This song no longer exists" />
         )}
       </Screen>
+    );
+  }
+
+  if (view.kind === "article") {
+    const songId = view.songId;
+    detail = (
+      <ArticleReader source={view.source} onBack={() => setView({ kind: "song", songId })} />
     );
   }
 
@@ -568,13 +584,7 @@ function SongList({
                   key={song.id}
                   leading={<Cover fileId={null} size={48} />}
                   title={song.title}
-                  subtitle={
-                    song.status === "generating"
-                      ? song.kind === "podcast"
-                        ? "Recording… (a minute or two)"
-                        : "Suno is singing… (2–4 min)"
-                      : "Could not be made"
-                  }
+                  subtitle={song.status === "generating" ? making(song) : "Could not be made"}
                   trailing={
                     song.status === "generating" ? <Spinner /> : <Badge tone="crimson">Failed</Badge>
                   }
@@ -630,6 +640,7 @@ function SongPage({
   onDeleted,
   onMessage,
   onPractise,
+  onRead,
 }: {
   song: Song;
   /** Every song, so a take plays on into the next song — not the other take. */
@@ -639,6 +650,8 @@ function SongPage({
   onMessage: (message: string, isError?: boolean) => void;
   /** Opens (or makes) the song's listening lesson. */
   onPractise: () => void;
+  /** Opens one of an episode's articles in the reader. */
+  onRead: (source: WikiSource) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<number | null>(null);
@@ -701,7 +714,9 @@ function SongPage({
       {song.status === "generating" ? (
         <Banner tone="info">
           {podcast
-            ? "Recording — each sentence is read aloud and joined; usually a minute or two."
+            ? song.sections.length === 0
+              ? "Writing the script — then each sentence is read aloud. A few minutes; you can leave meanwhile."
+              : "Recording — each sentence is read aloud and joined. You can leave meanwhile."
             : "Suno is singing — this usually takes 2–4 minutes."}
         </Banner>
       ) : null}
@@ -775,7 +790,7 @@ function SongPage({
 
       {podcast ? <PodcastSound song={song} onChanged={onChanged} /> : null}
 
-      {podcast ? <PodcastSources sources={song.origin?.sources ?? []} /> : null}
+      {podcast ? <EpisodeSources song={song} onRead={onRead} /> : null}
 
       <Section title={podcast ? "Script" : "Lyrics"}>
         <Lyrics sections={song.sections} parts={podcast} />

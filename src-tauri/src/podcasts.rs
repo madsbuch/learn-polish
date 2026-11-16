@@ -1,8 +1,8 @@
 //! Learning podcasts: short spoken episodes that say every sentence first in
 //! English and then in Polish, the same pairing that makes the songs work.
 //!
-//! A writer drafts the script from a Wikipedia article on a subject the
-//! learner cares about; the speech model reads each sentence; the clips are
+//! A writer drafts the script on a subject the learner cares about — from
+//! up to five Wikipedia articles, or as a short story with none; the speech model reads each sentence; the clips are
 //! joined, with silence between them, into one WAV file. Because the app
 //! puts the audio together itself, it knows exactly when each sentence is
 //! said, so the lyrics follow along without guessing.
@@ -27,14 +27,16 @@ use crate::songs::{self, Song, SongDraft, SongLine, SongOrigin, SongSection, Sou
 use crate::speech::{self, Delivery};
 use crate::wiki;
 
-/// The formats an episode can take, each a way of writing and reading it.
-/// "pairs": everyday sentences, English then Polish, like a song's verses.
-/// "slow": very simple sentences, the Polish read slowly and said twice.
-pub const FORMATS: &[&str] = &["pairs", "slow"];
+/// The formats an episode can take, each a way of writing and reading it
+/// (see `format_of`). "pairs": each sentence in English, then in Polish.
+/// "immersion": only Polish is spoken, in simpler sentences; the English
+/// meaning is shown with each line but not said.
 pub const DEFAULT_FORMAT: &str = "pairs";
 
-/// The most of an article the writer reads.
-const ARTICLE_LIMIT: usize = 9_000;
+/// The most of the articles the writer reads, shared between them.
+const READING_LIMIT: usize = 16_000;
+/// The most articles an episode is written from.
+pub const ARTICLE_LIMIT: usize = 5;
 /// The most sentence pairs an episode holds.
 const LINE_LIMIT: usize = 120;
 /// How many clips are made at once.
@@ -45,6 +47,8 @@ const LEAD_IN: f64 = 0.6;
 const BETWEEN_REPEATS: f64 = 1.0;
 /// Also the quiet at the very end.
 const AFTER_PAIR: f64 = 1.2;
+/// Between sentences when only Polish is heard.
+const AFTER_SENTENCE: f64 = 0.8;
 const BETWEEN_PARTS: f64 = 2.0;
 
 /// How an episode's audio is put together. Changing it only joins the cached
@@ -62,6 +66,9 @@ pub struct PodcastAudio {
     /// "two": the English and the Polish in different voices; "one": both in
     /// the same voice.
     pub voices: String,
+    /// The English is said before each Polish sentence. Off: only Polish
+    /// is heard (the English meaning still shows with the lyrics).
+    pub english: bool,
 }
 
 impl Default for PodcastAudio {
@@ -73,8 +80,8 @@ impl Default for PodcastAudio {
 impl PodcastAudio {
     pub fn for_format(format: &str) -> Self {
         match format {
-            "slow" => Self { pause: 2.0, repeats: 2, slow: true, voices: "two".into() },
-            _ => Self { pause: 0.8, repeats: 1, slow: false, voices: "two".into() },
+            "immersion" => Self { pause: 0.0, repeats: 1, slow: false, voices: "two".into(), english: false },
+            _ => Self { pause: 0.8, repeats: 1, slow: false, voices: "two".into(), english: true },
         }
     }
 
@@ -95,10 +102,12 @@ impl PodcastAudio {
 pub struct PodcastRequest {
     /// What the episode is about, in the learner's words.
     pub topic: String,
-    /// A Wikipedia article (English title) to write from; empty: search for
-    /// the topic.
-    pub article: String,
-    /// "pairs" | "slow".
+    /// English Wikipedia articles (titles) to write from, up to five; none:
+    /// the best match for the topic, unless it is a story.
+    pub articles: Vec<String>,
+    /// A short story, written from no articles.
+    pub story: bool,
+    /// "pairs" | "immersion".
     pub format: String,
     /// "short" | "medium" | "long".
     pub length: String,
@@ -116,8 +125,8 @@ pub struct PodcastRequest {
 #[serde(default, rename_all = "camelCase")]
 pub struct TopicIdea {
     pub topic: String,
-    /// The English Wikipedia article to write it from.
-    pub article: String,
+    /// English Wikipedia articles to write it from; none for a story.
+    pub articles: Vec<String>,
     /// Why it suits the learner, in a few words.
     pub why: String,
 }
@@ -148,12 +157,12 @@ fn existing_titles(conn: &mut Conn) -> Result<Vec<String>> {
         .load(conn)?)
 }
 
-const TOPIC_RULES: &str = r#"You suggest subjects for short learning podcasts in Polish for an adult learner who speaks English. Each episode is written from ONE English Wikipedia article.
+const TOPIC_RULES: &str = r#"You suggest subjects for short learning podcasts in Polish for an adult learner who speaks English. An episode is written from English Wikipedia articles (one to five), or it is a short made-up story written from none.
 
-Suggest 6 subjects. Most should follow what the learner is interested in; one or two may be about Poland (its history, places, nature, people, food or customs) in a way that connects to those interests. Each must have a real English Wikipedia article: give its exact title. Prefer concrete, story-like subjects (a person, a place, an event, an animal, an invention) over abstract ones. Avoid subjects that already have an episode.
+Suggest 6 subjects. Most should follow what the learner is interested in; one or two may be about Poland (its history, places, nature, people, food or customs) in a way that connects to those interests. Prefer concrete, story-like subjects (a person, a place, an event, an animal, an invention) over abstract ones. Usually one article is enough; give two or three when the subject brings several together (a person and their invention). Make one of the six a short story with no articles. Give the exact titles of real English Wikipedia articles. Avoid subjects that already have an episode.
 
 Reply with ONLY a JSON object:
-{"ideas": [{"topic": "short title for the episode", "article": "Exact Wikipedia article title", "why": "a few words on why it suits the learner"}]}"#;
+{"ideas": [{"topic": "short title for the episode", "articles": ["Exact Wikipedia article title"], "why": "a few words on why it suits the learner"}]}"#;
 
 /// Suggests subjects for an episode, from what the learner cares about.
 #[tauri::command]
@@ -195,23 +204,34 @@ pub async fn podcast_topics(db: State<'_, Db>) -> Result<Vec<TopicIdea>> {
 /// How long an episode is, as sentence pairs for the writer.
 fn pair_count(format: &str, length: &str) -> usize {
     match (format, length) {
-        ("slow", "short") => 15,
-        ("slow", "medium") => 25,
-        ("slow", _) => 40,
+        ("immersion", "short") => 30,
+        ("immersion", "medium") => 50,
+        ("immersion", _) => 80,
         (_, "short") => 20,
         (_, "medium") => 35,
         _ => 55,
     }
 }
 
+/// A format as asked for; the early "slow" format is immersion now.
+fn format_of(format: &str) -> &'static str {
+    match format {
+        "immersion" | "slow" => "immersion",
+        _ => DEFAULT_FORMAT,
+    }
+}
+
 fn format_rules(format: &str) -> &'static str {
     match format {
-        "slow" => {
-            "Format: very simple sentences, read slowly.\n\
-             - 3–7 words per sentence. One idea per sentence.\n\
-             - Present tense, the most common words, simple word order. No subordinate clauses.\n\
-             - Repeat the key words of the subject often, in slightly different sentences.\n\
-             - Think of a gentle documentary for a curious child: concrete, visual, calm."
+        "immersion" => {
+            "Format: Polish only. The learner hears ONLY the Polish; the English is never said, it \
+             is shown with each line as its meaning.\n\
+             - Simple Polish a beginner can follow by ear: 3–9 words per sentence, one idea each, \
+             mostly present tense, the most common words, simple word order.\n\
+             - Let the context carry the meaning: say things in an order that makes them easy to \
+             guess, and come back to the key words often, in slightly different sentences.\n\
+             - Tell it as a story or a calm walk through the subject, concrete and visual.\n\
+             - Each line still has \"en\" (its exact meaning, for reading) and \"da\"."
         }
         _ => {
             "Format: sentence pairs, like the verses of a learning song.\n\
@@ -222,10 +242,9 @@ fn format_rules(format: &str) -> &'static str {
     }
 }
 
-const WRITER_RULES: &str = r#"You write short learning podcasts that teach Polish to an adult who speaks English. Every sentence is said twice: first in English, then the same meaning in Polish. The learner listens, often more than once, without reading.
+const WRITER_RULES: &str = r#"You write short learning podcasts that teach Polish to an adult who speaks English. Every sentence is written as a pair: the Polish, and the same meaning in English. How the pairs are heard depends on the format below. The learner listens, often more than once, without reading.
 
 Rules:
-- Base the facts on the article you are given. Do not invent facts; leave out what you are unsure of.
 - The Polish must be natural, grammatical, correct Polish with correct diacritics (ą ć ę ł ń ó ś ź ż) — what a Pole would say, not a word-for-word translation. The English must say the same thing, so the pair teaches.
 - Split the episode into 3–6 parts, each with its own small focus. The first part opens the subject; the last part sums it up in a few of the most useful sentences again.
 - Work in the learner's words where they fit naturally.
@@ -242,42 +261,64 @@ Reply with ONLY a JSON object, no prose, in exactly this shape:
   ]
 }"#;
 
-/// The article an episode is written from: the one named, else the best
-/// match for the topic. None when Wikipedia has nothing (or is unreachable).
-async fn find_article(topic: &str, article: &str) -> Option<wiki::Article> {
-    if !article.trim().is_empty() {
-        if let Ok(found) = wiki::fetch("en", article.trim()).await {
-            if !found.content.trim().is_empty() {
-                return Some(found);
+/// The articles an episode is written from: the ones named (up to five),
+/// else the best match for the topic. Empty when Wikipedia has nothing (or
+/// is unreachable).
+async fn find_articles(topic: &str, titles: &[String]) -> Vec<wiki::Article> {
+    let mut found: Vec<wiki::Article> = Vec::new();
+    for title in titles.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).take(ARTICLE_LIMIT) {
+        if let Ok(article) = wiki::fetch("en", title).await {
+            let duplicate = found.iter().any(|a| a.pageid == article.pageid);
+            if !article.content.trim().is_empty() && !duplicate {
+                found.push(article);
             }
         }
     }
-    let query = if topic.trim().is_empty() { article.trim() } else { topic.trim() };
-    if query.is_empty() {
-        return None;
+    if !found.is_empty() || topic.trim().is_empty() {
+        return found;
     }
-    let hits = wiki::search("en", query).await.ok()?;
+    let Ok(hits) = wiki::search("en", topic.trim()).await else { return found };
     for hit in hits.into_iter().take(2) {
-        if let Ok(found) = wiki::fetch("en", &hit.title).await {
-            if !found.content.trim().is_empty() {
-                return Some(found);
+        if let Ok(article) = wiki::fetch("en", &hit.title).await {
+            if !article.content.trim().is_empty() {
+                found.push(article);
+                break;
             }
         }
     }
-    None
+    found
 }
 
-/// The article and, when Polish Wikipedia has it, its Polish version.
-fn sources_of(article: &wiki::Article) -> Vec<Source> {
-    let mut sources = vec![Source { title: article.title.clone(), url: article.url.clone(), lang: article.lang.clone() }];
-    if let Some(title) = article.polish_title.as_deref().filter(|t| !t.trim().is_empty()) {
-        sources.push(Source {
-            title: title.to_string(),
-            url: format!("https://pl.wikipedia.org/wiki/{}", title.replace(' ', "_")),
-            lang: "pl".into(),
-        });
+/// The articles as the episode records them. The reader shows each article's
+/// Polish version beside it, so that is not a source of its own.
+fn sources_of(articles: &[wiki::Article]) -> Vec<Source> {
+    articles
+        .iter()
+        .map(|a| Source { title: a.title.clone(), url: a.url.clone(), lang: a.lang.clone() })
+        .collect()
+}
+
+/// What the writer works from, and how to treat it.
+fn reading(articles: &[wiki::Article], story: bool) -> String {
+    if story {
+        return "\nThis is a short original STORY, not a factual piece: invent characters (with Polish \
+                names), a place, a small problem and how it is solved, in everyday situations. \
+                Keep it warm and easy to follow by ear.\n"
+            .to_string();
     }
-    sources
+    if articles.is_empty() {
+        return "\nNo article could be found: keep to well-known, certain facts about the subject.\n".to_string();
+    }
+    let share = READING_LIMIT / articles.len();
+    let mut out = String::from(
+        "\nBase the facts on these Wikipedia articles. Do not invent facts; leave out what you are \
+         unsure of. Weave them into one episode rather than one part per article.\n",
+    );
+    for article in articles {
+        let text: String = article.content.chars().take(share).collect();
+        out.push_str(&format!("\n### “{}”\n\n{text}\n", article.title));
+    }
+    out
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -325,9 +366,7 @@ pub fn normalize_episode(mut draft: SongDraft) -> Result<SongDraft> {
     draft.title = draft.title.trim().chars().take(80).collect();
     draft.chorus_pl = draft.chorus_pl.trim().to_string();
     draft.chorus_en = draft.chorus_en.trim().to_string();
-    if !FORMATS.contains(&draft.style.as_str()) {
-        draft.style = DEFAULT_FORMAT.into();
-    }
+    draft.style = format_of(&draft.style).into();
     draft.vocal_gender = if draft.vocal_gender == "m" { "m".into() } else { "f".into() };
     for section in &mut draft.sections {
         section.kind = "verse".into();
@@ -366,24 +405,26 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
     if let Some(previous) = &request.previous {
         return revise(db, previous, &request.feedback).await;
     }
-    let format = if FORMATS.contains(&request.format.as_str()) { request.format.as_str() } else { DEFAULT_FORMAT };
+    let format = format_of(&request.format);
     let length = if songs::SONG_LENGTHS.contains(&request.length.as_str()) { request.length.as_str() } else { "medium" };
-    if request.topic.trim().is_empty() && request.article.trim().is_empty() {
+    if request.topic.trim().is_empty() && request.articles.iter().all(|a| a.trim().is_empty()) {
         return Err(Error::msg("Say what the episode should be about."));
     }
 
-    let article = find_article(&request.topic, &request.article).await;
+    let articles =
+        if request.story { Vec::new() } else { find_articles(&request.topic, &request.articles).await };
 
     let (key, model, brief) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let context = songs::gather_context(conn, request.course_id)?;
         let mut brief = String::new();
-        brief.push_str(&format!("The episode is about: {}\n\n", if request.topic.trim().is_empty() {
-            request.article.trim()
+        let subject = if request.topic.trim().is_empty() {
+            request.articles.join(", ")
         } else {
-            request.topic.trim()
-        }));
+            request.topic.trim().to_string()
+        };
+        brief.push_str(&format!("The episode is about: {subject}\n\n"));
         brief.push_str(format_rules(format));
         brief.push_str(&format!(
             "\n\nLength: about {} sentence pairs in all.\n",
@@ -403,15 +444,7 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
             let words: Vec<&str> = context.words.iter().take(25).map(String::as_str).collect();
             brief.push_str(&format!("\nWords the learner knows or is learning:\n{}\n", words.join("\n")));
         }
-        match &article {
-            Some(article) => {
-                let text: String = article.content.chars().take(ARTICLE_LIMIT).collect();
-                brief.push_str(&format!("\nWrite it from this Wikipedia article, “{}”:\n\n{text}\n", article.title));
-            }
-            None => brief.push_str(
-                "\nNo article could be found: keep to well-known, certain facts about the subject.\n",
-            ),
-        }
+        brief.push_str(&reading(&articles, request.story));
         (ai::api_key(conn)?, songs::songwriter_model(conn)?, brief)
     };
 
@@ -427,11 +460,96 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
         brief: request.topic.trim().to_string(),
         length: length.to_string(),
         songwriter_model: model,
-        sources: article.as_ref().map(sources_of).unwrap_or_default(),
-        source_image: article.and_then(|a| a.thumbnail).unwrap_or_default(),
+        sources: sources_of(&articles),
+        // The first article with a picture gives the cover.
+        source_image: articles.iter().find_map(|a| a.thumbnail.clone()).unwrap_or_default(),
+        requested_articles: request.articles.clone(),
+        story: request.story,
         ..Default::default()
     };
     normalize_episode(draft)
+}
+
+/// Makes a whole episode from a request, in one go: the episode appears in the
+/// library at once, and is written and then recorded in the background (the
+/// app keeps working with the screen off or another app in front). There is
+/// no script to approve: a learner who does not like it deletes it.
+#[tauri::command]
+pub async fn podcast_make(app: AppHandle, db: State<'_, Db>, request: PodcastRequest) -> Result<Song> {
+    let id = start_from_request(&app, &db, request)?;
+    songs::load_song(&mut db.lock(), id)
+}
+
+pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> Result<i64> {
+    let articles: Vec<String> = request
+        .articles
+        .iter()
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .take(ARTICLE_LIMIT)
+        .collect();
+    let topic = request.topic.trim().to_string();
+    if topic.is_empty() && articles.is_empty() {
+        return Err(Error::msg("Say what the episode should be about."));
+    }
+    let format = format_of(&request.format).to_string();
+    let length = if songs::SONG_LENGTHS.contains(&request.length.as_str()) { request.length.clone() } else { "medium".into() };
+    // A placeholder until the script is written: the subject as its title.
+    let placeholder = SongDraft {
+        title: if topic.is_empty() { articles.join(", ") } else { topic.clone() }.chars().take(80).collect(),
+        style: format.clone(),
+        vocal_gender: if request.vocal_gender == "m" { "m".into() } else { "f".into() },
+        course_id: request.course_id,
+        kind: "podcast".into(),
+        podcast: Some(PodcastAudio::for_format(&format)),
+        origin: SongOrigin {
+            brief: topic,
+            length,
+            requested_articles: if request.story { Vec::new() } else { articles },
+            story: request.story,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let id = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        ai::api_key(conn)?;
+        songs::songwriter_model(conn)?;
+        songs::insert_song(conn, &placeholder, ai::SPEECH_MODEL)?
+    };
+    spawn_render(app.clone(), id);
+    songs::notify(app, id);
+    Ok(id)
+}
+
+/// Writes the script of an episode that has none yet, from what was asked
+/// for (kept with it), and stores it in place of the placeholder.
+async fn write_script(db: &Db, song: &Song) -> Result<()> {
+    let request = PodcastRequest {
+        topic: song.origin.brief.clone(),
+        articles: song.origin.requested_articles.clone(),
+        story: song.origin.story,
+        format: song.style.clone(),
+        length: song.origin.length.clone(),
+        course_id: song.course_id,
+        vocal_gender: song.vocal_gender.clone(),
+        ..Default::default()
+    };
+    let draft = write_episode(db, request).await?;
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    diesel::update(song_rows::table.find(song.id))
+        .set((
+            song_rows::title.eq(&draft.title),
+            song_rows::chorus_pl.eq(&draft.chorus_pl),
+            song_rows::chorus_en.eq(&draft.chorus_en),
+            song_rows::sections.eq(serde_json::to_string(&draft.sections)?),
+            song_rows::lyrics.eq(songs::render_lyrics(&draft)),
+            song_rows::origin.eq(serde_json::to_string(&draft.origin)?),
+        ))
+        .execute(conn)?;
+    Ok(())
 }
 
 async fn revise(db: &Db, previous: &SongDraft, feedback: &str) -> Result<SongDraft> {
@@ -524,7 +642,8 @@ pub(crate) fn rerender(app: &AppHandle, db: &Db, song_id: i64, audio: Option<Pod
 }
 
 pub fn spawn_render(app: AppHandle, song_id: i64) {
-    let busy = crate::work::begin(&app, "Recording a podcast…");
+    // Keeps the app working with the screen off or another app in front.
+    let busy = crate::work::begin(&app, "Making a podcast…");
     tauri::async_runtime::spawn(async move {
         let _busy = busy;
         if let Err(error) = render(&app, song_id).await {
@@ -533,6 +652,22 @@ pub fn spawn_render(app: AppHandle, song_id: i64) {
             songs::notify(&app, song_id);
         }
     });
+}
+
+/// Keeps the articles an episode was written from as its sources, for the
+/// in-app reader: each with its layout, its Polish version and its picture.
+/// Done once, while the episode is recorded; an article that cannot be
+/// fetched now is simply left out (its link stays in the episode's origin).
+async fn keep_sources(db: &Db, song_id: i64, sources: &[Source]) {
+    let kept = wiki::sources_of_song(&mut db.lock(), song_id).unwrap_or_default();
+    // Episodes from before kept the Polish article as a source of its own.
+    let wanted: Vec<&Source> = sources.iter().filter(|s| s.lang != "pl" || sources.len() == 1).collect();
+    for source in wanted {
+        if kept.iter().any(|k| k.lang == source.lang && k.title == source.title) {
+            continue;
+        }
+        let _ = wiki::attach_to(db, wiki::Owner::Song(song_id), &source.lang, &source.title).await;
+    }
 }
 
 /// One thing to say, in the order the episode says it.
@@ -551,6 +686,12 @@ async fn make_clip(app: AppHandle, clip: Clip) -> Result<Vec<u8>> {
 
 async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
     let db = app.state::<Db>();
+    // Made in one go: first the script, if it is not written yet.
+    let unwritten = songs::load_song(&mut db.lock(), song_id)?;
+    if unwritten.sections.is_empty() {
+        write_script(&db, &unwritten).await?;
+        songs::notify(app, song_id);
+    }
     let (song, audio, english_voice, polish_voice, old) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -573,11 +714,13 @@ async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
         (song, audio, english_voice, polish_voice, old)
     };
 
+    keep_sources(&db, song_id, &song.origin.sources).await;
+
     let polish = if audio.slow { Delivery::PolishSlow } else { Delivery::Polish };
     let mut jobs = Vec::new();
     for section in &song.sections {
         for line in &section.lines {
-            if !line.en.is_empty() {
+            if !line.en.is_empty() && (audio.english || line.pl.is_empty()) {
                 jobs.push(Clip { text: line.en.clone(), voice: english_voice.clone(), delivery: Delivery::English });
             }
             if !line.pl.is_empty() {
@@ -748,11 +891,13 @@ pub fn assemble(sections: &[SongSection], clips: &[Vec<u8>], audio: &PodcastAudi
 
     for (part, section) in sections.iter().enumerate() {
         if part > 0 {
-            tape.silence(BETWEEN_PARTS - AFTER_PAIR);
+            tape.silence(BETWEEN_PARTS - if audio.english { AFTER_PAIR } else { AFTER_SENTENCE });
         }
         for (index, line) in section.lines.iter().enumerate() {
             let mut label = (index == 0 && parts > 1).then(|| format!("Part {}", part + 1));
-            if !line.en.is_empty() {
+            // Without the English, only a line that has no Polish says it.
+            let say_english = !line.en.is_empty() && (audio.english || line.pl.is_empty());
+            if say_english {
                 let (start, end) = tape.record(next()?)?;
                 lines.push(TimedLine {
                     start,
@@ -783,7 +928,7 @@ pub fn assemble(sections: &[SongSection], clips: &[Vec<u8>], audio: &PodcastAudi
                     section: label.take(),
                 });
             }
-            tape.silence(AFTER_PAIR);
+            tape.silence(if audio.english { AFTER_PAIR } else { AFTER_SENTENCE });
         }
     }
     let (rate, channels) = tape.format.ok_or_else(|| Error::msg("The episode has nothing to say."))?;
@@ -820,7 +965,7 @@ mod tests {
         ];
         // Hello, Cześć, Dziękuję, Bye, Do widzenia: 500 ms each.
         let clips: Vec<Vec<u8>> = (0..5).map(|_| clip(500)).collect();
-        let audio = PodcastAudio { pause: 1.0, repeats: 2, slow: false, voices: "two".into() };
+        let audio = PodcastAudio { pause: 1.0, repeats: 2, slow: false, voices: "two".into(), english: true };
         let episode = assemble(&sections, &clips, &audio).unwrap();
         let times: Vec<(&str, &str, f64, f64, Option<&str>, Option<&str>)> = episode
             .lines
@@ -847,6 +992,18 @@ mod tests {
     }
 
     #[test]
+    fn immersion_says_only_the_polish_but_shows_the_meaning() {
+        let sections = vec![SongSection { kind: "verse".into(), lines: vec![line("Hello", "Cześć"), line("Thanks", "Dziękuję")] }];
+        // Only the two Polish clips are made.
+        let clips: Vec<Vec<u8>> = (0..2).map(|_| clip(500)).collect();
+        let episode = assemble(&sections, &clips, &PodcastAudio::for_format("immersion")).unwrap();
+        let lines: Vec<(&str, &str, Option<&str>)> =
+            episode.lines.iter().map(|l| (l.text.as_str(), l.lang.as_str(), l.gloss.as_deref())).collect();
+        assert_eq!(lines, [("Cześć", "pl", Some("Hello")), ("Dziękuję", "pl", Some("Thanks"))]);
+        assert!((episode.lines[1].start - (0.6 + 0.5 + AFTER_SENTENCE)).abs() < 1e-9);
+    }
+
+    #[test]
     fn clips_must_share_one_format() {
         let sections = vec![SongSection { kind: "verse".into(), lines: vec![line("Hello", "Cześć")] }];
         let clips = vec![clip(10), ai::wav_from_pcm(&[0u8; 20], 2000, 1)];
@@ -858,39 +1015,50 @@ mod tests {
     fn scripts_become_tidy_episodes() {
         let reply = r#"Sure! {"title": "The bridge", "titlePl": "Kopalnia", "about": "A mine.",
             "parts": [{"lines": [{"en": " There is a mine. ", "pl": "Jest kopalnia."}, {"en": "", "pl": ""}]}, {"lines": []}]}"#;
-        let draft = normalize_episode(script_to_draft(parse_script(reply).unwrap(), "slow", "")).unwrap();
+        let draft = normalize_episode(script_to_draft(parse_script(reply).unwrap(), "immersion", "")).unwrap();
         assert_eq!(draft.kind, "podcast");
-        assert_eq!(draft.style, "slow");
+        assert_eq!(draft.style, "immersion");
         assert_eq!(draft.vocal_gender, "f");
         assert_eq!(draft.chorus_pl, "Kopalnia");
         assert_eq!(draft.sections.len(), 1, "empty parts are dropped");
         assert_eq!(draft.sections[0].lines, vec![line("There is a mine.", "Jest kopalnia.")]);
-        assert_eq!(draft.podcast, Some(PodcastAudio::for_format("slow")));
+        assert_eq!(draft.podcast, Some(PodcastAudio::for_format("immersion")));
+        assert!(!PodcastAudio::for_format("immersion").english, "immersion says no English");
         assert!(normalize_episode(SongDraft::default()).is_err());
     }
 
     #[test]
     fn audio_settings_are_kept_sensible() {
-        let wild = PodcastAudio { pause: 99.0, repeats: 0, slow: true, voices: "many".into() }.clean();
-        assert_eq!(wild, PodcastAudio { pause: 6.0, repeats: 1, slow: true, voices: "two".into() });
+        let wild = PodcastAudio { pause: 99.0, repeats: 0, slow: true, voices: "many".into(), english: false }.clean();
+        assert_eq!(wild, PodcastAudio { pause: 6.0, repeats: 1, slow: true, voices: "two".into(), english: false });
+        // Episodes from before the setting keep their English.
+        let old: PodcastAudio = serde_json::from_str(r#"{"pause": 2.0, "repeats": 2, "slow": true, "voices": "two"}"#).unwrap();
+        assert!(old.english);
     }
 
     #[test]
-    fn a_polish_article_is_a_second_source() {
-        let article = wiki::Article {
+    fn articles_become_sources_and_the_reading() {
+        let article = |pageid: i64, title: &str, content: &str| wiki::Article {
             lang: "en".into(),
-            title: "Wieliczka Salt Mine".into(),
-            url: "https://en.wikipedia.org/wiki/Wieliczka_Salt_Mine".into(),
-            pageid: 1,
+            title: title.into(),
+            url: format!("https://en.wikipedia.org/wiki/{title}"),
+            pageid,
             revid: 1,
             summary: String::new(),
-            content: String::new(),
+            content: content.into(),
             thumbnail: None,
             polish_title: Some("Kopalnia Soli Wieliczka".into()),
+            html: None,
         };
-        let sources = sources_of(&article);
-        assert_eq!(sources.len(), 2);
-        assert_eq!(sources[1].url, "https://pl.wikipedia.org/wiki/Kopalnia_Soli_Wieliczka");
-        assert_eq!(sources[1].lang, "pl");
+        let articles = vec![article(1, "Wieliczka Salt Mine", &"b".repeat(20_000)), article(2, "Kraków", "Kraków is a city.")];
+        let sources = sources_of(&articles);
+        assert_eq!(sources.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["Wieliczka Salt Mine", "Kraków"]);
+        assert!(sources.iter().all(|s| s.lang == "en"), "the Polish versions are not sources of their own");
+
+        let text = reading(&articles, false);
+        assert!(text.contains("### “Wieliczka Salt Mine”") && text.contains("Kraków is a city."));
+        assert!(text.len() < READING_LIMIT + 1_000, "the articles share the reading limit");
+        assert!(reading(&articles, true).contains("STORY"), "a story ignores articles");
+        assert!(reading(&[], false).contains("No article"));
     }
 }

@@ -520,10 +520,11 @@ export interface AudioItem {
   bytes: number;
 }
 
-/** A Wikipedia article a study lesson is built on. */
+/** A Wikipedia article a study lesson or a podcast is built on. */
 export interface WikiSource {
   id: number;
-  lessonId: number;
+  lessonId: number | null;
+  songId: number | null;
   lang: string;
   title: string;
   url: string;
@@ -539,8 +540,16 @@ export interface ArticleView {
   lang: string;
   title: string;
   url: string;
-  /** Markdown. */
+  /** Markdown: shown when the layout is not known. */
   content: string;
+  /** The article as Wikipedia lays it out (HTML), drawn by WikiArticle. */
+  html: string | null;
+}
+
+/** An article found on Wikipedia. */
+export interface WikiHit {
+  title: string;
+  snippet: string;
 }
 
 /** The outcome of checking a lesson against its sources. */
@@ -604,6 +613,8 @@ export interface SongOrigin {
   /** What a podcast was written from: its Wikipedia article (and the Polish one). */
   sources?: PodcastSource[];
   sourceImage?: string;
+  requestedArticles?: string[];
+  story?: boolean;
 }
 
 /** An article a podcast was written from. */
@@ -616,6 +627,8 @@ export interface PodcastSource {
 
 /** How a podcast episode's audio is put together. */
 export interface PodcastAudio {
+  /** The English is said before each Polish sentence; off: only Polish is heard. */
+  english: boolean;
   /** Seconds of silence after the English, before the Polish. */
   pause: number;
   /** How many times the Polish is said. */
@@ -626,13 +639,15 @@ export interface PodcastAudio {
   voices: "one" | "two";
 }
 
-/** "pairs": everyday sentence pairs; "slow": very simple sentences, read slowly. */
-export type PodcastFormat = "pairs" | "slow";
+/** "pairs": English then Polish; "immersion": only Polish, in simpler sentences. */
+export type PodcastFormat = "pairs" | "immersion";
 
 export interface PodcastRequest {
   topic?: string;
-  /** An English Wikipedia article title to write from. */
-  article?: string;
+  /** English Wikipedia article titles to write from (0–5). */
+  articles?: string[];
+  /** A short made-up story, from no articles. */
+  story?: boolean;
   format?: PodcastFormat;
   length?: SongLength;
   courseId?: number | null;
@@ -644,7 +659,8 @@ export interface PodcastRequest {
 /** A subject the learner might like an episode about. */
 export interface TopicIdea {
   topic: string;
-  article: string;
+  /** None: a story. */
+  articles: string[];
   why: string;
 }
 

@@ -170,9 +170,12 @@ pub fn run() {
             commands::keys_import,
             songs::kie_credits,
             songs::songs_list,
+            wiki::song_sources,
+            wiki::wiki_find,
             podcasts::podcast_topics,
             podcasts::podcast_draft,
             podcasts::podcast_create,
+            podcasts::podcast_make,
             podcasts::podcast_rerender,
             songs::song_draft,
             songs::song_create,
@@ -1205,6 +1208,7 @@ mod integration {
             content: "Kraków is the second-largest city in Poland.\n\n## History\nCapital until 1596.".into(),
             thumbnail: None,
             polish_title: Some("Kraków".into()),
+            html: None,
         };
         let polish = wiki::Article {
             lang: "pl".into(),
@@ -1253,6 +1257,50 @@ mod integration {
         assert!(wiki::sources_of(&mut conn, study.id).unwrap().is_empty());
         wiki::store(&mut conn, study.id, &article, None, None).unwrap();
         lessons::delete(&mut conn, study.id).unwrap();
+        assert_eq!(t::wiki_sources::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn podcasts_keep_their_wikipedia_sources_apart_from_lessons() {
+        let mut conn = scratch_db("podcast-sources");
+        let song_id = songs::insert_song(
+            &mut conn,
+            &songs::SongDraft { title: "The bridge".into(), kind: "podcast".into(), ..Default::default() },
+            "tts",
+        )
+        .unwrap();
+        let article = wiki::Article {
+            lang: "en".into(),
+            title: "Øresund Bridge".into(),
+            url: "https://en.wikipedia.org/wiki/%C3%98resund_Bridge".into(),
+            pageid: 9,
+            revid: 1,
+            summary: "A bridge.".into(),
+            content: "A bridge between Denmark and Sweden.".into(),
+            thumbnail: None,
+            polish_title: Some("Øresundsbroen".into()),
+            html: Some("<p>A <b>bridge</b>.</p>".into()),
+        };
+        let polish = wiki::Article { lang: "pl".into(), html: Some("<p>En bro.</p>".into()), ..article.clone() };
+        let source = wiki::store_for(&mut conn, wiki::Owner::Song(song_id), &article, Some(&polish), None).unwrap();
+        assert_eq!((source.song_id, source.lesson_id), (Some(song_id), None));
+        assert_eq!(wiki::sources_of_song(&mut conn, song_id).unwrap().len(), 1);
+        let html: (Option<String>, Option<String>) = t::wiki_sources::table
+            .find(source.id)
+            .select((t::wiki_sources::html, t::wiki_sources::pl_html))
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(html, (Some("<p>A <b>bridge</b>.</p>".into()), Some("<p>En bro.</p>".into())));
+        // Stored again without a layout, the layout stays.
+        wiki::store_for(&mut conn, wiki::Owner::Song(song_id), &wiki::Article { html: None, ..article.clone() }, None, None).unwrap();
+        let kept: Option<String> =
+            t::wiki_sources::table.find(source.id).select(t::wiki_sources::html).first(&mut conn).unwrap();
+        assert!(kept.is_some());
+        // Episodes are not fact-checked; they go with their episode.
+        let now = db::now_secs();
+        diesel::update(t::wiki_sources::table).set(t::wiki_sources::checked_at.eq(0)).execute(&mut conn).unwrap();
+        assert!(wiki::lessons_due(&mut conn, now).unwrap().is_empty());
+        songs::delete_song(&mut conn, song_id).unwrap();
         assert_eq!(t::wiki_sources::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
     }
 
@@ -1934,8 +1982,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         assert_eq!(bread, 1, "the views are made again under the new names");
         let checkin: i64 = t::checkins::table.find(3).select(t::checkins::lesson_id).first(&mut conn).unwrap();
         assert_eq!(checkin, 10);
-        let source: i64 = t::wiki_sources::table.select(t::wiki_sources::lesson_id).first(&mut conn).unwrap();
-        assert_eq!(source, 10);
+        let source: Option<i64> = t::wiki_sources::table.select(t::wiki_sources::lesson_id).first(&mut conn).unwrap();
+        assert_eq!(source, Some(10));
         let title: String = t::courses::table.find(1).select(t::courses::title_en).first(&mut conn).unwrap();
         assert_eq!(title, "Grammar & culture");
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);

@@ -808,6 +808,190 @@
 
 
 /* Wikipedia sources: a thumbnail in the list, the picture in the reader. */
+/* A Wikipedia article in the reader (WikiArticle): laid out as on
+   Wikipedia, in the app's type and colours. */
+.wiki {
+  line-height: 1.65;
+  color: var(--text-dim);
+  display: flow-root;
+}
+.wiki p {
+  margin: 0 0 var(--space-3);
+}
+.wiki strong {
+  color: var(--text);
+  font-weight: var(--weight-bold);
+}
+.wiki .wiki-link {
+  color: var(--text);
+}
+.wiki-section {
+  margin-top: var(--space-5);
+  scroll-margin-top: var(--space-4);
+}
+.wiki-section-title {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--font-lead);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-lead);
+  color: var(--text);
+}
+.wiki-section-title::-webkit-details-marker {
+  display: none;
+}
+.wiki-section-title::after {
+  content: "";
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-faint);
+  border-bottom: 2px solid var(--text-faint);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+.wiki-section:not([open]) > .wiki-section-title::after {
+  transform: rotate(-45deg);
+}
+.wiki-subheading {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--font-body);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+}
+.wiki-contents {
+  margin: var(--space-2) 0 var(--space-4);
+}
+.wiki-list {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+}
+.wiki-list li {
+  margin-bottom: var(--space-1);
+}
+.wiki-dl {
+  margin: 0 0 var(--space-3);
+}
+.wiki-dl dt {
+  font-weight: var(--weight-bold);
+  color: var(--text);
+}
+.wiki-dl dd {
+  margin: 0 0 var(--space-2) var(--space-4);
+}
+.wiki-quote {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--line);
+  font-style: italic;
+}
+.wiki-pre,
+.wiki-math {
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+}
+.wiki-pre {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+/* Tables scroll sideways on their own, never the page. */
+.wiki-table {
+  overflow-x: auto;
+  margin: 0 0 var(--space-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+}
+.wiki-table table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: var(--font-small);
+  line-height: var(--leading-small);
+}
+.wiki-table caption {
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+  text-align: left;
+}
+.wiki-table th,
+.wiki-table td {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: top;
+}
+.wiki-table th {
+  color: var(--text);
+  font-weight: var(--weight-bold);
+  background: var(--surface-sunken);
+}
+.wiki img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+.wiki-figure {
+  margin: 0 0 var(--space-4);
+}
+.wiki-figure img {
+  display: block;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+}
+.wiki-figure figcaption {
+  margin-top: var(--space-2);
+  font-size: var(--font-small);
+  line-height: var(--leading-small);
+  color: var(--text-faint);
+  text-align: center;
+}
+/* The infobox: the article's key facts, in a card. Beside the text on a
+   wide screen, above it on a phone. */
+.wiki-infobox {
+  margin: 0 0 var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.wiki-infobox > summary {
+  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.wiki-infobox .wiki-table {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+.wiki-infobox th[colspan] {
+  text-align: center;
+}
+.wiki-infobox img {
+  display: block;
+  margin: 0 auto;
+}
+@media (min-width: 720px) {
+  .wiki-infobox {
+    float: right;
+    width: 300px;
+    margin: 0 0 var(--space-4) var(--space-5);
+  }
+}
+
 .source-thumb {
   width: 44px;
   height: 44px;
