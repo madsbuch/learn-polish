@@ -17,7 +17,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { CourseProgress, PodcastFormat, Settings, SongLength, TopicIdea, WikiHit } from "../lib/types";
+import type { CourseProgress, PodcastCast, PodcastFormat, Settings, SongLength, TopicIdea, WikiHit } from "../lib/types";
 
 const FORMAT_HINTS: Record<PodcastFormat, string> = {
   pairs: "Each sentence in English, then in Polish — like a song's verses.",
@@ -25,6 +25,12 @@ const FORMAT_HINTS: Record<PodcastFormat, string> = {
 };
 
 const MAX_ARTICLES = 5;
+
+const CAST_HINTS: Record<PodcastCast, string> = {
+  narrator: "One voice tells it all.",
+  hosts: "Two hosts talk it through: one asks, one explains — each in their own voice.",
+  characters: "A small radio play: characters act it out, each in their own voice.",
+};
 
 /**
  * Making a podcast episode in one go: a subject (suggested from what the
@@ -54,6 +60,8 @@ export function PodcastComposer({
   const [ideas, setIdeas] = useState<TopicIdea[] | null>(null);
   const [courseId, setCourseId] = useState<number | null>(null);
   const [format, setFormat] = useState<PodcastFormat>("pairs");
+  // Until picked, who talks follows what it is written from.
+  const [castChoice, setCastChoice] = useState<PodcastCast | null>(null);
   const [length, setLength] = useState<SongLength>("medium");
   const [vocalGender, setVocalGender] = useState("f");
   const [busy, setBusy] = useState<"ideas" | "search" | "make" | null>(null);
@@ -61,6 +69,7 @@ export function PodcastComposer({
 
   const writer = settings.songwriterModel || settings.aiModel;
   const story = basis === "story";
+  const cast: PodcastCast = castChoice ?? (story ? "characters" : "hosts");
 
   async function run(kind: NonNullable<typeof busy>, action: () => Promise<void>) {
     setBusy(kind);
@@ -239,6 +248,17 @@ export function PodcastComposer({
       <Section title="How it sounds">
         <Card>
           <Stack gap={4}>
+            <Field label="Who talks" hint={CAST_HINTS[cast]}>
+              <Segmented
+                value={cast}
+                onChange={setCastChoice}
+                options={[
+                  { value: "narrator", label: "Narrator" },
+                  { value: "hosts", label: "Two hosts" },
+                  { value: "characters", label: "Characters" },
+                ]}
+              />
+            </Field>
             <Field label="Kind" hint={FORMAT_HINTS[format]}>
               <Segmented
                 value={format}
@@ -260,7 +280,7 @@ export function PodcastComposer({
                 ]}
               />
             </Field>
-            <Field label="Polish voice">
+            <Field label={cast === "hosts" ? "Polish voice (first host)" : "Polish voice (narrator)"}>
               <Segmented
                 value={vocalGender}
                 onChange={setVocalGender}
@@ -300,6 +320,7 @@ export function PodcastComposer({
                 topic,
                 articles: story ? [] : articles,
                 story,
+                cast,
                 format,
                 length,
                 courseId,

@@ -574,6 +574,10 @@ export interface CacheProgress {
 export interface SongLine {
   en: string;
   pl: string;
+  /** In a podcast with a cast: who says it (absent or "": the narrator). */
+  speaker?: string;
+  /** In a podcast: how it is said ("surprised"). */
+  how?: string;
 }
 
 export type SongSectionKind = "verse" | "chorus" | "bridge" | "intro" | "outro";
@@ -615,6 +619,7 @@ export interface SongOrigin {
   sourceImage?: string;
   requestedArticles?: string[];
   story?: boolean;
+  requestedCast?: string;
 }
 
 /** An article a podcast was written from. */
@@ -637,7 +642,23 @@ export interface PodcastAudio {
   slow: boolean;
   /** "two" voices (English and Polish apart) or "one". */
   voices: "one" | "two";
+  /** Who speaks besides the narrator, each in a voice of their own. */
+  cast?: CastMember[];
 }
+
+/** A host or a character in a podcast. */
+export interface CastMember {
+  name: string;
+  /** "f" or "m". */
+  gender: string;
+  /** How they come across, in a word ("curious"). */
+  character: string;
+  /** The voice they speak in; chosen when the episode is recorded. */
+  voice: string;
+}
+
+/** Who talks in a podcast. */
+export type PodcastCast = "narrator" | "hosts" | "characters";
 
 /** "pairs": English then Polish; "immersion": only Polish, in simpler sentences. */
 export type PodcastFormat = "pairs" | "immersion";
@@ -648,6 +669,8 @@ export interface PodcastRequest {
   articles?: string[];
   /** A short made-up story, from no articles. */
   story?: boolean;
+  /** Who talks; absent: hosts for articles, characters for a story. */
+  cast?: PodcastCast;
   format?: PodcastFormat;
   length?: SongLength;
   courseId?: number | null;
@@ -691,6 +714,8 @@ export interface TimedLine {
   gloss: string | null;
   /** Set on the first line of a section, e.g. "Chorus". */
   section: string | null;
+  /** In a podcast with a cast: who says it. */
+  speaker?: string | null;
 }
 
 export interface Song extends SongDraft {

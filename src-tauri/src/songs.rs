@@ -53,6 +53,12 @@ fn unreachable(error: reqwest::Error) -> Error {
 pub struct SongLine {
     pub en: String,
     pub pl: String,
+    /// In a podcast with a cast: who says it (empty: the narrator).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub speaker: String,
+    /// In a podcast: how it is said, in a word or two ("surprised").
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub how: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -112,6 +118,8 @@ pub struct SongOrigin {
     /// kept so the episode can be written again if writing it failed.
     pub requested_articles: Vec<String>,
     pub story: bool,
+    /// For a podcast: who talks — "narrator", "hosts" or "characters".
+    pub requested_cast: String,
 }
 
 /// An article a podcast was written from.
@@ -156,6 +164,9 @@ pub struct TimedLine {
     pub gloss: Option<String>,
     /// Set on the first line of a section: "Verse 1", "Chorus".
     pub section: Option<String>,
+    /// In a podcast with a cast: who says it.
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 /// A sung word and its timing, as Suno aligns it. Stored compactly.
@@ -883,6 +894,7 @@ pub fn timed_lines(words: &[TimedWord], sections: &[SongSection]) -> Vec<TimedLi
                 lang: lang.to_string(),
                 gloss,
                 section: section.take(),
+                speaker: None,
             });
         }
         text.clear();
@@ -1527,8 +1539,8 @@ mod tests {
                 SongSection {
                     kind: "verse".into(),
                     lines: vec![
-                        SongLine { en: "Good morning".into(), pl: "Dzień dobry".into() },
-                        SongLine { en: "I am hungry".into(), pl: "Jestem głodny".into() },
+                        SongLine { en: "Good morning".into(), pl: "Dzień dobry".into(), ..Default::default() },
+                        SongLine { en: "I am hungry".into(), pl: "Jestem głodny".into(), ..Default::default() },
                     ],
                 },
                 SongSection {
@@ -1536,11 +1548,12 @@ mod tests {
                     lines: vec![SongLine {
                         en: "A coffee with milk, please".into(),
                         pl: "Poproszę kawę z mlekiem".into(),
+                        ..Default::default()
                     }],
                 },
                 SongSection {
                     kind: "verse".into(),
-                    lines: vec![SongLine { en: "Thank you".into(), pl: "Dziękuję".into() }],
+                    lines: vec![SongLine { en: "Thank you".into(), pl: "Dziękuję".into(), ..Default::default() }],
                 },
             ],
         }

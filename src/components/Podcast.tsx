@@ -82,7 +82,7 @@ function same(a: PodcastAudio, b: PodcastAudio): boolean {
   );
 }
 
-const FALLBACK: PodcastAudio = { english: true, pause: 0.8, repeats: 1, slow: false, voices: "two" };
+const FALLBACK: PodcastAudio = { english: true, pause: 0.8, repeats: 1, slow: false, voices: "two", cast: [] };
 
 /**
  * How an episode sounds: whether the English is said, the pause to answer
@@ -100,6 +100,7 @@ export function PodcastSound({ song, onChanged }: { song: Song; onChanged: () =>
     [song.id, saved.english, saved.pause, saved.repeats, saved.slow, saved.voices],
   );
 
+  const cast = song.podcast?.cast ?? [];
   const nearest = PAUSES.reduce((best, p) => (Math.abs(p - audio.pause) < Math.abs(best - audio.pause) ? p : best));
   const generating = song.status === "generating";
 
@@ -173,12 +174,30 @@ export function PodcastSound({ song, onChanged }: { song: Song; onChanged: () =>
                 <Segmented
                   value={audio.voices}
                   onChange={(voices) => setAudio({ ...audio, voices })}
-                  options={[
-                    { value: "two", label: "English and Polish apart" },
-                    { value: "one", label: "One voice" },
-                  ]}
+                  options={
+                    cast.length > 0
+                      ? [
+                          { value: "two", label: "A narrator for the English" },
+                          { value: "one", label: "Each says their own" },
+                        ]
+                      : [
+                          { value: "two", label: "English and Polish apart" },
+                          { value: "one", label: "One voice" },
+                        ]
+                  }
                 />
               }
+            />
+          ) : null}
+          {cast.length > 0 ? (
+            <SettingRow
+              stacked
+              label="Cast"
+              description={cast
+                .map((member) =>
+                  [member.name, [member.character, member.voice].filter(Boolean).join(", ")].filter(Boolean).join(" — "),
+                )
+                .join(" · ")}
             />
           ) : null}
           <Button

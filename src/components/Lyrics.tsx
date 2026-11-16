@@ -19,6 +19,9 @@ export function Lyrics({ sections, parts = false }: { sections: SongSection[]; p
               </div>
             ) : (
               <div key={j}>
+                {line.speaker && line.speaker !== section.lines[j - 1]?.speaker ? (
+                  <span className="lyric-speaker">{line.speaker}</span>
+                ) : null}
                 {line.en ? <span className="lyric-en">{line.en}</span> : null}
                 <span className="lyric-pl">{line.pl}</span>
               </div>

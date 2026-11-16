@@ -97,7 +97,8 @@ The app:
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
   to sort older ones, read their lyrics with get_song and move their lesson with move_lesson.
 - The Music tab also holds podcasts (make_podcast): short spoken episodes on a subject the \
-  learner likes, written from Wikipedia articles (0–5) or as a made-up story. Two kinds: pairs \
+  learner likes, written from Wikipedia articles (0–5) or as a made-up story, told by a narrator, \
+  two hosts or a cast of characters — each with a voice of their own. Two kinds: pairs \
   (each sentence in English, then in Polish) and immersion (only Polish, simpler sentences). \
   set_podcast_sound changes the pause before the Polish, repeats, slow Polish, voices and whether \
   the English is said. They need only the OpenRouter key, not kie.ai. list_songs and get_song \
@@ -721,6 +722,11 @@ pub fn tool_definitions() -> Vec<Tool> {
                         "description": "Exact English Wikipedia article titles to write from (0–5); leave out to use the best match for the subject"
                     },
                     "story": { "type": "boolean", "description": "A short made-up story, written from no articles" },
+                    "cast": {
+                        "type": "string",
+                        "enum": ["narrator", "hosts", "characters"],
+                        "description": "Who talks, each in a voice of their own: one narrator; two hosts discussing the subject (default for articles); or characters acting it out, a radio play (default for a story)"
+                    },
                     "format": {
                         "type": "string",
                         "enum": ["pairs", "immersion"],
@@ -1192,6 +1198,8 @@ struct PodcastArgs {
     article: String,
     #[serde(default)]
     story: bool,
+    #[serde(default)]
+    cast: String,
     #[serde(default)]
     format: String,
     #[serde(default)]
@@ -2032,6 +2040,7 @@ fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
                 std::iter::once(args.article).chain(args.articles).collect()
             },
             story: args.story,
+            cast: args.cast,
             format: args.format,
             length: args.length,
             course_id: args.course_id,

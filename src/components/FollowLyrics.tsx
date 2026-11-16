@@ -10,6 +10,15 @@ import type { TimedLine } from "../lib/types";
  * in view, and tapping a line jumps there. Without Suno's timings the lyrics
  * are shown whole, so there is always something to read along with.
  */
+/** Who spoke last before line `i` — a name shows only when the speaker changes. */
+function lastSpeaker(lines: { speaker?: string | null; section: string | null }[], i: number): string | null {
+  for (let j = i - 1; j >= 0; j--) {
+    if (lines[j].section) return j === i - 1 ? null : (lines[j].speaker ?? null);
+    if (lines[j].speaker) return lines[j].speaker ?? null;
+  }
+  return null;
+}
+
 export function FollowLyrics({ item }: { item: QueueItem }) {
   const player = usePlayer();
   const trackId = item.track.id;
@@ -81,6 +90,9 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
       {lines.map((line, i) => (
         <div key={i}>
           {line.section ? <div className="t-eyebrow follow-eyebrow">{line.section}</div> : null}
+          {line.speaker && line.speaker !== lastSpeaker(lines, i) ? (
+            <div className="follow-speaker">{line.speaker}</div>
+          ) : null}
           <button
             ref={i === current ? currentRef : undefined}
             className="follow-line"

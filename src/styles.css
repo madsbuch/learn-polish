@@ -715,6 +715,18 @@
   border-radius: var(--radius-md);
   transition: background 0.25s, opacity 0.25s;
 }
+/* Who speaks, in a podcast with a cast: shown when it changes. */
+.follow-speaker,
+.lyric-speaker {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand-ink);
+}
 .follow-line .pl {
   display: block;
   font-size: var(--font-lead);

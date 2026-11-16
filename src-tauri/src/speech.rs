@@ -186,7 +186,8 @@ pub(crate) enum Delivery {
 /// A podcast line's clip as raw audio (WAV), so clips can be joined into an
 /// episode. Stored apart from the lessons' clips, which may be MP3; making an
 /// episode's audio again reuses every line it already has.
-pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Delivery) -> Result<Vec<u8>> {
+/// `how` is a note on the delivery ("surprised", "whispering"), or empty.
+pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Delivery, how: &str) -> Result<Vec<u8>> {
     let (key, model) = {
         let mut guard = db.lock();
         (ai::api_key(&mut guard)?, ai::SPEECH_MODEL.to_string())
@@ -196,6 +197,8 @@ pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Deliver
         Delivery::Polish => format!("{voice}/pcm"),
         Delivery::PolishSlow => format!("{voice}/slow/pcm"),
     };
+    let how = how.trim();
+    let variant = if how.is_empty() { variant } else { format!("{variant}/{}", how.to_lowercase()) };
     let cache_key = audio_key(&model, &variant, text);
     let lock = clip_lock(&cache_key);
     let _making = lock.lock().await;
@@ -209,6 +212,8 @@ pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Deliver
         Delivery::Polish => ai::speech_prompt(text, false),
         Delivery::PolishSlow => ai::speech_prompt(text, true),
     };
+    // Gemini takes direction like an actor: say how, before what.
+    let prompt = if how.is_empty() { prompt } else { format!("Speak this line {how}. {prompt}") };
     let (mime, bytes) = ai::synthesize_pcm(&key, &model, voice, &prompt).await?;
     let mut guard = db.lock();
     let conn = &mut *guard;

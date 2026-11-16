@@ -69,7 +69,31 @@ pub struct PodcastAudio {
     /// The English is said before each Polish sentence. Off: only Polish
     /// is heard (the English meaning still shows with the lyrics).
     pub english: bool,
+    /// Who speaks besides the narrator, each with a voice of their own.
+    /// Empty: a narrator alone.
+    pub cast: Vec<CastMember>,
 }
+
+/// Someone who speaks in an episode: a host or a character.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CastMember {
+    pub name: String,
+    /// "f" or "m".
+    pub gender: String,
+    /// One word for how they come across ("curious", "grumpy"); matched to a
+    /// voice's character.
+    pub character: String,
+    /// The Gemini voice they speak in, chosen when the episode is recorded.
+    pub voice: String,
+}
+
+/// The most people in a cast.
+const CAST_LIMIT: usize = 4;
+
+/// Voices for the English when the cast speaks the Polish: calm, clear
+/// narrators, the first not in the cast.
+const ENGLISH_NARRATORS: &[&str] = &["Charon", "Sulafat", "Iapetus", "Erinome", "Schedar", "Achernar"];
 
 impl Default for PodcastAudio {
     fn default() -> Self {
@@ -80,8 +104,10 @@ impl Default for PodcastAudio {
 impl PodcastAudio {
     pub fn for_format(format: &str) -> Self {
         match format {
-            "immersion" => Self { pause: 0.0, repeats: 1, slow: false, voices: "two".into(), english: false },
-            _ => Self { pause: 0.8, repeats: 1, slow: false, voices: "two".into(), english: true },
+            "immersion" => {
+                Self { pause: 0.0, repeats: 1, slow: false, voices: "two".into(), english: false, cast: Vec::new() }
+            }
+            _ => Self { pause: 0.8, repeats: 1, slow: false, voices: "two".into(), english: true, cast: Vec::new() },
         }
     }
 
@@ -107,6 +133,9 @@ pub struct PodcastRequest {
     pub articles: Vec<String>,
     /// A short story, written from no articles.
     pub story: bool,
+    /// Who talks: "narrator", "hosts" or "characters"; empty: hosts for
+    /// articles, characters for a story.
+    pub cast: String,
     /// "pairs" | "immersion".
     pub format: String,
     /// "short" | "medium" | "long".
@@ -250,16 +279,55 @@ Rules:
 - Work in the learner's words where they fit naturally.
 - Names stay as they are; use the Polish form of a name when Poles use one (Kraków, Niemcy, Londyn).
 - The title is in English; titlePl is the same title in Polish; about is one English sentence saying what the episode is about.
+- "speaker" names who says a line: someone from "cast", or "" for the narrator. Who talks is given below.
+- "how" (optional) is how a line is said, in one to three English words — "surprised", "laughing", "whispering", "proudly". Use it where the feeling matters; leave it out for most lines.
 
 Reply with ONLY a JSON object, no prose, in exactly this shape:
 {
   "title": "The salt mine under the town",
   "titlePl": "Kopalnia soli pod miastem",
   "about": "How the Wieliczka Salt Mine was dug, and what is inside it today.",
+  "cast": [{"name": "Kasia", "gender": "f", "character": "curious"}, {"name": "Marek", "gender": "m", "character": "knowledgeable"}],
   "parts": [
-    {"lines": [{"en": "There is a mine under the town.", "pl": "Pod miastem jest kopalnia."}]}
+    {"lines": [
+      {"speaker": "Kasia", "en": "Have you been down the mine?", "pl": "Byłeś w kopalni?"},
+      {"speaker": "Marek", "how": "laughing", "en": "Many times!", "pl": "Wiele razy!"}
+    ]}
   ]
 }"#;
+
+/// Who talks, as the writer is told it.
+fn cast_rules(cast: &str) -> &'static str {
+    match cast {
+        "narrator" => {
+            "Who talks: one narrator tells it all. \"cast\" is empty and every \"speaker\" is \"\"."
+        }
+        "characters" => {
+            "Who talks: a small cast of 2–4 characters with Polish first names (both women and men), \
+             and a narrator. Tell it mostly through what the characters say to each other — a radio \
+             play — with the narrator (speaker \"\") only for a few lines that set the scene. Give each \
+             character a one-word character (\"cheerful\", \"grumpy\", \"shy\", \"wise\") and let it \
+             show in what they say."
+        }
+        _ => {
+            "Who talks: two podcast hosts, a woman and a man with Polish first names, talking about the \
+             subject together — one curious, asking and reacting; the other knowledgeable, explaining. \
+             Short turns, real reactions (\"Really?\", \"Wait — how long?\"), each building on the \
+             other. Every line has a speaker; no narrator."
+        }
+    }
+}
+
+/// Who talks, as asked for: hosts discuss articles; a story has characters.
+fn cast_of(cast: &str, story: bool) -> &'static str {
+    match cast {
+        "narrator" => "narrator",
+        "hosts" => "hosts",
+        "characters" => "characters",
+        _ if story => "characters",
+        _ => "hosts",
+    }
+}
 
 /// The articles an episode is written from: the ones named (up to five),
 /// else the best match for the topic. Empty when Wikipedia has nothing (or
@@ -327,6 +395,7 @@ struct Script {
     title: String,
     title_pl: String,
     about: String,
+    cast: Vec<CastMember>,
     parts: Vec<ScriptPart>,
 }
 
@@ -355,8 +424,61 @@ fn script_to_draft(script: Script, format: &str, vocal_gender: &str) -> SongDraf
             .map(|part| SongSection { kind: "verse".into(), lines: part.lines })
             .collect(),
         kind: "podcast".into(),
-        podcast: Some(PodcastAudio::for_format(format)),
+        podcast: Some(PodcastAudio { cast: script.cast, ..PodcastAudio::for_format(format) }),
         ..Default::default()
+    }
+}
+
+/// The cast as it is kept: named, at most four, no one twice, and anyone
+/// who speaks but was not listed added (with a guess at nothing).
+fn tidy_cast(cast: Vec<CastMember>, sections: &[SongSection]) -> Vec<CastMember> {
+    let mut tidy: Vec<CastMember> = Vec::new();
+    let mut add = |member: CastMember| {
+        let name = member.name.trim().to_string();
+        if name.is_empty() || tidy.iter().any(|m| m.name.eq_ignore_ascii_case(&name)) || tidy.len() >= CAST_LIMIT {
+            return;
+        }
+        let gender = if member.gender.trim().to_lowercase().starts_with('m') { "m" } else { "f" };
+        tidy.push(CastMember {
+            name,
+            gender: gender.into(),
+            character: member.character.trim().to_lowercase(),
+            voice: member.voice.trim().to_string(),
+        });
+    };
+    for member in cast {
+        add(member);
+    }
+    for line in sections.iter().flat_map(|s| &s.lines) {
+        if !line.speaker.is_empty() {
+            add(CastMember { name: line.speaker.clone(), ..Default::default() });
+        }
+    }
+    tidy
+}
+
+/// Gives each of the cast a voice of their own: a gender match, the learner's
+/// chosen voice for the first of each gender, else one whose character fits,
+/// else the next free one — never one already taken (the narrator's).
+pub fn assign_voices(cast: &mut [CastMember], taken: &[String], chosen_female: &str, chosen_male: &str) {
+    let mut used: Vec<String> = taken.to_vec();
+    used.extend(cast.iter().filter(|m| !m.voice.is_empty()).map(|m| m.voice.clone()));
+    for member in cast.iter_mut().filter(|m| m.voice.is_empty()) {
+        let gender = if member.gender == "m" { "m" } else { "f" };
+        let free = |name: &str| !used.iter().any(|u| u == name);
+        let candidates: Vec<&(&str, &str, &str)> =
+            ai::GEMINI_VOICES.iter().filter(|(name, g, _)| *g == gender && free(name)).collect();
+        let chosen = if gender == "m" { chosen_male } else { chosen_female };
+        let pick = candidates
+            .iter()
+            .find(|(name, _, _)| *name == chosen)
+            .or_else(|| candidates.iter().find(|(_, _, character)| *character == member.character))
+            .or_else(|| candidates.first())
+            .map(|(name, _, _)| name.to_string())
+            // More people of one gender than voices: share.
+            .unwrap_or_else(|| chosen.to_string());
+        used.push(pick.clone());
+        member.voice = pick;
     }
 }
 
@@ -373,6 +495,12 @@ pub fn normalize_episode(mut draft: SongDraft) -> Result<SongDraft> {
         for line in &mut section.lines {
             line.en = line.en.trim().to_string();
             line.pl = line.pl.trim().to_string();
+            line.speaker = line.speaker.trim().to_string();
+            line.how = line.how.trim().chars().take(40).collect();
+            // A narrator by any other name is the narrator.
+            if ["narrator", "lektor", "narrator:"].contains(&line.speaker.to_lowercase().as_str()) {
+                line.speaker.clear();
+            }
         }
         section.lines.retain(|l| !l.en.is_empty() || !l.pl.is_empty());
     }
@@ -390,7 +518,9 @@ pub fn normalize_episode(mut draft: SongDraft) -> Result<SongDraft> {
     if draft.title.is_empty() {
         return Err(Error::msg("Give the episode a title."));
     }
-    draft.podcast = Some(draft.podcast.take().unwrap_or_else(|| PodcastAudio::for_format(&draft.style)).clean());
+    let mut audio = draft.podcast.take().unwrap_or_else(|| PodcastAudio::for_format(&draft.style));
+    audio.cast = tidy_cast(std::mem::take(&mut audio.cast), &draft.sections);
+    draft.podcast = Some(audio.clean());
     Ok(draft)
 }
 
@@ -426,6 +556,8 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
         };
         brief.push_str(&format!("The episode is about: {subject}\n\n"));
         brief.push_str(format_rules(format));
+        brief.push_str("\n");
+        brief.push_str(cast_rules(cast_of(&request.cast, request.story)));
         brief.push_str(&format!(
             "\n\nLength: about {} sentence pairs in all.\n",
             pair_count(format, length)
@@ -465,6 +597,7 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
         source_image: articles.iter().find_map(|a| a.thumbnail.clone()).unwrap_or_default(),
         requested_articles: request.articles.clone(),
         story: request.story,
+        requested_cast: cast_of(&request.cast, request.story).to_string(),
         ..Default::default()
     };
     normalize_episode(draft)
@@ -507,6 +640,7 @@ pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> 
             length,
             requested_articles: if request.story { Vec::new() } else { articles },
             story: request.story,
+            requested_cast: cast_of(&request.cast, request.story).to_string(),
             ..Default::default()
         },
         ..Default::default()
@@ -530,6 +664,7 @@ async fn write_script(db: &Db, song: &Song) -> Result<()> {
         topic: song.origin.brief.clone(),
         articles: song.origin.requested_articles.clone(),
         story: song.origin.story,
+        cast: song.origin.requested_cast.clone(),
         format: song.style.clone(),
         length: song.origin.length.clone(),
         course_id: song.course_id,
@@ -537,6 +672,11 @@ async fn write_script(db: &Db, song: &Song) -> Result<()> {
         ..Default::default()
     };
     let draft = write_episode(db, request).await?;
+    // The sound stays as it was set; the cast comes with the script.
+    let audio = PodcastAudio {
+        cast: draft.podcast.clone().unwrap_or_default().cast,
+        ..song.podcast.clone().unwrap_or_default()
+    };
     let mut guard = db.lock();
     let conn = &mut *guard;
     diesel::update(song_rows::table.find(song.id))
@@ -547,6 +687,7 @@ async fn write_script(db: &Db, song: &Song) -> Result<()> {
             song_rows::sections.eq(serde_json::to_string(&draft.sections)?),
             song_rows::lyrics.eq(songs::render_lyrics(&draft)),
             song_rows::origin.eq(serde_json::to_string(&draft.origin)?),
+            song_rows::podcast.eq(serde_json::to_string(&audio)?),
         ))
         .execute(conn)?;
     Ok(())
@@ -675,13 +816,15 @@ struct Clip {
     text: String,
     voice: String,
     delivery: Delivery,
+    /// How it is said ("surprised"), or empty.
+    how: String,
 }
 
 /// A clip, made or taken from the cache. Owns what it needs, so many can be
 /// made at once from a detached task.
 async fn make_clip(app: AppHandle, clip: Clip) -> Result<Vec<u8>> {
     let db = app.state::<Db>();
-    speech::pcm_clip(&db, &clip.text, &clip.voice, clip.delivery).await
+    speech::pcm_clip(&db, &clip.text, &clip.voice, clip.delivery, &clip.how).await
 }
 
 async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
@@ -696,22 +839,43 @@ async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let song = songs::load_song(conn, song_id)?;
-        let audio = song.podcast.clone().unwrap_or_default().clean();
+        let mut audio = song.podcast.clone().unwrap_or_default().clean();
         let polish_gender = if song.vocal_gender == "m" { "m" } else { "f" };
         let english_gender = match (audio.voices.as_str(), polish_gender) {
             ("one", gender) => gender,
             (_, "m") => "f",
             _ => "m",
         };
+        // The narrator's voice; the cast each get one of their own, kept so
+        // that making the audio again sounds the same.
+        let narrator = ai::voice_for(conn, polish_gender);
+        if audio.cast.iter().any(|m| m.voice.is_empty()) {
+            let narrated = song.sections.iter().flat_map(|s| &s.lines).any(|l| l.speaker.is_empty());
+            let taken = if narrated { vec![narrator.clone()] } else { Vec::new() };
+            let (female, male) = (ai::voice_for(conn, "f"), ai::voice_for(conn, "m"));
+            assign_voices(&mut audio.cast, &taken, &female, &male);
+            diesel::update(song_rows::table.find(song_id))
+                .set(song_rows::podcast.eq(serde_json::to_string(&audio)?))
+                .execute(conn)?;
+        }
         let old: Option<(Option<i64>, Option<i64>)> = song_tracks::table
             .filter(song_tracks::song_id.eq(song_id))
             .filter(song_tracks::remote_id.eq("episode"))
             .select((song_tracks::audio_file_id, song_tracks::image_file_id))
             .first(conn)
             .optional()?;
-        let english_voice = ai::voice_for(conn, english_gender);
-        let polish_voice = ai::voice_for(conn, polish_gender);
-        (song, audio, english_voice, polish_voice, old)
+        // With a cast, the English is a calm narrator of its own, apart
+        // from everyone who speaks Polish.
+        let english_voice = if audio.cast.is_empty() {
+            ai::voice_for(conn, english_gender)
+        } else {
+            ENGLISH_NARRATORS
+                .iter()
+                .find(|v| **v != narrator && !audio.cast.iter().any(|m| m.voice == **v))
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| ai::voice_for(conn, english_gender))
+        };
+        (song, audio, english_voice, narrator, old)
     };
 
     keep_sources(&db, song_id, &song.origin.sources).await;
@@ -722,11 +886,19 @@ async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
     let mut jobs = Vec::new();
     for section in &song.sections {
         for line in &section.lines {
+            let speaker_voice = audio
+                .cast
+                .iter()
+                .find(|m| m.name == line.speaker)
+                .map(|m| m.voice.clone())
+                .unwrap_or_else(|| polish_voice.clone());
             if !line.en.is_empty() && (audio.english || line.pl.is_empty()) {
-                jobs.push(Clip { text: line.en.clone(), voice: english_voice.clone(), delivery: Delivery::English });
+                // One voice: everyone says their own English too.
+                let voice = if audio.voices == "one" { speaker_voice.clone() } else { english_voice.clone() };
+                jobs.push(Clip { text: line.en.clone(), voice, delivery: Delivery::English, how: String::new() });
             }
             if !line.pl.is_empty() {
-                jobs.push(Clip { text: line.pl.clone(), voice: polish_voice.clone(), delivery: polish });
+                jobs.push(Clip { text: line.pl.clone(), voice: speaker_voice, delivery: polish, how: line.how.clone() });
             }
         }
     }
@@ -908,6 +1080,8 @@ pub fn assemble(sections: &[SongSection], clips: &[Vec<u8>], audio: &PodcastAudi
                     lang: "en".into(),
                     gloss: None,
                     section: label.take(),
+                    // Said by the speaker only when there is no Polish.
+                    speaker: (line.pl.is_empty() && !line.speaker.is_empty()).then(|| line.speaker.clone()),
                 });
                 if !line.pl.is_empty() {
                     tape.silence(audio.pause);
@@ -928,6 +1102,7 @@ pub fn assemble(sections: &[SongSection], clips: &[Vec<u8>], audio: &PodcastAudi
                     lang: "pl".into(),
                     gloss: (!line.en.is_empty()).then(|| line.en.clone()),
                     section: label.take(),
+                    speaker: (!line.speaker.is_empty()).then(|| line.speaker.clone()),
                 });
             }
             tape.silence(if audio.english { AFTER_PAIR } else { AFTER_SENTENCE });
@@ -948,7 +1123,7 @@ mod tests {
     }
 
     fn line(en: &str, pl: &str) -> SongLine {
-        SongLine { en: en.into(), pl: pl.into() }
+        SongLine { en: en.into(), pl: pl.into(), ..Default::default() }
     }
 
     #[test]
@@ -967,7 +1142,7 @@ mod tests {
         ];
         // Hello, Cześć, Dziękuję, Bye, Do widzenia: 500 ms each.
         let clips: Vec<Vec<u8>> = (0..5).map(|_| clip(500)).collect();
-        let audio = PodcastAudio { pause: 1.0, repeats: 2, slow: false, voices: "two".into(), english: true };
+        let audio = PodcastAudio { pause: 1.0, repeats: 2, slow: false, voices: "two".into(), english: true, cast: Vec::new() };
         let episode = assemble(&sections, &clips, &audio).unwrap();
         let times: Vec<(&str, &str, f64, f64, Option<&str>, Option<&str>)> = episode
             .lines
@@ -1006,6 +1181,73 @@ mod tests {
     }
 
     #[test]
+    fn everyone_in_the_cast_gets_a_voice_of_their_own() {
+        let member = |name: &str, gender: &str, character: &str| CastMember {
+            name: name.into(),
+            gender: gender.into(),
+            character: character.into(),
+            voice: String::new(),
+        };
+        let mut cast = vec![
+            member("Mette", "f", "curious"),
+            member("Jonas", "m", "gravelly"),
+            member("Sofie", "f", "warm"),
+            member("Lars", "m", "upbeat"),
+        ];
+        // The narrator reads in Kore; the learner chose Kore and Puck.
+        assign_voices(&mut cast, &["Kore".into()], "Kore", "Puck");
+        let voices: Vec<&str> = cast.iter().map(|m| m.voice.as_str()).collect();
+        assert_eq!(voices[1], "Puck", "the learner's chosen male voice, free");
+        assert_eq!(voices[2], "Sulafat", "a female voice whose character fits");
+        assert_eq!(voices[3], "Achird", "Puck is taken and no other voice is upbeat: the first free one");
+        assert!(!voices.contains(&"Kore"), "the narrator's voice is not reused");
+        let mut unique = voices.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 4, "{voices:?}");
+        for m in &cast {
+            assert!(ai::GEMINI_VOICES.iter().any(|(n, g, _)| *n == m.voice && *g == m.gender), "{m:?}");
+        }
+        // Voices already chosen stay.
+        let before = cast.clone();
+        assign_voices(&mut cast, &["Kore".into()], "Kore", "Puck");
+        assert_eq!(cast, before);
+    }
+
+    #[test]
+    fn scripts_with_a_cast_keep_who_says_what_and_how() {
+        let reply = r#"{"title": "The bridge", "titlePl": "Kopalnia", "about": "A mine.",
+            "cast": [{"name": "Mette", "gender": "female", "character": "Curious"}, {"name": "Mette", "gender": "f"}],
+            "parts": [{"lines": [
+                {"speaker": "Narrator", "en": "A mine.", "pl": "Kopalnia."},
+                {"speaker": "Mette", "how": "surprised", "en": "So deep!", "pl": "Tak głęboko!"},
+                {"speaker": "Jonas", "en": "Yes.", "pl": "Tak."}
+            ]}]}"#;
+        let draft = normalize_episode(script_to_draft(parse_script(reply).unwrap(), "pairs", "f")).unwrap();
+        let lines = &draft.sections[0].lines;
+        assert_eq!(lines[0].speaker, "", "the narrator is no one in particular");
+        assert_eq!((lines[1].speaker.as_str(), lines[1].how.as_str()), ("Mette", "surprised"));
+        let cast = draft.podcast.unwrap().cast;
+        let names: Vec<(&str, &str, &str)> =
+            cast.iter().map(|m| (m.name.as_str(), m.gender.as_str(), m.character.as_str())).collect();
+        assert_eq!(names, [("Mette", "f", "curious"), ("Jonas", "f", "")], "no one twice; unlisted speakers join");
+
+        // The lyrics say who speaks.
+        let clips: Vec<Vec<u8>> = (0..6).map(|_| clip(100)).collect();
+        let episode = assemble(&draft.sections, &clips, &PodcastAudio::for_format("pairs")).unwrap();
+        let speakers: Vec<Option<&str>> = episode.lines.iter().map(|l| l.speaker.as_deref()).collect();
+        assert_eq!(speakers, [None, None, None, Some("Mette"), None, Some("Jonas")]);
+    }
+
+    #[test]
+    fn hosts_discuss_articles_and_stories_have_characters() {
+        assert_eq!(cast_of("", false), "hosts");
+        assert_eq!(cast_of("", true), "characters");
+        assert_eq!(cast_of("narrator", true), "narrator");
+        assert!(cast_rules("narrator").contains("one narrator"));
+    }
+
+    #[test]
     fn clips_must_share_one_format() {
         let sections = vec![SongSection { kind: "verse".into(), lines: vec![line("Hello", "Cześć")] }];
         let clips = vec![clip(10), ai::wav_from_pcm(&[0u8; 20], 2000, 1)];
@@ -1031,8 +1273,8 @@ mod tests {
 
     #[test]
     fn audio_settings_are_kept_sensible() {
-        let wild = PodcastAudio { pause: 99.0, repeats: 0, slow: true, voices: "many".into(), english: false }.clean();
-        assert_eq!(wild, PodcastAudio { pause: 6.0, repeats: 1, slow: true, voices: "two".into(), english: false });
+        let wild = PodcastAudio { pause: 99.0, repeats: 0, slow: true, voices: "many".into(), english: false, cast: Vec::new() }.clean();
+        assert_eq!(wild, PodcastAudio { pause: 6.0, repeats: 1, slow: true, voices: "two".into(), english: false, cast: Vec::new() });
         // Episodes from before the setting keep their English.
         let old: PodcastAudio = serde_json::from_str(r#"{"pause": 2.0, "repeats": 2, "slow": true, "voices": "two"}"#).unwrap();
         assert!(old.english);
