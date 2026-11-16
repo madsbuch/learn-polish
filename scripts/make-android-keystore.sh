@@ -44,6 +44,6 @@ $(base64 -w0 "$OUT" 2>/dev/null || base64 "$OUT" | tr -d '\n')
   ANDROID_KEY_ALIAS           $ALIAS
   ANDROID_KEY_PASSWORD        $PASSWORD
 
-Until those exist, CI signs each build with a throwaway key, which means every
-new APK has to be installed over an uninstall rather than as an upgrade.
+Release builds require these secrets and fail if any are missing.
+Pull requests build unsigned test APKs without accessing the release key.
 INFO

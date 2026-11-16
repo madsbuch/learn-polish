@@ -387,7 +387,7 @@ Requires [Bun](https://bun.sh) and a Rust toolchain.
 bun install
 bun run app:dev         # native desktop app
 bun run app:dev:tablet  # tablet-sized window; resize to test the phone layout
-bun tauri android dev  # on a device or emulator
+bun run android:dev     # on a device or emulator
 ```
 
 Tests:
@@ -415,7 +415,8 @@ rules (`bun run check:design` runs the check alone).
 The app draws edge to edge, which stops Android from shrinking it when the
 keyboard opens (it would pan the whole screen up instead, sliding the header
 away). `src-tauri/android/MainActivity.kt` replaces the activity `tauri android
-init` generates — CI copies it in and sets `adjustResize` — and turns the
+init` generates — `scripts/prepare-android.mjs` copies it in and sets
+`adjustResize`, the same way locally (`bun run android:init`) and in CI — and turns the
 keyboard's height into bottom padding, so the page lays out above it.
 `src/lib/keyboard.ts` then hides the tab bar while you type.
 
@@ -521,7 +522,8 @@ removes only unchanged default courses while preserving customized data.
 
 Every merge to `main` runs `.github/workflows/release.yml`, which tests, builds
 an Android `.apk`, and replaces the rolling
-[**latest**](../../releases/tag/latest) release.
+[**latest**](../../releases/tag/latest) release. Pull requests run the tests
+and compile the Android app too, but only `main` publishes.
 
 ### Installing
 
@@ -530,14 +532,18 @@ open it on the phone and allow installation from that source.
 
 ### Android signing
 
-Out of the box CI signs each APK with a throwaway key, which is enough to
-install but not to *upgrade* an existing install. To fix that once:
+Release signing requires the four repository secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`); a missing secret stops the release rather than
+publishing an APK that cannot upgrade an existing install. Pull requests build
+unsigned test APKs and never touch the release key.
+
+For a new installation, create a key once:
 
 ```bash
 ./scripts/make-android-keystore.sh
 ```
 
-It creates a keystore and prints the four repository secrets to add
-(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PASSWORD`). Keep the `.jks` file — losing it means future builds
-can never upgrade the installed app.
+It creates a keystore and prints the four secrets to add. Keep the `.jks`
+file (a local backup can go in the ignored `.signing/` directory) — losing it
+means future builds can never upgrade the installed app.

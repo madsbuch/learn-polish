@@ -11,9 +11,10 @@
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
-    "android:init": "tauri android init",
-    "android:dev": "tauri android dev",
-    "android:build": "tauri android build --apk",
+    "android:init": "tauri android init --ci && node scripts/prepare-android.mjs",
+    "android:prepare": "node scripts/prepare-android.mjs",
+    "android:dev": "node scripts/prepare-android.mjs && tauri android dev",
+    "android:build": "node scripts/prepare-android.mjs && tauri android build --apk --ci --target aarch64 --target armv7",
     "app:dev:tablet": "tauri dev --config src-tauri/tauri.tablet.conf.json"
   },
   "dependencies": {
