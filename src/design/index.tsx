@@ -207,19 +207,31 @@ export function Screen({
 /** The window width from which list screens show what is open beside them. */
 const SPLIT_MIN_WIDTH = 1000;
 
-/** True on a window wide enough for two panes (a tablet in landscape). */
-export function useWideLayout(): boolean {
-  const query = `(min-width: ${SPLIT_MIN_WIDTH}px)`;
-  const [wide, setWide] = useState(() => window.matchMedia?.(query).matches ?? false);
+/** Whether a CSS media query matches now, following it as the window changes. */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia?.(query).matches ?? false);
   useEffect(() => {
     const media = window.matchMedia?.(query);
     if (!media) return;
-    const changed = () => setWide(media.matches);
+    const changed = () => setMatches(media.matches);
     changed();
     media.addEventListener("change", changed);
     return () => media.removeEventListener("change", changed);
   }, [query]);
-  return wide;
+  return matches;
+}
+
+/** True on a window wide enough for two panes (a tablet in landscape). */
+export function useWideLayout(): boolean {
+  return useMediaQuery(`(min-width: ${SPLIT_MIN_WIDTH}px)`);
+}
+
+/**
+ * True on a tablet (or a wide window) held sideways: room to put two columns
+ * beside each other on a screen of its own, such as the player.
+ */
+export function useLandscapeLayout(): boolean {
+  return useMediaQuery("(min-width: 840px) and (orientation: landscape)");
 }
 
 /**

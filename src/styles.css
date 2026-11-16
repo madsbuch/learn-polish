@@ -619,6 +619,32 @@
   flex: none;
 }
 
+/* A tablet held sideways: the controls stay put on the left while the
+   lyrics (or the queue) fill the column beside them. */
+.player-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.player-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.player-layout[data-landscape="true"] {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+.player-layout[data-landscape="true"] .player-controls {
+  position: sticky;
+  top: 0;
+}
+.player-layout[data-landscape="true"] .follow-lyrics {
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 200px);
+}
+
 .cast-bar {
   display: flex;
   align-items: center;
