@@ -620,6 +620,21 @@ export interface SongOrigin {
   requestedArticles?: string[];
   story?: boolean;
   requestedCast?: string;
+  /** Made from today's news, and the stories it told. */
+  news?: boolean;
+  newsItems?: NewsItem[];
+}
+
+/** A news story a podcast told, as the news index had it. */
+export interface NewsItem {
+  title: string;
+  url: string;
+  /** The outlet's address, e.g. "pap.pl". */
+  outlet: string;
+  /** "2026-11-16". */
+  date: string;
+  image: string;
+  summary: string;
 }
 
 /** An article a podcast was written from. */
@@ -671,6 +686,8 @@ export interface PodcastRequest {
   story?: boolean;
   /** Who talks; absent: hosts for articles, characters for a story. */
   cast?: PodcastCast;
+  /** Today's news from Polish outlets (about `topic`, if given). */
+  news?: boolean;
   format?: PodcastFormat;
   length?: SongLength;
   courseId?: number | null;

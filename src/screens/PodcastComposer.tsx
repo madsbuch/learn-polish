@@ -53,7 +53,7 @@ export function PodcastComposer({
   onSwitch: () => void;
 }) {
   const [topic, setTopic] = useState("");
-  const [basis, setBasis] = useState<"wikipedia" | "story">("wikipedia");
+  const [basis, setBasis] = useState<"wikipedia" | "story" | "news">("wikipedia");
   const [articles, setArticles] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<WikiHit[] | null>(null);
@@ -69,6 +69,7 @@ export function PodcastComposer({
 
   const writer = settings.songwriterModel || settings.aiModel;
   const story = basis === "story";
+  const news = basis === "news";
   const cast: PodcastCast = castChoice ?? (story ? "characters" : "hosts");
 
   async function run(kind: NonNullable<typeof busy>, action: () => Promise<void>) {
@@ -94,7 +95,10 @@ export function PodcastComposer({
     void run("search", async () => setHits(await api.wikiFind(query)));
   }
 
-  const ready = Boolean(writer) && settings.hasApiKey && (topic.trim() !== "" || (!story && articles.length > 0));
+  const ready =
+    Boolean(writer) &&
+    settings.hasApiKey &&
+    (news || topic.trim() !== "" || (!story && articles.length > 0));
 
   return (
     <Screen title="New podcast" onBack={onCancel}>
@@ -113,10 +117,12 @@ export function PodcastComposer({
       <Section title="What it is about">
         <Card>
           <Stack gap={4}>
-            <Field label="Subject">
+            <Field label="Subject" hint={news ? "Optional: narrow the news down. Empty: the day's mix." : undefined}>
               <input
                 value={topic}
-                placeholder="e.g. the Wieliczka Salt Mine, octopuses, a day at the bakery"
+                placeholder={
+                  news ? "e.g. housing, cycling, football" : "e.g. the Wieliczka Salt Mine, octopuses, a day at the bakery"
+                }
                 onChange={(event) => setTopic(event.target.value)}
               />
             </Field>
@@ -156,8 +162,9 @@ export function PodcastComposer({
           <p>
             Facts come from English Wikipedia articles — up to five. Pick them, or leave the list
             empty to use the best match for the subject. The articles are kept with the episode, so
-            you can read them afterwards in the app (in Polish too). A story is made up, from no
-            articles.
+            you can read them afterwards in the app (in Polish too). Today's news comes from the
+            headlines of Polish outlets (through GDELT), told only as far as they go. A story is
+            made up, from no articles.
           </p>
         }
       >
@@ -167,11 +174,17 @@ export function PodcastComposer({
               value={basis}
               onChange={setBasis}
               options={[
-                { value: "wikipedia", label: "Wikipedia articles" },
+                { value: "wikipedia", label: "Wikipedia" },
+                { value: "news", label: "Today's news" },
                 { value: "story", label: "A story" },
               ]}
             />
-            {story ? (
+            {news ? (
+              <Text variant="small" tone="dim">
+                What's going on in Poland: the day's headlines from Polish outlets (the last week's, for
+                a subject), with Wikipedia for background. The stories are listed with the episode.
+              </Text>
+            ) : story ? (
               <Text variant="small" tone="dim">
                 A short made-up story about the subject.
               </Text>
@@ -318,8 +331,9 @@ export function PodcastComposer({
             run("make", async () => {
               await api.podcastMake({
                 topic,
-                articles: story ? [] : articles,
+                articles: story || news ? [] : articles,
                 story,
+                news,
                 cast,
                 format,
                 length,

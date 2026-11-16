@@ -97,7 +97,8 @@ The app:
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
   to sort older ones, read their lyrics with get_song and move their lesson with move_lesson.
 - The Music tab also holds podcasts (make_podcast): short spoken episodes on a subject the \
-  learner likes, written from Wikipedia articles (0–5) or as a made-up story, told by a narrator, \
+  learner likes, written from Wikipedia articles (0–5), from today's Polish news (news: true — \
+  \"what's going on in Poland?\"), or as a made-up story, told by a narrator, \
   two hosts or a cast of characters — each with a voice of their own. Two kinds: pairs \
   (each sentence in English, then in Polish) and immersion (only Polish, simpler sentences). \
   set_podcast_sound changes the pause before the Polish, repeats, slow Polish, voices and whether \
@@ -715,13 +716,14 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "about": { "type": "string", "description": "The subject, in English" },
+                    "about": { "type": "string", "description": "The subject, in English (for news: what to narrow it to, or empty for the day's mix)" },
                     "articles": {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Exact English Wikipedia article titles to write from (0–5); leave out to use the best match for the subject"
                     },
                     "story": { "type": "boolean", "description": "A short made-up story, written from no articles" },
+                    "news": { "type": "boolean", "description": "Today's news from Polish outlets (about the subject in 'about', if any — leave it empty for the day's mix), with Wikipedia for background; told by two hosts unless cast says otherwise" },
                     "cast": {
                         "type": "string",
                         "enum": ["narrator", "hosts", "characters"],
@@ -741,7 +743,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "voice": { "type": "string", "enum": ["f", "m"], "description": "The Polish voice; the English uses the other" },
                     "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default false)" }
                 },
-                "required": ["about"]
+                "required": []
             }),
         ),
         tool(
@@ -1190,6 +1192,7 @@ fn yes() -> bool {
 
 #[derive(Deserialize)]
 struct PodcastArgs {
+    #[serde(default)]
     about: String,
     #[serde(default)]
     articles: Vec<String>,
@@ -1200,6 +1203,8 @@ struct PodcastArgs {
     story: bool,
     #[serde(default)]
     cast: String,
+    #[serde(default)]
+    news: bool,
     #[serde(default)]
     format: String,
     #[serde(default)]
@@ -2041,6 +2046,7 @@ fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
             },
             story: args.story,
             cast: args.cast,
+            news: args.news,
             format: args.format,
             length: args.length,
             course_id: args.course_id,
@@ -2062,7 +2068,11 @@ fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
                 "listening_lesson_id": lesson.as_ref().map(|b| b.id),
             }),
             "songStarted",
-            format!("Making a podcast about {}", args.about.trim()),
+            match (args.news, args.about.trim()) {
+                (true, "") => "Making a podcast of today's news".to_string(),
+                (true, about) => format!("Making a news podcast about {about}"),
+                (false, about) => format!("Making a podcast about {about}"),
+            },
             Some(song_id),
         ))
     })();

@@ -25,6 +25,7 @@ use crate::files;
 use crate::schema::{courses, song_tracks, songs as song_rows};
 use crate::songs::{self, Song, SongDraft, SongLine, SongOrigin, SongSection, Source, TimedLine};
 use crate::speech::{self, Delivery};
+use crate::news;
 use crate::wiki;
 
 /// The formats an episode can take, each a way of writing and reading it
@@ -133,6 +134,9 @@ pub struct PodcastRequest {
     pub articles: Vec<String>,
     /// A short story, written from no articles.
     pub story: bool,
+    /// Today's news from Polish outlets (about `topic`, if one is given),
+    /// with Wikipedia for background.
+    pub news: bool,
     /// Who talks: "narrator", "hosts" or "characters"; empty: hosts for
     /// articles, characters for a story.
     pub cast: String,
@@ -327,6 +331,138 @@ fn cast_of(cast: &str, story: bool) -> &'static str {
         _ if story => "characters",
         _ => "hosts",
     }
+}
+
+const NEWS_PICKER: &str = r#"You pick stories for a short news podcast for an adult learning Polish. You are given today's Polish headlines, numbered.
+
+Choose 4–6 different stories worth telling: a mix (politics, society, the economy, culture, science, sport, something light) rather than all crime or accidents, and nothing graphic. When several headlines are the same story, group their numbers. Where there is a choice, prefer stories that touch what the learner cares about. If the learner asked for a subject, choose stories about it.
+
+For each story name 0–2 English Wikipedia articles that give useful background — the people, places or organisations it is about — by their exact titles, only articles that surely exist.
+
+Reply with ONLY a JSON object:
+{"stories": [{"headlines": [3, 17], "background": ["Sejm"]}]}"#;
+
+/// The most Wikipedia articles a news episode reads for background.
+const BACKGROUND_LIMIT: usize = 5;
+
+/// Today's news for an episode: the stories the picker chose (each one or
+/// two headlines, with their pages' summaries) and Wikipedia articles for
+/// background.
+async fn gather_news(db: &Db, subject: &str) -> Result<(Vec<wiki::Article>, Vec<Vec<news::Headline>>)> {
+    let headlines = news::headlines(subject).await?;
+    if headlines.is_empty() {
+        return Err(Error::msg(if subject.trim().is_empty() {
+            "No news came back from the news index just now. Try again in a little while.".to_string()
+        } else {
+            format!("No recent news about “{}”. Try a broader subject, or none.", subject.trim())
+        }));
+    }
+    let (key, model, brief) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let mut brief = String::new();
+        if !subject.trim().is_empty() {
+            brief.push_str(&format!("The learner asked for news about: {}\n\n", subject.trim()));
+        }
+        let interests = interests(conn)?;
+        if !interests.is_empty() {
+            brief.push_str(&format!("What the learner cares about:\n- {}\n\n", interests.join("\n- ")));
+        }
+        brief.push_str("Headlines:\n");
+        for (i, h) in headlines.iter().enumerate() {
+            brief.push_str(&format!("{i}. {} ({})\n", h.title, h.outlet));
+        }
+        (ai::api_key(conn)?, songs::songwriter_model(conn)?, brief)
+    };
+    let messages = [ai::Wire::system(NEWS_PICKER), ai::Wire::user(brief)];
+    let reply = ai::complete_json(&key, &model, &messages, 3000).await?;
+    let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::SONGWRITER, &model, reply.cost, "news", reply.tokens);
+    let (picked, background) = parse_picks(&reply.text, headlines.len());
+    if picked.is_empty() {
+        return Err(Error::msg("No stories could be chosen from today's news. Try again."));
+    }
+
+    // Each story's page summary: read side by side, a page at a time each.
+    let mut stories: Vec<Vec<news::Headline>> =
+        picked.iter().map(|ids| ids.iter().map(|&i| headlines[i].clone()).collect()).collect();
+    let pages: Vec<(usize, usize, String)> = stories
+        .iter()
+        .enumerate()
+        .flat_map(|(s, story)| story.iter().enumerate().map(move |(h, head)| (s, h, head.url.clone())))
+        .collect();
+    let summaries = futures_util::future::join_all(pages.iter().map(|(_, _, url)| news::summary(url))).await;
+    for ((s, h, _), summary) in pages.iter().zip(summaries) {
+        stories[*s][*h].summary = summary.unwrap_or_default();
+    }
+
+    let articles = find_articles("", &background).await;
+    Ok((articles, stories))
+}
+
+/// The picker's choice: stories as headline numbers (in range, each used
+/// once, at most two a story, at most six stories), and background articles.
+fn parse_picks(reply: &str, count: usize) -> (Vec<Vec<usize>>, Vec<String>) {
+    let Some(value) = ai::json_value(reply) else { return (Vec::new(), Vec::new()) };
+    let mut used: Vec<usize> = Vec::new();
+    let mut stories = Vec::new();
+    let mut background: Vec<String> = Vec::new();
+    for story in value["stories"].as_array().into_iter().flatten().take(6) {
+        let ids: Vec<usize> = story["headlines"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|n| n.as_u64().map(|n| n as usize))
+            .filter(|&n| n < count)
+            .collect();
+        let mut fresh = Vec::new();
+        for id in ids {
+            if !used.contains(&id) && fresh.len() < 2 {
+                used.push(id);
+                fresh.push(id);
+            }
+        }
+        if fresh.is_empty() {
+            continue;
+        }
+        stories.push(fresh);
+        for title in story["background"].as_array().into_iter().flatten().filter_map(|t| t.as_str()) {
+            let title = title.trim().to_string();
+            if !title.is_empty() && !background.contains(&title) && background.len() < BACKGROUND_LIMIT {
+                background.push(title);
+            }
+        }
+    }
+    (stories, background)
+}
+
+/// What a news episode is written from: the stories as the news has them,
+/// and Wikipedia for background.
+fn news_reading(stories: &[Vec<news::Headline>], background: &[wiki::Article], date: &str) -> String {
+    let mut out = format!(
+        "\nThis is a NEWS episode for {date}. Open with the date (in the Polish too). Tell only what \
+         the headlines and summaries below say: add no details, numbers, names or quotes they do not \
+         contain, and say where a story comes from (\"according to PAP\", \"według PAP\"). Explain \
+         background only from the Wikipedia articles given, and only where it helps. One part per \
+         story, with a short opening and a short goodbye.\n"
+    );
+    for (i, story) in stories.iter().enumerate() {
+        out.push_str(&format!("\nStory {}:\n", i + 1));
+        for h in story {
+            out.push_str(&format!("- “{}” ({}, {})\n", h.title, h.outlet, h.date));
+            if !h.summary.is_empty() {
+                out.push_str(&format!("  Summary: {}\n", h.summary));
+            }
+        }
+    }
+    if !background.is_empty() {
+        let share = READING_LIMIT / 2 / background.len();
+        out.push_str("\nBackground from Wikipedia:\n");
+        for article in background {
+            let text: String = article.content.chars().take(share).collect();
+            out.push_str(&format!("\n### “{}”\n\n{text}\n", article.title));
+        }
+    }
+    out
 }
 
 /// The articles an episode is written from: the ones named (up to five),
@@ -537,22 +673,28 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
     }
     let format = format_of(&request.format);
     let length = if songs::SONG_LENGTHS.contains(&request.length.as_str()) { request.length.as_str() } else { "medium" };
-    if request.topic.trim().is_empty() && request.articles.iter().all(|a| a.trim().is_empty()) {
+    if !request.news && request.topic.trim().is_empty() && request.articles.iter().all(|a| a.trim().is_empty()) {
         return Err(Error::msg("Say what the episode should be about."));
     }
 
-    let articles =
-        if request.story { Vec::new() } else { find_articles(&request.topic, &request.articles).await };
+    let (articles, stories) = if request.news {
+        gather_news(db, &request.topic).await?
+    } else if request.story {
+        (Vec::new(), Vec::new())
+    } else {
+        (find_articles(&request.topic, &request.articles).await, Vec::new())
+    };
 
     let (key, model, brief) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let context = songs::gather_context(conn, request.course_id)?;
         let mut brief = String::new();
-        let subject = if request.topic.trim().is_empty() {
-            request.articles.join(", ")
-        } else {
-            request.topic.trim().to_string()
+        let subject = match (request.news, request.topic.trim()) {
+            (true, "") => format!("today's news from {}", news::PLACE),
+            (true, topic) => format!("today's news from {} about {topic}", news::PLACE),
+            (false, "") => request.articles.join(", "),
+            (false, topic) => topic.to_string(),
         };
         brief.push_str(&format!("The episode is about: {subject}\n\n"));
         brief.push_str(format_rules(format));
@@ -576,7 +718,12 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
             let words: Vec<&str> = context.words.iter().take(25).map(String::as_str).collect();
             brief.push_str(&format!("\nWords the learner knows or is learning:\n{}\n", words.join("\n")));
         }
-        brief.push_str(&reading(&articles, request.story));
+        if request.news {
+            let (y, m, d) = crate::commands::civil_date(crate::db::today(conn));
+            brief.push_str(&news_reading(&stories, &articles, &format!("{y}-{m:02}-{d:02}")));
+        } else {
+            brief.push_str(&reading(&articles, request.story));
+        }
         (ai::api_key(conn)?, songs::songwriter_model(conn)?, brief)
     };
 
@@ -593,8 +740,16 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
         length: length.to_string(),
         songwriter_model: model,
         sources: sources_of(&articles),
-        // The first article with a picture gives the cover.
-        source_image: articles.iter().find_map(|a| a.thumbnail.clone()).unwrap_or_default(),
+        // The first story's picture gives the cover, else the first article's.
+        source_image: stories
+            .iter()
+            .flatten()
+            .map(|h| h.image.clone())
+            .find(|i| !i.is_empty())
+            .or_else(|| articles.iter().find_map(|a| a.thumbnail.clone()))
+            .unwrap_or_default(),
+        news: request.news,
+        news_items: stories.into_iter().flatten().collect(),
         requested_articles: request.articles.clone(),
         story: request.story,
         requested_cast: cast_of(&request.cast, request.story).to_string(),
@@ -622,14 +777,22 @@ pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> 
         .take(ARTICLE_LIMIT)
         .collect();
     let topic = request.topic.trim().to_string();
-    if topic.is_empty() && articles.is_empty() {
+    if !request.news && topic.is_empty() && articles.is_empty() {
         return Err(Error::msg("Say what the episode should be about."));
     }
     let format = format_of(&request.format).to_string();
     let length = if songs::SONG_LENGTHS.contains(&request.length.as_str()) { request.length.clone() } else { "medium".into() };
     // A placeholder until the script is written: the subject as its title.
     let placeholder = SongDraft {
-        title: if topic.is_empty() { articles.join(", ") } else { topic.clone() }.chars().take(80).collect(),
+        title: match (request.news, topic.is_empty()) {
+            (true, true) => format!("News from {}", news::PLACE),
+            (true, false) => format!("News: {topic}"),
+            (false, true) => articles.join(", "),
+            (false, false) => topic.clone(),
+        }
+        .chars()
+        .take(80)
+        .collect(),
         style: format.clone(),
         vocal_gender: if request.vocal_gender == "m" { "m".into() } else { "f".into() },
         course_id: request.course_id,
@@ -638,7 +801,8 @@ pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> 
         origin: SongOrigin {
             brief: topic,
             length,
-            requested_articles: if request.story { Vec::new() } else { articles },
+            requested_articles: if request.story || request.news { Vec::new() } else { articles },
+            news: request.news,
             story: request.story,
             requested_cast: cast_of(&request.cast, request.story).to_string(),
             ..Default::default()
@@ -664,6 +828,7 @@ async fn write_script(db: &Db, song: &Song) -> Result<()> {
         topic: song.origin.brief.clone(),
         articles: song.origin.requested_articles.clone(),
         story: song.origin.story,
+        news: song.origin.news,
         cast: song.origin.requested_cast.clone(),
         format: song.style.clone(),
         length: song.origin.length.clone(),
@@ -1245,6 +1410,31 @@ mod tests {
         assert_eq!(cast_of("", true), "characters");
         assert_eq!(cast_of("narrator", true), "narrator");
         assert!(cast_rules("narrator").contains("one narrator"));
+    }
+
+    #[test]
+    fn news_picks_are_checked_and_the_reading_keeps_to_them() {
+        let reply = r#"{"stories": [
+            {"headlines": [3, 17, 4], "background": ["Sejm", "Warsaw"]},
+            {"headlines": [3, 99], "background": []},
+            {"headlines": [5], "background": ["Sejm", "A", "B", "C", "D"]}
+        ]}"#;
+        let (stories, background) = parse_picks(reply, 20);
+        assert_eq!(stories, vec![vec![3, 17], vec![5]], "in range, once each, two at most");
+        assert_eq!(background, ["Sejm", "Warsaw", "A", "B", "C"]);
+        assert_eq!(parse_picks("nonsense", 20), (Vec::new(), Vec::new()));
+
+        let story = vec![news::Headline {
+            title: "Nowy most w Krakowie".into(),
+            outlet: "pap.pl".into(),
+            date: "2026-11-16".into(),
+            summary: "Most zostanie otwarty w 2030 roku.".into(),
+            ..Default::default()
+        }];
+        let text = news_reading(&[story], &[], "2026-11-16");
+        assert!(text.contains("NEWS episode for 2026-11-16"));
+        assert!(text.contains("“Nowy most w Krakowie” (pap.pl, 2026-11-16)") && text.contains("Summary: Most zostanie otwarty w 2030 roku."));
+        assert!(!text.contains("Background"), "no background without articles");
     }
 
     #[test]

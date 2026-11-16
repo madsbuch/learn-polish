@@ -73,7 +73,8 @@ function allTakes(songs: Song[]): QueueItem[] {
 /** What a song or episode still being made is doing. */
 function making(song: Song): string {
   if (song.kind !== "podcast") return "Suno is singing… (2–4 min)";
-  return song.sections.length === 0 ? "Writing the script…" : "Recording…";
+  if (song.sections.length > 0) return "Recording…";
+  return song.origin?.news ? "Reading today's news…" : "Writing the script…";
 }
 
 /** A row's subtitle: a song's chorus, or that it is a podcast. */

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { Avatar, Button, Card, List, ListItem, Section, Segmented, SettingRow, Spinner, Stack, Switch, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import type { PodcastAudio, Song, WikiSource } from "../lib/types";
+import { ExternalIcon } from "./icons";
 import { SourceList } from "./Sources";
 
 /**
@@ -26,47 +28,78 @@ export function EpisodeSources({ song, onRead }: { song: Song; onRead: (source: 
   const pending = (song.origin?.sources ?? []).filter(
     (linked) => !(sources ?? []).some((kept) => kept.lang === linked.lang && kept.title === linked.title),
   );
-  if (sources === null || (sources.length === 0 && pending.length === 0)) return null;
-
-  return (
-    <Section
-      title="Sources"
-      info={
-        <p>
-          The episode is written from these Wikipedia articles. Read them here — in Polish too,
-          when Polish Wikipedia has the article. The reader can also open them on Wikipedia.
-        </p>
-      }
-    >
-      {sources.length > 0 ? <SourceList sources={sources} onRead={onRead} /> : null}
-      {pending.length > 0 ? (
+  const stories = song.origin?.newsItems ?? [];
+  const news =
+    stories.length > 0 ? (
+      <Section
+        title="News"
+        info={
+          <p>
+            The stories this episode tells, from Polish news outlets. They belong to their outlets,
+            so they open there.
+          </p>
+        }
+      >
         <List>
-          {pending.map((linked) => (
+          {stories.map((story) => (
             <ListItem
-              key={linked.url}
-              leading={<Avatar>W</Avatar>}
-              title={linked.title}
-              subtitle={opening === linked.title ? "Fetching the article…" : "Read in the app"}
-              trailing={opening === linked.title ? <Spinner /> : undefined}
-              chevron={opening !== linked.title}
-              onClick={async () => {
-                if (opening) return;
-                setOpening(linked.title);
-                try {
-                  const source = await api.songSourceOpen(song.id, linked.lang, linked.title);
-                  setSources((current) => [...(current ?? []), source]);
-                  onRead(source);
-                } catch (cause) {
-                  toast(`Could not fetch the article: ${errorMessage(cause)}`, "error");
-                } finally {
-                  setOpening(null);
-                }
-              }}
+              key={story.url}
+              leading={<Avatar>{story.outlet.replace(/^www\./, "").slice(0, 2).toUpperCase()}</Avatar>}
+              title={story.title}
+              subtitle={[story.outlet.replace(/^www\./, ""), story.date].filter(Boolean).join(" · ")}
+              label={`Read “${story.title}” on ${story.outlet}`}
+              trailing={<ExternalIcon />}
+              onClick={() => void openUrl(story.url).catch(() => toast("Could not open the browser.", "error"))}
             />
           ))}
         </List>
-      ) : null}
-    </Section>
+      </Section>
+    ) : null;
+
+  if (sources === null || (sources.length === 0 && pending.length === 0)) return news;
+
+  return (
+    <>
+      {news}
+      <Section
+        title="Sources"
+        info={
+          <p>
+            The episode is written from these Wikipedia articles. Read them here — in Polish too,
+            when Polish Wikipedia has the article. The reader can also open them on Wikipedia.
+          </p>
+        }
+      >
+        {sources.length > 0 ? <SourceList sources={sources} onRead={onRead} /> : null}
+        {pending.length > 0 ? (
+          <List>
+            {pending.map((linked) => (
+              <ListItem
+                key={linked.url}
+                leading={<Avatar>W</Avatar>}
+                title={linked.title}
+                subtitle={opening === linked.title ? "Fetching the article…" : "Read in the app"}
+                trailing={opening === linked.title ? <Spinner /> : undefined}
+                chevron={opening !== linked.title}
+                onClick={async () => {
+                  if (opening) return;
+                  setOpening(linked.title);
+                  try {
+                    const source = await api.songSourceOpen(song.id, linked.lang, linked.title);
+                    setSources((current) => [...(current ?? []), source]);
+                    onRead(source);
+                  } catch (cause) {
+                    toast(`Could not fetch the article: ${errorMessage(cause)}`, "error");
+                  } finally {
+                    setOpening(null);
+                  }
+                }}
+              />
+            ))}
+          </List>
+        ) : null}
+      </Section>
+    </>
   );
 }
 

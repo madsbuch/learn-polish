@@ -120,6 +120,10 @@ pub struct SongOrigin {
     pub story: bool,
     /// For a podcast: who talks — "narrator", "hosts" or "characters".
     pub requested_cast: String,
+    /// For a podcast: made from today's news, and the stories it told
+    /// (their headlines, outlets, dates and links).
+    pub news: bool,
+    pub news_items: Vec<crate::news::Headline>,
 }
 
 /// An article a podcast was written from.

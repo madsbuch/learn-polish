@@ -26,6 +26,7 @@ mod schema;
 mod session;
 mod songs;
 mod podcasts;
+mod news;
 mod speech;
 mod srs;
 mod stats;
