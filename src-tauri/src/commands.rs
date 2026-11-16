@@ -68,6 +68,9 @@ fn read_settings(conn: &mut Conn) -> Result<Settings> {
 /// boundary in the app depends on this value.
 #[tauri::command]
 pub async fn init_app(db: State<'_, Db>, tz_offset_minutes: i64) -> Result<Settings> {
+    // The webview can start before the database has opened (Android); wait
+    // for it here, the first command, so later ones find it open.
+    db.opened(std::time::Duration::from_secs(20)).await?;
     let mut guard = db.lock();
     let conn = &mut *guard;
     db::set_setting(conn, "tz_offset_minutes", &tz_offset_minutes.to_string())?;

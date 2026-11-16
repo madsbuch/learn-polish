@@ -89,6 +89,33 @@ function startedFrom(back: Overlay): Overlay {
   return back.kind === "block" ? back.back : back;
 }
 
+/**
+ * `init_app`, asked again if the first call has not answered in a few
+ * seconds: on Android a call made while the webview is still starting can
+ * go unanswered, and a second one gets through. It is safe to repeat; the
+ * first answer wins.
+ */
+function initApp(): Promise<Settings> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (done: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(again);
+      done();
+    };
+    const attempt = () =>
+      api.init().then(
+        (value) => settle(() => resolve(value)),
+        (cause) => settle(() => reject(cause)),
+      );
+    const again = window.setTimeout(() => {
+      if (!settled) void attempt();
+    }, 6000);
+    void attempt();
+  });
+}
+
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [overview, setOverview] = useState<BlockOverview | null>(null);
@@ -144,7 +171,7 @@ export default function App() {
     setBootSteps([]);
     (async () => {
       try {
-        const loaded = await track("Opening your data", "init_app", () => api.init());
+        const loaded = await track("Opening your data", "init_app", initApp);
         if (cancelled) return;
         setSettings(loaded);
         // Display preferences live in the database; adopt them (or seed them).

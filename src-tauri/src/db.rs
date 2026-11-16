@@ -27,10 +27,17 @@ pub type Conn = SqliteConnection;
 /// database has opened: on Android the webview can call a command while
 /// startup is still opening it, and such a call waits for it rather than
 /// failing with "state not managed".
-#[derive(Default)]
 pub struct Db {
     conn: OnceLock<Mutex<Conn>>,
     ready: (Mutex<()>, Condvar),
+    /// The same news for async commands, which must not block a thread.
+    opened: tokio::sync::watch::Sender<bool>,
+}
+
+impl Default for Db {
+    fn default() -> Self {
+        Self { conn: OnceLock::new(), ready: Default::default(), opened: tokio::sync::watch::channel(false).0 }
+    }
 }
 
 impl Db {
@@ -47,6 +54,23 @@ impl Db {
         let _ = self.conn.set(Mutex::new(conn));
         let _guard = self.ready.0.lock().unwrap_or_else(|e| e.into_inner());
         self.ready.1.notify_all();
+        self.opened.send_replace(true);
+    }
+
+    /// Waits, without holding a thread, until the database has opened. The
+    /// first command at startup waits here; giving up after `limit` lets the
+    /// app say so instead of hanging.
+    pub async fn opened(&self, limit: std::time::Duration) -> Result<()> {
+        if self.conn.get().is_some() {
+            return Ok(());
+        }
+        let mut news = self.opened.subscribe();
+        let opened = tokio::time::timeout(limit, news.wait_for(|open| *open)).await.map(|r| r.is_ok());
+        if opened == Ok(true) {
+            Ok(())
+        } else {
+            Err(Error::msg("Your data did not open in time. Try again."))
+        }
     }
 
     fn conn(&self) -> &Mutex<Conn> {
@@ -1242,6 +1266,23 @@ mod tests {
     /// `crate::schema` is what queries are checked against at compile time;
     /// this checks it against the database the app actually creates. Every
     /// table and view's full column list must be selectable as declared.
+    #[test]
+    fn an_async_command_waits_for_the_database_without_a_thread() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let db = std::sync::Arc::new(Db::default());
+        runtime.block_on(async {
+            let late = db.clone();
+            let filler = tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                late.fill(SqliteConnection::establish(":memory:").unwrap());
+            });
+            // One thread only: this works only if waiting does not block it.
+            db.opened(std::time::Duration::from_secs(5)).await.unwrap();
+            filler.await.unwrap();
+            assert!(Db::default().opened(std::time::Duration::from_millis(20)).await.is_err());
+        });
+    }
+
     #[test]
     fn a_command_before_the_database_opens_waits_for_it() {
         let db = std::sync::Arc::new(Db::default());
