@@ -90,8 +90,8 @@
 }
 [data-keyboard] .screen-footer {
   margin-bottom: 0;
-  /* The web view ends a navigation bar's height below the keyboard's top
-     edge (MainActivity.kt), and the safe-area inset is that height. */
+  /* On Android the web view ends at the keyboard's top edge (MainActivity.kt)
+     and the safe-area inset is zero; in a browser it is the inset below. */
   padding-bottom: calc(var(--safe-bottom) + var(--space-2));
 }
 [data-keyboard] .screen[data-footer="true"] {
@@ -1321,7 +1321,7 @@ button.badge:active {
     --gutter: var(--space-6);
   }
   .app-tabs {
-    padding-left: calc(var(--nav-rail-width) + env(safe-area-inset-left, 0px));
+    padding-left: calc(var(--nav-rail-width) + var(--rail-inset));
     --safe-left: 0px;
   }
   .app-tabs > .screen,
@@ -1338,9 +1338,9 @@ button.badge:active {
     top: 0;
     bottom: 0;
     height: auto;
-    width: calc(var(--nav-rail-width) + env(safe-area-inset-left, 0px));
+    width: calc(var(--nav-rail-width) + var(--rail-inset));
     padding: calc(var(--safe-top) + var(--space-6)) var(--space-2)
-      calc(var(--safe-bottom) + var(--space-3)) calc(var(--space-2) + env(safe-area-inset-left, 0px));
+      calc(var(--safe-bottom) + var(--space-3)) calc(var(--space-2) + var(--rail-inset));
     display: flex;
     flex-direction: column;
     gap: var(--space-3);

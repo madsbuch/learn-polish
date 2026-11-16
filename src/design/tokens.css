@@ -72,6 +72,9 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+  /* The left inset for the navigation rail, which zeroes --safe-left for
+     the screens beside it. */
+  --rail-inset: env(safe-area-inset-left, 0px);
   --max-width: 1440px;
   --reading-width: 760px;
   --sheet-width: 560px;
@@ -98,6 +101,16 @@
   --mint: #34d399;
   --sky: #38bdf8;
   --scrim: rgba(8, 6, 20, 0.55);
+}
+
+/* Android lays the app out between the system bars itself (MainActivity.kt),
+   so nothing here keeps clear of them again. */
+:root[data-native-insets] {
+  --safe-top: 0px;
+  --safe-bottom: 0px;
+  --safe-left: 0px;
+  --safe-right: 0px;
+  --rail-inset: 0px;
 }
 
 /* ---- Themes. Dark is the default so nothing flashes white at start-up. */

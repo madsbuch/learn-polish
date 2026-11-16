@@ -30,6 +30,25 @@ function resolve(preference: ThemePreference): Theme {
   return media().matches ? "dark" : "light";
 }
 
+/**
+ * On Android the app sits between the system bars (MainActivity.kt), which
+ * show this colour behind them; elsewhere the bridge is not there.
+ */
+type SystemBars = { setColor: (color: string, dark: boolean) => void };
+const systemBars = () => (window as unknown as { AndroidSystemBars?: SystemBars }).AndroidSystemBars;
+
+function paintSystemBars(theme: Theme) {
+  const bars = systemBars();
+  if (!bars) return;
+  // The native side keeps clear of the bars, so the page must not as well.
+  document.documentElement.toggleAttribute("data-native-insets", true);
+  try {
+    bars.setColor(CHROME[theme], theme === "dark");
+  } catch {
+    /* an older app shell without the bridge's method */
+  }
+}
+
 function apply(preference: ThemePreference) {
   const theme = resolve(preference);
   const root = document.documentElement;
@@ -42,6 +61,7 @@ function apply(preference: ThemePreference) {
     document.head.appendChild(meta);
   }
   meta.content = CHROME[theme];
+  paintSystemBars(theme);
 }
 
 let current = readPreference();
@@ -50,6 +70,8 @@ const listeners = new Set<(preference: ThemePreference) => void>();
 /** Applies the saved theme and follows OS changes while set to "system". */
 export function initTheme() {
   apply(current);
+  // In case the bridge was added only once the page had started loading.
+  window.addEventListener("load", () => paintSystemBars(resolve(current)), { once: true });
   media().addEventListener("change", () => {
     if (current === "system") apply(current);
   });
