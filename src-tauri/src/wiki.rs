@@ -718,6 +718,18 @@ pub async fn song_sources(db: State<'_, Db>, song_id: i64) -> Result<Vec<Source>
     sources_of_song(&mut db.lock(), song_id)
 }
 
+/// One of an episode's articles, kept now if it is not yet (the episode is
+/// still being made, or the article could not be fetched then), so it opens
+/// in the app's reader rather than outside it.
+#[tauri::command]
+pub async fn song_source_open(db: State<'_, Db>, song_id: i64, lang: String, title: String) -> Result<Source> {
+    let kept = sources_of_song(&mut db.lock(), song_id)?;
+    if let Some(source) = kept.into_iter().find(|s| s.lang == lang && s.title == title) {
+        return Ok(source);
+    }
+    attach_to(&db, Owner::Song(song_id), &lang, &title).await
+}
+
 /// Finds English Wikipedia articles, for choosing what a podcast is written from.
 #[tauri::command]
 pub async fn wiki_find(query: String) -> Result<Vec<SearchHit>> {

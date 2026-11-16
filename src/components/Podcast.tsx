@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { Avatar, Button, Card, List, ListItem, Section, Segmented, SettingRow, Stack, Switch, Text } from "../design";
+import { Avatar, Button, Card, List, ListItem, Section, Segmented, SettingRow, Spinner, Stack, Switch, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import type { PodcastAudio, Song, WikiSource } from "../lib/types";
@@ -14,44 +13,59 @@ import { SourceList } from "./Sources";
  */
 export function EpisodeSources({ song, onRead }: { song: Song; onRead: (source: WikiSource) => void }) {
   const [sources, setSources] = useState<WikiSource[] | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
   useEffect(() => {
     api
       .songSources(song.id)
       .then(setSources)
       .catch(() => setSources([]));
-    // The articles are kept while the episode is made: look again when it is.
-  }, [song.id, song.status]);
+    // The articles are kept while the episode is made: look again whenever it changes.
+  }, [song]);
 
-  const linked = song.origin?.sources ?? [];
-  if (sources === null || (sources.length === 0 && linked.length === 0)) return null;
-
-  const info = (
-    <p>
-      The episode is written from these Wikipedia articles. Read them here — in Polish too, when
-      Polish Wikipedia has the article — or open them on Wikipedia.
-    </p>
+  // Articles it was written from that are not kept in the app yet.
+  const pending = (song.origin?.sources ?? []).filter(
+    (linked) => !(sources ?? []).some((kept) => kept.lang === linked.lang && kept.title === linked.title),
   );
-  if (sources.length > 0) {
-    return (
-      <Section title="Sources" info={info}>
-        <SourceList sources={sources} onRead={onRead} />
-      </Section>
-    );
-  }
-  // Not kept in the app (it could not be fetched yet): the links still work.
+  if (sources === null || (sources.length === 0 && pending.length === 0)) return null;
+
   return (
-    <Section title="Sources" info={info}>
-      <List>
-        {linked.map((source) => (
-          <ListItem
-            key={source.url}
-            leading={<Avatar>W</Avatar>}
-            title={source.title}
-            subtitle="Opens on Wikipedia"
-            onClick={() => void openUrl(source.url).catch(() => toast("Could not open the browser.", "error"))}
-          />
-        ))}
-      </List>
+    <Section
+      title="Sources"
+      info={
+        <p>
+          The episode is written from these Wikipedia articles. Read them here — in Polish too,
+          when Polish Wikipedia has the article. The reader can also open them on Wikipedia.
+        </p>
+      }
+    >
+      {sources.length > 0 ? <SourceList sources={sources} onRead={onRead} /> : null}
+      {pending.length > 0 ? (
+        <List>
+          {pending.map((linked) => (
+            <ListItem
+              key={linked.url}
+              leading={<Avatar>W</Avatar>}
+              title={linked.title}
+              subtitle={opening === linked.title ? "Fetching the article…" : "Read in the app"}
+              trailing={opening === linked.title ? <Spinner /> : undefined}
+              chevron={opening !== linked.title}
+              onClick={async () => {
+                if (opening) return;
+                setOpening(linked.title);
+                try {
+                  const source = await api.songSourceOpen(song.id, linked.lang, linked.title);
+                  setSources((current) => [...(current ?? []), source]);
+                  onRead(source);
+                } catch (cause) {
+                  toast(`Could not fetch the article: ${errorMessage(cause)}`, "error");
+                } finally {
+                  setOpening(null);
+                }
+              }}
+            />
+          ))}
+        </List>
+      ) : null}
     </Section>
   );
 }

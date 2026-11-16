@@ -226,6 +226,9 @@ export const api = {
   /** Makes a whole episode in the background: written, then recorded. */
   podcastMake: (request: PodcastRequest) => invoke<Song>("podcast_make", { request }),
   songSources: (songId: number) => invoke<WikiSource[]>("song_sources", { songId }),
+  /** One of an episode's articles, kept now if it is not yet, for the reader. */
+  songSourceOpen: (songId: number, lang: string, title: string) =>
+    invoke<WikiSource>("song_source_open", { songId, lang, title }),
   wikiFind: (query: string) => invoke<WikiHit[]>("wiki_find", { query }),
   /** Puts an episode's audio together again, with new settings if given. */
   podcastRerender: (songId: number, audio?: PodcastAudio) =>

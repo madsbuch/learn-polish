@@ -171,6 +171,7 @@ pub fn run() {
             songs::kie_credits,
             songs::songs_list,
             wiki::song_sources,
+            wiki::song_source_open,
             wiki::wiki_find,
             podcasts::podcast_topics,
             podcasts::podcast_draft,

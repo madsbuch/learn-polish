@@ -715,6 +715,8 @@ async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
     };
 
     keep_sources(&db, song_id, &song.origin.sources).await;
+    // Its page lists them now, in the reader.
+    songs::notify(app, song_id);
 
     let polish = if audio.slow { Delivery::PolishSlow } else { Delivery::Polish };
     let mut jobs = Vec::new();
