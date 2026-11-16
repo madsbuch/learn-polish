@@ -5,7 +5,7 @@
 //! one-off upgrades of older databases, whose tables no longer exist in the
 //! schema; what those upgrades read back is still typed (`legacy` rows).
 
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use diesel::connection::SimpleConnection;
@@ -22,13 +22,50 @@ pub type Conn = SqliteConnection;
 
 /// Guards the single SQLite connection. Every command locks it briefly; there is
 /// no long-running work behind the lock.
-pub struct Db(pub Mutex<Conn>);
+///
+/// It is registered with the app before anything runs and filled in once the
+/// database has opened: on Android the webview can call a command while
+/// startup is still opening it, and such a call waits for it rather than
+/// failing with "state not managed".
+#[derive(Default)]
+pub struct Db {
+    conn: OnceLock<Mutex<Conn>>,
+    ready: (Mutex<()>, Condvar),
+}
 
 impl Db {
+    /// A database that is open already (tests, tools).
+    #[allow(dead_code)]
+    pub fn new(conn: Conn) -> Self {
+        let db = Self::default();
+        db.fill(conn);
+        db
+    }
+
+    /// Hands over the opened connection and wakes every command waiting for it.
+    pub fn fill(&self, conn: Conn) {
+        let _ = self.conn.set(Mutex::new(conn));
+        let _guard = self.ready.0.lock().unwrap_or_else(|e| e.into_inner());
+        self.ready.1.notify_all();
+    }
+
+    fn conn(&self) -> &Mutex<Conn> {
+        if let Some(conn) = self.conn.get() {
+            return conn;
+        }
+        let mut guard = self.ready.0.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if let Some(conn) = self.conn.get() {
+                return conn;
+            }
+            guard = self.ready.1.wait(guard).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
     pub fn lock(&self) -> std::sync::MutexGuard<'_, Conn> {
         // A poisoned lock means an earlier command panicked. The connection is
         // still usable, so recover rather than cascading the panic.
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        self.conn().lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -1205,6 +1242,18 @@ mod tests {
     /// `crate::schema` is what queries are checked against at compile time;
     /// this checks it against the database the app actually creates. Every
     /// table and view's full column list must be selectable as declared.
+    #[test]
+    fn a_command_before_the_database_opens_waits_for_it() {
+        let db = std::sync::Arc::new(Db::default());
+        let waiting = {
+            let db = db.clone();
+            std::thread::spawn(move || db.lock().batch_execute("SELECT 1").is_ok())
+        };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        db.fill(SqliteConnection::establish(":memory:").unwrap());
+        assert!(waiting.join().unwrap());
+    }
+
     #[test]
     fn schema_matches_the_database() {
         let path = std::env::temp_dir()

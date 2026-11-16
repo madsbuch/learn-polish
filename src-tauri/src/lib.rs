@@ -33,7 +33,6 @@ mod tutor;
 mod wiki;
 mod work;
 
-use std::sync::Mutex;
 
 use tauri::Manager;
 
@@ -54,6 +53,9 @@ pub fn run() {
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || responder.respond(files::serve(&app, &request)));
         })
+        // Registered before the webview can call anything; filled in by setup.
+        .manage(Db::default())
+        .manage(cast::CastSessions::default())
         .setup(|app| {
             let path = app
                 .path()
@@ -64,8 +66,7 @@ pub fn run() {
             let mut connection = db::open(&path).map_err(|e| e.to_string())?;
             // Replies that were being written when the app last closed.
             let _ = tutor::recover_interrupted(&mut connection);
-            app.manage(Db(Mutex::new(connection)));
-            app.manage(cast::CastSessions::default());
+            app.state::<Db>().fill(connection);
             songs::resume_pending(app.handle());
             files::sync_to_disk(app.handle());
             // Lessons built on Wikipedia, checked against it every three months.
