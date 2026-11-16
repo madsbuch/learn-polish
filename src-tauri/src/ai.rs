@@ -217,6 +217,10 @@ struct ChatRequest<'a> {
     /// OpenAI-style function definitions, for the tutor.
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<&'a serde_json::Value>,
+    /// `{"type": "json_object"}` when the answer must be JSON. Providers that
+    /// cannot do it ignore it; the reply is still parsed leniently.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<serde_json::Value>,
     /// Asks OpenRouter to report what the request cost, for the cost center.
     usage: UsageRequest,
 }
@@ -268,6 +272,9 @@ impl Usage {
 #[derive(Debug)]
 pub struct Reply {
     pub text: String,
+    /// The model hit `max_tokens` before it finished (its thinking counts
+    /// too, for reasoning models), so the text is cut off.
+    pub truncated: bool,
     pub cost: Option<f64>,
     pub tokens: Tokens,
 }
@@ -395,6 +402,8 @@ struct ChatResponse {
 #[derive(Deserialize)]
 struct Choice {
     message: Wire,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -415,6 +424,26 @@ pub async fn complete_with(
     temperature: f32,
     max_tokens: u32,
 ) -> Result<Reply> {
+    request(key, model, messages, temperature, max_tokens, None).await
+}
+
+/// A completion whose answer must be a JSON object: JSON mode where the
+/// provider has it, and room to spare — reasoning models (Gemini Flash and
+/// others) spend part of `max_tokens` thinking, and a JSON answer cut off
+/// halfway is useless. Read the reply with [`json_value`].
+pub async fn complete_json(key: &str, model: &str, messages: &[Wire], max_tokens: u32) -> Result<Reply> {
+    let format = serde_json::json!({ "type": "json_object" });
+    request(key, model, messages, 0.3, max_tokens, Some(format)).await
+}
+
+async fn request(
+    key: &str,
+    model: &str,
+    messages: &[Wire],
+    temperature: f32,
+    max_tokens: u32,
+    response_format: Option<serde_json::Value>,
+) -> Result<Reply> {
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
@@ -428,6 +457,7 @@ pub async fn complete_with(
             max_tokens,
             stream: false,
             tools: None,
+            response_format,
             usage: UsageRequest { include: true },
         })
         .send()
@@ -452,14 +482,33 @@ pub async fn complete_with(
 
     let tokens = parsed.usage.as_ref().map(Usage::tokens).unwrap_or_default();
     let cost = parsed.usage.and_then(|u| u.cost);
-    parsed
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|c| c.message.content)
-        .filter(|text| !text.trim().is_empty())
-        .map(|text| Reply { text, cost, tokens })
-        .ok_or_else(|| Error::msg("OpenRouter returned an empty answer."))
+    let choice = parsed.choices.into_iter().next();
+    let truncated = choice.as_ref().and_then(|c| c.finish_reason.as_deref()) == Some("length");
+    match choice.and_then(|c| c.message.content).filter(|text| !text.trim().is_empty()) {
+        Some(text) => Ok(Reply { text, truncated, cost, tokens }),
+        None if truncated => Err(Error::msg(
+            "The model used up its room thinking and gave no answer. Try again, or pick another model in Settings.",
+        )),
+        None => Err(Error::msg("OpenRouter returned an empty answer.")),
+    }
+}
+
+/// The JSON in a model's reply, which may be wrapped in prose or a code
+/// fence: the first complete object or array, read from its opening bracket
+/// (so braces in prose after it do no harm).
+pub fn json_value(text: &str) -> Option<serde_json::Value> {
+    let mut from = 0;
+    while let Some(at) = text[from..].find(['{', '[']) {
+        let start = from + at;
+        let mut values = serde_json::Deserializer::from_str(&text[start..]).into_iter::<serde_json::Value>();
+        match values.next() {
+            Some(Ok(value)) if value.is_object() || value.is_array() => return Some(value),
+            // Cut off: an object inside it would only be a fragment.
+            Some(Err(error)) if error.is_eof() => return None,
+            _ => from = start + 1,
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +720,7 @@ where
             max_tokens: if tools.is_some() { 8000 } else { 1200 },
             stream: true,
             tools,
+            response_format: None,
             usage: UsageRequest { include: true },
         })
         .send()
@@ -961,6 +1011,18 @@ fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn json_is_found_in_whatever_wraps_it() {
+        assert_eq!(json_value("{\"a\": 1}"), Some(serde_json::json!({"a": 1})));
+        assert_eq!(json_value("Sure! ```json\n{\"a\": [1, 2]}\n``` Hope it helps {x}"), Some(serde_json::json!({"a": [1, 2]})));
+        assert_eq!(json_value("[{\"a\": 1}]"), Some(serde_json::json!([{"a": 1}])));
+        // Prose in brackets before the JSON is skipped.
+        assert_eq!(json_value("[note] {\"a\": 1}"), Some(serde_json::json!({"a": 1})));
+        // A cut-off answer gives nothing, not a fragment of it.
+        assert_eq!(json_value("{\"goals\": [{\"goal\": \"x\"}, {\"goal\": "), None);
+        assert_eq!(json_value("no json here"), None);
+    }
+
     use super::*;
 
     #[test]

@@ -551,10 +551,65 @@ pub struct GoalHelp {
     pub words: Vec<Phrase>,
 }
 
-/// The JSON object in a model's reply (it may wrap it in prose or fences).
-fn json_in(text: &str) -> Option<&str> {
-    let (start, end) = (text.find('{')?, text.rfind('}')?);
-    (start < end).then(|| &text[start..=end])
+/// A phrase from a model's JSON: `{"pl", "en"}`, under the other names
+/// models reach for, or a "Polish — English" string.
+fn phrase_from(value: &serde_json::Value) -> Option<Phrase> {
+    let pick = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| value.get(*k).and_then(|v| v.as_str()))
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+    };
+    if let Some(text) = value.as_str() {
+        let (pl, en) = [" — ", " – ", " - ", ": "]
+            .iter()
+            .find_map(|sep| text.split_once(sep))
+            .unwrap_or((text, ""));
+        let pl = pl.trim().to_string();
+        return (!pl.is_empty()).then(|| Phrase { pl, en: en.trim().to_string() });
+    }
+    let pl = pick(&["pl", "polish", "phrase", "text", "word"])?;
+    let en = pick(&["en", "english", "meaning", "translation"]).unwrap_or_default();
+    Some(Phrase { pl, en })
+}
+
+/// A word bank from a model's reply, read leniently: `{"goals": [...]}` or
+/// a bare list, phrases as objects or strings. None when nothing usable is in it.
+fn parse_bank(text: &str) -> Option<Vec<GoalHelp>> {
+    let value = crate::ai::json_value(text)?;
+    let goals = match &value {
+        serde_json::Value::Array(goals) => goals.clone(),
+        serde_json::Value::Object(map) => map
+            .get("goals")
+            .and_then(|g| g.as_array())
+            .or_else(|| map.values().find_map(|v| v.as_array()))
+            .cloned()?,
+        _ => return None,
+    };
+    let help: Vec<GoalHelp> = goals
+        .iter()
+        .filter_map(|g| {
+            let goal = ["goal", "name", "title"]
+                .iter()
+                .find_map(|k| g.get(*k).and_then(|v| v.as_str()))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let words: Vec<Phrase> = ["words", "phrases", "vocabulary"]
+                .iter()
+                .find_map(|k| g.get(*k).and_then(|v| v.as_array()))
+                .map(|list| list.iter().filter_map(phrase_from).collect())
+                .unwrap_or_default();
+            let starter = g.get("starter").and_then(phrase_from);
+            let starter = match starter {
+                Some(starter) => starter,
+                None if !words.is_empty() => words[0].clone(),
+                None => return None,
+            };
+            Some(GoalHelp { goal, starter, words })
+        })
+        .collect();
+    (!help.is_empty()).then_some(help)
 }
 
 /// A writing block's word bank: for each goal, a sentence starter and a few
@@ -584,21 +639,22 @@ pub async fn writing_scaffold(db: State<'_, Db>, block_id: i64) -> Result<Vec<Go
         detail.lesson,
         detail.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
     );
-    let reply = crate::ai::complete(&key, &model, &[Wire::user(prompt)]).await?;
-    #[derive(Deserialize)]
-    struct Bank {
-        goals: Vec<GoalHelp>,
-    }
-    let bank: Bank = json_in(&reply.text)
-        .and_then(|json| serde_json::from_str(json).ok())
-        .ok_or_else(|| Error::msg("The word bank came back unreadable. Try again."))?;
+    let reply = crate::ai::complete_json(&key, &model, &[Wire::user(prompt)], 6000).await?;
     let mut guard = db.lock();
     let conn = &mut *guard;
     let _ = crate::costs::record_tokens(conn, crate::costs::PARTNER, &model, reply.cost, "word bank", reply.tokens);
+    let Some(goals) = parse_bank(&reply.text) else {
+        eprintln!("unreadable word bank from {model}: {}", reply.text.chars().take(500).collect::<String>());
+        return Err(Error::msg(if reply.truncated {
+            "The word bank was cut off before it was finished. Try again, or pick another Writing partner model in Settings."
+        } else {
+            "The word bank came back unreadable. Try again, or pick another Writing partner model in Settings."
+        }));
+    };
     diesel::update(crate::schema::blocks::table.find(block_id))
-        .set(crate::schema::blocks::scaffold.eq(serde_json::to_string(&bank.goals)?))
+        .set(crate::schema::blocks::scaffold.eq(serde_json::to_string(&goals)?))
         .execute(conn)?;
-    Ok(bank.goals)
+    Ok(goals)
 }
 
 /// A hint for what to write next in a writing conversation: a sentence with
@@ -652,7 +708,26 @@ mod tests {
         assert_eq!(next_support_level(0, "fail"), 0);
         assert_eq!(bare("**[[say: Poproszę bułkę.]]** (A roll)"), bare("**Poproszę bułkę.** (A roll)"));
         assert_ne!(bare("[[say: Poproszę bułki.]]"), bare("Poproszę bułkę."));
-        assert_eq!(json_in("Here: ```json\n{\"a\": 1}\n```"), Some("{\"a\": 1}"));
+    }
+
+    #[test]
+    fn word_banks_are_read_however_the_model_shapes_them() {
+        let asked = r#"{"goals": [{"goal": "Order", "starter": {"pl": "Poproszę…", "en": "I'd like…"},
+            "words": [{"pl": "chleb", "en": "bread"}, {"pl": "bułki", "en": "rolls"}]}]}"#;
+        let bank = parse_bank(asked).unwrap();
+        assert_eq!(bank[0].starter.pl, "Poproszę…");
+        assert_eq!(bank[0].words.len(), 2);
+
+        let bare = r#"```json
+[{"goal": "Pay", "starter": "Płacę kartą — I'll pay by card", "words": ["gotówka — cash", {"polish": "karta", "english": "card"}]}]
+```"#;
+        let bank = parse_bank(bare).unwrap();
+        assert_eq!((bank[0].starter.pl.as_str(), bank[0].starter.en.as_str()), ("Płacę kartą", "I'll pay by card"));
+        assert_eq!(bank[0].words[0].en, "cash");
+        assert_eq!(bank[0].words[1].pl, "karta");
+
+        assert!(parse_bank(r#"{"goals": [{"goal": "Order", "starter": {"pl": "Popro"#).is_none());
+        assert!(parse_bank(r#"{"goals": []}"#).is_none());
     }
 
     #[test]

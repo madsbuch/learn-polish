@@ -47,12 +47,12 @@ pub async fn word_examples(db: State<'_, Db>, word_id: i64) -> Result<Vec<Exampl
              different contexts, in the form shown where natural. Reply with only JSON: \
              {{\"examples\": [{{\"pl\": \"…\", \"en\": \"…\"}}, {{\"pl\": \"…\", \"en\": \"…\"}}]}}"
         );
-        if let Ok(reply) = crate::ai::complete(&key, &model, &[Wire::user(prompt)]).await {
+        if let Ok(reply) = crate::ai::complete_json(&key, &model, &[Wire::user(prompt)], 3000).await {
             #[derive(Deserialize)]
             struct Reply {
                 examples: Vec<Example>,
             }
-            let parsed = json_in(&reply.text).and_then(|json| serde_json::from_str::<Reply>(json).ok());
+            let parsed = crate::ai::json_value(&reply.text).and_then(|json| serde_json::from_value::<Reply>(json).ok());
             let mut guard = db.lock();
             let conn = &mut *guard;
             let _ = crate::costs::record_tokens(conn, crate::costs::WORD_CHAT, &model, reply.cost, "examples", reply.tokens);
@@ -120,11 +120,6 @@ fn contains_word(text: &str, needle: &str) -> bool {
         from = start + needle.chars().next().map_or(1, char::len_utf8);
     }
     false
-}
-
-fn json_in(text: &str) -> Option<&str> {
-    let (start, end) = (text.find('{')?, text.rfind('}')?);
-    (start < end).then(|| &text[start..=end])
 }
 
 #[cfg(test)]
