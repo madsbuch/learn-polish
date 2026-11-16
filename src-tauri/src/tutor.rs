@@ -84,6 +84,10 @@ The app:
   the learner's level; a lesson clearly beyond it (a free conversation in a beginner course, a \
   deep lesson) is a challenge — set challenge with update_lesson. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
+- A mastered course can be closed by the learner: it becomes a trophy and its lessons leave the \
+  check-ins. Closed courses are finished — never add to or change them. To revisit a closed \
+  course's theme, make a new course a level up: build on what it taught (get_course shows it), \
+  don't repeat its words and lessons. Grammar & culture, Listening and Writing never end.
 - Culture and facts (cities, history, customs): write the study lesson from Wikipedia — wiki_search, \
   wiki_read — and attach the article to the lesson with attach_source (existing lessons too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
@@ -120,15 +124,27 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let due: Vec<String> = overview.due.iter().take(15).map(line).collect();
 
     let listed: Vec<i64> = course_lessons::table.select(course_lessons::course_id).load(conn)?;
-    let courses: Vec<String> = courses_table::table
+    let all: Vec<(i64, String, String, Option<i64>)> = courses_table::table
         .order(crate::lessons::course_order())
-        .limit(60)
-        .select((courses_table::id, courses_table::title_en, courses_table::title_pl))
-        .load::<(i64, String, String)>(conn)?
-        .into_iter()
-        .map(|(id, title, title_pl)| {
-            let lessons = listed.iter().filter(|&&c| c == id).count();
+        .limit(80)
+        .select((courses_table::id, courses_table::title_en, courses_table::title_pl, courses_table::closed_at))
+        .load(conn)?;
+    let courses: Vec<String> = all
+        .iter()
+        .filter(|c| c.3.is_none())
+        .map(|(id, title, title_pl, _)| {
+            let lessons = listed.iter().filter(|&&c| c == *id).count();
             format!("  - id {id}: {title} ({title_pl}), {lessons} lessons")
+        })
+        .collect();
+    // Closed as mastered: finished for good, kept as trophies.
+    let mastered: Vec<String> = all
+        .iter()
+        .filter_map(|(id, title, title_pl, closed)| {
+            closed.map(|at| {
+                let (y, m, d) = crate::commands::civil_date(at.div_euclid(86_400));
+                format!("  - id {id}: {title} ({title_pl}), closed {y}-{m:02}-{d:02}")
+            })
         })
         .collect();
 
@@ -179,6 +195,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
          - Due now ({due_count}):\n{due}\n\
          - Study lessons:\n{studies}\n\
          - Courses:\n{courses}\n\
+         - Mastered and closed (finished; never add to these):\n{mastered}\n\
          - Songs: {song_count} in the Music tab{song_note}{unsorted}.\n\
          - Playlists: {playlists}.",
         level = stats.level,
@@ -191,6 +208,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         due = if due.is_empty() { none() } else { due.join("\n") },
         studies = if studies.is_empty() { none() } else { studies.join("\n") },
         courses = if courses.is_empty() { none() } else { courses.join("\n") },
+        mastered = if mastered.is_empty() { none() } else { mastered.join("\n") },
         song_count = song_count,
         unsorted = match unsorted {
             0 => String::new(),
@@ -1749,11 +1767,13 @@ fn course_detail(conn: &mut Conn, course_id: i64) -> Result<Value> {
         .map(|l| json!({ "speaker": l.speaker, "pl": l.pl, "en": l.meaning }))
         .collect();
     let lessons: Vec<Value> = lessons::for_course(conn, course_id)?.iter().map(lesson_json).collect();
+    let status = courses::status(conn, course_id)?;
     Ok(json!({
         "course_id": course.id,
         "title": course.title,
         "title_pl": course.title_pl,
         "summary": course.summary,
+        "status": if status.closed_at.is_some() { "mastered and closed — finished, never changed" } else { status.status.as_str() },
         "words": words,
         "sentences": sentences,
         "dialogue": dialogue,

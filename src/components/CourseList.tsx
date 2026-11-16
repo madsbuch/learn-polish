@@ -1,12 +1,16 @@
 import { Avatar, List, ListItem, Progress, Stack } from "../design";
 import { fileUrl } from "../lib/files";
+import { dayToDate } from "../lib/lessons";
 import type { CourseProgress } from "../lib/types";
 
 /** Where a course stands, in a line: what is left, and what comes next. */
 function courseLine(entry: CourseProgress): string {
-  if (entry.status === "mastered") return `🏆 Mastered · ${entry.course.titlePl}`;
+  if (entry.closedAt !== null) {
+    return `🏆 ${entry.course.titlePl} · closed ${dayToDate(Math.floor(entry.closedAt / 86_400))}`;
+  }
+  if (entry.status === "mastered") return "🏆 Mastered · ready to close";
   if (entry.status === "completed") {
-    return `✓ Completed · mastery ${entry.holding} of ${entry.coreLessons + entry.challenges}`;
+    return `✓ Completed · keep it up · mastery ${entry.holding} of ${entry.coreLessons + entry.challenges}`;
   }
   const left = entry.coreLessons - entry.passedCore;
   if (entry.coreLessons === 0) return entry.course.titlePl;
@@ -43,7 +47,7 @@ export function CourseList({
                 <span>{courseLine(entry)}</span>
                 {entry.status === "active" ? (
                   <Progress value={entry.passedCore} max={Math.max(1, entry.coreLessons)} size="sm" />
-                ) : entry.status === "completed" ? (
+                ) : entry.status === "completed" && entry.closedAt === null ? (
                   <Progress value={entry.holding} max={Math.max(1, entry.coreLessons + entry.challenges)} size="sm" tone="gold" />
                 ) : null}
               </Stack>

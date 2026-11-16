@@ -37,6 +37,13 @@ function estimate(lessons: Lesson[]): number {
  * Everything to practise, top to bottom: today (with the one thing to do
  * next), what is due for a check-in, and the courses every lesson lives in.
  */
+/** The Mastered shelf's tally: "7 courses mastered · 86 lessons · 1,240 words for good". */
+function masteredLine(stats: Stats): string {
+  const { courses, lessons, words } = stats.mastered;
+  const n = (count: number, one: string, many: string) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+  return `${n(courses, "course", "courses")} mastered · ${n(lessons, "lesson", "lessons")} · ${n(words, "word", "words")} for good`;
+}
+
 export function Exercises({
   overview,
   stats,
@@ -60,10 +67,12 @@ export function Exercises({
   const goalPct = stats.completedToday
     ? 100
     : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
-  // Finished courses leave the list for their own shelf.
-  const active = courses.filter((t) => t.status === "active");
-  const finished = courses.filter((t) => t.status !== "active");
-  const [showFinished, setShowFinished] = useState(false);
+  // Courses closed as mastered leave the list for their own shelf; the rest
+  // stay, completed and mastered ones after those still being worked on.
+  const open = courses.filter((t) => t.closedAt === null);
+  const active = [...open.filter((t) => t.status === "active"), ...open.filter((t) => t.status !== "active")];
+  const mastered = courses.filter((t) => t.closedAt !== null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0));
+  const [showMastered, setShowMastered] = useState(false);
   // Today's list first; once it's done, more for a big day; else something new.
   const keepGoing = overview.due.length === 0 && overview.more.length > 0;
   const upNext = overview.due[0] ?? overview.more[0] ?? overview.next[0] ?? null;
@@ -260,32 +269,34 @@ export function Exercises({
             )}
           </Section>
 
-          {finished.length > 0 ? (
+          {mastered.length > 0 ? (
             <Section
-              title="Completed"
+              title="Mastered"
               info={
                 <p>
-                  Courses where every lesson is passed. Their lessons still come back in today's
-                  check-ins now and then; keep them up and a course becomes mastered 🏆.
+                  Courses you mastered and closed: kept here as trophies, readable any time. Their
+                  lessons no longer come back in your check-ins. To revisit a theme, ask the tutor for a
+                  new course.
                 </p>
               }
             >
-              {showFinished ? (
-                <CourseList entries={finished} onOpen={onOpenCourse} />
-              ) : (
-                <List>
-                  <ListItem
-                    leading={<Avatar>✓</Avatar>}
-                    title={`${finished.length} completed course${finished.length === 1 ? "" : "s"}`}
-                    subtitle={
-                      finished.filter((t) => t.status === "mastered").length > 0
-                        ? `${finished.filter((t) => t.status === "mastered").length} mastered 🏆`
-                        : "Tap to see them"
-                    }
-                    onClick={() => setShowFinished(true)}
-                  />
-                </List>
-              )}
+              <Stack gap={3}>
+                <Text variant="small" tone="dim" as="div">
+                  {masteredLine(stats)}
+                </Text>
+                {showMastered ? (
+                  <CourseList entries={mastered} onOpen={onOpenCourse} />
+                ) : (
+                  <List>
+                    <ListItem
+                      leading={<Avatar>🏆</Avatar>}
+                      title={`${mastered.length} mastered course${mastered.length === 1 ? "" : "s"}`}
+                      subtitle="Tap to see them"
+                      onClick={() => setShowMastered(true)}
+                    />
+                  </List>
+                )}
+              </Stack>
             </Section>
           ) : null}
         </div>

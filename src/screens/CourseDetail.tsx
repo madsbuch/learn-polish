@@ -25,10 +25,14 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
-import { holds, standing, standingText, writingStep } from "../lib/lessons";
+import { dayToDate, holds, standing, standingText, writingStep } from "../lib/lessons";
+import { toast } from "../lib/toast";
 import type { Lesson, Sentence, CourseProgress, Word } from "../lib/types";
 
 export type CourseSection = "lessons" | "words" | "sentences";
+
+/** How long after closing Undo is offered (courses.rs UNDO_CLOSE_SECS). */
+const UNDO_CLOSE_SECS = 10 * 60;
 
 /**
  * A course: the lessons it lists, in its order. Words and sentences belong to
@@ -83,6 +87,7 @@ export function CourseDetail({
   }
 
   const courseId = progress.course.id;
+  const [closedAt, setClosedAt] = useState<number | null>(progress.closedAt);
 
   // Drawn in the background for a new course: show it as soon as it is in.
   useEffect(() => {
@@ -156,6 +161,23 @@ export function CourseDetail({
       {lessons && lessons.length > 0 ? (
         <CourseStanding
           lessons={lessons}
+          openEnded={progress.openEnded}
+          closedAt={closedAt}
+          onClose={() =>
+            act(async () => {
+              await api.courseClose(courseId);
+              setClosedAt(Math.floor(Date.now() / 1000));
+              toast("Closed as mastered — it is in Mastered now. 🏆");
+              onChanged();
+            })
+          }
+          onUndo={() =>
+            act(async () => {
+              await api.courseUndoClose(courseId);
+              setClosedAt(null);
+              onChanged();
+            })
+          }
           onShowLeft={() => {
             setTab("lessons");
             window.requestAnimationFrame(() =>
@@ -174,7 +196,7 @@ export function CourseDetail({
               <ListEmpty>No lessons yet. Ask the tutor to add some.</ListEmpty>
             </List>
           ) : (
-            <CourseLessons lessons={lessons} today={today} onOpen={onOpenLesson} />
+            <CourseLessons lessons={lessons} today={today} closed={closedAt !== null} onOpen={onOpenLesson} />
           )
         ) : (
           <Spinner />
@@ -306,11 +328,56 @@ export function CourseDetail({
  * header counts that; after that it counts towards mastering — everything,
  * challenges too, holding at long gaps — and says what stands in the way.
  */
-function CourseStanding({ lessons, onShowLeft }: { lessons: Lesson[]; onShowLeft: () => void }) {
+function CourseStanding({
+  lessons,
+  openEnded,
+  closedAt,
+  onShowLeft,
+  onClose,
+  onUndo,
+}: {
+  lessons: Lesson[];
+  openEnded: boolean;
+  closedAt: number | null;
+  onShowLeft: () => void;
+  onClose: () => void;
+  onUndo: () => void;
+}) {
   const core = lessons.filter((lesson) => !lesson.challenge);
   const passed = core.filter((lesson) => lesson.passed).length;
   const left = core.length - passed;
   const holding = lessons.filter(holds).length;
+  if (closedAt !== null) {
+    // Undo is for a mis-tap: offered for the first minutes only (as the core allows).
+    const fresh = Date.now() / 1000 - closedAt < UNDO_CLOSE_SECS;
+    return (
+      <Banner tone="ok">
+        <Stack gap={2}>
+          <Text variant="small" weight="bold" as="div">
+            {`🏆 Mastered — closed ${dayToDate(Math.floor(closedAt / 86_400))}`}
+          </Text>
+          <Text variant="small" as="div">
+            Its lessons no longer come back in your check-ins. To revisit this theme, ask the tutor
+            for a new course — it builds on this one.
+          </Text>
+          {fresh ? (
+            <Inline>
+              <Button size="sm" onClick={onUndo}>
+                Undo
+              </Button>
+            </Inline>
+          ) : null}
+        </Stack>
+      </Banner>
+    );
+  }
+  if (openEnded) {
+    return (
+      <Text variant="small" tone="dim" as="div">
+        {`${passed} of ${core.length} passed · this course keeps growing as the tutor adds to it, so it is never finished.`}
+      </Text>
+    );
+  }
   if (left > 0 || core.length === 0) {
     return (
       <Stack gap={2}>
@@ -330,9 +397,18 @@ function CourseStanding({ lessons, onShowLeft }: { lessons: Lesson[]; onShowLeft
   }
   if (holding === lessons.length) {
     return (
-      <Text variant="small" tone="dim" as="div">
-        🏆 Mastered — everything holds.
-      </Text>
+      <Stack gap={2}>
+        <Text variant="small" weight="bold" as="div">
+          🏆 Mastered — everything holds.
+        </Text>
+        <Text variant="small" tone="dim" as="div">
+          Close it to keep it as a trophy in Mastered: its lessons leave your check-ins. Closing is
+          final — to come back to this theme, ask the tutor for a new course.
+        </Text>
+        <Button variant="primary" wide onClick={onClose}>
+          Close as mastered 🏆
+        </Button>
+      </Stack>
     );
   }
   // What stands in the way of mastering: a writing lesson still done with
@@ -369,10 +445,13 @@ function CourseStanding({ lessons, onShowLeft }: { lessons: Lesson[]; onShowLeft
 function CourseLessons({
   lessons,
   today,
+  closed,
   onOpen,
 }: {
   lessons: Lesson[];
   today: number;
+  /** Closed as mastered: its lessons no longer come back, so no dates. */
+  closed: boolean;
   onOpen: (lessonId: number) => void;
 }) {
   const core = lessons.filter((lesson) => !lesson.challenge);
@@ -387,7 +466,7 @@ function CourseLessons({
         key={lesson.id}
         lesson={lesson}
         today={today}
-        status={standingText(lesson, today)}
+        status={closed ? (lesson.passed ? "Mastered" : "Not passed") : standingText(lesson, today)}
         trailing={
           where === "holding" ? (
             <Badge tone="gold">✓ Holds</Badge>

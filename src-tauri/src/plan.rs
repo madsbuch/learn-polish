@@ -100,7 +100,10 @@ struct Scheduled {
     last_result: Option<String>,
 }
 
+/// Lessons with a check-in due by `until` — not the retired ones, which
+/// only closed courses list.
 fn scheduled(conn: &mut Conn, until: i64) -> Result<Vec<Scheduled>> {
+    let retired = crate::courses::retired_lessons(conn)?;
     Ok(lessons::table
         .filter(lessons::due_day.le(until))
         .select((
@@ -113,7 +116,10 @@ fn scheduled(conn: &mut Conn, until: i64) -> Result<Vec<Scheduled>> {
             lessons::ease,
             lessons::last_result,
         ))
-        .load(conn)?)
+        .load::<Scheduled>(conn)?
+        .into_iter()
+        .filter(|lesson| !retired.contains(&lesson.id))
+        .collect())
 }
 
 /// How much a due lesson is at risk of being forgotten: how far past its gap
@@ -181,14 +187,16 @@ pub struct Plan {
 
 pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
     let list = todays_list(conn, today)?;
+    let retired = crate::courses::retired_lessons(conn)?;
     let state: Vec<(i64, Option<i64>, Option<i64>)> = lessons::table
         .filter(lessons::id.eq_any(&list))
         .select((lessons::id, lessons::due_day, lessons::last_day))
         .load(conn)?;
     let (mut left, mut done) = (Vec::new(), 0usize);
     for id in &list {
-        // A lesson deleted since, or moved off today, just drops out.
-        match state.iter().find(|s| s.0 == *id) {
+        // A lesson deleted since, moved off today, or retired with its
+        // course, just drops out.
+        match state.iter().find(|s| s.0 == *id).filter(|s| !retired.contains(&s.0)) {
             Some((_, _, last)) if *last == Some(today) => done += 1,
             Some((_, Some(due), _)) if *due <= today => left.push(*id),
             _ => {}
@@ -228,5 +236,7 @@ pub fn remaining(conn: &mut Conn, day: i64) -> Result<i64> {
     if day == db::today(conn) {
         return Ok(plan(conn, day)?.left.len() as i64);
     }
-    Ok(lessons::table.filter(lessons::due_day.le(day)).count().get_result(conn)?)
+    let retired = crate::courses::retired_lessons(conn)?;
+    let due: Vec<i64> = lessons::table.filter(lessons::due_day.le(day)).select(lessons::id).load(conn)?;
+    Ok(due.into_iter().filter(|id| !retired.contains(id)).count() as i64)
 }

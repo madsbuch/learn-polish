@@ -77,8 +77,8 @@ export function SessionSummary({
       {(result.milestones ?? []).map((milestone) => (
         <Banner key={`${milestone.courseId}-${milestone.mastered}`} tone="ok">
           {milestone.mastered
-            ? `🏆 You mastered “${milestone.title}” — everything in it holds.`
-            : `🎉 You completed “${milestone.title}”! It moves to your completed courses; its lessons still come back now and then.`}
+            ? `🏆 You mastered “${milestone.title}” — everything in it holds. Close it on its page to keep it as a trophy.`
+            : `🎉 You completed “${milestone.title}”! Keep its lessons up in your check-ins to master it.`}
         </Banner>
       ))}
 

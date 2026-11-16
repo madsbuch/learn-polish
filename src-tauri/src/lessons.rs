@@ -350,7 +350,12 @@ pub fn overview(conn: &mut Conn) -> Result<Overview> {
     // newest courses first (the tutor just made them for a reason).
     let mut next: Vec<Lesson> = Vec::new();
     let mut courses_used = 0;
-    for course in courses::table.order(course_order()).select(courses::id).load::<i64>(conn)? {
+    for course in courses::table
+        .filter(courses::closed_at.is_null())
+        .order(course_order())
+        .select(courses::id)
+        .load::<i64>(conn)?
+    {
         if courses_used == 3 {
             break;
         }
@@ -591,7 +596,7 @@ pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Le
         .clamp(1, 60);
     let course_id = match input.course_id {
         Some(id) => {
-            crate::courses::require_course(conn, id)?;
+            crate::courses::require_open_course(conn, id)?;
             id
         }
         None => crate::courses::grammar_culture_course(conn)?,
@@ -649,7 +654,7 @@ pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Resul
     }
     let course_id = match input.course_id {
         Some(id) => {
-            crate::courses::require_course(conn, id)?;
+            crate::courses::require_open_course(conn, id)?;
             id
         }
         None => crate::courses::writing_course(conn)?,
@@ -707,7 +712,7 @@ pub fn create_listening(
     };
     let course_id = match course.or(song_course) {
         Some(id) => {
-            crate::courses::require_course(conn, id)?;
+            crate::courses::require_open_course(conn, id)?;
             id
         }
         None => crate::courses::listening_course(conn)?,
@@ -752,7 +757,7 @@ pub fn create_drill(
         return Err(Error::msg(format!("Unknown drill format '{format}'.")));
     }
     check_complexity(complexity)?;
-    crate::courses::require_course(conn, course_id)?;
+    crate::courses::require_open_course(conn, course_id)?;
     let period = period_days.unwrap_or_else(|| default_period("drill", complexity)).clamp(1, 60);
     let id = insert(
         conn,

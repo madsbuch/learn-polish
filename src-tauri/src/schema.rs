@@ -19,6 +19,7 @@ diesel::table! {
         image_file_id -> Nullable<BigInt>,
         completed_at -> Nullable<BigInt>,
         mastered_at -> Nullable<BigInt>,
+        closed_at -> Nullable<BigInt>,
     }
 }
 

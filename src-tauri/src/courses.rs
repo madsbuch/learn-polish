@@ -113,6 +113,71 @@ pub fn require_course(conn: &mut Conn, course_id: i64) -> Result<String> {
         .ok_or_else(|| Error::msg(format!("There is no course with id {course_id}.")))
 }
 
+/// Like [`require_course`], for changes: a course closed as mastered is
+/// finished, so nothing is added to it — revisiting its theme is a new course.
+pub fn require_open_course(conn: &mut Conn, course_id: i64) -> Result<String> {
+    let title = require_course(conn, course_id)?;
+    let closed: Option<i64> = courses::table.find(course_id).select(courses::closed_at).first(conn)?;
+    if closed.is_some() {
+        return Err(Error::msg(format!(
+            "“{title}” is mastered and closed, so it is not changed any more. To revisit its theme, make a new course (a level up)."
+        )));
+    }
+    Ok(title)
+}
+
+/// The built-in courses that never end (slugs): the tutor keeps adding to
+/// them, so they are not completed, mastered or closed.
+pub const OPEN_ENDED: [&str; 3] = ["lessons", "listening", "writing"];
+
+/// Lessons only closed courses list: retired, so check-ins no longer bring
+/// them back. A lesson an open course lists too stays.
+pub fn retired_lessons(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
+    let listed: Vec<(i64, Option<i64>)> = course_lessons::table
+        .inner_join(courses::table)
+        .select((course_lessons::lesson_id, courses::closed_at))
+        .load(conn)?;
+    let open: std::collections::HashSet<i64> = listed.iter().filter(|(_, closed)| closed.is_none()).map(|(id, _)| *id).collect();
+    Ok(listed.into_iter().filter(|(id, closed)| closed.is_some() && !open.contains(id)).map(|(id, _)| id).collect())
+}
+
+/// How long after closing a course "Undo" still opens it again.
+pub const UNDO_CLOSE_SECS: i64 = 10 * 60;
+
+/// Closes a mastered course: it moves to the Mastered section as a trophy,
+/// stays readable, and its lessons leave the check-ins (unless an open
+/// course lists them too). Only a mastered course, and not a built-in one
+/// that never ends, can be closed.
+pub fn close(conn: &mut Conn, course_id: i64) -> Result<()> {
+    let title = require_open_course(conn, course_id)?;
+    let current = status(conn, course_id)?;
+    if current.open_ended {
+        return Err(Error::msg(format!("“{title}” keeps growing, so it is never closed.")));
+    }
+    if current.status != "mastered" {
+        return Err(Error::msg(format!("“{title}” is not mastered yet, so it cannot be closed.")));
+    }
+    diesel::update(courses::table.find(course_id)).set(courses::closed_at.eq(db::now_secs())).execute(conn)?;
+    Ok(())
+}
+
+/// Opens a course closed a moment ago again — for a mis-tap; after
+/// [`UNDO_CLOSE_SECS`] closing is final.
+pub fn undo_close(conn: &mut Conn, course_id: i64) -> Result<()> {
+    let title = require_course(conn, course_id)?;
+    let closed: Option<i64> = courses::table.find(course_id).select(courses::closed_at).first(conn)?;
+    match closed {
+        None => Ok(()),
+        Some(at) if db::now_secs() - at <= UNDO_CLOSE_SECS => {
+            diesel::update(courses::table.find(course_id)).set(courses::closed_at.eq(None::<i64>)).execute(conn)?;
+            Ok(())
+        }
+        Some(_) => Err(Error::msg(format!(
+            "“{title}” was closed a while ago, and that is final. To revisit its theme, ask the tutor for a new course."
+        ))),
+    }
+}
+
 /// The position after the last course.
 fn next_ord(conn: &mut Conn) -> Result<i64> {
     Ok(courses::table.select(max(courses::ord)).first::<Option<i64>>(conn)?.unwrap_or(0) + 1)
@@ -233,7 +298,7 @@ pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<i64> 
 
 /// Lists a lesson in a course, at the end. Listing it again changes nothing.
 pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()> {
-    require_course(conn, course_id)?;
+    require_open_course(conn, course_id)?;
     let ord = course_lessons::table
         .filter(course_lessons::course_id.eq(course_id))
         .select(max(course_lessons::ord))
@@ -457,7 +522,7 @@ pub fn extend(
     dialogue: &[NewLine],
     origin: &str,
 ) -> Result<CourseSummary> {
-    require_course(conn, course_id)?;
+    require_open_course(conn, course_id)?;
     let skipped = conn.transaction::<_, Error, _>(|conn| {
         cut_into_drills(
             conn,
@@ -562,7 +627,7 @@ pub fn remove_items(
     remove_words: &[String],
     remove_sentences: &[String],
 ) -> Result<CourseSummary> {
-    require_course(conn, course_id)?;
+    require_open_course(conn, course_id)?;
     conn.transaction::<_, Error, _>(|conn| {
         let listed: Vec<i64> =
             course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?;
@@ -717,6 +782,18 @@ pub mod commands {
         super::rename(&mut db.lock(), course_id, Some(&title), Some(&title_pl), Some(&summary)).map(|_| ())
     }
 
+    /// Closes a mastered course (see [`super::close`]).
+    #[tauri::command]
+    pub async fn course_close(db: State<'_, Db>, course_id: i64) -> Result<()> {
+        super::close(&mut db.lock(), course_id)
+    }
+
+    /// Opens a course closed a moment ago again.
+    #[tauri::command]
+    pub async fn course_undo_close(db: State<'_, Db>, course_id: i64) -> Result<()> {
+        super::undo_close(&mut db.lock(), course_id)
+    }
+
     /// Lists a lesson in another course too.
     #[tauri::command]
     pub async fn lesson_add_to_course(db: State<'_, Db>, lesson_id: i64, course_id: i64) -> Result<()> {
@@ -768,6 +845,10 @@ pub struct CourseStatus {
     pub holding: i64,
     /// The first core lesson, in the course's order, not passed yet.
     pub next_lesson: Option<String>,
+    /// A built-in course that never ends (see [`OPEN_ENDED`]): always active.
+    pub open_ended: bool,
+    /// When it was closed as mastered, if it was.
+    pub closed_at: Option<i64>,
 }
 
 /// Whether a lesson holds the way mastering a course needs: passed, at a gap
@@ -795,8 +876,22 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
     let completed = !core.is_empty() && passed_core == core.len() as i64;
     let holding = list.iter().filter(|(_, passed, gap, format, support, _)| holds(*passed == 1, *gap, format, *support)).count();
     let mastered = completed && holding == list.len();
+    let (slug, closed_at): (String, Option<i64>) =
+        courses::table.find(course_id).select((courses::slug, courses::closed_at)).first(conn)?;
+    let open_ended = OPEN_ENDED.contains(&slug.as_str());
     Ok(CourseStatus {
-        status: if mastered { "mastered" } else if completed { "completed" } else { "active" }.into(),
+        status: if open_ended {
+            "active"
+        } else if mastered {
+            "mastered"
+        } else if completed {
+            "completed"
+        } else {
+            "active"
+        }
+        .into(),
+        open_ended,
+        closed_at,
         core_lessons: core.len() as i64,
         passed_core,
         challenges: (list.len() - core.len()) as i64,

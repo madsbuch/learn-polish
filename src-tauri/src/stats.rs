@@ -338,6 +338,26 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
         completed_today,
         history,
         achievements,
+        mastered: mastered_summary(conn)?,
+    })
+}
+
+/// Courses closed as mastered, and the lessons and words in them, each once
+/// (a lesson two closed courses list counts once).
+pub fn mastered_summary(conn: &mut Conn) -> Result<crate::models::MasteredSummary> {
+    let closed = courses::table.filter(courses::closed_at.is_not_null());
+    let lesson_ids: std::collections::HashSet<i64> = course_lessons::table
+        .inner_join(courses::table)
+        .filter(courses::closed_at.is_not_null())
+        .select(course_lessons::lesson_id)
+        .load::<i64>(conn)?
+        .into_iter()
+        .collect();
+    let ids: Vec<i64> = lesson_ids.iter().copied().collect();
+    Ok(crate::models::MasteredSummary {
+        courses: closed.count().get_result(conn)?,
+        lessons: ids.len() as i64,
+        words: words::table.filter(words::lesson_id.eq_any(&ids)).count().get_result(conn)?,
     })
 }
 

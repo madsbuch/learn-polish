@@ -263,6 +263,17 @@ export interface CourseProgress {
   holding: number;
   /** The first core lesson, in the course's order, not passed yet. */
   nextLesson: string | null;
+  /** A built-in course that never ends (Grammar & culture, Listening, Writing): always active. */
+  openEnded: boolean;
+  /** When it was closed as mastered (Unix seconds), if it was. */
+  closedAt: number | null;
+}
+
+/** What the courses closed as mastered add up to, each counted once. */
+export interface MasteredSummary {
+  courses: number;
+  lessons: number;
+  words: number;
 }
 
 /** A course just completed or mastered. */
@@ -273,6 +284,8 @@ export interface Milestone {
 }
 
 export interface Stats {
+  /** The courses closed as mastered, together. */
+  mastered: MasteredSummary;
   day: number;
   totalXp: number;
   dayXp: number;

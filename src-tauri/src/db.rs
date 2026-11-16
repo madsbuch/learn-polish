@@ -178,7 +178,10 @@ CREATE TABLE IF NOT EXISTS courses (
     -- When it was first completed and first mastered (courses::milestones),
     -- so each is celebrated once.
     completed_at INTEGER,
-    mastered_at  INTEGER
+    mastered_at  INTEGER,
+    -- When the learner closed it as mastered: it is kept as a trophy and its
+    -- lessons leave the check-ins (courses::close).
+    closed_at    INTEGER
 );
 
 -- Words, sentences and dialogue lines belong to a lesson — the drill that
@@ -603,6 +606,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "tutor_conversations", "tag", "TEXT")?;
     add_column(conn, "tutor_conversations", "about", "TEXT")?;
     add_column(conn, "courses", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
+    add_column(conn, "courses", "closed_at", "INTEGER")?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }

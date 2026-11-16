@@ -162,6 +162,9 @@ export const api = {
     invoke<void>("tutor_rename", { conversationId, title }),
   tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
   courseDelete: (courseId: number) => invoke<void>("course_delete", { courseId }),
+  /** Closes a mastered course: a trophy, out of the check-ins. Final after a few minutes. */
+  courseClose: (courseId: number) => invoke<void>("course_close", { courseId }),
+  courseUndoClose: (courseId: number) => invoke<void>("course_undo_close", { courseId }),
   courseRename: (courseId: number, title: string, titlePl: string, summary: string) =>
     invoke<void>("course_rename", { courseId, title, titlePl, summary }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */

@@ -138,6 +138,8 @@ pub fn run() {
             tutor::tutor_rename,
             tutor::tutor_delete,
             courses::commands::course_delete,
+            courses::commands::course_close,
+            courses::commands::course_undo_close,
             courses::commands::lesson_add_to_course,
             courses::commands::lesson_remove_from_course,
             courses::commands::course_rename,
@@ -912,6 +914,83 @@ mod integration {
         diesel::update(t::lessons::table.find(core[0])).set(t::lessons::passed.eq(0)).execute(&mut conn).unwrap();
         lessons::record(&mut conn, core[0], "pass").unwrap();
         assert!(lessons::load(&mut conn, core[0]).unwrap().passed);
+    }
+
+    #[test]
+    fn a_mastered_course_closes_into_a_trophy_and_leaves_the_check_ins() {
+        let mut conn = scratch_db("course-close");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let other = db::require_course_id(&mut conn, 2).unwrap();
+        let ids: Vec<i64> = lessons::for_course(&mut conn, course).unwrap().iter().map(|l| l.id).collect();
+        let today = db::today(&mut conn);
+        let hold = |conn: &mut db::Conn, id: i64, gap: i64| {
+            diesel::update(t::lessons::table.find(id))
+                .set((
+                    t::lessons::passed.eq(1),
+                    t::lessons::interval_days.eq(gap),
+                    t::lessons::support_level.eq(2),
+                    t::lessons::due_day.eq(Some(today)),
+                    t::lessons::last_day.eq(Some(today - gap)),
+                ))
+                .execute(conn)
+                .unwrap();
+        };
+        for id in &ids {
+            hold(&mut conn, *id, 3);
+        }
+        let err = courses::close(&mut conn, course).unwrap_err().to_string();
+        assert!(err.contains("not mastered"), "{err}");
+
+        for id in &ids {
+            hold(&mut conn, *id, 40);
+        }
+        // One lesson is shared with an open course: it stays in the check-ins.
+        let shared = ids[0];
+        courses::add_lesson(&mut conn, other, shared).unwrap();
+        db::delete_setting(&mut conn, "plan_day").unwrap();
+        let due_before = plan::remaining(&mut conn, today + 1).unwrap();
+        assert!(due_before >= ids.len() as i64, "all due before closing");
+
+        courses::close(&mut conn, course).unwrap();
+        let status = courses::status(&mut conn, course).unwrap();
+        assert!(status.closed_at.is_some());
+        let retired = courses::retired_lessons(&mut conn).unwrap();
+        assert!(!retired.contains(&shared), "an open course lists it too");
+        assert!(ids[1..].iter().all(|id| retired.contains(id)));
+        let after = plan::plan(&mut conn, today).unwrap();
+        assert_eq!(plan::remaining(&mut conn, today + 1).unwrap(), due_before - (ids.len() as i64 - 1));
+        assert!(ids[1..].iter().all(|id| !after.left.contains(id) && !after.more.contains(id)), "retired lessons are not asked for");
+
+        // Finished: nothing is added to it; its lessons still open.
+        let err = courses::add_lesson(&mut conn, course, ids[1]).unwrap_err().to_string();
+        assert!(err.contains("mastered and closed"), "{err}");
+        assert!(lessons::detail(&mut conn, ids[1]).is_ok());
+        assert!(courses::close(&mut conn, course).is_err(), "closed once");
+
+        let summary = stats::mastered_summary(&mut conn).unwrap();
+        assert_eq!((summary.courses, summary.lessons), (1, ids.len() as i64));
+        assert_eq!(stats::collect(&mut conn).unwrap().mastered, summary);
+
+        // Undo, for a mis-tap; after the window, closing is final.
+        courses::undo_close(&mut conn, course).unwrap();
+        assert!(courses::status(&mut conn, course).unwrap().closed_at.is_none());
+        courses::close(&mut conn, course).unwrap();
+        diesel::update(t::courses::table.find(course))
+            .set(t::courses::closed_at.eq(Some(db::now_secs() - courses::UNDO_CLOSE_SECS - 1)))
+            .execute(&mut conn)
+            .unwrap();
+        assert!(courses::undo_close(&mut conn, course).unwrap_err().to_string().contains("final"));
+
+        // The built-in courses that never end are never completed or closed.
+        let grammar = courses::grammar_culture_course(&mut conn).unwrap();
+        let essentials = grammar_course(&mut conn);
+        let study = lessons::for_course(&mut conn, essentials).unwrap()[0].id;
+        courses::add_lesson(&mut conn, grammar, study).unwrap();
+        hold(&mut conn, study, 40);
+        let open = courses::status(&mut conn, grammar).unwrap();
+        assert!(open.open_ended);
+        assert_eq!(open.status, "active");
+        assert!(courses::close(&mut conn, grammar).unwrap_err().to_string().contains("never closed"));
     }
 
     #[test]

@@ -208,6 +208,18 @@ pub struct Stats {
     pub completed_today: bool,
     pub history: Vec<DayStat>,
     pub achievements: Vec<Achievement>,
+    /// What the courses closed as mastered add up to, each counted once.
+    pub mastered: MasteredSummary,
+}
+
+/// The Mastered section's header: courses closed as mastered, their lessons
+/// and the words those lessons own.
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MasteredSummary {
+    pub courses: i64,
+    pub lessons: i64,
+    pub words: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
