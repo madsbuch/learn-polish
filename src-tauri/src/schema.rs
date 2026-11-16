@@ -353,6 +353,15 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    word_examples (word_id) {
+        word_id -> BigInt,
+        examples -> Text,
+        created_at -> BigInt,
+    }
+}
+
+diesel::joinable!(word_examples -> words (word_id));
 diesel::joinable!(words -> blocks (block_id));
 diesel::joinable!(sentences -> blocks (block_id));
 diesel::joinable!(conversation_lines -> blocks (block_id));
@@ -417,4 +426,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     playlist_tracks,
     ai_costs,
     memories,
+    word_examples,
 );

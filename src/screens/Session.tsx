@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { WordChat } from "../components/WordChat";
+import { WrongAnswerReview } from "../components/WrongAnswerReview";
 import { GapFill, Memory } from "../components/SetExercises";
 import { CloseIcon } from "../components/icons";
 import { SlowButton, SpeakButton } from "../components/ui";
@@ -152,10 +153,11 @@ export function Session({
         if (answer.correct) playCorrect();
         else playWrong();
       }
-      if (answer.correct && exercise.pl && exercise.itemKind !== "dialogue") {
-        // Let the chime ring before the word is read out.
+      if (exercise.pl && exercise.itemKind !== "dialogue" && exercise.itemKind !== "set") {
+        // Let the chime ring before the word is read out — after a miss too,
+        // so the right answer is heard, not just seen.
         const pl = exercise.pl;
-        window.setTimeout(() => speakQuietly(pl), 350);
+        window.setTimeout(() => speakQuietly(pl), answer.correct ? 350 : 600);
       }
       return true;
     } catch (cause) {
@@ -421,7 +423,13 @@ export function Session({
               </Text>
             ) : null}
             {/* Always show both sides of the pair, whichever direction was asked. */}
-            {exercise.itemKind !== "set" && (!result.correct || exercise.kind === "type") ? (
+            {!result.correct && (exercise.itemKind === "word" || exercise.itemKind === "sentence") ? (
+              <WrongAnswerReview
+                pl={exercise.pl}
+                meaning={exercise.meaning}
+                wordId={exercise.itemKind === "word" ? exercise.itemId : null}
+              />
+            ) : exercise.itemKind !== "set" && (!result.correct || exercise.kind === "type") ? (
               <Text variant="small" selectable>
                 {exercise.itemKind === "dialogue" ? exercise.answer : `${exercise.pl} — ${exercise.meaning}`}
               </Text>

@@ -481,6 +481,14 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Example sentences for a word, shown when it is answered wrong: made once
+-- by the AI (a JSON list of {pl, en}) and kept.
+CREATE TABLE IF NOT EXISTS word_examples (
+    word_id    INTEGER PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+    examples   TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
 "#;
 
 fn migrate(conn: &mut Conn) -> Result<()> {
@@ -1218,7 +1226,7 @@ mod tests {
             topics, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
             files, speech_clips, wiki_sources, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
-            playlist_tracks, ai_costs, memories,
+            playlist_tracks, ai_costs, memories, word_examples,
         );
     }
 }

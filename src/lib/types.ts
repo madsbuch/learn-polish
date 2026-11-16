@@ -765,3 +765,9 @@ export interface BenchRun {
   costUsd: number | null;
   items: BenchItem[];
 }
+
+/** A sentence that uses a word, shown when the word is answered wrong. */
+export interface WordExample {
+  pl: string;
+  en: string;
+}

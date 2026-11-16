@@ -11,6 +11,7 @@ mod courses;
 mod db;
 mod demo_course;
 mod error;
+mod examples;
 mod files;
 mod examiner;
 mod http;
@@ -108,6 +109,7 @@ pub fn run() {
             bench::bench_runs,
             bench::bench_delete,
             examiner::writing_hint,
+            examples::word_examples,
             examiner::lesson_add_players,
             pictures::course_picture,
             wiki::block_sources,

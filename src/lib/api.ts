@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  WordExample,
   MemoryCategory,
   MemoryOverview,
   CostSummary,
@@ -98,6 +99,7 @@ export const api = {
   /** A writing block's word bank (made once, then kept). */
   writingScaffold: (blockId: number) => invoke<GoalHelp[]>("writing_scaffold", { blockId }),
   /** A hint for the next message in a writing conversation. */
+  wordExamples: (wordId: number) => invoke<WordExample[]>("word_examples", { wordId }),
   writingHint: (checkinId: number) => invoke<string>("writing_hint", { checkinId }),
   /** Adds audio players to a lesson's Polish examples (its text otherwise unchanged). */
   lessonAddPlayers: (blockId: number) => invoke<BlockDetail>("lesson_add_players", { blockId }),
