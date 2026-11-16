@@ -373,6 +373,9 @@ export interface LessonFinished extends SessionResult {
   result: LessonResult;
   /** Extra practice: the schedule did not move. */
   extra: boolean;
+  /** This drill's score: right answers out of the scored cards. */
+  correct: number;
+  total: number;
 }
 
 export interface SessionResult {

@@ -843,6 +843,25 @@ mod integration {
         assert!(aced.due_day.unwrap() >= today + 10, "{:?}", aced.due_day);
         assert!(lessons::is_extra_practice(&aced, today));
 
+        // Failed today, then done again: a real retry, and its pass counts.
+        let retried = *all.iter().filter(|id| !first.left.contains(id)).nth(1).unwrap();
+        diesel::update(schema::lessons::table.find(retried))
+            .set((schema::lessons::passed.eq(0), schema::lessons::due_day.eq(today)))
+            .execute(&mut conn)
+            .unwrap();
+        let failed = practice::lesson_finish_in(&mut conn, retried, 2, 10).unwrap();
+        assert_eq!((failed.result.as_str(), failed.extra, failed.lesson.passed), ("fail", false, false));
+        let again = practice::lesson_finish_in(&mut conn, retried, 10, 10).unwrap();
+        assert_eq!((again.result.as_str(), again.extra), ("pass", false), "a retry after a fail is recorded");
+        assert!(again.lesson.passed, "and passing it counts");
+        let third = practice::lesson_finish_in(&mut conn, retried, 10, 10).unwrap();
+        assert!(third.extra, "passing it once more the same day is extra practice");
+        assert_eq!(third.lesson.due_day, again.lesson.due_day, "and does not move it further out");
+        diesel::update(schema::lessons::table.find(retried))
+            .set((schema::lessons::due_day.eq(None::<i64>), schema::lessons::reps.eq(0), schema::lessons::last_day.eq(None::<i64>)))
+            .execute(&mut conn)
+            .unwrap();
+
         // Pulling one forward from next week is a real check-in, counted ahead.
         let later = *all.iter().find(|id| !first.left.contains(id)).unwrap();
         diesel::update(schema::lessons::table.find(later))

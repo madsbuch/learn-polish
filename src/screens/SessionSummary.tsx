@@ -23,8 +23,8 @@ import type { LessonResult, SessionResult } from "../lib/types";
 
 const OUTCOME = {
   pass: "Passed",
-  partial: "Partly there — it comes back at its usual pace",
-  fail: "Not yet — it comes back tomorrow",
+  partial: "Partly there — 85% right passes; try again now, or it comes back at its usual pace",
+  fail: "Not yet — 85% right passes; try again now, or it comes back tomorrow",
 } as const;
 
 export function SessionSummary({
@@ -42,6 +42,8 @@ export function SessionSummary({
     nextDueDay: number | null;
     /** Extra practice: the schedule did not move. */
     extra?: boolean;
+    /** A drill's score; a check-in has none. */
+    score?: { correct: number; total: number };
   };
   onDone: () => void;
 }) {
@@ -53,6 +55,8 @@ export function SessionSummary({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { stats, newlyUnlocked } = result;
+  const score = outcome?.score;
+  const scoreText = score ? ` — ${score.correct} of ${score.total} right` : "";
   // The day is done: the goal reached, or everything due cleared.
   const goalMet = stats.completedToday;
 
@@ -65,9 +69,9 @@ export function SessionSummary({
         <h1>{result.firstCompletionToday ? "Day done!" : "Nice work"}</h1>
         <Text tone="dim" align="center" as="p">
           {outcome?.extra
-            ? `${outcome.title}: already checked in today, so this is extra practice: half XP, and its schedule stays as it was.`
+            ? `${outcome.title}${scoreText}: already passed today, so this is extra practice: half XP, and its schedule stays as it was.`
             : outcome
-            ? `${outcome.title}: ${OUTCOME[outcome.result]}.`
+            ? `${outcome.title}${scoreText}: ${OUTCOME[outcome.result]}.`
             : result.firstCompletionToday
               ? "Today's streak is safe."
               : "Extra practice always counts."}
@@ -108,8 +112,12 @@ export function SessionSummary({
 
       <StatGrid>
         <Stat value={stats.dayXp} label="XP today" />
-        <Stat value={stats.wordsSeen} label="words met" />
-        <Stat value={`${Math.round(stats.accuracy * 100)}%`} label="accuracy" />
+        {score ? (
+          <Stat value={`${Math.round((score.correct / score.total) * 100)}%`} label="this lesson" />
+        ) : (
+          <Stat value={stats.wordsSeen} label="words met" />
+        )}
+        <Stat value={`${Math.round(stats.accuracy * 100)}%`} label="accuracy, all time" />
       </StatGrid>
 
       {newlyUnlocked.length > 0 ? (

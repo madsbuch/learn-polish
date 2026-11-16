@@ -64,7 +64,14 @@ type Overlay =
       kind: "summary";
       result: SessionResult;
       xp: number;
-      outcome?: { title: string; result: LessonResult; nextDueDay: number | null; extra?: boolean };
+      outcome?: {
+        title: string;
+        result: LessonResult;
+        nextDueDay: number | null;
+        extra?: boolean;
+        /** A drill's score; a check-in has none. */
+        score?: { correct: number; total: number };
+      };
       /** Where Done goes: wherever the lesson was started from. */
       back: Overlay;
     }
@@ -388,6 +395,7 @@ export default function App() {
                 result: result.result,
                 nextDueDay: result.lesson.dueDay,
                 extra: result.extra,
+                score: result.total > 0 ? { correct: result.correct, total: result.total } : undefined,
               },
               back: startedFrom(overlay.back),
             });

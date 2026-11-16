@@ -201,6 +201,9 @@ pub struct LessonFinished {
     pub result: String,
     /// Extra practice on a lesson that was not due: its schedule is unchanged.
     pub extra: bool,
+    /// This drill's score: right answers out of the scored cards.
+    pub correct: i64,
+    pub total: i64,
     #[serde(flatten)]
     pub session: SessionResult,
 }
@@ -227,7 +230,7 @@ pub fn lesson_finish_in(conn: &mut Conn, lesson_id: i64, correct: i64, total: i6
     let ace = total > 0 && correct * 100 >= total * 95;
     let lesson = if extra { current } else { lessons::record_graded(conn, lesson_id, result, ace)? };
     let first = stats::mark_practised(conn, today)?;
-    Ok(LessonFinished { lesson, result: result.into(), extra, session: finish_up(conn, &before, first)? })
+    Ok(LessonFinished { lesson, result: result.into(), extra, correct, total, session: finish_up(conn, &before, first)? })
 }
 
 /// Stats after a check-in, for the summary screen. What counts as newly

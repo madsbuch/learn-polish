@@ -482,12 +482,14 @@ pub fn next_gap(grade: Grade, reps_before: i64, interval: i64, period: i64, ease
     (gap.min(MAX_INTERVAL), ease.clamp(MIN_EASE, MAX_EASE))
 }
 
-/// Doing a lesson again on a day it was already checked in is extra
-/// practice: it counts for the day, but does not move the schedule (three
-/// quick replays must not send it months away). Doing one before its day
-/// is an early check-in, and does move it — see [`next_gap`].
+/// Doing a lesson again on a day it was already passed is extra practice:
+/// it counts for the day, but does not move the schedule (three quick
+/// replays must not send it months away). After a fail or a partial, doing
+/// it again the same day is a real retry: it is recorded, and a pass counts
+/// as passing it. Doing one before its day is an early check-in, and does
+/// move it — see [`next_gap`].
 pub fn is_extra_practice(lesson: &Lesson, today: i64) -> bool {
-    lesson.reps > 0 && lesson.last_day == Some(today)
+    lesson.reps > 0 && lesson.last_day == Some(today) && lesson.last_result.as_deref() == Some("pass")
 }
 
 /// About how many minutes a lesson takes, by its kind and complexity: what
