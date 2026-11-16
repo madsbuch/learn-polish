@@ -1,7 +1,7 @@
 # Polski
 
-A Polish learning app for English speakers. Everything is a small block —
-a quick drill or a short lesson with a check-in — filed in courses: the
+A Polish learning app for English speakers. Everything is a small lesson —
+a quick drill, or a short text to study with a check-in — filed in courses: the
 small First steps demo, and courses on any theme you like, built for you by
 the tutor.
 
@@ -26,67 +26,68 @@ Edited, extended or shared courses are preserved, along with user-created
 courses, XP and settings. Historical course data exists only as regression
 test fixtures and is excluded from production builds.
 
-## Blocks
+## Lessons
 
-Learning happens in **blocks**: small units with one job each.
+Learning happens in **lessons**: small units with one job each.
 
 - **Drills** are mechanical practice on a handful of items, in one format:
   *words* (new-word cards, multiple choice, typing once known, a memory round),
   *memory* cards, *typing*, *sentences* (build them, then fill gaps), *gaps*,
   or a *dialogue* (read it, then fill its lines).
-- **Study blocks** are short lessons — a conjugation, a grammar point, a bit of
+- **Study lessons** are short texts — a conjugation, a grammar point, a bit of
   culture — with objectives. Their check-in is an interview: an **examiner**
   agent asks one question at a time (more, and harder ones, the more complex the
-  block), gives a line of feedback after each answer, and ends with a verdict:
+  lesson), gives a line of feedback after each answer, and ends with a verdict:
   pass, partial or fail, plus what to review (`src-tauri/src/examiner.rs`).
 
-- **Listening blocks** tie a study block to a song: play it (the lyrics stay
+- **Listening lessons** tie a study lesson to a song: play it (the lyrics stay
   hidden unless asked for), then the examiner asks about what you heard —
   what the chorus means, the missing word in a line, a line to translate, and
-  for deeper blocks the grammar of what is sung. The song can be replayed
+  for deeper lessons the grammar of what is sung. The song can be replayed
   during the check-in. Every song the tutor makes gets one; any song's page
   has *Listen and answer questions*.
 
-- **Writing blocks** are a situation played out in writing — tell a new
+- **Writing lessons** are a situation played out in writing — tell a new
   neighbour where you live, order dinner — with an AI partner who writes and
   understands only Polish. It answers anything else with "Przepraszam, nie
   rozumiem…". The conversation ends, with a verdict and corrections, as soon
   as you have got every goal across (or when you tap End). The partner runs on
   its own model (Settings → Writing partner), so a small, fast one can be used.
-  Writing blocks without a course go in *Writing*.
+  Writing lessons without a course go in *Writing*.
 
-Every block has a **complexity** — low (1–2 min), medium (5–10 min) or deep
+Every lesson has a **complexity** — low (1–2 min), medium (5–10 min) or deep
 (20+ min) — set by how hard its subject is, not by how much is in it. And every
-block has its own **check-in period**: the first pass brings it back after the
+lesson has its own **check-in period**: the first pass brings it back after the
 period, each further pass doubles the gap (up to four months), a partial pass
 repeats the period, and a fail brings it back tomorrow. The period can be
-changed on the block's page.
+changed on the lesson's page.
 
 Three levels:
 
-- A **course** is a folder on one theme. It lists blocks, in order.
-- A **block** is one thing you do, with its own check-in schedule. A drill
-  **owns** the words, sentences or dialogue lines it practises; a lesson owns
-  its text and objectives.
-- A **word** (or sentence) belongs to exactly one block, and a course reaches
-  its words only through its blocks.
+- A **course** is a folder on one theme. It lists lessons, in order.
+- A **lesson** is one thing you do, with its own check-in schedule. A drill
+  **owns** the words, sentences or dialogue lines it practises; a study lesson
+  owns its text and objectives.
+- A **word** (or sentence) belongs to exactly one lesson, and a course reaches
+  its words only through its lessons.
 
 Giving a course words, sentences or a dialogue cuts them into drills — the
 dialogue, words in eights, sentences in fives — skipping anything the course
-already teaches. A block can be listed in **several courses** (one block, one
+already teaches. A lesson can be listed in **several courses** (one lesson, one
 schedule, shown in each); it can be moved between courses, and taking it out
-of its last course deletes it, with its words and their history. On a block's
+of its last course deletes it, with its words and their history. On a lesson's
 page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it.
-A lesson the tutor writes without a better home goes in *Lessons*. A song remembers the course whose words it uses, and
-its listening block is filed there; like any block it can be moved or shared
+A study lesson the tutor writes without a better home goes in *Grammar &
+culture*. A song remembers the course whose words it uses, and
+its listening lesson is filed there; like any lesson it can be moved or shared
 afterwards. The tutor files songs itself: it picks the course a new song fits,
 and reads the lyrics of songs left in *Listening* to move them where they
 belong. The
 **tutor** builds more: courses on any theme, single drills in a chosen format,
-and study blocks with their own lessons and objectives.
+and study lessons with their own text and objectives.
 
 The **Exercises** tab reads top to bottom: **today** (the XP ring and the next
-thing to do — a due block, or else the next unstarted one), **Due now** (blocks
+thing to do — a due lesson, or else the next unstarted one), **Due now** (lessons
 whose check-in has come), and **Courses**.
 
 A day is **done** — for the goal ring and the streak alike — when the daily
@@ -94,7 +95,7 @@ XP goal is reached, or when, having practised, nothing is left due.
 
 ### Scheduling
 
-Blocks have their own schedule (`src-tauri/src/blocks.rs`). Inside a drill, an
+Lessons have their own schedule (`src-tauri/src/lessons.rs`). Inside a drill, an
 SM-2 style scheduler (`src-tauri/src/srs.rs`) still tracks every word and
 sentence, so exercise difficulty follows each item's history: brand-new items
 are introduced on a card, then drilled with multiple choice; once an item has
@@ -103,10 +104,10 @@ about diacritics and case — `czesc` counts as `cześć`.
 
 ### Wikipedia sources
 
-A study block — culture especially: a city, a custom, a bit of history — can
+A study lesson — culture especially: a city, a custom, a bit of history — can
 be built on Wikipedia articles (`src-tauri/src/wiki.rs`). The tutor searches
 and reads Wikipedia, writes the lesson from the article and attaches it to
-the block (new blocks or existing ones). The block page lists its sources;
+the lesson (new lessons or existing ones). The lesson page lists its sources;
 each opens in the app's reader — stored, so offline — with a switch to the
 Polish article when Polish Wikipedia has one, and the credit the licence
 (CC BY-SA 4.0) asks for. The examiner keeps its questions to what the
@@ -116,7 +117,7 @@ Every three months the lesson is checked again: at start, each source's
 current revision is compared with the stored one (cheap); an article that
 changed is fetched again, and an AI corrects only what the lesson now gets
 wrong — a figure, a name, an officeholder — noting what changed on the
-block page. Check now does it on demand. Wikipedia needs no key.
+lesson page. Check now does it on demand. Wikipedia needs no key.
 
 ### Gamification
 
@@ -125,8 +126,8 @@ It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
 - **XP** per answer — harder exercise types pay more, wrong answers nothing,
   and cards that are only read (a new word, a dialogue) nothing either.
   Check-ins pay by effort: 30/80/160 for low/medium/high (half for partial),
-  plus 10 per goal in a writing block.
-- **Extra practice**: a block that is not due can always be done again, at
+  plus 10 per goal in a writing lesson.
+- **Extra practice**: a lesson that is not due can always be done again, at
   half XP, without moving its schedule.
 - **The day** is done when the goal is reached (150 XP by default, about a
   drill and a check-in) or nothing is left due. The **streak** counts done
@@ -136,7 +137,7 @@ It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
   the day is done, and says what is due.
 - **Mastered** means a word's review interval has reached three weeks.
 - **Achievements** for showing up, words that stick, and the deeper work:
-  check-ins, writing blocks, listening, songs, a finished course.
+  check-ins, writing lessons, listening, songs, a finished course.
 
 ## The tutor (optional)
 
@@ -153,12 +154,12 @@ button to ask again.
 
 | Tool | What it does |
 |---|---|
-| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), lessons on the grammar it uses, sentence drills, and a writing block last |
-| `create_study_block`, `create_drill_block`, `create_listening_block`, `create_writing_block` | Writes a lesson with objectives, one drill in a chosen format, a listening block for a song, or a writing situation with goals |
-| `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study blocks (new or existing) |
-| `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
+| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), study lessons on the grammar it uses, sentence drills, and a writing lesson last |
+| `create_study_lesson`, `create_drill_lesson`, `create_listening_lesson`, `create_writing_lesson` | Writes a study lesson with objectives, one drill in a chosen format, a listening lesson for a song, or a writing situation with goals |
+| `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study lessons (new or existing) |
+| `list_lessons`, `get_lesson`, `update_lesson`, `delete_lesson`, `schedule_lesson`, `suggest_lesson` | Sees and manages lessons, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, the demo included |
-| `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |
+| `move_lesson`, `add_lesson_to_course`, `remove_lesson_from_course`, `order_course_lessons` | Rearranges lessons between and within courses |
 | `update_practice_settings` | Daily XP goal |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `get_song`, `delete_songs` | Has a song written and sung (filed in the course it fits); reads a song's lyrics to file it; tidies up songs |
@@ -241,7 +242,7 @@ tab makes them to order:
 Every file the app keeps — speech clips, song audio, cover art — is a row in
 one `files` table (bytes, type, size, SHA-256), and other tables reference it
 by id: `speech_clips.file_id`, `song_tracks.audio_file_id` and
-`image_file_id`, `topics.image_file_id`. A course's picture is drawn by an
+`image_file_id`, `courses.image_file_id`. A course's picture is drawn by an
 OpenRouter image model (Settings → Course pictures; Gemini 2.5 Flash Image by
 default) from its title, summary and words. The database alone is a complete backup.
 
@@ -433,10 +434,10 @@ belongs to the app as a whole.
 src-tauri/src/
   schema.rs      every table and view as Rust types (Diesel): queries are checked against it
   db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), one-time demo setup
-  courses.rs     courses: the folders blocks are listed in; cutting items into drills; moving blocks
-  blocks.rs      blocks: what they own, their check-in schedule, the home screen's lists
+  courses.rs     courses: the folders lessons are listed in; cutting items into drills; moving lessons
+  lessons.rs     lessons: what they own, their check-in schedule, the home screen's lists
   session.rs     a drill's exercises, by format
-  practice.rs    doing a block: checking answers, finishing a drill, the results
+  practice.rs    doing a lesson: checking answers, finishing a drill, the results
   srs.rs         the per-item scheduler inside drills
   stats.rs       XP, levels, streaks, achievements, per-course progress
   agent.rs       the one AI loop: streaming, tool rounds, memory tools, costs
@@ -459,7 +460,7 @@ src/
   lib/useAiStream.ts       any streamed AI answer: text, tool status, errors, stale streams
   lib/back.ts              Android's back button over in-app pages
   lib/player.ts            the app-wide music player and queue
-  screens/                 one file per screen (Exercises, BlockPage, Session, CheckIn, Tutor, Music…)
+  screens/                 one file per screen (Exercises, LessonPage, Session, CheckIn, Tutor, Music…)
   components/              pieces shared between screens (Markdown, SetExercises, Cover…)
 ```
 
@@ -478,10 +479,10 @@ A few conventions keep it that way:
 - **Every AI feature goes through `agent::Agent`.** A new agent declares its
   tools with `agent::tool(name, status line, description, schema)` and says
   how to run a call; streaming, costs, memory and errors come with it.
-- **Words reach a course only through its blocks.** Query a course's items
+- **Words reach a course only through its lessons.** Query a course's items
   through the `course_words`, `course_sentences` and `course_lines` views.
-- **"Topic" in the code is "course" in the app.** The table and ids kept the
-  old name (`topics`, `topic_id`); everything the learner sees says course.
+- **"Course" in the code is "course" in the app.** The table and ids kept the
+  old name (`courses`, `course_id`); everything the learner sees says course.
 - **Pages with a way back use `Screen`'s `onBack`/`onClose` or a `Sheet`**, so
   the system back button works without extra code.
 
@@ -494,15 +495,15 @@ then the page you are on, then from another tab to Exercises — and only
 leaves the app from Exercises (`src/lib/back.ts`: every page with a ← or ⌄,
 and every sheet, adds a history entry that back pops).
 
-Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Blocks** (in the course's
+Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Lessons** (in the course's
 order), **Words** and **Sentences** — every item with the drill it belongs to,
 one tap away — and *Rename* / *Delete course*. A conversation drill's
 dialogue is on that drill's page. Two screens open from it rather than taking a tab:
 
 - **Progress** — tap the streak or level chip, or *Your progress*: stats,
-  the 18-week activity map, per-topic progress and achievements.
+  the 18-week activity map, per-course progress and achievements.
 - **Search** — the 🔍 button: every word and sentence in the app, whether or
-  not you have met it yet, filterable by topic and searchable in Polish or
+  not you have met it yet, filterable by course and searchable in Polish or
   English. Each row has its own 🔊.
 
 ### Editing the curriculum

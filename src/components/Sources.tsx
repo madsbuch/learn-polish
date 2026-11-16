@@ -9,32 +9,32 @@ import type { ArticleView, WikiSource } from "../lib/types";
 import { Markdown } from "./Markdown";
 
 /**
- * A study block's Wikipedia sources: a card each, opening the article in the
- * app. Nothing shows for a block without any.
+ * A study lesson's Wikipedia sources: a card each, opening the article in the
+ * app. Nothing shows for a lesson without any.
  */
 export function Sources({
-  blockId,
+  lessonId,
   factNote,
   factCheckedAt,
   onRead,
   onChecked,
 }: {
-  blockId: number;
+  lessonId: number;
   /** What the last check changed. */
   factNote: string | null;
   factCheckedAt: number | null;
   onRead: (source: WikiSource) => void;
-  /** A check corrected the lesson: reload the block. */
+  /** A check corrected the lesson: reload the lesson. */
   onChecked: () => void;
 }) {
   const [sources, setSources] = useState<WikiSource[]>([]);
   const [checking, setChecking] = useState(false);
   useEffect(() => {
     api
-      .blockSources(blockId)
+      .lessonSources(lessonId)
       .then(setSources)
       .catch(() => setSources([]));
-  }, [blockId]);
+  }, [lessonId]);
   if (sources.length === 0) return null;
   return (
     <Section
@@ -81,7 +81,7 @@ export function Sources({
           onClick={async () => {
             setChecking(true);
             try {
-              const check = await api.factCheckBlock(blockId);
+              const check = await api.factCheckLesson(lessonId);
               const what = check.note?.replace(/^\d{4}-\d{2}-\d{2}: /, "") ?? "the lesson was out of date";
               toast(check.updated ? `Corrected — ${what}` : "Still matches its sources");
               onChecked();
@@ -150,12 +150,12 @@ export function ArticleReader({
             From Wikipedia, the free encyclopedia — “{article.title}”, available under the Creative
             Commons Attribution-ShareAlike 4.0 licence.
           </Text>
-          <Button block onClick={() => void openUrl(article.url).catch(() => toast("Could not open the browser.", "error"))}>
+          <Button wide onClick={() => void openUrl(article.url).catch(() => toast("Could not open the browser.", "error"))}>
             Open on Wikipedia
           </Button>
           <Button
             variant="plain"
-            block
+            wide
             onClick={async () => {
               try {
                 await api.sourceRemove(source.id);

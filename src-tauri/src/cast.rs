@@ -310,12 +310,12 @@ pub fn groups_from_topology(state_xml: &str) -> Vec<CastDevice> {
             .find("</ZoneGroup>")
             .map(|e| start + e)
             .unwrap_or(state_xml.len());
-        let block = &state_xml[start..end];
+        let lesson = &state_xml[start..end];
         search = end.max(start + 1);
 
-        let Some(group) = elements(block, "ZoneGroup").into_iter().next() else { continue };
+        let Some(group) = elements(lesson, "ZoneGroup").into_iter().next() else { continue };
         let Some(coordinator) = group.get("Coordinator").cloned() else { continue };
-        let members: Vec<HashMap<String, String>> = elements(block, "ZoneGroupMember")
+        let members: Vec<HashMap<String, String>> = elements(lesson, "ZoneGroupMember")
             .into_iter()
             // Surround speakers, subs and bridges are not rooms of their own.
             .filter(|m| m.get("Invisible").map(String::as_str) != Some("1"))

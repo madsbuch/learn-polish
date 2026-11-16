@@ -15,7 +15,7 @@ import {
   Stack,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { CataloguePage, TopicProgress } from "../lib/types";
+import type { CataloguePage, CourseProgress } from "../lib/types";
 
 type Kind = "words" | "sentences";
 
@@ -24,15 +24,15 @@ const PAGE = 200;
 
 /** Every word and sentence in the app, searchable in Polish or English. */
 export function Search({
-  topics,
+  courses,
   onBack,
 }: {
-  topics: TopicProgress[];
+  courses: CourseProgress[];
   onBack: () => void;
 }) {
   const [section, setSection] = useState<Kind>("words");
   const [query, setQuery] = useState("");
-  const [topicId, setTopicId] = useState<number | null>(null);
+  const [courseId, setCourseId] = useState<number | null>(null);
   const [page, setPage] = useState<CataloguePage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +41,7 @@ export function Search({
     let cancelled = false;
     const timer = setTimeout(() => {
       api
-        .browseCatalogue(topicId, query, PAGE)
+        .browseCatalogue(courseId, query, PAGE)
         .then((result) => {
           if (!cancelled) setPage(result);
         })
@@ -53,7 +53,7 @@ export function Search({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, topicId]);
+  }, [query, courseId]);
 
   const shown = useMemo(() => {
     if (!page) return { rows: [], total: 0 };
@@ -85,16 +85,16 @@ export function Search({
           ]}
         />
         <ChoiceRow>
-          <Choice selected={topicId === null} onClick={() => setTopicId(null)}>
-            All topics
+          <Choice selected={courseId === null} onClick={() => setCourseId(null)}>
+            All courses
           </Choice>
-          {topics.map((entry) => (
+          {courses.map((entry) => (
             <Choice
-              key={entry.topic.id}
-              selected={topicId === entry.topic.id}
-              onClick={() => setTopicId(entry.topic.id)}
+              key={entry.course.id}
+              selected={courseId === entry.course.id}
+              onClick={() => setCourseId(entry.course.id)}
             >
-              {entry.topic.title}
+              {entry.course.title}
             </Choice>
           ))}
         </ChoiceRow>
@@ -104,7 +104,7 @@ export function Search({
         <Spinner />
       ) : (
         <Section
-          title={`${shown.total} ${section}${topicId !== null || query.trim() ? " matching" : ""}${
+          title={`${shown.total} ${section}${courseId !== null || query.trim() ? " matching" : ""}${
             shown.total > shown.rows.length ? ` · first ${shown.rows.length}` : ""
           }`}
         >

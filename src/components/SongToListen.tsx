@@ -38,7 +38,7 @@ export function playSong(item: QueueItem, isCurrent: boolean) {
 }
 
 /**
- * A listening block's song: play it, and reveal the lyrics only when asked —
+ * A listening lesson's song: play it, and reveal the lyrics only when asked —
  * the point is to understand it by ear.
  */
 export function SongToListen({ songId }: { songId: number }) {

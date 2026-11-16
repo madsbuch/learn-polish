@@ -6,10 +6,10 @@ import type {
   MemoryOverview,
   CostSummary,
   AiModel,
-  Block,
-  BlockDetail,
-  BlockFinished,
-  BlockOverview,
+  Lesson,
+  LessonDetail,
+  LessonFinished,
+  LessonOverview,
   CheckinTurn,
   AnswerResult,
   AudioCacheStats,
@@ -43,7 +43,7 @@ import type {
   Settings,
   SettingsPatch,
   Stats,
-  TopicProgress,
+  CourseProgress,
   Word,
 } from "./types";
 
@@ -66,55 +66,55 @@ export const api = {
     isNew: boolean;
     expected: string;
     given: string;
-    /** Extra practice (the block is not due): half XP. */
+    /** Extra practice (the lesson is not due): half XP. */
     extra?: boolean;
   }) => invoke<AnswerResult>("submit_answer", { answer }),
-  blocksOverview: () => invoke<BlockOverview>("blocks_overview"),
-  blocksForTopic: (topicId: number) => invoke<Block[]>("blocks_for_topic", { topicId }),
-  blockDetail: (blockId: number) => invoke<BlockDetail>("block_detail", { blockId }),
-  blockSession: (blockId: number) => invoke<SessionPlan>("block_session", { blockId }),
+  lessonsOverview: () => invoke<LessonOverview>("lessons_overview"),
+  lessonsForCourse: (courseId: number) => invoke<Lesson[]>("lessons_for_course", { courseId }),
+  lessonDetail: (lessonId: number) => invoke<LessonDetail>("lesson_detail", { lessonId }),
+  lessonSession: (lessonId: number) => invoke<SessionPlan>("lesson_session", { lessonId }),
   /** A drill is done: its score schedules the next check-in. */
-  blockFinish: (blockId: number, correct: number, total: number) =>
-    invoke<BlockFinished>("block_finish", { blockId, correct, total }),
-  blockSetPeriod: (blockId: number, periodDays: number) =>
-    invoke<Block>("block_set_period", { blockId, periodDays }),
-  blockDelete: (blockId: number) => invoke<void>("block_delete", { blockId }),
+  lessonFinish: (lessonId: number, correct: number, total: number) =>
+    invoke<LessonFinished>("lesson_finish", { lessonId, correct, total }),
+  lessonSetPeriod: (lessonId: number, periodDays: number) =>
+    invoke<Lesson>("lesson_set_period", { lessonId, periodDays }),
+  lessonDelete: (lessonId: number) => invoke<void>("lesson_delete", { lessonId }),
   /** A challenge: needed to master its courses, not to complete them. */
-  blockSetChallenge: (blockId: number, challenge: boolean) =>
-    invoke<Block>("block_set_challenge", { blockId, challenge }),
-  blockAddToCourse: (blockId: number, topicId: number) =>
-    invoke<void>("block_add_to_course", { blockId, topicId }),
-  /** True when it was the block's last course, so the block was deleted. */
-  blockRemoveFromCourse: (blockId: number, topicId: number) =>
-    invoke<boolean>("block_remove_from_course", { blockId, topicId }),
-  /** The listening block for a song, made on first ask. */
-  blockForSong: (songId: number) => invoke<Block>("block_for_song", { songId }),
-  checkinStart: (blockId: number, streamId: string) =>
-    invoke<CheckinTurn>("checkin_start", { blockId, streamId }),
+  lessonSetChallenge: (lessonId: number, challenge: boolean) =>
+    invoke<Lesson>("lesson_set_challenge", { lessonId, challenge }),
+  lessonAddToCourse: (lessonId: number, courseId: number) =>
+    invoke<void>("lesson_add_to_course", { lessonId, courseId }),
+  /** True when it was the lesson's last course, so the lesson was deleted. */
+  lessonRemoveFromCourse: (lessonId: number, courseId: number) =>
+    invoke<boolean>("lesson_remove_from_course", { lessonId, courseId }),
+  /** The listening lesson for a song, made on first ask. */
+  lessonForSong: (songId: number) => invoke<Lesson>("lesson_for_song", { songId }),
+  checkinStart: (lessonId: number, streamId: string) =>
+    invoke<CheckinTurn>("checkin_start", { lessonId, streamId }),
   checkinSend: (checkinId: number, message: string, streamId: string) =>
     invoke<CheckinTurn>("checkin_send", { checkinId, message, streamId }),
   /** Ends a writing conversation; the partner gives its verdict. */
   checkinEnd: (checkinId: number, streamId: string) =>
     invoke<CheckinTurn>("checkin_end", { checkinId, streamId }),
-  /** A writing block's word bank (made once, then kept). */
-  writingScaffold: (blockId: number) => invoke<GoalHelp[]>("writing_scaffold", { blockId }),
+  /** A writing lesson's word bank (made once, then kept). */
+  writingScaffold: (lessonId: number) => invoke<GoalHelp[]>("writing_scaffold", { lessonId }),
   /** A hint for the next message in a writing conversation. */
   writingHint: (checkinId: number) => invoke<string>("writing_hint", { checkinId }),
   /** Two sentences that use a word, shown after it is answered wrong. */
   wordExamples: (wordId: number) => invoke<WordExample[]>("word_examples", { wordId }),
   /** Adds audio players to a lesson's Polish examples (its text otherwise unchanged). */
-  lessonAddPlayers: (blockId: number) => invoke<BlockDetail>("lesson_add_players", { blockId }),
+  lessonAddPlayers: (lessonId: number) => invoke<LessonDetail>("lesson_add_players", { lessonId }),
   /** The summary after a check-in; new achievements are those since it began. */
   checkinSummary: (checkinId: number, firstCompletionToday: boolean) =>
     invoke<SessionResult>("checkin_summary", { checkinId, firstCompletionToday }),
 
   getStats: () => invoke<Stats>("get_stats"),
-  getTopicProgress: () => invoke<TopicProgress[]>("get_topic_progress"),
-  browseWords: (topicId: number | null, query: string, limit = 300) =>
-    invoke<Word[]>("browse_words", { topicId, query, limit }),
-  browseCatalogue: (topicId: number | null, query: string, limit = 200) =>
-    invoke<CataloguePage>("browse_catalogue", { topicId, query, limit }),
-  browseSentences: (topicId: number) => invoke<Sentence[]>("browse_sentences", { topicId }),
+  getCourseProgress: () => invoke<CourseProgress[]>("get_course_progress"),
+  browseWords: (courseId: number | null, query: string, limit = 300) =>
+    invoke<Word[]>("browse_words", { courseId, query, limit }),
+  browseCatalogue: (courseId: number | null, query: string, limit = 200) =>
+    invoke<CataloguePage>("browse_catalogue", { courseId, query, limit }),
+  browseSentences: (courseId: number) => invoke<Sentence[]>("browse_sentences", { courseId }),
   resetProgress: () => invoke<void>("reset_progress"),
 
   aiSetKey: (key: string) => invoke<Settings>("ai_set_key", { key }),
@@ -145,25 +145,25 @@ export const api = {
   tutorRetry: (conversationId: number) => invoke<void>("tutor_retry", { conversationId }),
   /** Whether the app is on screen: off screen, finished replies notify. */
   appVisibility: (visible: boolean) => invoke<void>("app_visibility", { visible }),
-  /** A study block's Wikipedia sources. */
-  blockSources: (blockId: number) => invoke<WikiSource[]>("block_sources", { blockId }),
+  /** A study lesson's Wikipedia sources. */
+  lessonSources: (lessonId: number) => invoke<WikiSource[]>("lesson_sources", { lessonId }),
   /** A source's article, in its own language or in Polish. */
   sourceArticle: (sourceId: number, polish: boolean) => invoke<ArticleView>("source_article", { sourceId, polish }),
   sourceRemove: (sourceId: number) => invoke<void>("source_remove", { sourceId }),
-  /** Checks a block's lesson against its sources now. */
-  factCheckBlock: (blockId: number) => invoke<FactCheck>("fact_check_block", { blockId }),
+  /** Checks a lesson's lesson against its sources now. */
+  factCheckLesson: (lessonId: number) => invoke<FactCheck>("fact_check_lesson", { lessonId }),
   /** Draws a new picture for a course; returns its file id. */
-  coursePicture: (topicId: number) => invoke<number>("course_picture", { topicId }),
-  coursePictureDelete: (topicId: number) => invoke<void>("course_picture_delete", { topicId }),
+  coursePicture: (courseId: number) => invoke<number>("course_picture", { courseId }),
+  coursePictureDelete: (courseId: number) => invoke<void>("course_picture_delete", { courseId }),
   tutorConversations: () => invoke<Conversation[]>("tutor_conversations"),
   tutorHistory: (conversationId: number) =>
     invoke<ChatMessage[]>("tutor_history", { conversationId }),
   tutorRename: (conversationId: number, title: string) =>
     invoke<void>("tutor_rename", { conversationId, title }),
   tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
-  courseDelete: (topicId: number) => invoke<void>("course_delete", { topicId }),
-  courseRename: (topicId: number, title: string, titlePl: string, summary: string) =>
-    invoke<void>("course_rename", { topicId, title, titlePl, summary }),
+  courseDelete: (courseId: number) => invoke<void>("course_delete", { courseId }),
+  courseRename: (courseId: number, title: string, titlePl: string, summary: string) =>
+    invoke<void>("course_rename", { courseId, title, titlePl, summary }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */
   exportDatabase: (includeKeys: boolean) =>
     invoke<string | null>("export_database", { includeKeys }),
@@ -192,10 +192,10 @@ export const api = {
   /** Makes one line's audio again, replacing the stored clip. */
   respeak: (text: string, gender: string) => invoke<AudioClip>("respeak", { text, gender }),
   audioOverview: () => invoke<AudioOverview>("audio_overview"),
-  courseAudio: (topicId: number) => invoke<AudioItem[]>("course_audio", { topicId }),
+  courseAudio: (courseId: number) => invoke<AudioItem[]>("course_audio", { courseId }),
   /** Deletes clips no course uses; returns how many went. */
   deleteUnusedAudio: () => invoke<number>("delete_unused_audio"),
-  topicAudioLines: (topicId: number) => invoke<SpeechLine[]>("topic_audio_lines", { topicId }),
+  courseAudioLines: (courseId: number) => invoke<SpeechLine[]>("course_audio_lines", { courseId }),
   audioCacheStats: () => invoke<AudioCacheStats>("audio_cache_stats"),
   clearAudioCache: () => invoke<void>("clear_audio_cache"),
 

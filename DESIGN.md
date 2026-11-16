@@ -97,7 +97,7 @@ Every screen is a `Screen`:
 |---|---|
 | `Screen` | Every screen. Header, scrolling, spacing, safe areas. |
 | `Section` | A labelled group. `action` takes one plain button ("Select"). |
-| `Card` | A block of content or a form. `onClick` makes it a button. |
+| `Card` | A lesson of content or a form. `onClick` makes it a button. |
 | `Hero` | The brand gradient. At most one per screen, at the top. |
 | `List`, `ListItem` | Any collection. `leading` (cover, avatar, icon), `title`, `subtitle`, `trailing` controls, `onClick` (adds a chevron), `selected`. |
 | `Button` | Text actions. `primary` (one per screen/card) · `secondary` (default) · `plain` (low emphasis) · `danger` (deletes) · `inverse` (on the hero) · `success` (continue after a right answer). Sizes `sm`, `md`, `lg`. |

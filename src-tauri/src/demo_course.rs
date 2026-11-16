@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use crate::courses::{self, NewLine, NewSentence, NewWord};
 use crate::db::{self, Conn};
 use crate::error::{Error, Result};
-use crate::schema::topics;
+use crate::schema::courses as courses_table;
 
 pub(crate) const SLUG: &str = "demo-first-steps";
 pub(crate) const SEEDED: &str = "demo_first_steps_seeded_v1";
@@ -15,7 +15,7 @@ pub fn seed_once(conn: &mut Conn) -> Result<()> {
         return Ok(());
     }
     conn.transaction::<_, Error, _>(|conn| {
-        let exists = topics::table.filter(topics::slug.eq(SLUG)).count().get_result::<i64>(conn)? > 0;
+        let exists = courses_table::table.filter(courses_table::slug.eq(SLUG)).count().get_result::<i64>(conn)? > 0;
         // An existing course with this identity is user data: never refill it.
         if !exists {
             let course = courses::ensure(
@@ -61,7 +61,7 @@ pub fn seed_once(conn: &mut Conn) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{blocks, conversation_lines, sentences, words};
+    use crate::schema::{lessons, conversation_lines, sentences, words};
 
     fn path(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("polish-demo-{name}-{}.db", std::process::id()))
@@ -76,36 +76,36 @@ mod tests {
     #[test]
     fn a_fresh_install_has_one_small_demo_without_grammar_courses() {
         let mut conn = fresh("fresh");
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
-        let (id, slug): (i64, String) = topics::table.select((topics::id, topics::slug)).first(&mut conn).unwrap();
+        assert_eq!(courses_table::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
+        let (id, slug): (i64, String) = courses_table::table.select((courses_table::id, courses_table::slug)).first(&mut conn).unwrap();
         assert_eq!(slug, SLUG);
         assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 12);
         assert_eq!(sentences::table.count().get_result::<i64>(&mut conn).unwrap(), 4);
         assert_eq!(conversation_lines::table.count().get_result::<i64>(&mut conn).unwrap(), 6);
-        assert_eq!(blocks::table.count().get_result::<i64>(&mut conn).unwrap(), 4);
-        assert_eq!(blocks::table.filter(blocks::kind.ne("drill")).count().get_result::<i64>(&mut conn).unwrap(), 0);
-        assert!(!crate::blocks::overview(&mut conn).unwrap().next.is_empty());
+        assert_eq!(lessons::table.count().get_result::<i64>(&mut conn).unwrap(), 4);
+        assert_eq!(lessons::table.filter(lessons::kind.ne("drill")).count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert!(!crate::lessons::overview(&mut conn).unwrap().next.is_empty());
         crate::stats::collect(&mut conn).unwrap();
         // Reopening neither duplicates the demo nor overwrites a learner's rename.
-        diesel::update(topics::table.find(id)).set(topics::title_en.eq("My first Polish")).execute(&mut conn).unwrap();
+        diesel::update(courses_table::table.find(id)).set(courses_table::title_en.eq("My first Polish")).execute(&mut conn).unwrap();
         drop(conn);
         let mut conn = db::open(&path("fresh")).unwrap();
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
+        assert_eq!(courses_table::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
         assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 12);
-        assert_eq!(topics::table.find(id).select(topics::title_en).first::<String>(&mut conn).unwrap(), "My first Polish");
+        assert_eq!(courses_table::table.find(id).select(courses_table::title_en).first::<String>(&mut conn).unwrap(), "My first Polish");
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
     }
 
     #[test]
     fn deleting_the_demo_is_respected_after_reset_and_reopen() {
         let mut conn = fresh("deleted");
-        let id: i64 = topics::table.select(topics::id).first(&mut conn).unwrap();
+        let id: i64 = courses_table::table.select(courses_table::id).first(&mut conn).unwrap();
         courses::delete(&mut conn, id).unwrap();
         crate::commands::reset_progress_in(&mut conn).unwrap();
         drop(conn);
         let mut conn = db::open(&path("deleted")).unwrap();
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
-        assert_eq!(blocks::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(courses_table::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(lessons::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
     }

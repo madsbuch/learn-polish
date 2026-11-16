@@ -1,5 +1,5 @@
-//! Builds the exercises of a drill block: a handful of words, sentences or a
-//! dialogue, practised in the block's format.
+//! Builds the exercises of a drill lesson: a handful of words, sentences or a
+//! dialogue, practised in the lesson's format.
 
 use std::collections::HashSet;
 
@@ -7,9 +7,9 @@ use diesel::prelude::*;
 use rand::seq::SliceRandom;
 
 use crate::db::{self, Conn};
-use crate::schema::{conversation_lines, course_blocks, course_lines, course_sentences, course_words, reviews, sentences, topics, words};
+use crate::schema::{conversation_lines, course_lessons, course_lines, course_sentences, course_words, reviews, sentences, courses, words};
 use crate::error::Result;
-use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Topic};
+use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Course};
 
 const DIALOGUE_GAPS: usize = 3;
 /// Cards in the memory game: this many Polish/English pairs.
@@ -34,28 +34,28 @@ struct SentenceRow {
     meaning: String,
 }
 
-pub fn load_topic(conn: &mut Conn, topic_id: i64) -> Result<Topic> {
-    topics::table
-        .find(topic_id)
-        .select(Topic::as_select())
+pub fn load_course(conn: &mut Conn, course_id: i64) -> Result<Course> {
+    courses::table
+        .find(course_id)
+        .select(Course::as_select())
         .first(conn)
         .optional()?
-        .ok_or_else(|| crate::error::Error::msg(format!("There is no topic with id {topic_id}.")))
+        .ok_or_else(|| crate::error::Error::msg(format!("There is no course with id {course_id}.")))
 }
 
 /// A course's dialogue: the lines of its conversation drills, in order.
-pub fn dialogue_lines(conn: &mut Conn, topic_id: i64) -> Result<Vec<DialogueLine>> {
+pub fn dialogue_lines(conn: &mut Conn, course_id: i64) -> Result<Vec<DialogueLine>> {
     Ok(course_lines::table
-        .filter(course_lines::topic_id.eq(topic_id))
+        .filter(course_lines::course_id.eq(course_id))
         .order(course_lines::ord)
         .select((course_lines::ord, course_lines::speaker, course_lines::gender, course_lines::pl, course_lines::en))
         .load(conn)?)
 }
 
-/// The dialogue one block owns.
-pub fn block_lines(conn: &mut Conn, block_id: i64) -> Result<Vec<DialogueLine>> {
+/// The dialogue one lesson owns.
+pub fn lesson_lines(conn: &mut Conn, lesson_id: i64) -> Result<Vec<DialogueLine>> {
     Ok(conversation_lines::table
-        .filter(conversation_lines::block_id.eq(block_id))
+        .filter(conversation_lines::lesson_id.eq(lesson_id))
         .order((conversation_lines::ord, conversation_lines::id))
         .select(DialogueLine::as_select())
         .load(conn)?)
@@ -72,11 +72,11 @@ fn met(conn: &mut Conn, kind: &str, ids: &[i64]) -> Result<std::collections::Has
         .collect())
 }
 
-/// The courses a block is listed in.
-fn courses_of(conn: &mut Conn, block_id: i64) -> Result<Vec<i64>> {
-    Ok(course_blocks::table
-        .filter(course_blocks::block_id.eq(block_id))
-        .select(course_blocks::topic_id)
+/// The courses a lesson is listed in.
+fn courses_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<i64>> {
+    Ok(course_lessons::table
+        .filter(course_lessons::lesson_id.eq(lesson_id))
+        .select(course_lessons::course_id)
         .load(conn)?)
 }
 
@@ -149,9 +149,9 @@ fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> E
     }
 }
 
-fn block_words(conn: &mut Conn, block_id: i64) -> Result<Vec<(WordRow, bool)>> {
+fn lesson_words(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(WordRow, bool)>> {
     let rows: Vec<(i64, String, String, String)> = words::table
-        .filter(words::block_id.eq(block_id))
+        .filter(words::lesson_id.eq(lesson_id))
         .order((words::ord, words::id))
         .select((words::id, words::pl, words::en, words::pos))
         .load(conn)?;
@@ -165,9 +165,9 @@ fn block_words(conn: &mut Conn, block_id: i64) -> Result<Vec<(WordRow, bool)>> {
         .collect())
 }
 
-fn block_sentences(conn: &mut Conn, block_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
+fn lesson_sentences(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
     let rows: Vec<(i64, String, String)> = sentences::table
-        .filter(sentences::block_id.eq(block_id))
+        .filter(sentences::lesson_id.eq(lesson_id))
         .order((sentences::ord, sentences::id))
         .select((sentences::id, sentences::pl, sentences::en))
         .load(conn)?;
@@ -181,27 +181,27 @@ fn block_sentences(conn: &mut Conn, block_id: i64) -> Result<Vec<(SentenceRow, b
         .collect())
 }
 
-/// The exercises of one drill block. Small on purpose: a low block is a
-/// minute or two of taps, never the whole topic at once.
-pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
-    let block = crate::blocks::load(conn, block_id)?;
-    if block.kind != "drill" {
-        return Err(crate::error::Error::msg("Study blocks are checked by the examiner, not drilled."));
+/// The exercises of one drill lesson. Small on purpose: a low lesson is a
+/// minute or two of taps, never the whole course at once.
+pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
+    let lesson = crate::lessons::load(conn, lesson_id)?;
+    if lesson.kind != "drill" {
+        return Err(crate::error::Error::msg("Study lessons are checked by the examiner, not drilled."));
     }
-    let topic_id = block
-        .topic_id
+    let course_id = lesson
+        .course_id
         .ok_or_else(|| crate::error::Error::msg("This drill has no words to practise."))?;
-    let topic = load_topic(conn, topic_id)?;
+    let course = load_course(conn, course_id)?;
     let today = db::today(conn);
-    let pool = distractor_pool(conn, block_id)?;
+    let pool = distractor_pool(conn, lesson_id)?;
     let rng = &mut rand::rng();
 
-    let words = block_words(conn, block_id)?;
-    let sentences = block_sentences(conn, block_id)?;
+    let words = lesson_words(conn, lesson_id)?;
+    let sentences = lesson_sentences(conn, lesson_id)?;
     let mut exercises: Vec<Exercise> = Vec::new();
     let mut dialogue = Vec::new();
 
-    match block.format.as_str() {
+    match lesson.format.as_str() {
         "words" | "typing" => {
             // New words are introduced first, in order; known ones are
             // practised in a shuffled order.
@@ -209,26 +209,26 @@ pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
             for (w, is_new) in &words {
                 if *is_new {
                     exercises.push(word_intro(w));
-                    exercises.push(if block.format == "typing" { typing(w) } else { recognise(w, &pool, rng) });
+                    exercises.push(if lesson.format == "typing" { typing(w) } else { recognise(w, &pool, rng) });
                 } else {
-                    known.push(if block.format == "typing" { typing(w) } else { practise_word(w, &pool, rng) });
+                    known.push(if lesson.format == "typing" { typing(w) } else { practise_word(w, &pool, rng) });
                 }
             }
             known.shuffle(rng);
             exercises.extend(known);
-            if block.format == "words" {
+            if lesson.format == "words" {
                 let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
-                exercises.extend(memory_game(&all, format!("b{block_id}-memory"), block_id, rng));
+                exercises.extend(memory_game(&all, format!("b{lesson_id}-memory"), lesson_id, rng));
             }
         }
         "memory" => {
             let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
             for (n, chunk) in all.chunks(MEMORY_PAIRS).enumerate() {
-                exercises.extend(memory_game(chunk, format!("b{block_id}-memory-{n}"), block_id, rng));
+                exercises.extend(memory_game(chunk, format!("b{lesson_id}-memory-{n}"), lesson_id, rng));
             }
         }
         "sentences" | "gaps" => {
-            if block.format == "sentences" {
+            if lesson.format == "sentences" {
                 for (s, is_new) in &sentences {
                     if *is_new {
                         exercises.push(sentence_intro(s));
@@ -238,30 +238,30 @@ pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
             }
             let rows: Vec<&SentenceRow> = sentences.iter().map(|(s, _)| s).collect();
             for chunk in rows.chunks(GAP_SENTENCES) {
-                exercises.extend(gap_fill(conn, block_id, chunk, true, rng)?);
+                exercises.extend(gap_fill(conn, lesson_id, chunk, true, rng)?);
             }
         }
         "dialogue" => {
-            dialogue = block_lines(conn, block_id)?;
+            dialogue = lesson_lines(conn, lesson_id)?;
             if !dialogue.is_empty() {
                 exercises.push(Exercise {
-                    key: format!("d{block_id}-read"),
+                    key: format!("d{lesson_id}-read"),
                     kind: "dialogueRead".into(),
                     item_kind: "dialogue".into(),
-                    item_id: block_id,
+                    item_id: lesson_id,
                     is_new: true,
-                    prompt: topic.title.clone(),
-                    hint: topic.summary.clone(),
+                    prompt: course.title.clone(),
+                    hint: course.summary.clone(),
                     answer: String::new(),
                     options: vec![],
                     tokens: vec![],
                     gaps: vec![],
                     pairs: vec![],
-                    pl: topic.title_pl.clone(),
-                    meaning: topic.summary.clone(),
+                    pl: course.title_pl.clone(),
+                    meaning: course.summary.clone(),
                 });
             }
-            exercises.extend(dialogue_gaps(&dialogue, block_id, rng));
+            exercises.extend(dialogue_gaps(&dialogue, lesson_id, rng));
         }
         other => return Err(crate::error::Error::msg(format!("Unknown drill format '{other}'."))),
     }
@@ -270,7 +270,7 @@ pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
     let new_sentences = sentences.iter().filter(|(_, n)| *n).count();
     Ok(SessionPlan {
         day: today,
-        topic,
+        course,
         dialogue,
         new_words,
         review_words: words.len() - new_words,
@@ -278,8 +278,8 @@ pub fn build_block(conn: &mut Conn, block_id: i64) -> Result<SessionPlan> {
         review_sentences: sentences.len() - new_sentences,
         exercises,
         already_completed: false,
-        block_id,
-        extra: crate::blocks::is_extra_practice(&block, today),
+        lesson_id,
+        extra: crate::lessons::is_extra_practice(&lesson, today),
     })
 }
 
@@ -288,11 +288,11 @@ struct Distractors {
     polish: Vec<String>,
 }
 
-/// Decoys come from the words of every course the block is in.
-fn distractor_pool(conn: &mut Conn, block_id: i64) -> Result<Distractors> {
-    let courses = courses_of(conn, block_id)?;
+/// Decoys come from the words of every course the lesson is in.
+fn distractor_pool(conn: &mut Conn, lesson_id: i64) -> Result<Distractors> {
+    let courses = courses_of(conn, lesson_id)?;
     let rows: Vec<(String, String)> = course_words::table
-        .filter(course_words::topic_id.eq_any(courses))
+        .filter(course_words::course_id.eq_any(courses))
         .select((course_words::pl, course_words::en))
         .distinct()
         .load(conn)?;
@@ -380,7 +380,7 @@ fn word_order(s: &SentenceRow) -> Exercise {
 /// Blanks out a few lines of the conversation and asks which one belongs.
 fn dialogue_gaps(
     dialogue: &[DialogueLine],
-    block_id: i64,
+    lesson_id: i64,
     rng: &mut impl rand::Rng,
 ) -> Vec<Exercise> {
     if dialogue.len() < 5 {
@@ -399,10 +399,10 @@ fn dialogue_gaps(
             let line = &dialogue[i];
             let previous = &dialogue[i - 1];
             Exercise {
-                key: format!("d{block_id}-gap{i}"),
+                key: format!("d{lesson_id}-gap{i}"),
                 kind: "dialogueGap".into(),
                 item_kind: "dialogue".into(),
-                item_id: block_id,
+                item_id: lesson_id,
                 is_new: false,
                 prompt: previous.pl.clone(),
                 hint: format!("{} — {}", previous.speaker, line.speaker),
@@ -470,9 +470,9 @@ fn split_punctuation(token: &str) -> (&str, &str, &str) {
     (&token[..start], &token[start..end.max(start)], &token[end.max(start)..])
 }
 
-/// Takes the most useful word out of a sentence: one of the topic's own
+/// Takes the most useful word out of a sentence: one of the course's own
 /// words if it has one, else its longest word.
-fn make_gap(pl: &str, meaning: &str, topic_words: &std::collections::HashSet<String>) -> Option<Gap> {
+fn make_gap(pl: &str, meaning: &str, course_words: &std::collections::HashSet<String>) -> Option<Gap> {
     let tokens: Vec<&str> = pl.split_whitespace().collect();
     if tokens.len() < 3 {
         return None;
@@ -485,7 +485,7 @@ fn make_gap(pl: &str, meaning: &str, topic_words: &std::collections::HashSet<Str
         .collect();
     let (index, _) = candidates
         .iter()
-        .find(|(_, word)| topic_words.contains(&word.to_lowercase()))
+        .find(|(_, word)| course_words.contains(&word.to_lowercase()))
         .or_else(|| candidates.iter().max_by_key(|(_, word)| word.chars().count()))?;
     let (prefix, word, suffix) = split_punctuation(tokens[*index]);
     let mut before = tokens[..*index].join(" ");
@@ -501,24 +501,24 @@ fn make_gap(pl: &str, meaning: &str, topic_words: &std::collections::HashSet<Str
     Some(Gap { before, answer: word.to_string(), after, meaning: meaning.to_string() })
 }
 
-/// A few of the topic's sentences with a word missing from each, and a word
+/// A few of the course's sentences with a word missing from each, and a word
 /// bank of the missing words plus two that do not belong.
 fn gap_fill(
     conn: &mut Conn,
-    block_id: i64,
+    lesson_id: i64,
     session: &[&SentenceRow],
-    // Only the given sentences, rather than topping up from the topic.
+    // Only the given sentences, rather than topping up from the course.
     only_session: bool,
     rng: &mut impl rand::Rng,
 ) -> Result<Option<Exercise>> {
-    let courses = courses_of(conn, block_id)?;
-    let mut topic_sentences: Vec<(String, String)> = course_sentences::table
-        .filter(course_sentences::topic_id.eq_any(&courses))
+    let courses = courses_of(conn, lesson_id)?;
+    let mut course_sentences: Vec<(String, String)> = course_sentences::table
+        .filter(course_sentences::course_id.eq_any(&courses))
         .select((course_sentences::pl, course_sentences::en))
         .distinct()
         .load(conn)?;
-    let topic_words: HashSet<String> = course_words::table
-        .filter(course_words::topic_id.eq_any(&courses))
+    let course_words: HashSet<String> = course_words::table
+        .filter(course_words::course_id.eq_any(&courses))
         .select(course_words::pl)
         .distinct()
         .load::<String>(conn)?
@@ -527,11 +527,11 @@ fn gap_fill(
         .map(|w| w.to_lowercase())
         .collect();
 
-    // Today's sentences first, then the rest of the topic in random order.
-    topic_sentences.shuffle(rng);
+    // Today's sentences first, then the rest of the course in random order.
+    course_sentences.shuffle(rng);
     let mut ordered: Vec<(String, String)> =
         session.iter().map(|s| (s.pl.clone(), s.meaning.clone())).collect();
-    for sentence in topic_sentences.iter().filter(|_| !only_session) {
+    for sentence in course_sentences.iter().filter(|_| !only_session) {
         if !ordered.iter().any(|(pl, _)| pl == &sentence.0) {
             ordered.push(sentence.clone());
         }
@@ -539,7 +539,7 @@ fn gap_fill(
 
     let mut gaps: Vec<Gap> = Vec::new();
     for (pl, en) in &ordered {
-        if let Some(gap) = make_gap(pl, en, &topic_words) {
+        if let Some(gap) = make_gap(pl, en, &course_words) {
             if gaps.iter().any(|g| g.answer.eq_ignore_ascii_case(&gap.answer)) {
                 continue;
             }
@@ -553,7 +553,7 @@ fn gap_fill(
         return Ok(None);
     }
 
-    let mut decoys: Vec<String> = topic_sentences
+    let mut decoys: Vec<String> = course_sentences
         .iter()
         .flat_map(|(pl, _)| pl.split_whitespace().map(|t| split_punctuation(t).1.to_string()).collect::<Vec<_>>())
         .filter(|w| w.chars().count() >= 3 && w.chars().all(char::is_alphabetic))
@@ -567,10 +567,10 @@ fn gap_fill(
     bank.shuffle(rng);
 
     Ok(Some(Exercise {
-        key: format!("t{block_id}-gaps"),
+        key: format!("t{lesson_id}-gaps"),
         kind: "gapFill".into(),
         item_kind: "set".into(),
-        item_id: block_id,
+        item_id: lesson_id,
         is_new: false,
         prompt: String::new(),
         hint: String::new(),
@@ -618,13 +618,13 @@ mod tests {
     }
 
     #[test]
-    fn a_gap_prefers_a_topic_word() {
+    fn a_gap_prefers_a_course_word() {
         let words: std::collections::HashSet<String> = ["kawę".to_string()].into();
         let gap = make_gap("Poproszę kawę z mlekiem.", "A coffee with milk, please.", &words).unwrap();
         assert_eq!(gap.answer, "kawę");
         assert_eq!(gap.before, "Poproszę ");
         assert_eq!(gap.after, " z mlekiem.");
-        // Without a topic word, the longest word goes.
+        // Without a course word, the longest word goes.
         let gap = make_gap("Skąd pan pochodzi?", "Where are you from?", &Default::default()).unwrap();
         assert_eq!(gap.answer, "pochodzi");
         assert_eq!(gap.after, "?");

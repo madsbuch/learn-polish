@@ -2,7 +2,7 @@
 //! browsing the catalogue, explanations, reset and export.
 //!
 //! Commands that belong to one part of the app live in that part's module
-//! (blocks, courses, practice, speech, songs, playlists, tutor, examiner,
+//! (lessons, courses, practice, speech, songs, playlists, tutor, examiner,
 //! memories, costs, cast); this is what is left over.
 
 use diesel::connection::SimpleConnection;
@@ -15,7 +15,7 @@ use tauri::State;
 use crate::ai;
 use crate::costs;
 use crate::db::{self, Conn, Db};
-use crate::schema::{blocks, course_sentences, course_words};
+use crate::schema::{lessons, course_sentences, course_words};
 use crate::error::{Error, Result};
 use crate::keyshare;
 use crate::models::*;
@@ -200,29 +200,29 @@ pub async fn get_stats(db: State<'_, Db>) -> Result<Stats> {
 }
 
 #[tauri::command]
-pub async fn get_topic_progress(db: State<'_, Db>) -> Result<Vec<TopicProgress>> {
+pub async fn get_course_progress(db: State<'_, Db>) -> Result<Vec<CourseProgress>> {
     let mut guard = db.lock();
     let conn = &mut *guard;
-    stats::topic_progress(conn)
+    stats::course_progress(conn)
 }
 
 /// Words in one course, or in all of them, whose Polish or English contains
-/// `needle`, in course order. A word in a block two courses list is one word.
-fn matching_words(conn: &mut Conn, topic_id: Option<i64>, needle: &str) -> Result<Vec<Word>> {
+/// `needle`, in course order. A word in a lesson two courses list is one word.
+fn matching_words(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> Result<Vec<Word>> {
     let mut query = course_words::table
-        .inner_join(blocks::table)
-        .order((course_words::topic_id, course_words::ord))
+        .inner_join(lessons::table)
+        .order((course_words::course_id, course_words::ord))
         .select((
             course_words::id,
             course_words::pl,
             course_words::en,
             course_words::pos,
-            course_words::block_id,
-            blocks::title,
+            course_words::lesson_id,
+            lessons::title,
         ))
         .into_boxed();
-    if let Some(id) = topic_id {
-        query = query.filter(course_words::topic_id.eq(id));
+    if let Some(id) = course_id {
+        query = query.filter(course_words::course_id.eq(id));
     }
     if !needle.is_empty() {
         let pattern = format!("%{needle}%");
@@ -233,25 +233,25 @@ fn matching_words(conn: &mut Conn, topic_id: Option<i64>, needle: &str) -> Resul
         .load::<(i64, String, String, String, i64, String)>(conn)?
         .into_iter()
         .filter(|row| seen.insert(row.0))
-        .map(|(id, pl, meaning, pos, block_id, block)| Word { id, pl, meaning, pos, block_id, block })
+        .map(|(id, pl, meaning, pos, lesson_id, lesson)| Word { id, pl, meaning, pos, lesson_id, lesson })
         .collect())
 }
 
 /// The same for sentences.
-fn matching_sentences(conn: &mut Conn, topic_id: Option<i64>, needle: &str) -> Result<Vec<Sentence>> {
+fn matching_sentences(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> Result<Vec<Sentence>> {
     let mut query = course_sentences::table
-        .inner_join(blocks::table)
-        .order((course_sentences::topic_id, course_sentences::ord))
+        .inner_join(lessons::table)
+        .order((course_sentences::course_id, course_sentences::ord))
         .select((
             course_sentences::id,
             course_sentences::pl,
             course_sentences::en,
-            course_sentences::block_id,
-            blocks::title,
+            course_sentences::lesson_id,
+            lessons::title,
         ))
         .into_boxed();
-    if let Some(id) = topic_id {
-        query = query.filter(course_sentences::topic_id.eq(id));
+    if let Some(id) = course_id {
+        query = query.filter(course_sentences::course_id.eq(id));
     }
     if !needle.is_empty() {
         let pattern = format!("%{needle}%");
@@ -262,28 +262,28 @@ fn matching_sentences(conn: &mut Conn, topic_id: Option<i64>, needle: &str) -> R
         .load::<(i64, String, String, i64, String)>(conn)?
         .into_iter()
         .filter(|row| seen.insert(row.0))
-        .map(|(id, pl, meaning, block_id, block)| Sentence { id, pl, meaning, block_id, block })
+        .map(|(id, pl, meaning, lesson_id, lesson)| Sentence { id, pl, meaning, lesson_id, lesson })
         .collect())
 }
 
 /// The query behind [`browse_words`], callable without Tauri (tests).
-pub fn browse_words_in(conn: &mut Conn, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
-    let mut words = matching_words(conn, topic_id, query.trim())?;
+pub fn browse_words_in(conn: &mut Conn, course_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
+    let mut words = matching_words(conn, course_id, query.trim())?;
     words.truncate(limit.clamp(1, 500) as usize);
     Ok(words)
 }
 
 #[tauri::command]
-pub async fn browse_words(db: State<'_, Db>, topic_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
-    browse_words_in(&mut db.lock(), topic_id, query, limit)
+pub async fn browse_words(db: State<'_, Db>, course_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
+    browse_words_in(&mut db.lock(), course_id, query, limit)
 }
 
 /// One catalogue page: words and sentences matching a search, plus how many
 /// matched in total so the UI can say what it is not showing.
-pub fn browse_catalogue_in(conn: &mut Conn, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
+pub fn browse_catalogue_in(conn: &mut Conn, course_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
     let limit = limit.clamp(1, 1000) as usize;
-    let mut words = matching_words(conn, topic_id, query.trim())?;
-    let mut sentences = matching_sentences(conn, topic_id, query.trim())?;
+    let mut words = matching_words(conn, course_id, query.trim())?;
+    let mut sentences = matching_sentences(conn, course_id, query.trim())?;
     let (total_words, total_sentences) = (words.len() as i64, sentences.len() as i64);
     words.truncate(limit);
     sentences.truncate(limit);
@@ -291,18 +291,18 @@ pub fn browse_catalogue_in(conn: &mut Conn, topic_id: Option<i64>, query: String
 }
 
 #[tauri::command]
-pub async fn browse_catalogue(db: State<'_, Db>, topic_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
-    browse_catalogue_in(&mut db.lock(), topic_id, query, limit)
+pub async fn browse_catalogue(db: State<'_, Db>, course_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
+    browse_catalogue_in(&mut db.lock(), course_id, query, limit)
 }
 
 /// A course's sentences, in order.
-pub fn browse_sentences_in(conn: &mut Conn, topic_id: i64) -> Result<Vec<Sentence>> {
-    matching_sentences(conn, Some(topic_id), "")
+pub fn browse_sentences_in(conn: &mut Conn, course_id: i64) -> Result<Vec<Sentence>> {
+    matching_sentences(conn, Some(course_id), "")
 }
 
 #[tauri::command]
-pub async fn browse_sentences(db: State<'_, Db>, topic_id: i64) -> Result<Vec<Sentence>> {
-    browse_sentences_in(&mut db.lock(), topic_id)
+pub async fn browse_sentences(db: State<'_, Db>, course_id: i64) -> Result<Vec<Sentence>> {
+    browse_sentences_in(&mut db.lock(), course_id)
 }
 
 #[tauri::command]
@@ -319,13 +319,13 @@ pub(crate) fn reset_progress_in(conn: &mut Conn) -> Result<()> {
         diesel::delete(tutor_messages::table).execute(conn)?;
         diesel::delete(tutor_conversations::table).execute(conn)?;
         diesel::delete(checkins::table).execute(conn)?;
-        diesel::update(blocks::table)
+        diesel::update(lessons::table)
             .set((
-                blocks::due_day.eq(None::<i64>),
-                blocks::last_day.eq(None::<i64>),
-                blocks::last_result.eq(None::<String>),
-                blocks::reps.eq(0),
-                blocks::interval_days.eq(0),
+                lessons::due_day.eq(None::<i64>),
+                lessons::last_day.eq(None::<i64>),
+                lessons::last_result.eq(None::<String>),
+                lessons::reps.eq(0),
+                lessons::interval_days.eq(0),
             ))
             .execute(conn)?;
         Ok(())

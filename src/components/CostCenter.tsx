@@ -15,7 +15,7 @@ import {
   StatGrid,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import { dayToDate } from "../lib/blocks";
+import { dayToDate } from "../lib/lessons";
 import type { CostSummary, FeatureCost } from "../lib/types";
 
 const FEATURES: Record<string, string> = {

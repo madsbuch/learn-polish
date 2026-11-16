@@ -1,8 +1,8 @@
 import { useState, type CSSProperties } from "react";
 
-import { BlockRow } from "../components/BlockRow";
+import { LessonRow } from "../components/LessonRow";
 import { Logo, SearchIcon } from "../components/icons";
-import { TopicList } from "../components/TopicList";
+import { CourseList } from "../components/CourseList";
 import {
   Avatar,
   Badge,
@@ -18,8 +18,8 @@ import {
   Stack,
   Text,
 } from "../design";
-import { minutes } from "../lib/blocks";
-import type { Block, BlockOverview, Stats, TopicProgress } from "../lib/types";
+import { minutes } from "../lib/lessons";
+import type { Lesson, LessonOverview, Stats, CourseProgress } from "../lib/types";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -28,30 +28,30 @@ function greeting(): string {
   return "Dobry wieczór";
 }
 
-/** Rough minutes for a list of blocks, for the summary line. */
-function estimate(blocks: Block[]): number {
-  return blocks.reduce((sum, b) => sum + (b.complexity === "low" ? 2 : b.complexity === "medium" ? 7 : 20), 0);
+/** Rough minutes for a list of lessons, for the summary line. */
+function estimate(lessons: Lesson[]): number {
+  return lessons.reduce((sum, b) => sum + (b.complexity === "low" ? 2 : b.complexity === "medium" ? 7 : 20), 0);
 }
 
 /**
  * Everything to practise, top to bottom: today (with the one thing to do
- * next), what is due for a check-in, and the courses every block lives in.
+ * next), what is due for a check-in, and the courses every lesson lives in.
  */
 export function Exercises({
   overview,
   stats,
-  topics,
-  onOpenBlock,
-  onOpenTopic,
+  courses,
+  onOpenLesson,
+  onOpenCourse,
   onOpenTutor,
   onOpenProgress,
   onOpenSearch,
 }: {
-  overview: BlockOverview;
+  overview: LessonOverview;
   stats: Stats;
-  topics: TopicProgress[];
-  onOpenBlock: (block: Block) => void;
-  onOpenTopic: (progress: TopicProgress) => void;
+  courses: CourseProgress[];
+  onOpenLesson: (lesson: Lesson) => void;
+  onOpenCourse: (progress: CourseProgress) => void;
   onOpenTutor: () => void;
   onOpenProgress: () => void;
   onOpenSearch: () => void;
@@ -61,8 +61,8 @@ export function Exercises({
     ? 100
     : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
   // Finished courses leave the list for their own shelf.
-  const active = topics.filter((t) => t.status === "active");
-  const finished = topics.filter((t) => t.status !== "active");
+  const active = courses.filter((t) => t.status === "active");
+  const finished = courses.filter((t) => t.status !== "active");
   const [showFinished, setShowFinished] = useState(false);
   // Today's list first; once it's done, more for a big day; else something new.
   const keepGoing = overview.due.length === 0 && overview.more.length > 0;
@@ -89,8 +89,8 @@ export function Exercises({
       }
     >
       <div className="practice-layout">
-        {topics.length > 0 || stats.totalXp > 0 ? <div className="practice-today">
-          {topics.length > 0 ? <Hero>
+        {courses.length > 0 || stats.totalXp > 0 ? <div className="practice-today">
+          {courses.length > 0 ? <Hero>
             <Stack gap={4}>
               <Inline gap={4}>
                 <div
@@ -131,7 +131,7 @@ export function Exercises({
                           overview.planDone > 0 ? ` · ${overview.planDone} of ${overview.planTotal} done` : ""
                         }`
                       : overview.doneToday > 0
-                        ? `${overview.doneToday} block${overview.doneToday === 1 ? "" : "s"} done today`
+                        ? `${overview.doneToday} lesson${overview.doneToday === 1 ? "" : "s"} done today`
                         : "Start something new below"}
                   </Text>
                   {balance ? (
@@ -143,7 +143,7 @@ export function Exercises({
               </Inline>
               {upNext ? (
                 <Stack gap={2}>
-                  <Button variant="inverse" size="lg" block onClick={() => onOpenBlock(upNext)}>
+                  <Button variant="inverse" size="lg" wide onClick={() => onOpenLesson(upNext)}>
                     {overview.due.length > 0
                       ? "Start the first check-in"
                       : keepGoing
@@ -152,7 +152,7 @@ export function Exercises({
                   </Button>
                   <Text variant="caption" tone="dim" align="center" as="div">
                     {upNext.title}
-                    {upNext.topicTitle ? ` · ${upNext.topicTitle}` : ""} · {minutes(upNext.complexity)}
+                    {upNext.courseTitle ? ` · ${upNext.courseTitle}` : ""} · {minutes(upNext.complexity)}
                   </Text>
                 </Stack>
               ) : null}
@@ -165,7 +165,7 @@ export function Exercises({
               info={
                 <>
                   <p>
-                    The blocks most at risk of being forgotten, as many as fit today. Clear these and
+                    The lessons most at risk of being forgotten, as many as fit today. Clear these and
                     the day counts for your streak.
                   </p>
                   <p>
@@ -177,8 +177,8 @@ export function Exercises({
               }
             >
               <List>
-                {overview.due.map((block) => (
-                  <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
+                {overview.due.map((lesson) => (
+                  <LessonRow key={lesson.id} lesson={lesson} today={overview.today} showCourse onOpen={onOpenLesson} />
                 ))}
               </List>
             </Section>
@@ -196,14 +196,14 @@ export function Exercises({
               }
             >
               <List>
-                {overview.more.map((block) => (
-                  <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
+                {overview.more.map((lesson) => (
+                  <LessonRow key={lesson.id} lesson={lesson} today={overview.today} showCourse onOpen={onOpenLesson} />
                 ))}
               </List>
             </Section>
           ) : null}
 
-          {topics.length > 0 || stats.totalXp > 0 ? <List>
+          {courses.length > 0 || stats.totalXp > 0 ? <List>
             <ListItem
               leading={<Avatar>📈</Avatar>}
               title="Your progress"
@@ -225,13 +225,13 @@ export function Exercises({
             title="Courses"
             info={
               <p>
-                A course is a folder of blocks on one theme: drills on its words, sentences and
+                A course is a folder of lessons on one theme: drills on its words, sentences and
                 dialogue, and lessons with a check-in. Ask the tutor for a new course on anything, or to
                 add lessons and drills to one you have.
               </p>
             }
           >
-            {topics.length === 0 ? (
+            {courses.length === 0 ? (
               <List>
                 <EmptyState
                   icon="✨"
@@ -242,12 +242,12 @@ export function Exercises({
                     </Button>
                   }
                 >
-                  Tell the tutor what you want to learn — everyday conversation, life in Poland, or a topic you enjoy.
+                  Tell the tutor what you want to learn — everyday conversation, life in Poland, or a course you enjoy.
                 </EmptyState>
               </List>
             ) : (
               <Stack gap={3}>
-                <TopicList entries={active} onOpen={onOpenTopic} />
+                <CourseList entries={active} onOpen={onOpenCourse} />
                 <List>
                   <ListItem
                     leading={<Avatar>✨</Avatar>}
@@ -265,13 +265,13 @@ export function Exercises({
               title="Completed"
               info={
                 <p>
-                  Courses where every block is passed. Their blocks still come back in today's
+                  Courses where every lesson is passed. Their lessons still come back in today's
                   check-ins now and then; keep them up and a course becomes mastered 🏆.
                 </p>
               }
             >
               {showFinished ? (
-                <TopicList entries={finished} onOpen={onOpenTopic} />
+                <CourseList entries={finished} onOpen={onOpenCourse} />
               ) : (
                 <List>
                   <ListItem

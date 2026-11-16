@@ -1,10 +1,10 @@
 // Mirrors the serde structs in src-tauri/src/models.rs.
 
-export interface Topic {
+export interface Course {
   id: number;
   ord: number;
   slug: string;
-  /** Always "course": every topic is a course, a folder of blocks. */
+  /** Always "course": every course is a course, a folder of lessons. */
   kind: string;
   titlePl: string;
   title: string;
@@ -17,16 +17,16 @@ export interface Word {
   meaning: string;
   pos: string;
   /** The drill it belongs to. */
-  blockId: number;
-  block: string;
+  lessonId: number;
+  lesson: string;
 }
 
 export interface Sentence {
   id: number;
   pl: string;
   meaning: string;
-  blockId: number;
-  block: string;
+  lessonId: number;
+  lesson: string;
 }
 
 export interface DialogueLine {
@@ -109,7 +109,7 @@ export interface Pair {
 
 export interface SessionPlan {
   day: number;
-  topic: Topic;
+  course: Course;
   dialogue: DialogueLine[];
   exercises: Exercise[];
   newWords: number;
@@ -117,19 +117,19 @@ export interface SessionPlan {
   newSentences: number;
   reviewSentences: number;
   alreadyCompleted: boolean;
-  /** The drill block this session practises. */
-  blockId: number;
+  /** The drill lesson this session practises. */
+  lessonId: number;
   /** Done before and not due: extra practice — half XP, schedule unchanged. */
   extra: boolean;
 }
 
-// ------------------------------------------------------------------ blocks
+// ------------------------------------------------------------------ lessons
 
 export type Complexity = "low" | "medium" | "high";
-export type BlockResult = "pass" | "partial" | "fail";
+export type LessonResult = "pass" | "partial" | "fail";
 
-/** A unit of learning: a small drill, or a study lesson checked by an examiner. */
-export interface Block {
+/** A unit of learning in a course: a drill, or a study, writing or listening lesson. */
+export interface Lesson {
   id: number;
   kind: "drill" | "study";
   /** Drills: words | memory | typing | sentences | gaps | dialogue. */
@@ -138,32 +138,32 @@ export interface Block {
   summary: string;
   complexity: Complexity;
   /** The first course it was listed in, for display. */
-  topicId: number | null;
-  topicTitle: string | null;
+  courseId: number | null;
+  courseTitle: string | null;
   /** Every course that lists it. */
   courseIds: number[];
-  /** Who made it; informational — every block can be edited and deleted. */
+  /** Who made it; informational — every lesson can be edited and deleted. */
   origin: "starter" | "tutor" | "you";
   periodDays: number;
   intervalDays: number;
   /** Day number; null until done once. */
   dueDay: number | null;
   lastDay: number | null;
-  lastResult: BlockResult | null;
+  lastResult: LessonResult | null;
   reps: number;
-  /** Writing blocks: 0 guided (word bank, hints), 1 supported (hints), 2 free. */
+  /** Writing lessons: 0 guided (word bank, hints), 1 supported (hints), 2 free. */
   supportLevel: number;
   /** Beyond the course's level: needed to master it, not to complete it. */
   challenge: boolean;
   /** Passed at least once. */
   passed: boolean;
   items: number;
-  /** A listening block's song. */
+  /** A listening lesson's song. */
   songId: number | null;
 }
 
-export interface BlockDetail extends Block {
-  lesson: string;
+export interface LessonDetail extends Lesson {
+  content: string;
   objectives: string[];
   words: [string, string][];
   sentences: [string, string][];
@@ -172,20 +172,20 @@ export interface BlockDetail extends Block {
   courses: [number, string, string][];
   /** A conversation drill's dialogue. */
   lines: DialogueLine[];
-  /** What the last check against the block's Wikipedia sources changed. */
+  /** What the last check against the lesson's Wikipedia sources changed. */
   factNote: string | null;
   /** When the lesson was last checked against its sources (seconds). */
   factCheckedAt: number | null;
 }
 
-export interface BlockOverview {
+export interface LessonOverview {
   today: number;
   /** Today's list, still to do: the most at risk first. */
-  due: Block[];
-  next: Block[];
+  due: Lesson[];
+  next: Lesson[];
   doneToday: number;
   /** For a big day: the rest of what is due, then what is due soonest. */
-  more: Block[];
+  more: Lesson[];
   planTotal: number;
   planDone: number;
   budgetMinutes: number;
@@ -196,7 +196,7 @@ export interface BlockOverview {
 }
 
 export interface Assessment {
-  result: BlockResult;
+  result: LessonResult;
   summary: string;
   strengths: string[];
   toReview: string[];
@@ -241,29 +241,29 @@ export interface DayStat {
   frozen: boolean;
 }
 
-export interface TopicProgress {
-  topic: Topic;
+export interface CourseProgress {
+  course: Course;
   totalWords: number;
   seenWords: number;
   masteredWords: number;
   totalSentences: number;
   seenSentences: number;
-  totalBlocks: number;
-  /** Blocks done at least once. */
-  startedBlocks: number;
+  totalLessons: number;
+  /** Lessons done at least once. */
+  startedLessons: number;
   /** The course's picture: a file id, loaded with fileUrl(). */
   imageFileId: number | null;
-  /** Completed: every core block passed once. Mastered: everything holds, challenges too. */
+  /** Completed: every core lesson passed once. Mastered: everything holds, challenges too. */
   status: "active" | "completed" | "mastered";
-  /** Blocks needed to complete it (not challenges), and how many are passed. */
-  coreBlocks: number;
+  /** Lessons needed to complete it (not challenges), and how many are passed. */
+  coreLessons: number;
   passedCore: number;
   challenges: number;
 }
 
 /** A course just completed or mastered. */
 export interface Milestone {
-  topicId: number;
+  courseId: number;
   title: string;
   mastered: boolean;
 }
@@ -309,7 +309,7 @@ export interface Settings {
   tzOffsetMinutes: number;
   /** Empty means the songwriter uses the tutor model. */
   songwriterModel: string;
-  /** Plays the other side in writing blocks; empty means the tutor model. */
+  /** Plays the other side in writing lessons; empty means the tutor model. */
   partnerModel: string;
   /** "Talk about it" chats; empty means the tutor model. */
   wordChatModel: string;
@@ -351,9 +351,9 @@ export interface SettingsPatch {
   playerRepeat?: "off" | "all" | "one";
 }
 
-export interface BlockFinished extends SessionResult {
-  block: Block;
-  result: BlockResult;
+export interface LessonFinished extends SessionResult {
+  lesson: Lesson;
+  result: LessonResult;
   /** Extra practice: the schedule did not move. */
   extra: boolean;
 }
@@ -378,17 +378,17 @@ export interface TutorAction {
     | "settingsChanged"
     | "songStarted"
     | "songsDeleted"
-    | "blockCreated"
-    | "blockUpdated"
-    | "blockDeleted"
-    | "blockScheduled"
-    | "blockSuggested"
+    | "lessonCreated"
+    | "lessonUpdated"
+    | "lessonDeleted"
+    | "lessonScheduled"
+    | "lessonSuggested"
     | "memory"
     | "playlistChanged";
   label: string;
-  topicId: number | null;
+  courseId: number | null;
   songId: number | null;
-  blockId: number | null;
+  lessonId: number | null;
 }
 
 export interface Conversation {
@@ -475,7 +475,7 @@ export interface AudioCacheStats {
 
 /** How much of one course can be played without the network. */
 export interface CourseAudio {
-  topicId: number;
+  courseId: number;
   title: string;
   titlePl: string;
   total: number;
@@ -500,10 +500,10 @@ export interface AudioItem {
   bytes: number;
 }
 
-/** A Wikipedia article a study block is built on. */
+/** A Wikipedia article a study lesson is built on. */
 export interface WikiSource {
   id: number;
-  blockId: number;
+  lessonId: number;
   lang: string;
   title: string;
   url: string;
@@ -525,7 +525,7 @@ export interface ArticleView {
 
 /** The outcome of checking a lesson against its sources. */
 export interface FactCheck {
-  blockId: number;
+  lessonId: number;
   title: string;
   updated: boolean;
   note: string | null;
@@ -562,8 +562,8 @@ export interface SongDraft {
   /** "f", "m" or "" for no preference. */
   vocalGender: string;
   sections: SongSection[];
-  /** The course whose words it uses; its listening block is filed there. */
-  topicId?: number | null;
+  /** The course whose words it uses; its listening lesson is filed there. */
+  courseId?: number | null;
   /** How it came about — kept with the song; pass it back unchanged. */
   origin?: SongOrigin;
 }
@@ -633,7 +633,7 @@ export type SongLength = "short" | "medium" | "long";
 export interface DraftRequest {
   length?: SongLength;
   brief?: string;
-  topicId?: number | null;
+  courseId?: number | null;
   chorusPl?: string;
   style?: string;
   vocalGender?: string;

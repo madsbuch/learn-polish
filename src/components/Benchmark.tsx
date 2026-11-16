@@ -83,7 +83,7 @@ export function Benchmark({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </Field>
-        <Button variant="primary" block loading={running} disabled={!model} onClick={() => void run()}>
+        <Button variant="primary" wide loading={running} disabled={!model} onClick={() => void run()}>
           {running ? (progress ? `Testing… ${progress.done} of ${progress.total}` : "Testing…") : "Run the benchmark"}
         </Button>
         {error ? <Banner tone="error">{error}</Banner> : null}
@@ -136,7 +136,7 @@ export function Benchmark({ onClose }: { onClose: () => void }) {
               label="Delete this run"
               confirmLabel="Delete"
               question="Delete this benchmark run?"
-              block
+              wide
               onConfirm={async () => {
                 await api.benchDelete(open.id);
                 setOpen(null);

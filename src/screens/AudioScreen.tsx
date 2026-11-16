@@ -81,7 +81,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
       .then((next) => {
         setOverview(next);
         // Keep an open course's numbers current.
-        setOpen((current) => (current ? (next.courses.find((c) => c.topicId === current.topicId) ?? current) : null));
+        setOpen((current) => (current ? (next.courses.find((c) => c.courseId === current.courseId) ?? current) : null));
       })
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
@@ -156,7 +156,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
             <List>
               {overview.courses.map((course) => (
                 <ListItem
-                  key={course.topicId}
+                  key={course.courseId}
                   oneLine
                   title={course.titlePl}
                   leading={
@@ -198,7 +198,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
                 label="Delete unused clips"
                 confirmLabel="Delete"
                 question={`Delete ${overview.unusedClips} clips no course uses?`}
-                block
+                wide
                 onConfirm={() =>
                   run(async () => {
                     const deleted = await api.deleteUnusedAudio();
@@ -212,7 +212,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
           <Section title="Everything">
             <Stack gap={2}>
               <Button
-                block
+                wide
                 icon={<PlayerIcon.download />}
                 loading={busy && Boolean(progress && !progress.finished)}
                 disabled={busy || missing === 0}
@@ -220,7 +220,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
                   run(async () => {
                     const lines = [];
                     for (const course of overview.courses) {
-                      if (course.stored < course.total) lines.push(...(await api.topicAudioLines(course.topicId)));
+                      if (course.stored < course.total) lines.push(...(await api.courseAudioLines(course.courseId)));
                     }
                     const result = await api.cacheAudio(lines);
                     return result.error
@@ -235,7 +235,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
                 label="Delete all downloaded audio"
                 confirmLabel="Delete"
                 question="Delete every stored clip? Each is made again the next time it's played."
-                block
+                wide
                 onConfirm={() =>
                   run(async () => {
                     await api.clearAudioCache();
@@ -275,10 +275,10 @@ function CourseAudioPage({
 
   const load = useCallback(() => {
     api
-      .courseAudio(course.topicId)
+      .courseAudio(course.courseId)
       .then(setItems)
       .catch((cause) => setError(errorMessage(cause)));
-  }, [course.topicId]);
+  }, [course.courseId]);
   useEffect(load, [load]);
   // Tick items off as a download goes.
   useEffect(() => {
@@ -314,7 +314,7 @@ function CourseAudioPage({
           </List>
           <Button
             variant={missing.length > 0 ? "primary" : "secondary"}
-            block
+            wide
             icon={<PlayerIcon.download />}
             loading={busy}
             disabled={missing.length === 0}
@@ -340,7 +340,7 @@ function CourseAudioPage({
               label="Download the whole course again"
               confirmLabel="Download again"
               question={`Make all ${items.length} clips again, replacing the stored ones? Each costs a speech request.`}
-              block
+              wide
               onConfirm={async () => {
                 setBusy(true);
                 setError(null);
@@ -421,12 +421,12 @@ function CourseAudioPage({
               {selected.gender === "m" ? " · male voice" : ""} ·{" "}
               {selected.stored ? `downloaded, ${megabytes(selected.bytes)}` : "not downloaded"}
             </Text>
-            <Button block icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))}>
+            <Button wide icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))}>
               Play
             </Button>
             <Button
               variant="primary"
-              block
+              wide
               icon={<PlayerIcon.download />}
               loading={redoing}
               onClick={async () => {

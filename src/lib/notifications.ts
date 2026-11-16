@@ -17,7 +17,7 @@ const DAYS_AHEAD = 7;
 
 const GENERIC = [
   { title: "Czas na polski!", body: "A drill and a check-in — about ten minutes." },
-  { title: "Dzień dobry!", body: "Your blocks are waiting in Polski." },
+  { title: "Dzień dobry!", body: "Your lessons are waiting in Polski." },
   { title: "Pięć minut?", body: "One short drill keeps the Polish warm." },
 ];
 
@@ -54,7 +54,7 @@ export async function syncReminder(options: {
   minute: number;
   /** Today's goal reached, or nothing left due. */
   doneToday?: boolean;
-  /** Blocks due today. */
+  /** Lessons due today. */
   due?: number;
   streak?: number;
 }): Promise<boolean> {
@@ -73,7 +73,7 @@ export async function syncReminder(options: {
         offset === 0 && (options.due ?? 0) > 0
           ? {
               title: options.streak ? `Your ${options.streak}-day streak is waiting` : "Czas na polski!",
-              body: `${options.due} block${options.due === 1 ? " is" : "s are"} due today.`,
+              body: `${options.due} lesson${options.due === 1 ? " is" : "s are"} due today.`,
             }
           : GENERIC[(at.getDate() + offset) % GENERIC.length];
       await sendNotification({

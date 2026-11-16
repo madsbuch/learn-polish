@@ -420,7 +420,7 @@ export type ButtonVariant = "primary" | "secondary" | "plain" | "danger" | "inve
 export function Button({
   variant = "secondary",
   size = "md",
-  block,
+  wide,
   icon,
   loading,
   disabled,
@@ -430,7 +430,7 @@ export function Button({
 }: {
   variant?: ButtonVariant;
   size?: "sm" | "md" | "lg";
-  block?: boolean;
+  wide?: boolean;
   icon?: ReactNode;
   loading?: boolean;
   disabled?: boolean;
@@ -440,10 +440,10 @@ export function Button({
 }) {
   return (
     <button
-      className={cx("button", block ? null : "no-shrink")}
+      className={cx("button", wide ? null : "no-shrink")}
       data-variant={variant}
       data-size={size}
-      data-block={block}
+      data-wide={wide}
       disabled={disabled || loading}
       onClick={onClick}
       aria-label={label}
@@ -878,7 +878,7 @@ export function ConfirmButton({
   question,
   onConfirm,
   size = "md",
-  block,
+  wide,
 }: {
   label: string;
   confirmLabel: string;
@@ -886,13 +886,13 @@ export function ConfirmButton({
   question?: string;
   onConfirm: () => Promise<unknown> | void;
   size?: "sm" | "md";
-  block?: boolean;
+  wide?: boolean;
 }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   if (!asking) {
     return (
-      <Button variant="danger" size={size} block={block} onClick={() => setAsking(true)}>
+      <Button variant="danger" size={size} wide={wide} onClick={() => setAsking(true)}>
         {label}
       </Button>
     );
@@ -912,7 +912,7 @@ export function ConfirmButton({
           <Button
             variant="danger"
             size={size}
-            block
+            wide
             loading={busy}
             onClick={async () => {
               setBusy(true);

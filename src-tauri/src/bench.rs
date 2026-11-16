@@ -89,7 +89,7 @@ fn items() -> Vec<Item> {
             Contains(&["kawę"]),
         ),
         Item { part: "tools", name: "Make a course", prompt: "Make me a course about the weather with exactly 10 words and 5 sentences.", check: Tool(ToolTask::Course) },
-        Item { part: "tools", name: "Make a writing block", prompt: "Make a writing block where I order food in a restaurant, with exactly 3 goals.", check: Tool(ToolTask::Writing) },
+        Item { part: "tools", name: "Make a writing lesson", prompt: "Make a writing lesson where I order food in a restaurant, with exactly 3 goals.", check: Tool(ToolTask::Writing) },
         Item { part: "tools", name: "A question is not an order", prompt: "What does \"dziękuję\" mean?", check: Tool(ToolTask::NoTool) },
         Item { part: "rules", name: "Answers in Danish", prompt: "Hvad er forskellen på \"ty\" og \"pan\"?", check: Rule(RuleTask::Danish) },
         Item { part: "rules", name: "Short, with a player", prompt: "How do I say \"thank you\" in Polish?", check: Rule(RuleTask::ShortWithPlayer) },
@@ -253,7 +253,7 @@ fn score_tools(task: ToolTask, turn: &ai::Turn) -> (f64, String) {
             Some(c) => (0.0, format!("called {} for a plain question", c.function.name)),
         },
         ToolTask::Course | ToolTask::Writing => {
-            let wanted = if matches!(task, ToolTask::Course) { "create_course" } else { "create_writing_block" };
+            let wanted = if matches!(task, ToolTask::Course) { "create_course" } else { "create_writing_lesson" };
             let Some(call) = turn.tool_calls.iter().find(|c| c.function.name == wanted) else {
                 return (0.0, format!("did not call {wanted}"));
             };

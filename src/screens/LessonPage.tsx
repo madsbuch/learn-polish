@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { BlockIcon } from "../components/BlockRow";
+import { LessonIcon } from "../components/LessonRow";
 import { CloseIcon, PlayerIcon, PlusIcon } from "../components/icons";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
@@ -37,35 +37,35 @@ import {
   dueLabel,
   kindName,
   minutes,
-} from "../lib/blocks";
-import type { BlockDetail, TopicProgress, WikiSource } from "../lib/types";
+} from "../lib/lessons";
+import type { LessonDetail, CourseProgress, WikiSource } from "../lib/types";
 
 const RESULT_TEXT = { pass: "Passed", partial: "Partly there", fail: "Not yet" } as const;
 
 /**
- * One block: what it is, the lesson or the items it practises, and its
+ * One lesson: what it is, the lesson or the items it practises, and its
  * check-in schedule. The one primary action starts it.
  */
-export function BlockPage({
-  blockId,
+export function LessonPage({
+  lessonId,
   today,
   onBack,
   onStartDrill,
   onCheckIn,
   onDeleted,
 }: {
-  blockId: number;
+  lessonId: number;
   today: number;
   onBack: () => void;
-  onStartDrill: (blockId: number) => void;
-  onCheckIn: (blockId: number) => void;
+  onStartDrill: (lessonId: number) => void;
+  onCheckIn: (lessonId: number) => void;
   onDeleted: () => void;
 }) {
-  const [block, setBlock] = useState<BlockDetail | null>(null);
+  const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revealAll, setRevealAll] = useState(false);
-  /** The course picker: add the block to one, or move it there. */
-  const [picking, setPicking] = useState<{ mode: "add" | "move"; courses: TopicProgress[] } | null>(null);
+  /** The course picker: add the lesson to one, or move it there. */
+  const [picking, setPicking] = useState<{ mode: "add" | "move"; courses: CourseProgress[] } | null>(null);
   /** A source being read, in the app's reader. */
   const [reading, setReading] = useState<WikiSource | null>(null);
   /** Adding audio players to the lesson's Polish. */
@@ -74,30 +74,30 @@ export function BlockPage({
   const [sourcesVersion, setSourcesVersion] = useState(0);
 
   const reload = () =>
-    api.blockDetail(blockId).then(setBlock).catch((cause) => setError(errorMessage(cause)));
+    api.lessonDetail(lessonId).then(setLesson).catch((cause) => setError(errorMessage(cause)));
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockId]);
+  }, [lessonId]);
 
-  // Opening a block downloads its audio at normal speed in the background
+  // Opening a lesson downloads its audio at normal speed in the background
   // (conversation first, in each speaker's voice), so every 🔊 here plays at
   // once. Slow versions are made only when 🐢 asks for one.
   const prefetched = useRef<number | null>(null);
   useEffect(() => {
-    if (!block || prefetched.current === block.id) return;
-    prefetched.current = block.id;
+    if (!lesson || prefetched.current === lesson.id) return;
+    prefetched.current = lesson.id;
     const lines = [
-      ...block.lines.map((line) => ({ text: line.pl, gender: line.gender })),
-      ...block.sentences.map(([pl]) => ({ text: pl, gender: "" })),
-      ...block.words.map(([pl]) => ({ text: pl, gender: "" })),
+      ...lesson.lines.map((line) => ({ text: line.pl, gender: line.gender })),
+      ...lesson.sentences.map(([pl]) => ({ text: pl, gender: "" })),
+      ...lesson.words.map(([pl]) => ({ text: pl, gender: "" })),
     ];
     if (lines.length) void api.prefetchAudio(lines).catch(() => {});
-  }, [block]);
+  }, [lesson]);
 
   async function openPicker(mode: "add" | "move") {
     try {
-      setPicking({ mode, courses: await api.getTopicProgress() });
+      setPicking({ mode, courses: await api.getCourseProgress() });
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -114,9 +114,9 @@ export function BlockPage({
     }
   }
 
-  if (!block) {
+  if (!lesson) {
     return (
-      <Screen title="Block" onBack={onBack} nav={false}>
+      <Screen title="Lesson" onBack={onBack} nav={false}>
         {error ? <Banner tone="error">{error}</Banner> : <Spinner />}
       </Screen>
     );
@@ -135,11 +135,11 @@ export function BlockPage({
     );
   }
 
-  const study = block.kind === "study";
-  const listening = block.songId !== null;
-  const writing = block.format === "writing";
-  const started = block.dueDay !== null;
-  const period = String(block.periodDays);
+  const study = lesson.kind === "study";
+  const listening = lesson.songId !== null;
+  const writing = lesson.format === "writing";
+  const started = lesson.dueDay !== null;
+  const period = String(lesson.periodDays);
   const periodOptions = PERIOD_CHOICES.some((choice) => choice.value === period)
     ? PERIOD_CHOICES
     : [...PERIOD_CHOICES, { value: period, label: `${period} days` }].sort(
@@ -147,34 +147,34 @@ export function BlockPage({
       );
 
   return (
-    <Screen title={block.title} subtitle={block.topicTitle ?? undefined} onBack={onBack} nav={false}>
+    <Screen title={lesson.title} subtitle={lesson.courseTitle ?? undefined} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
 
       <Stack gap={3}>
         <Inline gap={2} wrap>
           <Badge tone="brand">
             <Inline gap={1}>
-              <BlockIcon block={block} />
-              {kindName(block)}
+              <LessonIcon lesson={lesson} />
+              {kindName(lesson)}
             </Inline>
           </Badge>
-          <Badge tone={complexityTone(block.complexity)}>
-            {complexityName(block.complexity)} · {minutes(block.complexity)}
+          <Badge tone={complexityTone(lesson.complexity)}>
+            {complexityName(lesson.complexity)} · {minutes(lesson.complexity)}
           </Badge>
-          {started ? <Badge>{dueLabel(block, today)}</Badge> : null}
-          {block.challenge ? <Badge tone="gold">Challenge</Badge> : null}
+          {started ? <Badge>{dueLabel(lesson, today)}</Badge> : null}
+          {lesson.challenge ? <Badge tone="gold">Challenge</Badge> : null}
         </Inline>
-        {block.summary ? (
+        {lesson.summary ? (
           <Text tone="dim" as="p">
-            {block.summary}
+            {lesson.summary}
           </Text>
         ) : null}
         <Button
           variant="primary"
           size="lg"
-          block
+          wide
           icon={<PlayerIcon.play size={18} />}
-          onClick={() => (study ? onCheckIn(block.id) : onStartDrill(block.id))}
+          onClick={() => (study ? onCheckIn(lesson.id) : onStartDrill(lesson.id))}
         >
           {writing
             ? started
@@ -194,7 +194,7 @@ export function BlockPage({
 
       {listening ? (
         <Section title="Listen">
-          <SongToListen songId={block.songId!} />
+          <SongToListen songId={lesson.songId!} />
         </Section>
       ) : null}
 
@@ -204,16 +204,16 @@ export function BlockPage({
             <Text variant="small" tone="dim" as="p">
               Write only in Polish — your partner doesn't understand anything else. The
               conversation ends when you've got every goal across.{" "}
-              {block.supportLevel === 0
+              {lesson.supportLevel === 0
                 ? "Guided: a word bank and hints help you, and your partner asks simple questions. Pass it and the help steps back."
-                : block.supportLevel === 1
+                : lesson.supportLevel === 1
                   ? "Supported: hints if you need them. Pass it and you write on your own."
                   : "Free: you write on your own."}
             </Text>
           ) : null}
           <Section title={writing ? "Goals" : "You will be able to"}>
             <List>
-              {block.objectives.map((objective) => (
+              {lesson.objectives.map((objective) => (
                 <ListItem key={objective} title={objective} />
               ))}
             </List>
@@ -221,17 +221,17 @@ export function BlockPage({
           <Section title={writing ? "The situation" : listening ? "Note" : "Lesson"}>
             <Card>
               <div className="selectable">
-                <Markdown text={block.lesson} />
+                <Markdown text={lesson.content} />
               </div>
             </Card>
-            {!writing && !listening && block.lesson && !block.lesson.includes("[[say:") ? (
+            {!writing && !listening && lesson.content && !lesson.content.includes("[[say:") ? (
               <Button
-                block
+                wide
                 loading={addingPlayers}
                 onClick={async () => {
                   setAddingPlayers(true);
                   try {
-                    setBlock(await api.lessonAddPlayers(block.id));
+                    setLesson(await api.lessonAddPlayers(lesson.id));
                   } catch (cause) {
                     setError(errorMessage(cause));
                   } finally {
@@ -245,41 +245,41 @@ export function BlockPage({
           </Section>
           <Sources
             key={sourcesVersion}
-            blockId={block.id}
-            factNote={block.factNote}
-            factCheckedAt={block.factCheckedAt}
+            lessonId={lesson.id}
+            factNote={lesson.factNote}
+            factCheckedAt={lesson.factCheckedAt}
             onRead={setReading}
             onChecked={() => void reload()}
           />
         </>
       ) : null}
 
-      {block.lines.length > 0 ? (
+      {lesson.lines.length > 0 ? (
         <Section title="Conversation">
           <Stack gap={3}>
             <DialogueToolbar
-              lines={block.lines}
+              lines={lesson.lines}
               revealAll={revealAll}
               onToggleReveal={() => setRevealAll((value) => !value)}
             />
-            <DialogueView lines={block.lines} revealAll={revealAll} />
+            <DialogueView lines={lesson.lines} revealAll={revealAll} />
           </Stack>
         </Section>
       ) : null}
 
-      {!study && block.words.length > 0 ? (
-        <Section title={`${block.words.length} words`}>
+      {!study && lesson.words.length > 0 ? (
+        <Section title={`${lesson.words.length} words`}>
           <List>
-            {block.words.map(([pl, en]) => (
+            {lesson.words.map(([pl, en]) => (
               <ListItem key={pl} selectable title={pl} subtitle={en} trailing={<SpeakButton text={pl} />} />
             ))}
           </List>
         </Section>
       ) : null}
-      {!study && block.sentences.length > 0 ? (
-        <Section title={`${block.sentences.length} sentences`}>
+      {!study && lesson.sentences.length > 0 ? (
+        <Section title={`${lesson.sentences.length} sentences`}>
           <List>
-            {block.sentences.map(([pl, en]) => (
+            {lesson.sentences.map(([pl, en]) => (
               <ListItem
                 key={pl}
                 selectable
@@ -299,24 +299,24 @@ export function BlockPage({
 
       <Section title="Check-ins">
         <List>
-          {block.lastResult ? (
+          {lesson.lastResult ? (
             <SettingRow
-              label={`Last time: ${RESULT_TEXT[block.lastResult]}`}
-              description={block.lastFeedback ?? undefined}
+              label={`Last time: ${RESULT_TEXT[lesson.lastResult]}`}
+              description={lesson.lastFeedback ?? undefined}
             />
           ) : null}
           <SettingRow
             label={
               !started
                 ? "Starts the first time you do it"
-                : block.dueDay! <= today
+                : lesson.dueDay! <= today
                   ? "Due now"
-                  : `Next check-in ${dayToDate(block.dueDay!)}`
+                  : `Next check-in ${dayToDate(lesson.dueDay!)}`
             }
             description={
               started
                 ? "Each pass pushes the next one further out; struggling brings it back sooner."
-                : `Then it comes back about every ${block.periodDays} days, further apart as you pass.`
+                : `Then it comes back about every ${lesson.periodDays} days, further apart as you pass.`
             }
           />
           <SettingRow
@@ -330,8 +330,8 @@ export function BlockPage({
                     selected={option.value === period}
                     onClick={async () => {
                       try {
-                        await api.blockSetPeriod(block.id, Number(option.value));
-                        setBlock({ ...block, periodDays: Number(option.value) });
+                        await api.lessonSetPeriod(lesson.id, Number(option.value));
+                        setLesson({ ...lesson, periodDays: Number(option.value) });
                       } catch (cause) {
                         setError(errorMessage(cause));
                       }
@@ -347,28 +347,28 @@ export function BlockPage({
       </Section>
 
       <Section
-        title={block.courses.length === 1 ? "Course" : "Courses"}
+        title={lesson.courses.length === 1 ? "Course" : "Courses"}
         info={
           <p>
-            A block can be in several courses: it stays one block, with one schedule, shown in each.
-            Its words and sentences belong to the block and go wherever it goes. Taking it out of its
-            last course deletes it — use Delete block for that.
+            A lesson can be in several courses: it stays one lesson, with one schedule, shown in each.
+            Its words and sentences belong to the lesson and go wherever it goes. Taking it out of its
+            last course deletes it — use Delete lesson for that.
           </p>
         }
       >
         <Stack gap={2}>
           <List>
-            {block.courses.map(([id, title, titlePl]) => (
+            {lesson.courses.map(([id, title, titlePl]) => (
               <ListItem
                 key={id}
                 title={titlePl}
                 subtitle={title}
                 trailing={
-                  block.courses.length > 1 ? (
+                  lesson.courses.length > 1 ? (
                     <IconButton
                       icon={<CloseIcon />}
                       label={`Take it out of ${title}`}
-                      onClick={() => changeCourses(() => api.blockRemoveFromCourse(block.id, id))}
+                      onClick={() => changeCourses(() => api.lessonRemoveFromCourse(lesson.id, id))}
                     />
                   ) : undefined
                 }
@@ -377,13 +377,13 @@ export function BlockPage({
           </List>
           <Inline gap={2}>
             <div className="grow">
-              <Button block icon={<PlusIcon />} onClick={() => openPicker("add")}>
+              <Button wide icon={<PlusIcon />} onClick={() => openPicker("add")}>
                 Also in…
               </Button>
             </div>
-            {block.courses.length === 1 ? (
+            {lesson.courses.length === 1 ? (
               <div className="grow">
-                <Button block onClick={() => openPicker("move")}>
+                <Button wide onClick={() => openPicker("move")}>
                   Move to…
                 </Button>
               </div>
@@ -399,17 +399,17 @@ export function BlockPage({
         >
           <List>
             {picking.courses
-              .filter((entry) => !block.courses.some(([id]) => id === entry.topic.id))
+              .filter((entry) => !lesson.courses.some(([id]) => id === entry.course.id))
               .map((entry) => (
                 <ListItem
-                  key={entry.topic.id}
-                  title={entry.topic.titlePl}
-                  subtitle={entry.topic.title}
+                  key={entry.course.id}
+                  title={entry.course.titlePl}
+                  subtitle={entry.course.title}
                   onClick={() =>
                     changeCourses(async () => {
-                      await api.blockAddToCourse(block.id, entry.topic.id);
+                      await api.lessonAddToCourse(lesson.id, entry.course.id);
                       if (picking.mode === "move") {
-                        await api.blockRemoveFromCourse(block.id, block.courses[0][0]);
+                        await api.lessonRemoveFromCourse(lesson.id, lesson.courses[0][0]);
                       }
                     })
                   }
@@ -427,10 +427,10 @@ export function BlockPage({
             control={
               <Switch
                 label="Challenge"
-                checked={block.challenge}
+                checked={lesson.challenge}
                 onChange={async (challenge) => {
                   try {
-                    await api.blockSetChallenge(block.id, challenge);
+                    await api.lessonSetChallenge(lesson.id, challenge);
                     await reload();
                   } catch (cause) {
                     setError(errorMessage(cause));
@@ -441,13 +441,13 @@ export function BlockPage({
           />
         </List>
         <ConfirmButton
-          label="Delete block"
+          label="Delete lesson"
           confirmLabel="Delete"
-          question="Delete this block, its words and its check-in history, from every course it is in?"
-          block
+          question="Delete this lesson, its words and its check-in history, from every course it is in?"
+          wide
           onConfirm={async () => {
             try {
-              await api.blockDelete(block.id);
+              await api.lessonDelete(lesson.id);
               onDeleted();
             } catch (cause) {
               setError(errorMessage(cause));

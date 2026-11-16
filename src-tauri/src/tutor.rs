@@ -16,10 +16,10 @@ use tauri::{Emitter, Manager, State};
 
 use crate::agent::{tool, Agent, Tool, ToolOutput};
 use crate::ai::Wire;
-use crate::blocks;
+use crate::lessons;
 use crate::db::{self, Conn, Db};
 use crate::schema::{
-    blocks as blocks_table, checkins, course_blocks, course_sentences, course_words, reviews, songs as songs_table, topics,
+    lessons as lessons_table, checkins, course_lessons, course_sentences, course_words, reviews, songs as songs_table, courses as courses_table,
     tutor_conversations, tutor_messages, words,
 };
 use crate::error::{Error, Result};
@@ -53,7 +53,7 @@ Talking:
   question words\"), give the gist in two or three lines and ask what prompted it or which part \
   they want — they often have one word or sentence in mind. Follow their lead from there.
 - Save the full explanation (tables, every form, many examples) for a lesson: offer a study \
-  block when the learner wants it all in one place.
+  lesson when the learner wants it all in one place.
 - Be friendly. Markdown is rendered, and so is TeX math: $3 + 5 = 8$ inline, $$…$$ on a line \
   of its own (\\times, \\div, \\frac work) — in replies and in lessons.
 
@@ -61,37 +61,37 @@ Acting:
 - A question gets an answer, not an action. Explaining something is not a request to save it.
 - Change the app only when the learner asks you to make, change or delete something. Then do it \
   straight away, without asking first, and say in a sentence or two what you did.
-- If something you explained would make a good block or course, offer it in one line and wait.
-- Deleting (courses, blocks, songs, playlists) is permanent: name what goes and wait for a yes.
-- Look before you judge: get_progress, list_blocks and get_block show how the learner is doing; \
+- If something you explained would make a good lesson or course, offer it in one line and wait.
+- Deleting (courses, lessons, songs, playlists) is permanent: name what goes and wait for a yes.
+- Look before you judge: get_progress, list_lessons and get_lesson show how the learner is doing; \
   never invent numbers.
 
 The app:
-- Courses list blocks. A block has one job: a drill (practice on a few words, sentences or a \
-  dialogue it owns), a study block (a lesson checked by an examiner's interview), a listening \
-  block (a song, then questions), or a writing block (a situation written out in Polish with a \
+- Courses list lessons. A lesson has one job: a drill (practice on a few words, sentences or a \
+  dialogue it owns), a study lesson (a short text, checked by an examiner's interview), a listening \
+  lesson (a song, then questions), or a writing lesson (a situation written out in Polish with a \
   partner who understands only Polish; goals are things to get across, not grammar).
 - Complexity is how hard the subject is: low (1–2 min, one small idea), medium (5–10 min, a \
   pattern with variations), high (20+ min, a system like the cases). Split big subjects into \
-  several blocks instead of stuffing one.
+  several lessons instead of stuffing one.
 - A new course is a small learning path, made in one create_course call: an 8–12 line dialogue \
-  to hear the theme; 15–30 words and 8–12 short sentences; one or two short lessons on the \
-  grammar the dialogue uses; and a writing block where the learner plays out the course's \
+  to hear the theme; 15–30 words and 8–12 short sentences; one or two short study lessons on the \
+  grammar the dialogue uses; and a writing lesson where the learner plays out the course's \
   situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
   To grow a course, add to it rather than making a new one.
-- Courses are made to be finished: the learner completes one by passing each block once, and \
+- Courses are made to be finished: the learner completes one by passing each lesson once, and \
   masters it when everything holds at long gaps (writing done without help). Keep the core at \
-  the learner's level; a block clearly beyond it (a free conversation in a beginner course, a \
-  deep lesson) is a challenge — set challenge with update_block. Challenges count for mastering, \
-  not completing. Writing blocks start guided (word bank, hints) and step up as they pass.
-- Culture and facts (cities, history, customs): write the lesson from Wikipedia — wiki_search, \
-  wiki_read — and attach the article to the block with attach_source (existing blocks too). \
+  the learner's level; a lesson clearly beyond it (a free conversation in a beginner course, a \
+  deep lesson) is a challenge — set challenge with update_lesson. Challenges count for mastering, \
+  not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
+- Culture and facts (cities, history, customs): write the study lesson from Wikipedia — wiki_search, \
+  wiki_read — and attach the article to the lesson with attach_source (existing lessons too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
   language hook (the city in \"w Krakowie\", \"z Krakowa\").
 - Polish must be correct, with diacritics. Words in dictionary form, lowercase, with a short \
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
-  to sort older ones, read their lyrics with get_song and move their block with move_block.";
+  to sort older ones, read their lyrics with get_song and move their lesson with move_lesson.";
 
 /// The whole prompt in one string, for tests.
 #[cfg(test)]
@@ -105,57 +105,57 @@ pub(crate) fn system_prompt(conn: &mut Conn) -> Result<String> {
 /// stay the same from turn to turn and can be cached (cheaper, faster).
 pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let stats = stats::collect(conn)?;
-    let overview = blocks::overview(conn)?;
-    let line = |b: &blocks::Block| {
+    let overview = lessons::overview(conn)?;
+    let line = |b: &lessons::Lesson| {
         format!(
             "  - id {}: {} ({} {}, {}){}",
             b.id,
             b.title,
             b.complexity,
             b.kind,
-            b.topic_title.clone().unwrap_or_default(),
+            b.course_title.clone().unwrap_or_default(),
             b.last_result.as_ref().map(|r| format!(", last check-in: {r}")).unwrap_or_default()
         )
     };
     let due: Vec<String> = overview.due.iter().take(15).map(line).collect();
 
-    let listed: Vec<i64> = course_blocks::table.select(course_blocks::topic_id).load(conn)?;
-    let courses: Vec<String> = topics::table
-        .order(crate::blocks::course_order())
+    let listed: Vec<i64> = course_lessons::table.select(course_lessons::course_id).load(conn)?;
+    let courses: Vec<String> = courses_table::table
+        .order(crate::lessons::course_order())
         .limit(60)
-        .select((topics::id, topics::title_en, topics::title_pl))
+        .select((courses_table::id, courses_table::title_en, courses_table::title_pl))
         .load::<(i64, String, String)>(conn)?
         .into_iter()
         .map(|(id, title, title_pl)| {
-            let blocks = listed.iter().filter(|&&c| c == id).count();
-            format!("  - id {id}: {title} ({title_pl}), {blocks} blocks")
+            let lessons = listed.iter().filter(|&&c| c == id).count();
+            format!("  - id {id}: {title} ({title_pl}), {lessons} lessons")
         })
         .collect();
 
-    // Every lesson, with the courses that list it.
-    let mut lessons: Vec<(i64, String, String, i64, Vec<(i64, i64, String)>)> = Vec::new();
-    for (id, title, complexity, reps, course_ord, list_ord, course) in course_blocks::table
-        .inner_join(blocks_table::table)
-        .inner_join(topics::table)
-        .filter(blocks_table::kind.eq("study"))
-        .order((topics::ord, course_blocks::ord))
+    // Every study lesson, with the courses that list it.
+    let mut studies: Vec<(i64, String, String, i64, Vec<(i64, i64, String)>)> = Vec::new();
+    for (id, title, complexity, reps, course_ord, list_ord, course) in course_lessons::table
+        .inner_join(lessons_table::table)
+        .inner_join(courses_table::table)
+        .filter(lessons_table::kind.eq("study"))
+        .order((courses_table::ord, course_lessons::ord))
         .select((
-            blocks_table::id,
-            blocks_table::title,
-            blocks_table::complexity,
-            blocks_table::reps,
-            topics::ord,
-            course_blocks::ord,
-            topics::title_en,
+            lessons_table::id,
+            lessons_table::title,
+            lessons_table::complexity,
+            lessons_table::reps,
+            courses_table::ord,
+            course_lessons::ord,
+            courses_table::title_en,
         ))
         .load::<(i64, String, String, i64, i64, i64, String)>(conn)?
     {
-        match lessons.iter_mut().find(|l| l.0 == id) {
-            Some(lesson) => lesson.4.push((course_ord, list_ord, course)),
-            None => lessons.push((id, title, complexity, reps, vec![(course_ord, list_ord, course)])),
+        match studies.iter_mut().find(|l| l.0 == id) {
+            Some(entry) => entry.4.push((course_ord, list_ord, course)),
+            None => studies.push((id, title, complexity, reps, vec![(course_ord, list_ord, course)])),
         }
     }
-    let lessons: Vec<String> = lessons
+    let studies: Vec<String> = studies
         .into_iter()
         .map(|(id, title, complexity, reps, courses)| {
             let names: Vec<String> = courses.into_iter().map(|c| c.2).collect();
@@ -165,9 +165,9 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         .collect();
 
     let song_count: i64 = songs_table::table.count().get_result(conn)?;
-    let unsorted: i64 = course_blocks::table
-        .inner_join(topics::table)
-        .filter(topics::slug.eq("listening"))
+    let unsorted: i64 = course_lessons::table
+        .inner_join(courses_table::table)
+        .filter(courses_table::slug.eq("listening"))
         .count()
         .get_result(conn)?;
     let playlists = playlists::list(conn)?;
@@ -177,7 +177,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         "The learner right now:\n\
          - Level {level}, {xp} XP, streak {streak} days{done}, {seen} of {total} words met.\n\
          - Due now ({due_count}):\n{due}\n\
-         - Study blocks:\n{lessons}\n\
+         - Study lessons:\n{studies}\n\
          - Courses:\n{courses}\n\
          - Songs: {song_count} in the Music tab{song_note}{unsorted}.\n\
          - Playlists: {playlists}.",
@@ -189,13 +189,13 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         total = stats.words_total,
         due_count = overview.due.len(),
         due = if due.is_empty() { none() } else { due.join("\n") },
-        lessons = if lessons.is_empty() { none() } else { lessons.join("\n") },
+        studies = if studies.is_empty() { none() } else { studies.join("\n") },
         courses = if courses.is_empty() { none() } else { courses.join("\n") },
         song_count = song_count,
         unsorted = match unsorted {
             0 => String::new(),
             n => format!(
-                "; {n} listening block{} still in \"Listening\" with no course — when it fits the \
+                "; {n} listening lesson{} still in \"Listening\" with no course — when it fits the \
                  conversation, offer to read their lyrics and file them",
                 if n == 1 { " is" } else { "s are" }
             ),
@@ -282,7 +282,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Building the course…",
             "Create a new course on a theme: a small learning path. The words, sentences and \
              dialogue are cut into drills (some word batches are typed, for variety); the lessons \
-             and the writing block join them; the app orders it all — conversation, words, \
+             and the writing lesson join them; the app orders it all — conversation, words, \
              lessons and sentences interleaved, writing last. It can be practised straight away.",
             json!({
                 "type": "object",
@@ -293,19 +293,19 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "words": word_schema(),
                     "sentences": sentence_schema(),
                     "dialogue": dialogue_schema(),
-                    "lessons": {
+                    "study_lessons": {
                         "type": "array",
-                        "description": "1–2 short lessons on the grammar the dialogue and sentences use (a case ending, a verb form), each a study block checked by the examiner",
+                        "description": "1–2 short lessons on the grammar the dialogue and sentences use (a case ending, a verb form), each a study lesson checked by the examiner",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "title": { "type": "string" },
                                 "summary": { "type": "string", "description": "One sentence" },
                                 "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
-                                "lesson": { "type": "string", "description": "The lesson in markdown: short, with a small table or examples. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
+                                "content": { "type": "string", "description": "The lesson in markdown: short, with a small table or examples. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
                                 "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–4 things the learner can then do" }
                             },
-                            "required": ["title", "summary", "complexity", "lesson", "objectives"]
+                            "required": ["title", "summary", "complexity", "content", "objectives"]
                         }
                     },
                     "writing": {
@@ -359,7 +359,7 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "delete_course",
             "Deleting the course…",
-            "Permanently delete a course with all its blocks and practice history. Only after the learner confirmed.",
+            "Permanently delete a course with all its lessons and practice history. Only after the learner confirmed.",
             json!({
                 "type": "object",
                 "properties": { "course_id": { "type": "integer" } },
@@ -399,9 +399,9 @@ pub fn tool_definitions() -> Vec<Tool> {
             none,
         ),
         tool(
-            "create_writing_block",
+            "create_writing_lesson",
             "Setting the scene…",
-            "Make a writing block: a situation the learner writes their way through with an AI \
+            "Make a writing lesson: a situation the learner writes their way through with an AI \
              partner who only understands Polish. It ends when they have got every goal across.",
             json!({
                 "type": "object",
@@ -447,21 +447,21 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "attach_source",
             "Attaching the article…",
-            "Attach a Wikipedia article to a study block (new or existing) as its source: the learner can read it in the app (in Polish too, when Polish Wikipedia has it), the examiner draws on it, and the lesson is checked against it every three months.",
+            "Attach a Wikipedia article to a study lesson (new or existing) as its source: the learner can read it in the app (in Polish too, when Polish Wikipedia has it), the examiner draws on it, and the lesson is checked against it every three months.",
             json!({
                 "type": "object",
                 "properties": {
-                    "block_id": { "type": "integer" },
+                    "lesson_id": { "type": "integer" },
                     "title": { "type": "string" },
                     "lang": { "type": "string", "description": "Default \"en\"" }
                 },
-                "required": ["block_id", "title"]
+                "required": ["lesson_id", "title"]
             }),
         ),
         tool(
             "remove_source",
             "Removing the source…",
-            "Take a Wikipedia source off a block (its id is in get_block).",
+            "Take a Wikipedia source off a lesson (its id is in get_lesson).",
             json!({
                 "type": "object",
                 "properties": { "source_id": { "type": "integer" } },
@@ -469,29 +469,29 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
-            "create_study_block",
+            "create_study_lesson",
             "Writing the lesson…",
-            "Write a study block: a short lesson (conjugation, grammar, culture) with objectives. \
+            "Write a study lesson: a short lesson (conjugation, grammar, culture) with objectives. \
              The examiner interviews the learner on the objectives at each check-in.",
             json!({
                 "type": "object",
                 "properties": {
                     "title": { "type": "string", "description": "Short, e.g. \"Iść — to go (on foot)\"" },
-                    "summary": { "type": "string", "description": "One sentence: what the block covers" },
+                    "summary": { "type": "string", "description": "One sentence: what the lesson covers" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "By how hard the subject is: low ≈ 1–2 min, medium ≈ 5–10 min, high ≈ 20+ min" },
-                    "lesson": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
+                    "content": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
                     "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–5 things the learner should be able to do afterwards" },
                     "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
-                    "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Lessons\"" }
+                    "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Grammar & culture\"" }
                 },
-                "required": ["title", "summary", "complexity", "lesson", "objectives"]
+                "required": ["title", "summary", "complexity", "content", "objectives"]
             }),
         ),
         tool(
-            "create_drill_block",
+            "create_drill_lesson",
             "Making the drill…",
-            "Make one drill block in a chosen format over words and/or sentences you give. \
-             The items are added to a course (a new one named after the block if none is given).",
+            "Make one drill lesson in a chosen format over words and/or sentences you give. \
+             The items are added to a course (a new one named after the lesson if none is given).",
             json!({
                 "type": "object",
                 "properties": {
@@ -508,9 +508,9 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
-            "create_listening_block",
-            "Making the listening block…",
-            "Make a listening block for a song: the learner listens, then the examiner asks about what they heard (meaning, missing words, translation, grammar). One per song.",
+            "create_listening_lesson",
+            "Making the listening lesson…",
+            "Make a listening lesson for a song: the learner listens, then the examiner asks about what they heard (meaning, missing words, translation, grammar). One per song.",
             json!({
                 "type": "object",
                 "properties": {
@@ -523,9 +523,9 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
-            "list_blocks",
-            "Looking at your blocks…",
-            "List blocks: those due now, one course's blocks, or every study block.",
+            "list_lessons",
+            "Looking at your lessons…",
+            "List lessons: those due now, one course's lessons, or every study lesson.",
             json!({
                 "type": "object",
                 "properties": {
@@ -536,111 +536,111 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
-            "get_block",
-            "Looking at your blocks…",
-            "One block in full: lesson and objectives or its words and sentences, its schedule, and the last check-in's verdict.",
+            "get_lesson",
+            "Looking at your lessons…",
+            "One lesson in full: lesson and objectives or its words and sentences, its schedule, and the last check-in's verdict.",
             json!({
                 "type": "object",
-                "properties": { "block_id": { "type": "integer" } },
-                "required": ["block_id"]
+                "properties": { "lesson_id": { "type": "integer" } },
+                "required": ["lesson_id"]
             }),
         ),
         tool(
-            "update_block",
-            "Updating the block…",
-            "Change a block: title, summary, complexity, lesson, objectives, check-in period, or \
+            "update_lesson",
+            "Updating the lesson…",
+            "Change a lesson: title, summary, complexity, content, objectives, check-in period, or \
              whether it is a challenge (beyond the course's level: needed to master the course, \
              not to complete it).",
             json!({
                 "type": "object",
                 "properties": {
-                    "block_id": { "type": "integer" },
+                    "lesson_id": { "type": "integer" },
                     "title": { "type": "string" },
                     "summary": { "type": "string" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
-                    "lesson": { "type": "string" },
+                    "content": { "type": "string" },
                     "objectives": { "type": "array", "items": { "type": "string" } },
                     "period_days": { "type": "integer" },
                     "challenge": { "type": "boolean" }
                 },
-                "required": ["block_id"]
+                "required": ["lesson_id"]
             }),
         ),
         tool(
-            "delete_block",
-            "Deleting the block…",
-            "Permanently delete a block and its check-in history. Only after the learner confirmed.",
+            "delete_lesson",
+            "Deleting the lesson…",
+            "Permanently delete a lesson and its check-in history. Only after the learner confirmed.",
             json!({
                 "type": "object",
-                "properties": { "block_id": { "type": "integer" } },
-                "required": ["block_id"]
+                "properties": { "lesson_id": { "type": "integer" } },
+                "required": ["lesson_id"]
             }),
         ),
         tool(
-            "add_block_to_course",
+            "add_lesson_to_course",
             "Rearranging your courses…",
-            "List a block in another course too. It stays one block — one schedule, one history — shown in each course.",
+            "List a lesson in another course too. It stays one lesson — one schedule, one history — shown in each course.",
             json!({
                 "type": "object",
-                "properties": { "block_id": { "type": "integer" }, "course_id": { "type": "integer" } },
-                "required": ["block_id", "course_id"]
+                "properties": { "lesson_id": { "type": "integer" }, "course_id": { "type": "integer" } },
+                "required": ["lesson_id", "course_id"]
             }),
         ),
         tool(
-            "remove_block_from_course",
+            "remove_lesson_from_course",
             "Rearranging your courses…",
-            "Take a block out of a course. If no other course lists it, the block is deleted with its words, sentences and history — only after the learner confirmed that.",
+            "Take a lesson out of a course. If no other course lists it, the lesson is deleted with its words, sentences and history — only after the learner confirmed that.",
             json!({
                 "type": "object",
-                "properties": { "block_id": { "type": "integer" }, "course_id": { "type": "integer" } },
-                "required": ["block_id", "course_id"]
+                "properties": { "lesson_id": { "type": "integer" }, "course_id": { "type": "integer" } },
+                "required": ["lesson_id", "course_id"]
             }),
         ),
         tool(
-            "move_block",
+            "move_lesson",
             "Rearranging your courses…",
-            "Move a block from one course to another; its words and history go with it.",
+            "Move a lesson from one course to another; its words and history go with it.",
             json!({
                 "type": "object",
                 "properties": {
-                    "block_id": { "type": "integer" },
+                    "lesson_id": { "type": "integer" },
                     "from_course_id": { "type": "integer" },
                     "to_course_id": { "type": "integer" }
                 },
-                "required": ["block_id", "from_course_id", "to_course_id"]
+                "required": ["lesson_id", "from_course_id", "to_course_id"]
             }),
         ),
         tool(
-            "order_course_blocks",
+            "order_course_lessons",
             "Rearranging your courses…",
-            "Put a course's blocks in an order (block ids, first to last). Blocks left out keep their order after these.",
+            "Put a course's lessons in an order (lesson ids, first to last). Lessons left out keep their order after these.",
             json!({
                 "type": "object",
                 "properties": {
                     "course_id": { "type": "integer" },
-                    "block_ids": { "type": "array", "items": { "type": "integer" } }
+                    "lesson_ids": { "type": "array", "items": { "type": "integer" } }
                 },
-                "required": ["course_id", "block_ids"]
+                "required": ["course_id", "lesson_ids"]
             }),
         ),
         tool(
-            "schedule_block",
-            "Updating the block…",
-            "Make a block due now, so it shows at the top of the learner's list.",
+            "schedule_lesson",
+            "Updating the lesson…",
+            "Make a lesson due now, so it shows at the top of the learner's list.",
             json!({
                 "type": "object",
-                "properties": { "block_id": { "type": "integer" } },
-                "required": ["block_id"]
+                "properties": { "lesson_id": { "type": "integer" } },
+                "required": ["lesson_id"]
             }),
         ),
         tool(
-            "suggest_block",
-            "Finding the block…",
-            "Show the learner a button that opens a block right now.",
+            "suggest_lesson",
+            "Finding the lesson…",
+            "Show the learner a button that opens a lesson right now.",
             json!({
                 "type": "object",
-                "properties": { "block_id": { "type": "integer" } },
-                "required": ["block_id"]
+                "properties": { "lesson_id": { "type": "integer" } },
+                "required": ["lesson_id"]
             }),
         ),
         tool(
@@ -664,7 +664,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "about": { "type": "string", "description": "What the song is about, in English" },
-                    "course_id": { "type": "integer", "description": "Take vocabulary from this course; the song's listening block is filed there too" },
+                    "course_id": { "type": "integer", "description": "Take vocabulary from this course; the song's listening lesson is filed there too" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
                     "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
                     "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
@@ -673,7 +673,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                         "enum": ["short", "medium", "long"],
                         "description": "short ≈ 2 min, medium ≈ 3 min, long ≈ 4–5 min. Leave out to use the learner's setting."
                     },
-                    "listening_block": { "type": "boolean", "description": "Also make a listening block for the song (default true)" }
+                    "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for the song (default true)" }
                 },
                 "required": ["about"]
             }),
@@ -687,7 +687,7 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "get_song",
             "Reading the lyrics…",
-            "One song in full: its lyrics (Polish with English, by section), the course it was written from, where its listening block is filed, and everything it was made with — style, singer, Suno model, the brief, what was asked for, length, the songwriter model and any revisions. Use it to make a song that matches or varies another.",
+            "One song in full: its lyrics (Polish with English, by section), the course it was written from, where its listening lesson is filed, and everything it was made with — style, singer, Suno model, the brief, what was asked for, length, the songwriter model and any revisions. Use it to make a song that matches or varies another.",
             json!({
                 "type": "object",
                 "properties": { "song_id": { "type": "integer" } },
@@ -783,54 +783,54 @@ impl Outcome {
     fn data(result: Value) -> Self {
         Outcome { result, action: None }
     }
-    fn acted(result: Value, kind: &str, label: String, topic_id: Option<i64>) -> Self {
+    fn acted(result: Value, kind: &str, label: String, course_id: Option<i64>) -> Self {
         Outcome {
             result,
-            action: Some(TutorAction { kind: kind.into(), label, topic_id, song_id: None, block_id: None }),
+            action: Some(TutorAction { kind: kind.into(), label, course_id, song_id: None, lesson_id: None }),
         }
     }
-    fn block(result: Value, kind: &str, label: String, block_id: i64) -> Self {
+    fn lesson(result: Value, kind: &str, label: String, lesson_id: i64) -> Self {
         Outcome {
             result,
             action: Some(TutorAction {
                 kind: kind.into(),
                 label,
-                topic_id: None,
+                course_id: None,
                 song_id: None,
-                block_id: Some(block_id),
+                lesson_id: Some(lesson_id),
             }),
         }
     }
     fn song(result: Value, kind: &str, label: String, song_id: Option<i64>) -> Self {
         Outcome {
             result,
-            action: Some(TutorAction { kind: kind.into(), label, topic_id: None, song_id, block_id: None }),
+            action: Some(TutorAction { kind: kind.into(), label, course_id: None, song_id, lesson_id: None }),
         }
     }
 }
 
 #[derive(Deserialize)]
-struct TopicArg {
+struct CourseArg {
     #[serde(rename = "course_id", alias = "topic_id")]
-    topic_id: i64,
+    course_id: i64,
 }
 
 #[derive(Deserialize)]
 struct CreateArgs {
     #[serde(flatten)]
     course: NewCourse,
-    /// Short lessons on the grammar the course uses.
-    #[serde(default)]
-    lessons: Vec<blocks::NewStudy>,
+    /// Short study lessons on the grammar the course uses.
+    #[serde(default, alias = "lessons")]
+    study_lessons: Vec<lessons::NewStudy>,
     /// The course's situation, written out in Polish at the end.
     #[serde(default)]
-    writing: Option<blocks::NewWriting>,
+    writing: Option<lessons::NewWriting>,
 }
 
 #[derive(Deserialize)]
 struct ExtendArgs {
     #[serde(rename = "course_id", alias = "topic_id")]
-    topic_id: i64,
+    course_id: i64,
     #[serde(default)]
     words: Vec<NewWord>,
     #[serde(default)]
@@ -842,7 +842,7 @@ struct ExtendArgs {
 #[derive(Deserialize)]
 struct EditArgs {
     #[serde(rename = "course_id", alias = "topic_id")]
-    topic_id: i64,
+    course_id: i64,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -862,19 +862,19 @@ struct SettingsArgs {
 }
 
 #[derive(Deserialize)]
-struct BlockArg {
-    block_id: i64,
+struct LessonArg {
+    lesson_id: i64,
 }
 
 #[derive(Deserialize)]
 struct MembershipArgs {
-    block_id: i64,
+    lesson_id: i64,
     course_id: i64,
 }
 
 #[derive(Deserialize)]
 struct MoveArgs {
-    block_id: i64,
+    lesson_id: i64,
     from_course_id: i64,
     to_course_id: i64,
 }
@@ -883,7 +883,7 @@ struct MoveArgs {
 struct OrderArgs {
     course_id: i64,
     #[serde(default)]
-    block_ids: Vec<i64>,
+    lesson_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -902,7 +902,45 @@ struct WikiArgs {
     #[serde(default)]
     section: Option<String>,
     #[serde(default)]
-    block_id: Option<i64>,
+    lesson_id: Option<i64>,
+}
+
+/// A tool call in today's names. Conversations saved before "blocks" became
+/// lessons and "topics" became courses hold calls like `get_block` with a
+/// `block_id`; a model reading them back may call the same way again.
+fn current_call(name: &str, arguments: &str) -> (String, String) {
+    fn upgrade(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                for (old, new) in [
+                    ("block_id", "lesson_id"),
+                    ("block_ids", "lesson_ids"),
+                    ("topic_id", "course_id"),
+                    ("topic_ids", "course_ids"),
+                    ("lesson", "content"),
+                    ("lessons", "study_lessons"),
+                ] {
+                    if !map.contains_key(new) {
+                        if let Some(v) = map.remove(old) {
+                            map.insert(new.to_string(), v);
+                        }
+                    }
+                }
+                map.values_mut().for_each(upgrade);
+            }
+            Value::Array(items) => items.iter_mut().for_each(upgrade),
+            _ => {}
+        }
+    }
+    let name = name.replace("blocks", "lessons").replace("block", "lesson");
+    let arguments = match serde_json::from_str::<Value>(arguments) {
+        Ok(mut value) => {
+            upgrade(&mut value);
+            value.to_string()
+        }
+        Err(_) => arguments.to_string(),
+    };
+    (name, arguments)
 }
 
 /// The Wikipedia tools that need the network, run without holding the lock.
@@ -941,13 +979,13 @@ async fn run_wiki_tool(db: &Db, name: &str, arguments: &str) -> Outcome {
                 })))
             }
             _ => {
-                let block_id = args.block_id.ok_or_else(|| Error::msg("attach_source needs a block_id."))?;
-                let source = crate::wiki::attach(db, block_id, lang, &args.title).await?;
-                Ok(Outcome::block(
+                let lesson_id = args.lesson_id.ok_or_else(|| Error::msg("attach_source needs a lesson_id."))?;
+                let source = crate::wiki::attach(db, lesson_id, lang, &args.title).await?;
+                Ok(Outcome::lesson(
                     json!({ "attached": { "source_id": source.id, "title": source.title, "in_polish_too": source.polish_title.is_some() } }),
                     "sourceAdded",
                     format!("Attached “{}” from Wikipedia", source.title),
-                    block_id,
+                    lesson_id,
                 ))
             }
         }
@@ -974,13 +1012,13 @@ fn section_text(markdown: &str, wanted: &str) -> Option<String> {
 #[derive(Deserialize)]
 struct WritingArgs {
     #[serde(flatten)]
-    writing: blocks::NewWriting,
+    writing: lessons::NewWriting,
 }
 
 #[derive(Deserialize)]
 struct StudyArgs {
     #[serde(flatten)]
-    study: blocks::NewStudy,
+    study: lessons::NewStudy,
 }
 
 #[derive(Deserialize)]
@@ -1001,17 +1039,17 @@ struct DrillArgs {
 }
 
 #[derive(Deserialize)]
-struct ListBlocksArgs {
+struct ListLessonsArgs {
     which: String,
     #[serde(default, rename = "course_id", alias = "topic_id")]
-    topic_id: Option<i64>,
+    course_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
-struct UpdateBlockArgs {
-    block_id: i64,
+struct UpdateLessonArgs {
+    lesson_id: i64,
     #[serde(flatten)]
-    changes: blocks::BlockChanges,
+    changes: lessons::LessonChanges,
 }
 
 fn complexity_label(complexity: &str) -> &'static str {
@@ -1022,25 +1060,25 @@ fn complexity_label(complexity: &str) -> &'static str {
     }
 }
 
-fn block_json(block: &blocks::Block) -> Value {
+fn lesson_json(lesson: &lessons::Lesson) -> Value {
     json!({
-        "block_id": block.id,
-        "kind": block.kind,
-        "format": block.format,
-        "title": block.title,
-        "summary": block.summary,
-        "complexity": block.complexity,
-        "course_ids": block.course_ids,
-        "course": block.topic_title,
-        "items": block.items,
-        "period_days": block.period_days,
-        "times_done": block.reps,
-        "last_result": block.last_result,
-        "due_in_days": block.due_day.map(|due| due - block.last_day.unwrap_or(due)),
-        "made_by": block.origin,
-        "challenge": block.challenge,
-        "passed": block.passed,
-        "writing_support": (block.format == "writing").then(|| ["guided", "supported", "free"][block.support_level.clamp(0, 2) as usize]),
+        "lesson_id": lesson.id,
+        "kind": lesson.kind,
+        "format": lesson.format,
+        "title": lesson.title,
+        "summary": lesson.summary,
+        "complexity": lesson.complexity,
+        "course_ids": lesson.course_ids,
+        "course": lesson.course_title,
+        "items": lesson.items,
+        "period_days": lesson.period_days,
+        "times_done": lesson.reps,
+        "last_result": lesson.last_result,
+        "due_in_days": lesson.due_day.map(|due| due - lesson.last_day.unwrap_or(due)),
+        "made_by": lesson.origin,
+        "challenge": lesson.challenge,
+        "passed": lesson.passed,
+        "writing_support": (lesson.format == "writing").then(|| ["guided", "supported", "free"][lesson.support_level.clamp(0, 2) as usize]),
     })
 }
 
@@ -1049,7 +1087,7 @@ fn block_json(block: &blocks::Block) -> Value {
 struct SongArgs {
     about: String,
     #[serde(default, rename = "course_id", alias = "topic_id")]
-    topic_id: Option<i64>,
+    course_id: Option<i64>,
     #[serde(default)]
     chorus_pl: String,
     #[serde(default)]
@@ -1059,7 +1097,7 @@ struct SongArgs {
     #[serde(default)]
     length: String,
     #[serde(default = "yes")]
-    listening_block: bool,
+    listening_lesson: bool,
 }
 
 fn yes() -> bool {
@@ -1091,21 +1129,21 @@ fn singer(vocal_gender: &str) -> &'static str {
     }
 }
 
-/// Which course a song was written from, and where its listening block is.
+/// Which course a song was written from, and where its listening lesson is.
 fn song_placement(conn: &mut Conn, song_id: i64) -> Result<Value> {
     let course: Option<(i64, String)> = songs_table::table
-        .inner_join(topics::table)
+        .inner_join(courses_table::table)
         .filter(songs_table::id.eq(song_id))
-        .select((topics::id, topics::title_en))
+        .select((courses_table::id, courses_table::title_en))
         .first(conn)
         .optional()?;
-    let block: Option<i64> = blocks_table::table
-        .filter(blocks_table::song_id.eq(song_id))
-        .select(blocks_table::id)
+    let lesson: Option<i64> = lessons_table::table
+        .filter(lessons_table::song_id.eq(song_id))
+        .select(lessons_table::id)
         .first(conn)
         .optional()?;
-    let block_courses: Vec<Value> = match block {
-        Some(id) => blocks::detail(conn, id)?
+    let lesson_courses: Vec<Value> = match lesson {
+        Some(id) => lessons::detail(conn, id)?
             .courses
             .into_iter()
             .map(|(id, title, _)| json!({ "course_id": id, "title": title }))
@@ -1114,8 +1152,8 @@ fn song_placement(conn: &mut Conn, song_id: i64) -> Result<Value> {
     };
     Ok(json!({
         "written_from_course": course.map(|(id, title)| json!({ "course_id": id, "title": title })),
-        "listening_block_id": block,
-        "listening_block_in": block_courses,
+        "listening_lesson_id": lesson,
+        "listening_lesson_in": lesson_courses,
     }))
 }
 
@@ -1176,27 +1214,27 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
         "create_course" => {
             let args: CreateArgs = parse(arguments)?;
             let created = courses::create(conn, args.course, "tutor")?;
-            let topic_id = created.topic_id;
-            // The lessons and the writing block join the course; one that
+            let course_id = created.course_id;
+            // The lessons and the writing lesson join the course; one that
             // cannot be made is reported, not a reason to lose the course.
             let mut problems = Vec::new();
             let mut lessons = 0;
-            for mut lesson in args.lessons {
-                lesson.topic_id = Some(topic_id);
-                match blocks::create_study(conn, lesson, "tutor") {
+            for mut study in args.study_lessons {
+                study.course_id = Some(course_id);
+                match lessons::create_study(conn, study, "tutor") {
                     Ok(_) => lessons += 1,
                     Err(error) => problems.push(format!("lesson: {error}")),
                 }
             }
             let mut writing = false;
-            if let Some(mut block) = args.writing {
-                block.topic_id = Some(topic_id);
-                match blocks::create_writing(conn, block, "tutor") {
+            if let Some(mut lesson) = args.writing {
+                lesson.course_id = Some(course_id);
+                match lessons::create_writing(conn, lesson, "tutor") {
                     Ok(_) => writing = true,
-                    Err(error) => problems.push(format!("writing block: {error}")),
+                    Err(error) => problems.push(format!("writing lesson: {error}")),
                 }
             }
-            courses::arrange_path(conn, topic_id)?;
+            courses::arrange_path(conn, course_id)?;
 
             let mut label = format!(
                 "Created “{}” — {} words, {} sentences",
@@ -1211,21 +1249,21 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 n => label.push_str(&format!(", {n} lessons")),
             }
             if writing {
-                label.push_str(", a writing block");
+                label.push_str(", a writing lesson");
             }
-            let blocks_made = blocks::for_topic(conn, topic_id)?.len();
-            label.push_str(&format!(" · {blocks_made} blocks"));
+            let lessons_made = lessons::for_course(conn, course_id)?.len();
+            label.push_str(&format!(" · {lessons_made} lessons"));
             Ok(Outcome::acted(
-                json!({ "created": created, "blocks": blocks_made, "lessons": lessons, "writing": writing, "problems": problems }),
+                json!({ "created": created, "lessons": lessons_made, "lessons": lessons, "writing": writing, "problems": problems }),
                 "courseCreated",
                 label,
-                Some(created.topic_id),
+                Some(created.course_id),
             ))
         }
         "add_to_course" => {
             let args: ExtendArgs = parse(arguments)?;
             let updated =
-                courses::extend(conn, args.topic_id, &args.words, &args.sentences, &args.dialogue, "tutor")?;
+                courses::extend(conn, args.course_id, &args.words, &args.sentences, &args.dialogue, "tutor")?;
             Ok(Outcome::acted(
                 json!({ "updated": updated }),
                 "courseUpdated",
@@ -1233,30 +1271,30 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                     "Updated “{}” — now {} words, {} sentences",
                     updated.title, updated.words, updated.sentences
                 ),
-                Some(updated.topic_id),
+                Some(updated.course_id),
             ))
         }
         "edit_course" => {
             let args: EditArgs = parse(arguments)?;
             courses::rename(
                 conn,
-                args.topic_id,
+                args.course_id,
                 args.title.as_deref(),
                 args.title_pl.as_deref(),
                 args.summary.as_deref(),
             )?;
             let updated =
-                courses::remove_items(conn, args.topic_id, &args.remove_words, &args.remove_sentences)?;
+                courses::remove_items(conn, args.course_id, &args.remove_words, &args.remove_sentences)?;
             Ok(Outcome::acted(
                 json!({ "updated": updated }),
                 "courseUpdated",
                 format!("Edited “{}”", updated.title),
-                Some(updated.topic_id),
+                Some(updated.course_id),
             ))
         }
         "delete_course" => {
-            let args: TopicArg = parse(arguments)?;
-            let title = courses::delete(conn, args.topic_id)?;
+            let args: CourseArg = parse(arguments)?;
+            let title = courses::delete(conn, args.course_id)?;
             Ok(Outcome::acted(
                 json!({ "deleted": title }),
                 "courseDeleted",
@@ -1264,49 +1302,49 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 None,
             ))
         }
-        "list_courses" => Ok(Outcome::data(list_topics(conn)?)),
+        "list_courses" => Ok(Outcome::data(list_courses(conn)?)),
         "get_course" => {
-            let args: TopicArg = parse(arguments)?;
-            Ok(Outcome::data(topic_detail(conn, args.topic_id)?))
+            let args: CourseArg = parse(arguments)?;
+            Ok(Outcome::data(course_detail(conn, args.course_id)?))
         }
         "search_vocabulary" => {
             let args: SearchArgs = parse(arguments)?;
             Ok(Outcome::data(search(conn, &args.query)?))
         }
         "get_progress" => Ok(Outcome::data(progress(conn)?)),
-        "create_writing_block" => {
+        "create_writing_lesson" => {
             let args: WritingArgs = parse(arguments)?;
-            let block = blocks::create_writing(conn, args.writing, "tutor")?;
-            Ok(Outcome::block(
-                json!({ "created": block_json(&block) }),
-                "blockCreated",
-                format!("Set up “{}” — {} writing block", block.title, complexity_label(&block.complexity)),
-                block.id,
+            let lesson = lessons::create_writing(conn, args.writing, "tutor")?;
+            Ok(Outcome::lesson(
+                json!({ "created": lesson_json(&lesson) }),
+                "lessonCreated",
+                format!("Set up “{}” — {} writing lesson", lesson.title, complexity_label(&lesson.complexity)),
+                lesson.id,
             ))
         }
-        "create_study_block" => {
+        "create_study_lesson" => {
             let args: StudyArgs = parse(arguments)?;
-            let block = blocks::create_study(conn, args.study, "tutor")?;
-            Ok(Outcome::block(
-                json!({ "created": block_json(&block) }),
-                "blockCreated",
-                format!("Wrote “{}” — {} study block", block.title, complexity_label(&block.complexity)),
-                block.id,
+            let lesson = lessons::create_study(conn, args.study, "tutor")?;
+            Ok(Outcome::lesson(
+                json!({ "created": lesson_json(&lesson) }),
+                "lessonCreated",
+                format!("Wrote “{}” — {} study lesson", lesson.title, complexity_label(&lesson.complexity)),
+                lesson.id,
             ))
         }
-        "create_drill_block" => {
+        "create_drill_lesson" => {
             let args: DrillArgs = parse(arguments)?;
             if args.words.is_empty() && args.sentences.is_empty() {
                 return Err(Error::msg("A drill needs words or sentences."));
             }
-            // The block owns its words; it is not cut into the course's own drills.
-            let topic_id = match args.course_id {
+            // The lesson owns its words; it is not cut into the course's own drills.
+            let course_id = match args.course_id {
                 Some(id) => id,
                 None => courses::create_empty(conn, &args.title, &args.summary)?,
             };
-            let (block, skipped) = blocks::create_drill(
+            let (lesson, skipped) = lessons::create_drill(
                 conn,
-                topic_id,
+                course_id,
                 &args.title,
                 &args.summary,
                 &args.format,
@@ -1315,16 +1353,16 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 args.period_days,
                 "tutor",
             )?;
-            Ok(Outcome::block(
-                json!({ "created": block_json(&block), "course_id": topic_id, "skipped_duplicates": skipped }),
-                "blockCreated",
-                format!("Made “{}” — {} drill, {} items", block.title, complexity_label(&block.complexity), block.items),
-                block.id,
+            Ok(Outcome::lesson(
+                json!({ "created": lesson_json(&lesson), "course_id": course_id, "skipped_duplicates": skipped }),
+                "lessonCreated",
+                format!("Made “{}” — {} drill, {} items", lesson.title, complexity_label(&lesson.complexity), lesson.items),
+                lesson.id,
             ))
         }
-        "create_listening_block" => {
+        "create_listening_lesson" => {
             let args: ListeningArgs = parse(arguments)?;
-            let block = blocks::create_listening(
+            let lesson = lessons::create_listening(
                 conn,
                 args.song_id,
                 args.complexity.as_deref(),
@@ -1332,43 +1370,43 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 args.course_id,
                 "tutor",
             )?;
-            Ok(Outcome::block(
-                json!({ "created": block_json(&block) }),
-                "blockCreated",
-                format!("Made “{}” — {} listening block", block.title, complexity_label(&block.complexity)),
-                block.id,
+            Ok(Outcome::lesson(
+                json!({ "created": lesson_json(&lesson) }),
+                "lessonCreated",
+                format!("Made “{}” — {} listening lesson", lesson.title, complexity_label(&lesson.complexity)),
+                lesson.id,
             ))
         }
-        "list_blocks" => {
-            let args: ListBlocksArgs = parse(arguments)?;
+        "list_lessons" => {
+            let args: ListLessonsArgs = parse(arguments)?;
             let list = match args.which.as_str() {
-                "due" => blocks::overview(conn)?.due,
-                "course" | "topic" => blocks::for_topic(
+                "due" => lessons::overview(conn)?.due,
+                "course" | "topic" => lessons::for_course(
                     conn,
-                    args.topic_id.ok_or_else(|| Error::msg("Give a course_id."))?,
+                    args.course_id.ok_or_else(|| Error::msg("Give a course_id."))?,
                 )?,
                 _ => {
-                    let ids: Vec<i64> = blocks_table::table
-                        .filter(blocks_table::kind.eq("study"))
-                        .order((blocks_table::ord, blocks_table::id))
-                        .select(blocks_table::id)
+                    let ids: Vec<i64> = lessons_table::table
+                        .filter(lessons_table::kind.eq("study"))
+                        .order((lessons_table::ord, lessons_table::id))
+                        .select(lessons_table::id)
                         .load(conn)?;
-                    ids.into_iter().map(|id| blocks::load(conn, id)).collect::<Result<_>>()?
+                    ids.into_iter().map(|id| lessons::load(conn, id)).collect::<Result<_>>()?
                 }
             };
-            Ok(Outcome::data(Value::Array(list.iter().map(block_json).collect())))
+            Ok(Outcome::data(Value::Array(list.iter().map(lesson_json).collect())))
         }
-        "get_block" => {
-            let args: BlockArg = parse(arguments)?;
-            let detail = blocks::detail(conn, args.block_id)?;
+        "get_lesson" => {
+            let args: LessonArg = parse(arguments)?;
+            let detail = lessons::detail(conn, args.lesson_id)?;
             Ok(Outcome::data(json!({
-                "block": block_json(&detail.block),
-                "lesson": detail.lesson,
+                "lesson": lesson_json(&detail.lesson),
+                "content": detail.content,
                 "objectives": detail.objectives,
                 "words": detail.words.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
                 "sentences": detail.sentences.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
                 "last_checkin_feedback": detail.last_feedback,
-                "sources": crate::wiki::sources_of(conn, args.block_id)?
+                "sources": crate::wiki::sources_of(conn, args.lesson_id)?
                     .into_iter()
                     .map(|s| json!({ "source_id": s.id, "title": s.title, "lang": s.lang, "url": s.url, "in_polish_too": s.polish_title.is_some() }))
                     .collect::<Vec<_>>(),
@@ -1379,41 +1417,41 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             crate::wiki::remove(conn, args.source_id)?;
             Ok(Outcome::data(json!({ "removed": args.source_id })))
         }
-        "update_block" => {
-            let args: UpdateBlockArgs = parse(arguments)?;
-            let block = blocks::update(conn, args.block_id, args.changes)?;
-            Ok(Outcome::block(
-                json!({ "updated": block_json(&block) }),
-                "blockUpdated",
-                format!("Updated “{}”", block.title),
-                block.id,
+        "update_lesson" => {
+            let args: UpdateLessonArgs = parse(arguments)?;
+            let lesson = lessons::update(conn, args.lesson_id, args.changes)?;
+            Ok(Outcome::lesson(
+                json!({ "updated": lesson_json(&lesson) }),
+                "lessonUpdated",
+                format!("Updated “{}”", lesson.title),
+                lesson.id,
             ))
         }
-        "delete_block" => {
-            let args: BlockArg = parse(arguments)?;
-            let title = blocks::delete(conn, args.block_id)?;
-            Ok(Outcome::acted(json!({ "deleted": title }), "blockDeleted", format!("Deleted “{title}”"), None))
+        "delete_lesson" => {
+            let args: LessonArg = parse(arguments)?;
+            let title = lessons::delete(conn, args.lesson_id)?;
+            Ok(Outcome::acted(json!({ "deleted": title }), "lessonDeleted", format!("Deleted “{title}”"), None))
         }
-        "add_block_to_course" => {
+        "add_lesson_to_course" => {
             let args: MembershipArgs = parse(arguments)?;
-            courses::add_block(conn, args.course_id, args.block_id)?;
-            let block = blocks::load(conn, args.block_id)?;
+            courses::add_lesson(conn, args.course_id, args.lesson_id)?;
+            let lesson = lessons::load(conn, args.lesson_id)?;
             let course = courses::require_course(conn, args.course_id)?;
             Ok(Outcome::acted(
-                json!({ "block": block_json(&block) }),
+                json!({ "lesson": lesson_json(&lesson) }),
                 "courseUpdated",
-                format!("“{}” is now also in “{course}”", block.title),
+                format!("“{}” is now also in “{course}”", lesson.title),
                 Some(args.course_id),
             ))
         }
-        "remove_block_from_course" => {
+        "remove_lesson_from_course" => {
             let args: MembershipArgs = parse(arguments)?;
-            let title = blocks::load(conn, args.block_id)?.title;
+            let title = lessons::load(conn, args.lesson_id)?.title;
             let course = courses::require_course(conn, args.course_id)?;
-            let deleted = courses::remove_block(conn, args.course_id, args.block_id)?;
+            let deleted = courses::remove_lesson(conn, args.course_id, args.lesson_id)?;
             Ok(Outcome::acted(
-                json!({ "removed": title, "block_deleted": deleted }),
-                if deleted { "blockDeleted" } else { "courseUpdated" },
+                json!({ "removed": title, "lesson_deleted": deleted }),
+                if deleted { "lessonDeleted" } else { "courseUpdated" },
                 if deleted {
                     format!("Deleted “{title}” (it was only in “{course}”)")
                 } else {
@@ -1422,47 +1460,47 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 if deleted { None } else { Some(args.course_id) },
             ))
         }
-        "move_block" => {
+        "move_lesson" => {
             let args: MoveArgs = parse(arguments)?;
-            courses::move_block(conn, args.block_id, args.from_course_id, args.to_course_id)?;
-            let block = blocks::load(conn, args.block_id)?;
+            courses::move_lesson(conn, args.lesson_id, args.from_course_id, args.to_course_id)?;
+            let lesson = lessons::load(conn, args.lesson_id)?;
             let course = courses::require_course(conn, args.to_course_id)?;
             Ok(Outcome::acted(
-                json!({ "block": block_json(&block) }),
+                json!({ "lesson": lesson_json(&lesson) }),
                 "courseUpdated",
-                format!("Moved “{}” to “{course}”", block.title),
+                format!("Moved “{}” to “{course}”", lesson.title),
                 Some(args.to_course_id),
             ))
         }
-        "order_course_blocks" => {
+        "order_course_lessons" => {
             let args: OrderArgs = parse(arguments)?;
-            courses::order_blocks(conn, args.course_id, &args.block_ids)?;
+            courses::order_lessons(conn, args.course_id, &args.lesson_ids)?;
             let course = courses::require_course(conn, args.course_id)?;
             Ok(Outcome::acted(
-                json!({ "order": blocks::for_topic(conn, args.course_id)?.iter().map(|b| b.id).collect::<Vec<_>>() }),
+                json!({ "order": lessons::for_course(conn, args.course_id)?.iter().map(|b| b.id).collect::<Vec<_>>() }),
                 "courseUpdated",
                 format!("Reordered “{course}”"),
                 Some(args.course_id),
             ))
         }
-        "schedule_block" => {
-            let args: BlockArg = parse(arguments)?;
-            let block = blocks::due_now(conn, args.block_id)?;
-            Ok(Outcome::block(
-                json!({ "due_now": block.title }),
-                "blockScheduled",
-                format!("“{}” is due now", block.title),
-                block.id,
+        "schedule_lesson" => {
+            let args: LessonArg = parse(arguments)?;
+            let lesson = lessons::due_now(conn, args.lesson_id)?;
+            Ok(Outcome::lesson(
+                json!({ "due_now": lesson.title }),
+                "lessonScheduled",
+                format!("“{}” is due now", lesson.title),
+                lesson.id,
             ))
         }
-        "suggest_block" => {
-            let args: BlockArg = parse(arguments)?;
-            let block = blocks::load(conn, args.block_id)?;
-            Ok(Outcome::block(
-                json!({ "shown_button_for": block.title }),
-                "blockSuggested",
-                format!("{} · {}", block.title, complexity_label(&block.complexity)),
-                block.id,
+        "suggest_lesson" => {
+            let args: LessonArg = parse(arguments)?;
+            let lesson = lessons::load(conn, args.lesson_id)?;
+            Ok(Outcome::lesson(
+                json!({ "shown_button_for": lesson.title }),
+                "lessonSuggested",
+                format!("{} · {}", lesson.title, complexity_label(&lesson.complexity)),
+                lesson.id,
             ))
         }
         "update_practice_settings" => {
@@ -1649,31 +1687,31 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
     }
 }
 
-fn list_topics(conn: &mut Conn) -> Result<Value> {
-    let topics = stats::topic_progress(conn)?
+fn list_courses(conn: &mut Conn) -> Result<Value> {
+    let courses = stats::course_progress(conn)?
         .into_iter()
         .map(|p| {
             json!({
-                "course_id": p.topic.id,
-                "title": p.topic.title,
-                "title_pl": p.topic.title_pl,
+                "course_id": p.course.id,
+                "title": p.course.title,
+                "title_pl": p.course.title_pl,
                 "words": p.total_words,
                 "words_met": p.seen_words,
                 "words_mastered": p.mastered_words,
                 "sentences": p.total_sentences,
-                "blocks": blocks::for_topic(conn, p.topic.id).map(|b| b.len()).unwrap_or(0),
+                "lessons": lessons::for_course(conn, p.course.id).map(|b| b.len()).unwrap_or(0),
             })
         })
         .collect();
-    Ok(Value::Array(topics))
+    Ok(Value::Array(courses))
 }
 
-fn topic_detail(conn: &mut Conn, topic_id: i64) -> Result<Value> {
-    let topic = session::load_topic(conn, topic_id)?;
+fn course_detail(conn: &mut Conn, course_id: i64) -> Result<Value> {
+    let course = session::load_course(conn, course_id)?;
     let rows: Vec<(i64, String, String, String, i64)> = course_words::table
-        .filter(course_words::topic_id.eq(topic_id))
+        .filter(course_words::course_id.eq(course_id))
         .order(course_words::ord)
-        .select((course_words::id, course_words::pl, course_words::en, course_words::pos, course_words::block_id))
+        .select((course_words::id, course_words::pl, course_words::en, course_words::pos, course_words::lesson_id))
         .load(conn)?;
     let history: std::collections::HashMap<i64, (i64, i64)> = reviews::table
         .filter(reviews::kind.eq("word"))
@@ -1685,7 +1723,7 @@ fn topic_detail(conn: &mut Conn, topic_id: i64) -> Result<Value> {
         .collect();
     let words: Vec<Value> = rows
         .into_iter()
-        .map(|(id, pl, en, pos, block_id)| {
+        .map(|(id, pl, en, pos, lesson_id)| {
             let seen = history.get(&id);
             json!({
                 "pl": pl,
@@ -1694,32 +1732,32 @@ fn topic_detail(conn: &mut Conn, topic_id: i64) -> Result<Value> {
                 "met": seen.is_some(),
                 "correct_reps": seen.map_or(0, |s| s.0),
                 "lapses": seen.map_or(0, |s| s.1),
-                "block_id": block_id,
+                "lesson_id": lesson_id,
             })
         })
         .collect();
     let sentences: Vec<Value> = course_sentences::table
-        .filter(course_sentences::topic_id.eq(topic_id))
+        .filter(course_sentences::course_id.eq(course_id))
         .order(course_sentences::ord)
-        .select((course_sentences::pl, course_sentences::en, course_sentences::block_id))
+        .select((course_sentences::pl, course_sentences::en, course_sentences::lesson_id))
         .load::<(String, String, i64)>(conn)?
         .into_iter()
-        .map(|(pl, en, block_id)| json!({ "pl": pl, "en": en, "block_id": block_id }))
+        .map(|(pl, en, lesson_id)| json!({ "pl": pl, "en": en, "lesson_id": lesson_id }))
         .collect();
-    let dialogue: Vec<Value> = session::dialogue_lines(conn, topic_id)?
+    let dialogue: Vec<Value> = session::dialogue_lines(conn, course_id)?
         .into_iter()
         .map(|l| json!({ "speaker": l.speaker, "pl": l.pl, "en": l.meaning }))
         .collect();
-    let blocks: Vec<Value> = blocks::for_topic(conn, topic_id)?.iter().map(block_json).collect();
+    let lessons: Vec<Value> = lessons::for_course(conn, course_id)?.iter().map(lesson_json).collect();
     Ok(json!({
-        "course_id": topic.id,
-        "title": topic.title,
-        "title_pl": topic.title_pl,
-        "summary": topic.summary,
+        "course_id": course.id,
+        "title": course.title,
+        "title_pl": course.title_pl,
+        "summary": course.summary,
         "words": words,
         "sentences": sentences,
         "dialogue": dialogue,
-        "blocks": blocks,
+        "lessons": lessons,
     }))
 }
 
@@ -1733,40 +1771,40 @@ fn search(conn: &mut Conn, query: &str) -> Result<Value> {
         .collect();
     let mut seen = HashSet::new();
     let words: Vec<Value> = course_words::table
-        .inner_join(topics::table)
+        .inner_join(courses_table::table)
         .filter(course_words::pl.like(&pattern).or(course_words::en.like(&pattern)))
-        .order((topics::ord, course_words::ord))
+        .order((courses_table::ord, course_words::ord))
         .select((
             course_words::id,
             course_words::pl,
             course_words::en,
             course_words::pos,
-            topics::title_en,
-            topics::id,
-            course_words::block_id,
+            courses_table::title_en,
+            courses_table::id,
+            course_words::lesson_id,
         ))
         .load::<(i64, String, String, String, String, i64, i64)>(conn)?
         .into_iter()
-        // A word in a block two courses list is one word.
+        // A word in a lesson two courses list is one word.
         .filter(|row| seen.insert(row.0))
         .take(40)
-        .map(|(id, pl, en, pos, topic, course_id, block_id)| {
+        .map(|(id, pl, en, pos, course, course_id, lesson_id)| {
             json!({
-                "pl": pl, "en": en, "pos": pos, "topic": topic, "course_id": course_id,
-                "met": met.contains(&id), "block_id": block_id,
+                "pl": pl, "en": en, "pos": pos, "course": course, "course_id": course_id,
+                "met": met.contains(&id), "lesson_id": lesson_id,
             })
         })
         .collect();
     let mut seen = HashSet::new();
     let sentences: Vec<Value> = course_sentences::table
-        .inner_join(topics::table)
+        .inner_join(courses_table::table)
         .filter(course_sentences::pl.like(&pattern).or(course_sentences::en.like(&pattern)))
-        .select((course_sentences::id, course_sentences::pl, course_sentences::en, topics::title_en))
+        .select((course_sentences::id, course_sentences::pl, course_sentences::en, courses_table::title_en))
         .load::<(i64, String, String, String)>(conn)?
         .into_iter()
         .filter(|row| seen.insert(row.0))
         .take(15)
-        .map(|(_, pl, en, topic)| json!({ "pl": pl, "en": en, "topic": topic }))
+        .map(|(_, pl, en, course)| json!({ "pl": pl, "en": en, "course": course }))
         .collect();
     Ok(json!({ "words": words, "sentences": sentences }))
 }
@@ -1810,7 +1848,7 @@ fn progress(conn: &mut Conn) -> Result<Value> {
         "new_words_per_session": db::get_setting_i64(conn, "new_words_per_day", 12),
         "recent_days": recent,
         "hardest_words": hardest,
-        "blocks_due_now": s.due_today,
+        "lessons_due_now": s.due_today,
         "recent_checkins": recent_checkins(conn)?,
         "achievements_unlocked": s.achievements.iter().filter(|a| a.unlocked).map(|a| a.title.clone()).collect::<Vec<_>>(),
     }))
@@ -1827,7 +1865,7 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
             db,
             songs::DraftRequest {
                 brief: args.about,
-                topic_id: args.topic_id,
+                course_id: args.course_id,
                 chorus_pl: args.chorus_pl,
                 style: args.style,
                 vocal_gender: args.vocal_gender,
@@ -1838,10 +1876,10 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
         .await?;
         let title = draft.title.clone();
         let chorus = format!("{} — {}", draft.chorus_pl, draft.chorus_en);
-        let listen = args.listening_block;
+        let listen = args.listening_lesson;
         let song_id = songs::start_song(app, db, draft)?;
-        let block = if listen {
-            Some(blocks::create_listening(&mut db.lock(), song_id, None, None, args.topic_id, "tutor")?)
+        let lesson = if listen {
+            Some(lessons::create_listening(&mut db.lock(), song_id, None, None, args.course_id, "tutor")?)
         } else {
             None
         };
@@ -1851,12 +1889,12 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
                 "title": title,
                 "chorus": chorus,
                 "status": "Suno is singing it now; ready in 2–4 minutes",
-                "listening_block_id": block.as_ref().map(|b| b.id),
+                "listening_lesson_id": lesson.as_ref().map(|b| b.id),
             }),
             "songStarted",
             format!(
                 "Writing “{title}” — Suno is singing it now{}",
-                if block.is_some() { ", with a listening block" } else { "" }
+                if lesson.is_some() { ", with a listening lesson" } else { "" }
             ),
             Some(song_id),
         ))
@@ -1869,15 +1907,15 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
 /// follow up on what the learner found hard.
 fn recent_checkins(conn: &mut Conn) -> Result<Value> {
     let rows: Vec<Value> = checkins::table
-        .inner_join(blocks_table::table)
+        .inner_join(lessons_table::table)
         .filter(checkins::finished_at.is_not_null())
         .order(checkins::finished_at.desc())
         .limit(8)
-        .select((blocks_table::id, blocks_table::title, checkins::result, checkins::feedback))
+        .select((lessons_table::id, lessons_table::title, checkins::result, checkins::feedback))
         .load::<(i64, String, Option<String>, Option<String>)>(conn)?
         .into_iter()
         .map(|(id, title, result, feedback)| {
-            json!({ "block_id": id, "block": title, "result": result, "examiner_said": feedback })
+            json!({ "lesson_id": id, "lesson": title, "result": result, "examiner_said": feedback })
         })
         .collect();
     Ok(Value::Array(rows))
@@ -1925,8 +1963,8 @@ fn recent_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<Wire>> {
             if !actions.is_empty() {
                 let notes: Vec<String> = actions
                     .iter()
-                    .map(|a| match (a.topic_id, a.song_id) {
-                        (Some(id), _) => format!("{} (topic id {id})", a.label),
+                    .map(|a| match (a.course_id, a.song_id) {
+                        (Some(id), _) => format!("{} (course id {id})", a.label),
                         (_, Some(id)) => format!("{} (song id {id})", a.label),
                         _ => a.label.clone(),
                     })
@@ -2054,7 +2092,7 @@ pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String
 }
 
 /// Deletes one conversation and its messages. What the tutor made in the app
-/// (courses, blocks, songs) stays.
+/// (courses, lessons, songs) stays.
 #[tauri::command]
 pub async fn tutor_delete(db: State<'_, Db>, conversation_id: i64) -> Result<()> {
     let mut guard = db.lock();
@@ -2263,19 +2301,20 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     let outcome = agent
         .run(wire, |call| {
             Box::pin(async move {
-                let done = if call.function.name == "make_song" {
+                let (name, arguments) = current_call(&call.function.name, &call.function.arguments);
+                let done = if name == "make_song" {
                     // The network twice (songwriter, then Suno): not under the lock.
-                    make_song(app, db, &call.function.arguments).await
-                } else if is_wiki_tool(&call.function.name) {
-                    run_wiki_tool(db, &call.function.name, &call.function.arguments).await
+                    make_song(app, db, &arguments).await
+                } else if is_wiki_tool(&name) {
+                    run_wiki_tool(db, &name, &arguments).await
                 } else {
                     let mut guard = db.lock();
                     let conn = &mut *guard;
                     // Every new course gets a picture, whichever tool made it.
                     let before = course_ids(conn);
-                    let done = execute(conn, &call.function.name, &call.function.arguments);
-                    for topic_id in course_ids(conn).difference(&before) {
-                        crate::pictures::draw_in_background(app, *topic_id);
+                    let done = execute(conn, &name, &arguments);
+                    for course_id in course_ids(conn).difference(&before) {
+                        crate::pictures::draw_in_background(app, *course_id);
                     }
                     done
                 };
@@ -2288,9 +2327,9 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     actions.extend(outcome.remembered.into_iter().map(|label| TutorAction {
         kind: "memory".into(),
         label,
-        topic_id: None,
+        course_id: None,
         song_id: None,
-        block_id: None,
+        lesson_id: None,
     }));
     let mut reply = outcome.text;
     // Even when the conversation fails half-way, whatever the tools already
@@ -2311,7 +2350,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
 }
 
 fn course_ids(conn: &mut Conn) -> HashSet<i64> {
-    topics::table.select(topics::id).load::<i64>(conn).map(|ids| ids.into_iter().collect()).unwrap_or_default()
+    courses_table::table.select(courses_table::id).load::<i64>(conn).map(|ids| ids.into_iter().collect()).unwrap_or_default()
 }
 
 /// How a conversation about one word or sentence goes (\"Talk about it\"):
@@ -2327,7 +2366,7 @@ pub(crate) fn word_chat_rules(about: &str) -> String {
   passing and why, briefly. Then take it one step further: a related phrase, another form, or a \
   new little situation to try.
 - Grammar only when it helps them say the next thing. If they want practice on it, you can make \
-  a block — when they ask."
+  a lesson — when they ask."
     )
 }
 
@@ -2413,6 +2452,20 @@ pub fn recover_interrupted(conn: &mut Conn) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn calls_in_the_old_names_still_work() {
+        let (name, args) = current_call("add_block_to_course", r#"{"block_id": 4, "course_id": 2}"#);
+        assert_eq!(name, "add_lesson_to_course");
+        assert_eq!(serde_json::from_str::<Value>(&args).unwrap(), json!({"lesson_id": 4, "course_id": 2}));
+        let (name, args) = current_call(
+            "create_course",
+            r#"{"title": "x", "lessons": [{"title": "y", "lesson": "**Mam**"}]}"#,
+        );
+        assert_eq!(name, "create_course");
+        assert_eq!(serde_json::from_str::<Value>(&args).unwrap()["study_lessons"][0]["content"], "**Mam**");
+        assert_eq!(current_call("order_course_blocks", "{}").0, "order_course_lessons");
+    }
+
     use super::*;
 
     #[test]

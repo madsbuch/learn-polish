@@ -7,7 +7,7 @@
 //! them.
 
 diesel::table! {
-    topics (id) {
+    courses (id) {
         id -> BigInt,
         slug -> Text,
         ord -> BigInt,
@@ -25,7 +25,7 @@ diesel::table! {
 diesel::table! {
     words (id) {
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -36,7 +36,7 @@ diesel::table! {
 diesel::table! {
     sentences (id) {
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -46,7 +46,7 @@ diesel::table! {
 diesel::table! {
     conversation_lines (id) {
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         speaker -> Text,
         gender -> Text,
@@ -74,7 +74,7 @@ diesel::table! {
         xp -> BigInt,
         answered -> BigInt,
         correct -> BigInt,
-        topic_id -> Nullable<BigInt>,
+        course_id -> Nullable<BigInt>,
         completed -> BigInt,
         frozen -> BigInt,
         minutes -> BigInt,
@@ -113,10 +113,10 @@ diesel::table! {
 }
 
 diesel::table! {
-    /// Wikipedia articles a study block is built on (wiki.rs).
+    /// Wikipedia articles a study lesson is built on (wiki.rs).
     wiki_sources (id) {
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         lang -> Text,
         title -> Text,
@@ -146,7 +146,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    blocks (id) {
+    lessons (id) {
         id -> BigInt,
         slug -> Nullable<Text>,
         kind -> Text,
@@ -155,7 +155,7 @@ diesel::table! {
         title -> Text,
         summary -> Text,
         complexity -> Text,
-        lesson -> Text,
+        content -> Text,
         objectives -> Text,
         period_days -> BigInt,
         interval_days -> BigInt,
@@ -177,22 +177,22 @@ diesel::table! {
 }
 
 diesel::table! {
-    course_blocks (topic_id, block_id) {
-        /// SQLite's implicit row id: the order a block was listed in its
+    course_lessons (course_id, lesson_id) {
+        /// SQLite's implicit row id: the order a lesson was listed in its
         /// courses, so its first course is the one it was made in.
         rowid -> BigInt,
-        topic_id -> BigInt,
-        block_id -> BigInt,
+        course_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
     }
 }
 
 diesel::table! {
-    /// A course's words: whatever its blocks own (a view).
-    course_words (topic_id, id) {
-        topic_id -> BigInt,
+    /// A course's words: whatever its lessons own (a view).
+    course_words (course_id, id) {
+        course_id -> BigInt,
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -202,10 +202,10 @@ diesel::table! {
 
 diesel::table! {
     /// A course's sentences (a view).
-    course_sentences (topic_id, id) {
-        topic_id -> BigInt,
+    course_sentences (course_id, id) {
+        course_id -> BigInt,
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -214,10 +214,10 @@ diesel::table! {
 
 diesel::table! {
     /// A course's dialogue lines (a view).
-    course_lines (topic_id, id) {
-        topic_id -> BigInt,
+    course_lines (course_id, id) {
+        course_id -> BigInt,
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         ord -> BigInt,
         speaker -> Text,
         gender -> Text,
@@ -229,7 +229,7 @@ diesel::table! {
 diesel::table! {
     checkins (id) {
         id -> BigInt,
-        block_id -> BigInt,
+        lesson_id -> BigInt,
         started_at -> BigInt,
         finished_at -> Nullable<BigInt>,
         result -> Nullable<Text>,
@@ -286,7 +286,7 @@ diesel::table! {
         status -> Text,
         error -> Nullable<Text>,
         created_at -> BigInt,
-        topic_id -> Nullable<BigInt>,
+        course_id -> Nullable<BigInt>,
         /// JSON: how the song came about (songs::SongOrigin).
         origin -> Text,
     }
@@ -362,10 +362,10 @@ diesel::table! {
 }
 
 diesel::joinable!(word_examples -> words (word_id));
-diesel::joinable!(words -> blocks (block_id));
-diesel::joinable!(sentences -> blocks (block_id));
-diesel::joinable!(conversation_lines -> blocks (block_id));
-diesel::joinable!(course_blocks -> blocks (block_id));
+diesel::joinable!(words -> lessons (lesson_id));
+diesel::joinable!(sentences -> lessons (lesson_id));
+diesel::joinable!(conversation_lines -> lessons (lesson_id));
+diesel::joinable!(course_lessons -> lessons (lesson_id));
 diesel::table! {
     bench_runs (id) {
         id -> BigInt,
@@ -381,26 +381,26 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(course_blocks -> topics (topic_id));
-diesel::joinable!(course_words -> topics (topic_id));
-diesel::joinable!(course_words -> blocks (block_id));
-diesel::joinable!(course_sentences -> blocks (block_id));
-diesel::joinable!(course_sentences -> topics (topic_id));
-diesel::joinable!(course_lines -> topics (topic_id));
-diesel::joinable!(checkins -> blocks (block_id));
+diesel::joinable!(course_lessons -> courses (course_id));
+diesel::joinable!(course_words -> courses (course_id));
+diesel::joinable!(course_words -> lessons (lesson_id));
+diesel::joinable!(course_sentences -> lessons (lesson_id));
+diesel::joinable!(course_sentences -> courses (course_id));
+diesel::joinable!(course_lines -> courses (course_id));
+diesel::joinable!(checkins -> lessons (lesson_id));
 diesel::joinable!(checkin_messages -> checkins (checkin_id));
 diesel::joinable!(tutor_messages -> tutor_conversations (conversation_id));
 diesel::joinable!(song_tracks -> songs (song_id));
 diesel::joinable!(speech_clips -> files (file_id));
-diesel::joinable!(wiki_sources -> blocks (block_id));
-diesel::joinable!(blocks -> songs (song_id));
-diesel::joinable!(songs -> topics (topic_id));
+diesel::joinable!(wiki_sources -> lessons (lesson_id));
+diesel::joinable!(lessons -> songs (song_id));
+diesel::joinable!(songs -> courses (course_id));
 diesel::joinable!(playlist_tracks -> playlists (playlist_id));
 diesel::joinable!(playlist_tracks -> song_tracks (track_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     bench_runs,
-    topics,
+    courses,
     words,
     sentences,
     conversation_lines,
@@ -411,8 +411,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     files,
     speech_clips,
     wiki_sources,
-    blocks,
-    course_blocks,
+    lessons,
+    course_lessons,
     course_words,
     course_sentences,
     course_lines,

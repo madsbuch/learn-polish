@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::ai;
 use crate::files;
 use crate::db::{self, Conn, Db};
-use crate::schema::{course_sentences, course_words, reviews, sentences, song_tracks, songs, topics, words};
+use crate::schema::{course_sentences, course_words, reviews, sentences, song_tracks, songs, courses, words};
 use crate::error::{Error, Result};
 
 const KIE_BASE_URL: &str = "https://api.kie.ai/api/v1";
@@ -75,8 +75,8 @@ pub struct SongDraft {
     /// "f", "m" or "" for no preference.
     pub vocal_gender: String,
     pub sections: Vec<SongSection>,
-    /// The course whose words it uses: its listening block is filed there.
-    pub topic_id: Option<i64>,
+    /// The course whose words it uses: its listening lesson is filed there.
+    pub course_id: Option<i64>,
     /// How the song came about: what was asked and with what. Saved with the
     /// song, so it can be made again or varied later.
     pub origin: SongOrigin,
@@ -162,7 +162,7 @@ pub struct Song {
     pub created_at: i64,
     pub tracks: Vec<SongTrack>,
     /// The course it was written from.
-    pub topic_id: Option<i64>,
+    pub course_id: Option<i64>,
     /// The Suno model that sang it.
     pub suno_model: String,
     pub origin: SongOrigin,
@@ -174,8 +174,8 @@ pub struct Song {
 pub struct DraftRequest {
     /// Free text: what the song should be about.
     pub brief: String,
-    /// Draw vocabulary from this conversation topic.
-    pub topic_id: Option<i64>,
+    /// Draw vocabulary from this conversation course.
+    pub course_id: Option<i64>,
     /// A fixed chorus sentence; empty lets the songwriter choose.
     pub chorus_pl: String,
     pub style: String,
@@ -363,36 +363,36 @@ Reply with ONLY a JSON object, no prose, in exactly this shape:
 }"#;
 
 pub(crate) struct SongContext {
-    topic: Option<String>,
+    course: Option<String>,
     words: Vec<String>,
     sentences: Vec<String>,
     weak_words: Vec<String>,
     existing_choruses: Vec<String>,
 }
 
-pub(crate) fn gather_context(conn: &mut Conn, topic_id: Option<i64>) -> Result<SongContext> {
+pub(crate) fn gather_context(conn: &mut Conn, course_id: Option<i64>) -> Result<SongContext> {
     let pair = |(pl, en): (String, String)| format!("{pl} = {en}");
-    let topic = match topic_id {
-        Some(id) => topics::table.find(id).select(topics::title_en).first(conn).optional()?,
+    let course = match course_id {
+        Some(id) => courses::table.find(id).select(courses::title_en).first(conn).optional()?,
         None => None,
     };
     let met = |kind: &'static str| reviews::kind.eq(kind);
-    let (words, sentences) = match topic_id {
+    let (words, sentences) = match course_id {
         Some(id) => (
             course_words::table
-                .filter(course_words::topic_id.eq(id))
+                .filter(course_words::course_id.eq(id))
                 .order(course_words::ord)
                 .limit(40)
                 .select((course_words::pl, course_words::en))
                 .load(conn)?,
             course_sentences::table
-                .filter(course_sentences::topic_id.eq(id))
+                .filter(course_sentences::course_id.eq(id))
                 .order(course_sentences::ord)
                 .limit(20)
                 .select((course_sentences::pl, course_sentences::en))
                 .load(conn)?,
         ),
-        // Without a topic, sing what the learner has actually met.
+        // Without a course, sing what the learner has actually met.
         None => (
             words::table
                 .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
@@ -409,7 +409,7 @@ pub(crate) fn gather_context(conn: &mut Conn, topic_id: Option<i64>) -> Result<S
         ),
     };
     Ok(SongContext {
-        topic,
+        course,
         words: words.into_iter().map(pair).collect(),
         sentences: sentences.into_iter().map(pair).collect(),
         weak_words: words::table
@@ -442,8 +442,8 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
     if !request.brief.trim().is_empty() {
         brief.push_str(&format!("The song is about: {}\n", request.brief.trim()));
     }
-    if let Some(topic) = &context.topic {
-        brief.push_str(&format!("Theme: {topic}\n"));
+    if let Some(course) = &context.course {
+        brief.push_str(&format!("Theme: {course}\n"));
     }
     brief.push_str(structure_for(length));
     brief.push('\n');
@@ -1000,7 +1000,7 @@ struct SongRow {
     status: String,
     error: Option<String>,
     created_at: i64,
-    topic_id: Option<i64>,
+    course_id: Option<i64>,
     suno_model: String,
     origin: String,
 }
@@ -1019,7 +1019,7 @@ fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
         status: row.status,
         error: row.error,
         created_at: row.created_at,
-        topic_id: row.topic_id,
+        course_id: row.course_id,
         suno_model: row.suno_model,
         origin: serde_json::from_str(&row.origin).unwrap_or_default(),
     })
@@ -1042,8 +1042,8 @@ pub fn list_songs(conn: &mut Conn) -> Result<Vec<Song>> {
 
 pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Result<i64> {
     // A course that no longer exists is simply not remembered.
-    let topic_id: Option<i64> = match draft.topic_id {
-        Some(id) => topics::table.find(id).select(topics::id).first(conn).optional()?,
+    let course_id: Option<i64> = match draft.course_id {
+        Some(id) => courses::table.find(id).select(courses::id).first(conn).optional()?,
         None => None,
     };
     Ok(diesel::insert_into(songs::table)
@@ -1058,7 +1058,7 @@ pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Resu
             songs::suno_model.eq(suno_model),
             songs::status.eq("generating"),
             songs::created_at.eq(db::now_secs()),
-            songs::topic_id.eq(topic_id),
+            songs::course_id.eq(course_id),
             songs::origin.eq(serde_json::to_string(&draft.origin)?),
         ))
         .returning(songs::id)
@@ -1079,7 +1079,7 @@ fn draft_of(song: &Song) -> SongDraft {
         vocal_gender: song.vocal_gender.clone(),
         sections: song.sections.clone(),
         // Only for generation, which does not file anything.
-        topic_id: None,
+        course_id: None,
         origin: song.origin.clone(),
     }
 }
@@ -1279,7 +1279,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (key, model, messages) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let context = gather_context(conn, request.topic_id)?;
+        let context = gather_context(conn, request.course_id)?;
         let length = if SONG_LENGTHS.contains(&request.length.as_str()) {
             request.length.clone()
         } else {
@@ -1299,7 +1299,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
     }
-    draft.topic_id = request.topic_id.or(request.previous.as_ref().and_then(|p| p.topic_id));
+    draft.course_id = request.course_id.or(request.previous.as_ref().and_then(|p| p.course_id));
     draft.origin = match &request.previous {
         // A revision keeps how the song began and adds what was changed.
         Some(previous) => {
@@ -1450,7 +1450,7 @@ mod tests {
             chorus_en: "A coffee with milk, please".into(),
             style: "acoustic pop".into(),
             vocal_gender: "".into(),
-            topic_id: None,
+            course_id: None,
             origin: SongOrigin::default(),
             sections: vec![
                 SongSection {

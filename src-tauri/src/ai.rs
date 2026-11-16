@@ -989,8 +989,8 @@ fn content_type_param(content_type: &str, name: &str) -> Option<u32> {
 /// Wraps signed 16-bit little-endian PCM in a minimal WAV container.
 fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
     const BITS: u16 = 16;
-    let block_align = channels * BITS / 8;
-    let byte_rate = sample_rate * u32::from(block_align);
+    let lesson_align = channels * BITS / 8;
+    let byte_rate = sample_rate * u32::from(lesson_align);
 
     let mut out = Vec::with_capacity(44 + pcm.len());
     out.extend_from_slice(b"RIFF");
@@ -1001,7 +1001,7 @@ fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
     out.extend_from_slice(&channels.to_le_bytes());
     out.extend_from_slice(&sample_rate.to_le_bytes());
     out.extend_from_slice(&byte_rate.to_le_bytes());
-    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&lesson_align.to_le_bytes());
     out.extend_from_slice(&BITS.to_le_bytes());
     out.extend_from_slice(b"data");
     out.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
@@ -1153,7 +1153,7 @@ mod tests {
             vec![ToolCall {
                 id: "c1".into(),
                 kind: "function".into(),
-                function: FunctionCall { name: "list_topics".into(), arguments: "{}".into() },
+                function: FunctionCall { name: "list_courses".into(), arguments: "{}".into() },
             }],
         );
         let json = serde_json::to_value(&request).unwrap();

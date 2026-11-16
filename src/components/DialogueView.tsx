@@ -150,7 +150,7 @@ export function DialogueToolbar({
   return (
     <div className="inline gap-2">
       <div className="grow">
-        <Button size="sm" block onClick={onToggleReveal}>
+        <Button size="sm" wide onClick={onToggleReveal}>
           {revealAll ? "Hide translations" : "Show translations"}
         </Button>
       </div>

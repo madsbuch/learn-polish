@@ -97,7 +97,7 @@ export function playMatch() {
   play([{ freq: 1047, at: 0, length: 0.16, type: "triangle", volume: 0.3 }]);
 }
 
-/** A block finished well: a short rising flourish. */
+/** A lesson finished well: a short rising flourish. */
 export function playComplete() {
   play([
     { freq: 523, at: 0, length: 0.2, type: "triangle", volume: 0.3 }, // C5

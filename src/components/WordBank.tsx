@@ -11,16 +11,16 @@ function used(draft: string, phrase: Phrase): boolean {
 }
 
 /**
- * A guided writing block's word bank, docked above the message box so it is
+ * A guided writing lesson's word bank, docked above the message box so it is
  * at hand while writing: one goal at a time, a way to start and words to use.
  * Tapping one adds it to the message; what is in the message already is ticked.
  */
 export function WordBank({
-  blockId,
+  lessonId,
   draft,
   onUse,
 }: {
-  blockId: number;
+  lessonId: number;
   draft: string;
   onUse: (text: string) => void;
 }) {
@@ -32,11 +32,11 @@ export function WordBank({
   const load = () => {
     setError(null);
     api
-      .writingScaffold(blockId)
+      .writingScaffold(lessonId)
       .then(setHelp)
       .catch((cause) => setError(errorMessage(cause)));
   };
-  useEffect(load, [blockId]);
+  useEffect(load, [lessonId]);
 
   const current = help?.[Math.min(goal, help.length - 1)];
 

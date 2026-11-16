@@ -1,8 +1,8 @@
 //! The daily plan: which check-ins today asks for, out of everything due.
 //!
-//! With hundreds of blocks, "everything due" can be far more than a day can
+//! With hundreds of lessons, "everything due" can be far more than a day can
 //! hold — and some days hold a lot more than others. So today gets a list:
-//! the due blocks most at risk of being forgotten, until a **budget** of
+//! the due lessons most at risk of being forgotten, until a **budget** of
 //! minutes is filled. The budget follows what the learner actually does (the
 //! average of recent days they studied), never less than a floor they set,
 //! so a quiet spell shrinks the list instead of piling up a wall.
@@ -12,19 +12,19 @@
 //! not on it waits, ranked again tomorrow, without counting as missed. On a
 //! big day, **keep going** offers more — the rest of what is due, then what
 //! comes due soonest; doing one early is a real check-in (see
-//! [`crate::blocks::next_gap`]) and takes it off the day it was due.
+//! [`crate::lessons::next_gap`]) and takes it off the day it was due.
 //!
-//! New check-ins are also **spread**: a block lands on the lightest day near
+//! New check-ins are also **spread**: a lesson lands on the lightest day near
 //! its target, so they don't bunch up.
 
 use diesel::prelude::*;
 use diesel::upsert::excluded;
 use serde::Serialize;
 
-use crate::blocks::minutes_for;
+use crate::lessons::minutes_for;
 use crate::db::{self, Conn};
 use crate::error::Result;
-use crate::schema::{blocks, day_log};
+use crate::schema::{lessons, day_log};
 
 /// The smallest daily list, in minutes, unless the learner sets another.
 pub const DEFAULT_FLOOR: i64 = 10;
@@ -35,19 +35,19 @@ const AHEAD_DAYS: i64 = 7;
 /// How many extra check-ins "keep going" offers at a time.
 const MORE: usize = 12;
 
-/// The lightest day near `today + gap` for a block's next check-in:
+/// The lightest day near `today + gap` for a lesson's next check-in:
 /// within a tenth of the gap either side (short gaps stay exact).
-pub fn spread(conn: &mut Conn, today: i64, gap: i64, block_id: i64) -> Result<i64> {
+pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: i64) -> Result<i64> {
     let target = today + gap;
     if gap < 4 {
         return Ok(target);
     }
     let fuzz = ((gap as f64) * 0.1).round().clamp(1.0, 7.0) as i64;
     let (from, to) = ((target - fuzz).max(today + 1), target + fuzz);
-    let booked: Vec<(i64, String, String)> = blocks::table
-        .filter(blocks::due_day.between(from, to))
-        .filter(blocks::id.ne(block_id))
-        .select((blocks::due_day.assume_not_null(), blocks::kind, blocks::complexity))
+    let booked: Vec<(i64, String, String)> = lessons::table
+        .filter(lessons::due_day.between(from, to))
+        .filter(lessons::id.ne(lesson_id))
+        .select((lessons::due_day.assume_not_null(), lessons::kind, lessons::complexity))
         .load(conn)?;
     let load = |day: i64| -> i64 {
         booked.iter().filter(|(d, _, _)| *d == day).map(|(_, kind, complexity)| minutes_for(kind, complexity)).sum()
@@ -101,28 +101,28 @@ struct Scheduled {
 }
 
 fn scheduled(conn: &mut Conn, until: i64) -> Result<Vec<Scheduled>> {
-    Ok(blocks::table
-        .filter(blocks::due_day.le(until))
+    Ok(lessons::table
+        .filter(lessons::due_day.le(until))
         .select((
-            blocks::id,
-            blocks::kind,
-            blocks::complexity,
-            blocks::due_day,
-            blocks::last_day,
-            blocks::interval_days,
-            blocks::ease,
-            blocks::last_result,
+            lessons::id,
+            lessons::kind,
+            lessons::complexity,
+            lessons::due_day,
+            lessons::last_day,
+            lessons::interval_days,
+            lessons::ease,
+            lessons::last_result,
         ))
         .load(conn)?)
 }
 
-/// How much a due block is at risk of being forgotten: how far past its gap
-/// it is, more for a hard block (low ease) or one that went badly last time.
-fn risk(block: &Scheduled, today: i64) -> f64 {
-    let elapsed = block.last_day.map_or(0, |last| today - last) as f64;
-    let overdue = elapsed / block.interval_days.max(1) as f64;
-    let hard = (2.5 - block.ease).max(0.0) * 0.5;
-    let last = match block.last_result.as_deref() {
+/// How much a due lesson is at risk of being forgotten: how far past its gap
+/// it is, more for a hard lesson (low ease) or one that went badly last time.
+fn risk(lesson: &Scheduled, today: i64) -> f64 {
+    let elapsed = lesson.last_day.map_or(0, |last| today - last) as f64;
+    let overdue = elapsed / lesson.interval_days.max(1) as f64;
+    let hard = (2.5 - lesson.ease).max(0.0) * 0.5;
+    let last = match lesson.last_result.as_deref() {
         Some("fail") => 1.0,
         Some("partial") => 0.3,
         _ => 0.0,
@@ -147,12 +147,12 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
         scheduled(conn, today)?.into_iter().filter(|b| b.last_day != Some(today)).collect();
     let mut ids = Vec::new();
     let mut minutes = 0;
-    for block in by_risk(due, today) {
+    for lesson in by_risk(due, today) {
         if minutes >= budget {
             break;
         }
-        minutes += minutes_for(&block.kind, &block.complexity);
-        ids.push(block.id);
+        minutes += minutes_for(&lesson.kind, &lesson.complexity);
+        ids.push(lesson.id);
     }
     db::set_setting(conn, "plan_ids", &serde_json::to_string(&ids)?)?;
     db::set_setting(conn, "plan_day", &today.to_string())?;
@@ -181,13 +181,13 @@ pub struct Plan {
 
 pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
     let list = todays_list(conn, today)?;
-    let state: Vec<(i64, Option<i64>, Option<i64>)> = blocks::table
-        .filter(blocks::id.eq_any(&list))
-        .select((blocks::id, blocks::due_day, blocks::last_day))
+    let state: Vec<(i64, Option<i64>, Option<i64>)> = lessons::table
+        .filter(lessons::id.eq_any(&list))
+        .select((lessons::id, lessons::due_day, lessons::last_day))
         .load(conn)?;
     let (mut left, mut done) = (Vec::new(), 0usize);
     for id in &list {
-        // A block deleted since, or moved off today, just drops out.
+        // A lesson deleted since, or moved off today, just drops out.
         match state.iter().find(|s| s.0 == *id) {
             Some((_, _, last)) if *last == Some(today) => done += 1,
             Some((_, Some(due), _)) if *due <= today => left.push(*id),
@@ -228,5 +228,5 @@ pub fn remaining(conn: &mut Conn, day: i64) -> Result<i64> {
     if day == db::today(conn) {
         return Ok(plan(conn, day)?.left.len() as i64);
     }
-    Ok(blocks::table.filter(blocks::due_day.le(day)).count().get_result(conn)?)
+    Ok(lessons::table.filter(lessons::due_day.le(day)).count().get_result(conn)?)
 }

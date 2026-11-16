@@ -351,13 +351,13 @@ if (typeof document !== "undefined") {
   });
 }
 
-// Who wants the screen on: the lyrics player, an open block… It stays on
+// Who wants the screen on: the lyrics player, an open lesson… It stays on
 // while anyone does, so one letting go doesn't switch it off for another.
 const awakeHolders = new Set<string>();
 
 /**
  * Keeps the screen from going to standby while `holder` wants it — following
- * the lyrics, studying a block with pen and paper. Android sets the window
+ * the lyrics, studying a lesson with pen and paper. Android sets the window
  * flag natively; desktops use the browser's wake lock. Only ever applies
  * while the app is in front.
  */

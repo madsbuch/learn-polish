@@ -51,9 +51,9 @@ function when(seconds: number): string {
 
 type Shared = {
   /** Opens a course page. */
-  onOpenTopic: (topicId: number) => void;
-  /** Opens a block's page. */
-  onOpenBlock: (blockId: number) => void;
+  onOpenCourse: (courseId: number) => void;
+  /** Opens a lesson's page. */
+  onOpenLesson: (lessonId: number) => void;
   /** Shows a song in the Music tab. */
   onOpenSong: (songId: number) => void;
   /** The tutor changed something in the app; reload what the screens show. */
@@ -225,8 +225,8 @@ function Chat({
   onBack,
   onRenamed,
   onDeleted,
-  onOpenTopic,
-  onOpenBlock,
+  onOpenCourse,
+  onOpenLesson,
   onOpenSong,
   onOpenMemories,
 }: Shared & {
@@ -321,9 +321,9 @@ function Chat({
   }
 
   function ActionRow({ action }: { action: TutorAction }) {
-    const { topicId, songId, blockId } = action;
+    const { courseId, songId, lessonId } = action;
     const opensCourse =
-      topicId !== null &&
+      courseId !== null &&
       ["courseCreated", "courseUpdated", "programmeCreated", "programmeUpdated"].includes(action.kind);
     return (
       <div className="tutor-action">
@@ -349,13 +349,13 @@ function Chat({
             </Button>
           </Inline>
         ) : null}
-        {blockId !== null && action.kind !== "blockDeleted" ? (
+        {lessonId !== null && action.kind !== "lessonDeleted" ? (
           <Inline gap={2} wrap>
             <Button
               variant="primary"
               size="sm"
               icon={<PlayerIcon.play size={14} />}
-              onClick={() => onOpenBlock(blockId)}
+              onClick={() => onOpenLesson(lessonId)}
             >
               Open
             </Button>
@@ -367,7 +367,7 @@ function Chat({
               variant="primary"
               size="sm"
               icon={<PlayerIcon.play size={14} />}
-              onClick={() => onOpenTopic(topicId)}
+              onClick={() => onOpenCourse(courseId)}
             >
               Open course
             </Button>
@@ -495,7 +495,7 @@ function Chat({
             label="Delete conversation"
             confirmLabel="Delete"
             question="Delete this conversation? Courses and songs the tutor made stay."
-            block
+            wide
             onConfirm={async () => {
               await api.tutorDelete(conversationId);
               onDeleted();
@@ -515,7 +515,7 @@ function TutorInfo() {
       <ul>
         <li>Build a course on any theme — words, sentences and a dialogue, cut into drills</li>
         <li>Write lessons (a conjugation, a grammar point, culture) with a check-in</li>
-        <li>Add to, edit or delete any course or block</li>
+        <li>Add to, edit or delete any course or lesson</li>
         <li>Look at your progress and the words you find hardest</li>
         <li>Make learning songs, and tidy up the ones you don't want</li>
         <li>Make playlists and add songs to them, or take them out</li>

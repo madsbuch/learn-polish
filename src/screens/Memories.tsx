@@ -179,7 +179,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 label="Forget everything"
                 confirmLabel="Forget all"
                 question={`Delete all ${overview.memories.length} memories? The agents start from scratch.`}
-                block
+                wide
                 onConfirm={() => run(api.memoriesClear)}
               />
             </Section>
@@ -218,7 +218,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
             <Button
               variant="primary"
               size="lg"
-              block
+              wide
               loading={busy}
               disabled={!editing.content.trim()}
               onClick={save}
@@ -229,7 +229,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
               <ConfirmButton
                 label="Forget this"
                 confirmLabel="Forget"
-                block
+                wide
                 onConfirm={async () => {
                   if (await run(() => api.memoryDelete(editing.id!))) setEditing(null);
                 }}

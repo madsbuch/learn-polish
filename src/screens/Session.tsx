@@ -22,7 +22,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
-import type { AnswerResult, BlockFinished, Exercise, SessionPlan } from "../lib/types";
+import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
 import { playCorrect, playWrong } from "../lib/sounds";
 
 /** Cards that only show something; they are not scored. */
@@ -36,7 +36,7 @@ export function Session({
   onQuit,
 }: {
   plan: SessionPlan;
-  onFinished: (result: BlockFinished, sessionXp: number) => void;
+  onFinished: (result: LessonFinished, sessionXp: number) => void;
   onQuit: () => void;
 }) {
   useBackHandler(true, onQuit);
@@ -176,7 +176,7 @@ export function Session({
     setBusy(true);
     try {
       const scored = plan.exercises.filter((e) => !READING_KINDS.has(e.kind)).length;
-      onFinished(await api.blockFinish(plan.blockId, correctCount, scored), sessionXp);
+      onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
@@ -453,14 +453,14 @@ export function Session({
 
       <div className="session-foot">
         {isChecked && !reading ? (
-          <Button variant="success" size="lg" block loading={busy} onClick={advance}>
+          <Button variant="success" size="lg" wide loading={busy} onClick={advance}>
             {index + 1 < total ? "Continue" : "Finish"}
           </Button>
         ) : (
           <Button
             variant="primary"
             size="lg"
-            block
+            wide
             loading={busy}
             disabled={!canSubmit || exercise.kind === "memory"}
             onClick={async () => {

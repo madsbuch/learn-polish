@@ -418,7 +418,7 @@ button.list-item__main:active {
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-lg);
 }
-.button[data-block="true"] {
+.button[data-wide="true"] {
   width: 100%;
 }
 .button[data-variant="primary"] {

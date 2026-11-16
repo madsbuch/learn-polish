@@ -1,6 +1,6 @@
-//! Wikipedia as the source of study blocks — culture especially: a lesson
+//! Wikipedia as the source of study lessons — culture especially: a lesson
 //! on Kraków is written from the Kraków article, the article is kept with
-//! the block (readable in the app, offline, in English and in Polish), and
+//! the lesson (readable in the app, offline, in English and in Polish), and
 //! every three months the lesson is checked against the article again.
 //!
 //! Wikipedia's APIs need no key. Articles are CC BY-SA: the reader shows
@@ -14,9 +14,9 @@ use tauri::State;
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
 use crate::files;
-use crate::schema::{blocks, wiki_sources};
+use crate::schema::{lessons, wiki_sources};
 
-/// How often a block's lesson is compared with its sources again.
+/// How often a lesson's lesson is compared with its sources again.
 pub const CHECK_EVERY_DAYS: i64 = 90;
 /// The most of an article an AI reads at once (fact checks, the tutor).
 const READ_LIMIT: usize = 12_000;
@@ -195,15 +195,15 @@ pub async fn current_revision(lang: &str, title: &str) -> Result<i64> {
 }
 
 // ---------------------------------------------------------------------------
-// Sources of a block
+// Sources of a lesson
 // ---------------------------------------------------------------------------
 
-/// A source as the block page shows it.
+/// A source as the lesson page shows it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
     pub id: i64,
-    pub block_id: i64,
+    pub lesson_id: i64,
     pub lang: String,
     pub title: String,
     pub url: String,
@@ -217,17 +217,17 @@ pub struct Source {
 type SourceRow = (i64, i64, String, String, String, String, Option<i64>, Option<String>, i64);
 
 fn source_from(row: SourceRow) -> Source {
-    let (id, block_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
-    Source { id, block_id, lang, title, url, summary, image_file_id, polish_title, checked_at }
+    let (id, lesson_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
+    Source { id, lesson_id, lang, title, url, summary, image_file_id, polish_title, checked_at }
 }
 
-pub fn sources_of(conn: &mut Conn, block_id: i64) -> Result<Vec<Source>> {
+pub fn sources_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<Source>> {
     Ok(wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+        .filter(wiki_sources::lesson_id.eq(lesson_id))
         .order((wiki_sources::ord, wiki_sources::id))
         .select((
             wiki_sources::id,
-            wiki_sources::block_id,
+            wiki_sources::lesson_id,
             wiki_sources::lang,
             wiki_sources::title,
             wiki_sources::url,
@@ -242,23 +242,23 @@ pub fn sources_of(conn: &mut Conn, block_id: i64) -> Result<Vec<Source>> {
         .collect())
 }
 
-/// Stores an article as a source of a study block (replacing an earlier
+/// Stores an article as a source of a study lesson (replacing an earlier
 /// copy of the same article), with its Polish version's text and its picture.
 pub fn store(
     conn: &mut Conn,
-    block_id: i64,
+    lesson_id: i64,
     article: &Article,
     polish: Option<&Article>,
     picture: Option<(String, Vec<u8>)>,
 ) -> Result<Source> {
-    let kind: String = blocks::table
-        .find(block_id)
-        .select(blocks::kind)
+    let kind: String = lessons::table
+        .find(lesson_id)
+        .select(lessons::kind)
         .first(conn)
         .optional()?
-        .ok_or_else(|| Error::msg("That block no longer exists."))?;
+        .ok_or_else(|| Error::msg("That lesson no longer exists."))?;
     if kind != "study" {
-        return Err(Error::msg("Only study blocks take sources."));
+        return Err(Error::msg("Only study lessons take sources."));
     }
     let image = match picture {
         Some((mime, bytes)) => Some(files::store(
@@ -272,11 +272,11 @@ pub fn store(
     };
     let now = db::now_secs();
     let ord: i64 = wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+        .filter(wiki_sources::lesson_id.eq(lesson_id))
         .count()
         .get_result(conn)?;
     let existing: Option<(i64, Option<i64>)> = wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+        .filter(wiki_sources::lesson_id.eq(lesson_id))
         .filter(wiki_sources::lang.eq(&article.lang))
         .filter(wiki_sources::pageid.eq(article.pageid))
         .select((wiki_sources::id, wiki_sources::image_file_id))
@@ -307,7 +307,7 @@ pub fn store(
         }
         None => diesel::insert_into(wiki_sources::table)
             .values((
-                wiki_sources::block_id.eq(block_id),
+                wiki_sources::lesson_id.eq(lesson_id),
                 wiki_sources::ord.eq(ord),
                 wiki_sources::lang.eq(&article.lang),
                 wiki_sources::pageid.eq(article.pageid),
@@ -316,12 +316,12 @@ pub fn store(
             .returning(wiki_sources::id)
             .get_result(conn)?,
     };
-    Ok(sources_of(conn, block_id)?.into_iter().find(|s| s.id == id).expect("just stored"))
+    Ok(sources_of(conn, lesson_id)?.into_iter().find(|s| s.id == id).expect("just stored"))
 }
 
-/// Fetches an article and attaches it to a study block: the tutor's
-/// attach_source, for new and existing blocks alike.
-pub async fn attach(db: &Db, block_id: i64, lang: &str, title: &str) -> Result<Source> {
+/// Fetches an article and attaches it to a study lesson: the tutor's
+/// attach_source, for new and existing lessons alike.
+pub async fn attach(db: &Db, lesson_id: i64, lang: &str, title: &str) -> Result<Source> {
     let article = fetch(lang, title).await?;
     // Reading practice: the Polish version, when there is one.
     let polish = match (&article.polish_title, lang) {
@@ -332,7 +332,7 @@ pub async fn attach(db: &Db, block_id: i64, lang: &str, title: &str) -> Result<S
         Some(url) => download_picture(url).await.ok(),
         None => None,
     };
-    store(&mut db.lock(), block_id, &article, polish.as_ref(), picture)
+    store(&mut db.lock(), lesson_id, &article, polish.as_ref(), picture)
 }
 
 async fn download_picture(url: &str) -> Result<(String, Vec<u8>)> {
@@ -363,9 +363,9 @@ pub fn remove(conn: &mut Conn, source_id: i64) -> Result<()> {
 
 /// What the examiner and the fact check read: each source's lead, and as
 /// much of the rest as fits.
-pub fn reading_for(conn: &mut Conn, block_id: i64, limit: usize) -> Result<String> {
+pub fn reading_for(conn: &mut Conn, lesson_id: i64, limit: usize) -> Result<String> {
     let rows: Vec<(String, String)> = wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+        .filter(wiki_sources::lesson_id.eq(lesson_id))
         .order(wiki_sources::ord)
         .select((wiki_sources::title, wiki_sources::content))
         .load(conn)?;
@@ -396,7 +396,7 @@ fn clip(text: &str, limit: usize) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FactCheck {
-    pub block_id: i64,
+    pub lesson_id: i64,
     pub title: String,
     /// The lesson was out of date and has been corrected.
     pub updated: bool,
@@ -404,22 +404,22 @@ pub struct FactCheck {
     pub note: Option<String>,
 }
 
-/// Blocks whose sources have not been compared with Wikipedia for three months.
-pub fn blocks_due(conn: &mut Conn, now: i64) -> Result<Vec<i64>> {
+/// Lessons whose sources have not been compared with Wikipedia for three months.
+pub fn lessons_due(conn: &mut Conn, now: i64) -> Result<Vec<i64>> {
     let mut ids: Vec<i64> = wiki_sources::table
         .filter(wiki_sources::checked_at.lt(now - CHECK_EVERY_DAYS * 86_400))
-        .select(wiki_sources::block_id)
+        .select(wiki_sources::lesson_id)
         .load(conn)?;
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
 }
 
-/// At startup: checks every block that is due, in the background, and says
+/// At startup: checks every lesson that is due, in the background, and says
 /// when a lesson was corrected (`facts://updated`).
 pub fn check_due_in_background(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
-    let due = blocks_due(&mut app.state::<Db>().lock(), db::now_secs()).unwrap_or_default();
+    let due = lessons_due(&mut app.state::<Db>().lock(), db::now_secs()).unwrap_or_default();
     if due.is_empty() {
         return;
     }
@@ -428,29 +428,29 @@ pub fn check_due_in_background(app: &tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let _busy = busy;
         let db = app.state::<Db>();
-        for block_id in due {
-            match fact_check(&db, block_id, false).await {
+        for lesson_id in due {
+            match fact_check(&db, lesson_id, false).await {
                 Ok(check) if check.updated => {
                     let _ = app.emit("facts://updated", check);
                 }
                 Ok(_) => {}
-                Err(error) => eprintln!("fact check of block {block_id}: {error}"),
+                Err(error) => eprintln!("fact check of lesson {lesson_id}: {error}"),
             }
         }
     });
 }
 
-/// Compares a block's sources with Wikipedia now. Articles that changed are
+/// Compares a lesson's sources with Wikipedia now. Articles that changed are
 /// fetched again; if any did (or `force`), an AI reads the lesson against
 /// them and corrects what is out of date — nothing else — noting what
 /// changed. Unchanged articles cost nothing.
-pub async fn fact_check(db: &Db, block_id: i64, force: bool) -> Result<FactCheck> {
+pub async fn fact_check(db: &Db, lesson_id: i64, force: bool) -> Result<FactCheck> {
     let (title, sources): (String, Vec<(i64, String, String, i64)>) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let title = blocks::table.find(block_id).select(blocks::title).first(conn)?;
+        let title = lessons::table.find(lesson_id).select(lessons::title).first(conn)?;
         let sources = wiki_sources::table
-            .filter(wiki_sources::block_id.eq(block_id))
+            .filter(wiki_sources::lesson_id.eq(lesson_id))
             .select((wiki_sources::id, wiki_sources::lang, wiki_sources::title, wiki_sources::revid))
             .load(conn)?;
         (title, sources)
@@ -470,35 +470,35 @@ pub async fn fact_check(db: &Db, block_id: i64, force: bool) -> Result<FactCheck
             (Some(pl), l) if l != "pl" => fetch("pl", pl).await.ok(),
             _ => None,
         };
-        store(&mut db.lock(), block_id, &article, polish.as_ref(), None)?;
+        store(&mut db.lock(), lesson_id, &article, polish.as_ref(), None)?;
     }
-    let mut check = FactCheck { block_id, title, updated: false, note: None };
+    let mut check = FactCheck { lesson_id, title, updated: false, note: None };
     if changed || force {
-        if let Some(note) = correct_lesson(db, block_id).await? {
+        if let Some(note) = correct_lesson(db, lesson_id).await? {
             check.updated = true;
             check.note = Some(note);
         }
     }
-    diesel::update(blocks::table.find(block_id))
-        .set(blocks::fact_checked_at.eq(db::now_secs()))
+    diesel::update(lessons::table.find(lesson_id))
+        .set(lessons::fact_checked_at.eq(db::now_secs()))
         .execute(&mut *db.lock())?;
     Ok(check)
 }
 
 /// Asks the model whether the lesson is out of date against its sources and,
 /// if so, stores the corrected lesson. Returns what changed.
-async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
-    let (key, model, lesson, objectives, reading) = {
+async fn correct_lesson(db: &Db, lesson_id: i64) -> Result<Option<String>> {
+    let (key, model, content, objectives, reading) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let (lesson, objectives): (String, String) =
-            blocks::table.find(block_id).select((blocks::lesson, blocks::objectives)).first(conn)?;
+        let (content, objectives): (String, String) =
+            lessons::table.find(lesson_id).select((lessons::content, lessons::objectives)).first(conn)?;
         (
             crate::ai::api_key(conn)?,
             crate::ai::require_model(conn)?,
-            lesson,
+            content,
             objectives,
-            reading_for(conn, block_id, READ_LIMIT)?,
+            reading_for(conn, lesson_id, READ_LIMIT)?,
         )
     };
     if reading.is_empty() {
@@ -510,7 +510,7 @@ async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
              answer with JSON only.",
         ),
         crate::ai::Wire::user(format!(
-            "The lesson:\n{lesson}\n\nWhat the learner should be able to do: {objectives}\n\n\
+            "The lesson:\n{content}\n\nWhat the learner should be able to do: {objectives}\n\n\
              The sources, as they read today:\n{reading}\n\n\
              Is anything in the lesson now wrong or out of date according to the sources — a figure, \
              a name, an officeholder, a date? Wording, style, the Polish teaching, and things the \
@@ -528,8 +528,8 @@ async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
     let Some((changes, corrected)) = verdict else { return Ok(None) };
     let today = crate::commands::civil_date(db::today(conn));
     let note = format!("{}-{:02}-{:02}: {changes}", today.0, today.1, today.2);
-    diesel::update(blocks::table.find(block_id))
-        .set((blocks::lesson.eq(corrected.trim()), blocks::fact_note.eq(&note)))
+    diesel::update(lessons::table.find(lesson_id))
+        .set((lessons::content.eq(corrected.trim()), lessons::fact_note.eq(&note)))
         .execute(conn)?;
     Ok(Some(note))
 }
@@ -546,7 +546,7 @@ fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
     }
     let changes = value["changes"].as_str().unwrap_or("Corrected against Wikipedia.").trim().to_string();
     match value["lesson"].as_str().map(str::trim).filter(|l| !l.is_empty()) {
-        Some(lesson) => Ok(Some((changes, lesson.to_string()))),
+        Some(corrected) => Ok(Some((changes, corrected.to_string()))),
         None => Ok(None),
     }
 }
@@ -556,8 +556,8 @@ fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn block_sources(db: State<'_, Db>, block_id: i64) -> Result<Vec<Source>> {
-    sources_of(&mut db.lock(), block_id)
+pub async fn lesson_sources(db: State<'_, Db>, lesson_id: i64) -> Result<Vec<Source>> {
+    sources_of(&mut db.lock(), lesson_id)
 }
 
 /// One source's article for the reader, in its own language or in Polish.
@@ -593,10 +593,10 @@ pub async fn source_article(db: State<'_, Db>, source_id: i64, polish: bool) -> 
     })
 }
 
-/// Checks one block against its sources now, whatever the date.
+/// Checks one lesson against its sources now, whatever the date.
 #[tauri::command]
-pub async fn fact_check_block(db: State<'_, Db>, block_id: i64) -> Result<FactCheck> {
-    fact_check(&db, block_id, true).await
+pub async fn fact_check_lesson(db: State<'_, Db>, lesson_id: i64) -> Result<FactCheck> {
+    fact_check(&db, lesson_id, true).await
 }
 
 #[tauri::command]
@@ -628,12 +628,12 @@ mod tests {
     #[test]
     fn a_fact_check_verdict_is_read_from_the_reply() {
         assert_eq!(parse_verdict("```json\n{\"outdated\": false}\n```").unwrap(), None);
-        let (changes, lesson) = parse_verdict(
+        let (changes, corrected) = parse_verdict(
             "Here: {\"outdated\": true, \"changes\": \"The population is now 804,000.\", \"lesson\": \"Kraków has 804,000 people.\"}",
         )
         .unwrap()
         .unwrap();
-        assert!(changes.contains("804,000") && lesson.starts_with("Kraków"));
+        assert!(changes.contains("804,000") && corrected.starts_with("Kraków"));
         assert!(parse_verdict("no json here").is_err());
         // A verdict without a corrected lesson changes nothing.
         assert_eq!(parse_verdict("{\"outdated\": true, \"changes\": \"x\"}").unwrap(), None);

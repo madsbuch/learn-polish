@@ -102,7 +102,7 @@ function ShowQr({ onClose }: { onClose: () => void }) {
           On the other device, open Settings → Other devices → Scan. Anyone who sees this code can
           use your keys.
         </Text>
-        <Button block onClick={onClose}>
+        <Button wide onClick={onClose}>
           Done
         </Button>
       </Stack>
@@ -120,7 +120,7 @@ function ScanOverlay() {
         <Text tone="dim" align="center">
           Point the camera at the QR code on the other device
         </Text>
-        <Button block onClick={() => void cancelScan()}>
+        <Button wide onClick={() => void cancelScan()}>
           Cancel
         </Button>
       </div>

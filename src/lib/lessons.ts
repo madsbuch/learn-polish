@@ -1,6 +1,6 @@
-import type { Block, Complexity } from "./types";
+import type { Lesson, Complexity } from "./types";
 
-/** How long a block takes, by complexity. */
+/** How long a lesson takes, by complexity. */
 export function minutes(complexity: Complexity): string {
   return complexity === "low" ? "1–2 min" : complexity === "medium" ? "5–10 min" : "20+ min";
 }
@@ -25,16 +25,16 @@ const FORMAT_NAMES: Record<string, string> = {
 };
 
 /** "Study" or the drill's format, e.g. "Memory cards". */
-export function kindName(block: Block): string {
-  if (block.format === "song") return "Listening";
-  if (block.format === "writing") return "Writing";
-  return block.kind === "study" ? "Study" : (FORMAT_NAMES[block.format] ?? "Drill");
+export function kindName(lesson: Lesson): string {
+  if (lesson.format === "song") return "Listening";
+  if (lesson.format === "writing") return "Writing";
+  return lesson.kind === "study" ? "Study" : (FORMAT_NAMES[lesson.format] ?? "Drill");
 }
 
-/** When the block is next due, in words: "due now", "in 3 days", "new". */
-export function dueLabel(block: Block, today: number): string {
-  if (block.dueDay === null) return "new";
-  const days = block.dueDay - today;
+/** When the lesson is next due, in words: "due now", "in 3 days", "new". */
+export function dueLabel(lesson: Lesson, today: number): string {
+  if (lesson.dueDay === null) return "new";
+  const days = lesson.dueDay - today;
   if (days <= 0) return "due now";
   if (days === 1) return "tomorrow";
   if (days < 14) return `in ${days} days`;

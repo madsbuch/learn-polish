@@ -200,7 +200,7 @@ Using memory:
   short drills, hates long word lists\"), context (\"partner's family speaks only Polish\"), a \
   strength, or a struggle (\"mixes up the instrumental and locative after 'z'\"). One fact per \
   memory, in a short third-person sentence. Don't save small talk, one-off requests, what the \
-  app already records (scores, streaks, blocks), or anything sensitive the learner did not \
+  app already records (scores, streaks, lessons), or anything sensitive the learner did not \
   offer to have remembered.
 - Keep memories true: when one changes or is no longer true (a struggle is overcome, a goal is \
   reached), call update_memory or forget_memory instead of adding a contradicting one.

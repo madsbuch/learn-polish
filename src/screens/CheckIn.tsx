@@ -27,11 +27,11 @@ import { useAiStream } from "../lib/useAiStream";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { currentItem, usePlayer } from "../lib/player";
-import { dayToDate } from "../lib/blocks";
+import { dayToDate } from "../lib/lessons";
 import type { Assessment } from "../lib/types";
 
 
-/** A writing block's situation and goals. */
+/** A writing lesson's situation and goals. */
 export interface Writing {
   situation: string;
   goals: string[];
@@ -57,21 +57,21 @@ interface Line {
 }
 
 /**
- * A study block's check-in: the examiner asks, the learner answers, and at
+ * A study lesson's check-in: the examiner asks, the learner answers, and at
  * the end the examiner gives a verdict that schedules the next check-in.
  */
 export function CheckIn({
-  blockId,
+  lessonId,
   songId,
   writing,
   title,
   onClose,
   onFinished,
 }: {
-  blockId: number;
-  /** For a listening block: its song, playable during the check-in. */
+  lessonId: number;
+  /** For a listening lesson: its song, playable during the check-in. */
   songId: number | null;
-  /** For a writing block: the conversation is with a partner, in Polish. */
+  /** For a writing lesson: the conversation is with a partner, in Polish. */
   writing?: Writing | null;
   title: string;
   onClose: () => void;
@@ -118,8 +118,8 @@ export function CheckIn({
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void exchange((streamId) => api.checkinStart(blockId, streamId));
-  }, [blockId]);
+    void exchange((streamId) => api.checkinStart(lessonId, streamId));
+  }, [lessonId]);
 
   async function answer() {
     const text = draft.trim();
@@ -192,12 +192,12 @@ export function CheckIn({
       }
       footer={
         assessment ? (
-          <Button variant="primary" size="lg" block onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}>
+          <Button variant="primary" size="lg" wide onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}>
             Done
           </Button>
         ) : (
           <Stack gap={2}>
-            {writing && writing.supportLevel === 0 ? <WordBank blockId={blockId} draft={draft} onUse={use} /> : null}
+            {writing && writing.supportLevel === 0 ? <WordBank lessonId={lessonId} draft={draft} onUse={use} /> : null}
             <Composer
               draft={draft}
               setDraft={setDraft}
@@ -214,7 +214,7 @@ export function CheckIn({
         <Stack gap={2}>
           <Banner tone="error">{error}</Banner>
           {checkinId === null ? (
-            <Button onClick={() => void exchange((streamId) => api.checkinStart(blockId, streamId))}>
+            <Button onClick={() => void exchange((streamId) => api.checkinStart(lessonId, streamId))}>
               Try again
             </Button>
           ) : null}

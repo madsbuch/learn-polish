@@ -12,13 +12,13 @@ import { keepScreenAwake, resumeCast, syncRepeatFromSettings } from "./lib/playe
 import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
-  BlockOverview,
-  BlockResult,
+  LessonOverview,
+  LessonResult,
   SessionPlan,
   SessionResult,
   Settings,
   Stats,
-  TopicProgress,
+  CourseProgress,
   TutorDone,
   FactCheck,
 } from "./lib/types";
@@ -29,12 +29,12 @@ import { SessionSummary } from "./screens/SessionSummary";
 import { Memories } from "./screens/Memories";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
-import { BlockPage } from "./screens/BlockPage";
+import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music } from "./screens/Music";
 import { Player } from "./screens/Player";
-import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
+import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
 
 type Tab = "exercises" | "tutor" | "music" | "settings";
@@ -49,14 +49,14 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
 /** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
 type Overlay =
   | { kind: "none" }
-  | { kind: "block"; blockId: number; back: Overlay }
+  | { kind: "lesson"; lessonId: number; back: Overlay }
   | { kind: "session"; plan: SessionPlan; back: Overlay }
   | {
       kind: "checkin";
-      blockId: number;
+      lessonId: number;
       title: string;
       songId: number | null;
-      /** A writing block's situation and goals, shown above the conversation. */
+      /** A writing lesson's situation and goals, shown above the conversation. */
       writing: Writing | null;
       back: Overlay;
     }
@@ -64,8 +64,8 @@ type Overlay =
       kind: "summary";
       result: SessionResult;
       xp: number;
-      outcome?: { title: string; result: BlockResult; nextDueDay: number | null; extra?: boolean };
-      /** Where Done goes: wherever the block was started from. */
+      outcome?: { title: string; result: LessonResult; nextDueDay: number | null; extra?: boolean };
+      /** Where Done goes: wherever the lesson was started from. */
       back: Overlay;
     }
   | { kind: "progress" }
@@ -74,19 +74,19 @@ type Overlay =
   | { kind: "search" }
   | { kind: "player"; back?: Overlay }
   | {
-      kind: "topic";
-      progress: TopicProgress;
-      section?: TopicSection;
+      kind: "course";
+      progress: CourseProgress;
+      section?: CourseSection;
       /** Where the back button goes. */
       back: Overlay;
     };
 
 /**
- * Where to return once a block is done: the screen its page was opened from
- * (a course, or home), not the block page itself.
+ * Where to return once a lesson is done: the screen its page was opened from
+ * (a course, or home), not the lesson page itself.
  */
 function startedFrom(back: Overlay): Overlay {
-  return back.kind === "block" ? back.back : back;
+  return back.kind === "lesson" ? back.back : back;
 }
 
 /**
@@ -118,15 +118,15 @@ function initApp(): Promise<Settings> {
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [overview, setOverview] = useState<BlockOverview | null>(null);
+  const [overview, setOverview] = useState<LessonOverview | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [topics, setTopics] = useState<TopicProgress[]>([]);
+  const [courses, setCourses] = useState<CourseProgress[]>([]);
   const [tab, setTab] = useState<Tab>("exercises");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
 
-  // Studying a block — its page, its drill, its check-in — often means pen
+  // Studying a lesson — its page, its drill, its check-in — often means pen
   // and paper, not touching the phone: keep the screen on meanwhile.
-  const studying = overlay.kind === "block" || overlay.kind === "session" || overlay.kind === "checkin";
+  const studying = overlay.kind === "lesson" || overlay.kind === "session" || overlay.kind === "checkin";
   useEffect(() => {
     keepScreenAwake(studying, "study");
   }, [studying]);
@@ -138,14 +138,14 @@ export default function App() {
   useBackHandler(overlay.kind === "none" && tab !== "exercises", () => setTab("exercises"));
 
   const refresh = useCallback(async () => {
-    const [nextOverview, nextStats, nextTopics] = await Promise.all([
-      api.blocksOverview(),
+    const [nextOverview, nextStats, nextCourses] = await Promise.all([
+      api.lessonsOverview(),
       api.getStats(),
-      api.getTopicProgress(),
+      api.getCourseProgress(),
     ]);
     setOverview(nextOverview);
     setStats(nextStats);
-    setTopics(nextTopics);
+    setCourses(nextCourses);
   }, []);
 
   // Starting up, step by step, shown on the loading screen so a stall says
@@ -179,15 +179,15 @@ export default function App() {
         syncRepeatFromSettings(loaded.playerRepeat);
         // A speaker may still be playing from before a reload.
         resumeCast();
-        const [nextOverview, nextStats, nextTopics] = await Promise.all([
-          track("Today's check-ins", "blocks_overview", () => api.blocksOverview()),
+        const [nextOverview, nextStats, nextCourses] = await Promise.all([
+          track("Today's check-ins", "lessons_overview", () => api.lessonsOverview()),
           track("Your stats", "get_stats", () => api.getStats()),
-          track("Your courses", "get_topic_progress", () => api.getTopicProgress()),
+          track("Your courses", "get_course_progress", () => api.getCourseProgress()),
         ]);
         if (cancelled) return;
         setOverview(nextOverview);
         setStats(nextStats);
-        setTopics(nextTopics);
+        setCourses(nextCourses);
       } catch (cause) {
         if (!cancelled) setError(errorMessage(cause));
       }
@@ -246,12 +246,12 @@ export default function App() {
     [settings?.ttsPrefetch, settings?.hasApiKey],
   );
 
-  /** Starts a drill block's exercises. */
+  /** Starts a drill lesson's exercises. */
   const startDrill = useCallback(
-    async (blockId: number, back: Overlay) => {
+    async (lessonId: number, back: Overlay) => {
       stopAudio();
       try {
-        const session = await api.blockSession(blockId);
+        const session = await api.lessonSession(lessonId);
         setOverlay({ kind: "session", plan: session, back });
         prefetchAudio(session);
       } catch (cause) {
@@ -262,12 +262,12 @@ export default function App() {
   );
 
   /** Opens a course by id (the tutor's buttons). */
-  const openTopicById = useCallback(async (topicId: number) => {
+  const openCourseById = useCallback(async (courseId: number) => {
     try {
-      const fresh = await api.getTopicProgress();
-      setTopics(fresh);
-      const progress = fresh.find((entry) => entry.topic.id === topicId);
-      if (progress) setOverlay({ kind: "topic", progress, back: { kind: "none" } });
+      const fresh = await api.getCourseProgress();
+      setCourses(fresh);
+      const progress = fresh.find((entry) => entry.course.id === courseId);
+      if (progress) setOverlay({ kind: "course", progress, back: { kind: "none" } });
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -384,9 +384,9 @@ export default function App() {
               result,
               xp: sessionXp,
               outcome: {
-                title: result.block.title,
+                title: result.lesson.title,
                 result: result.result,
-                nextDueDay: result.block.dueDay,
+                nextDueDay: result.lesson.dueDay,
                 extra: result.extra,
               },
               back: startedFrom(overlay.back),
@@ -414,15 +414,15 @@ export default function App() {
     );
   }
 
-  if (overlay.kind === "topic") {
+  if (overlay.kind === "course") {
     return (
       <div className="app">
-        <TopicDetail
+        <CourseDetail
           progress={overlay.progress}
           initialSection={overlay.section}
           today={overview.today}
           onBack={() => setOverlay(overlay.back)}
-          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: overlay })}
+          onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: overlay })}
           onDeleted={() => {
             setOverlay(overlay.back);
             void reloadAll();
@@ -433,27 +433,27 @@ export default function App() {
     );
   }
 
-  if (overlay.kind === "block") {
+  if (overlay.kind === "lesson") {
     return (
       <div className="app">
-        <BlockPage
-          blockId={overlay.blockId}
+        <LessonPage
+          lessonId={overlay.lessonId}
           today={overview.today}
           onBack={() => {
             setOverlay(overlay.back);
             void refresh();
           }}
-          onStartDrill={(blockId) => void startDrill(blockId, overlay)}
-          onCheckIn={async (blockId) => {
-            const detail = await api.blockDetail(blockId).catch(() => null);
+          onStartDrill={(lessonId) => void startDrill(lessonId, overlay)}
+          onCheckIn={async (lessonId) => {
+            const detail = await api.lessonDetail(lessonId).catch(() => null);
             setOverlay({
               kind: "checkin",
-              blockId,
+              lessonId,
               title: detail?.title ?? "Check-in",
               songId: detail?.songId ?? null,
               writing:
                 detail?.format === "writing"
-                  ? { situation: detail.lesson, goals: detail.objectives, supportLevel: detail.supportLevel }
+                  ? { situation: detail.content, goals: detail.objectives, supportLevel: detail.supportLevel }
                   : null,
               back: overlay,
             });
@@ -471,7 +471,7 @@ export default function App() {
     return (
       <div className="app">
         <CheckIn
-          blockId={overlay.blockId}
+          lessonId={overlay.lessonId}
           songId={overlay.songId}
           writing={overlay.writing}
           title={overlay.title}
@@ -525,10 +525,10 @@ export default function App() {
       <div className="app">
         <Progress
           stats={stats}
-          topics={topics}
+          courses={courses}
           onBack={() => setOverlay({ kind: "none" })}
-          onOpenTopic={(progress) =>
-            setOverlay({ kind: "topic", progress, back: { kind: "progress" } })
+          onOpenCourse={(progress) =>
+            setOverlay({ kind: "course", progress, back: { kind: "progress" } })
           }
         />
       </div>
@@ -553,7 +553,7 @@ export default function App() {
   if (overlay.kind === "search") {
     return (
       <div className="app">
-        <Search topics={topics} onBack={() => setOverlay({ kind: "none" })} />
+        <Search courses={courses} onBack={() => setOverlay({ kind: "none" })} />
       </div>
     );
   }
@@ -564,9 +564,9 @@ export default function App() {
         <Exercises
           overview={overview}
           stats={stats}
-          topics={topics}
-          onOpenBlock={(block) => setOverlay({ kind: "block", blockId: block.id, back: { kind: "none" } })}
-          onOpenTopic={(progress) => setOverlay({ kind: "topic", progress, back: { kind: "none" } })}
+          courses={courses}
+          onOpenLesson={(lesson) => setOverlay({ kind: "lesson", lessonId: lesson.id, back: { kind: "none" } })}
+          onOpenCourse={(progress) => setOverlay({ kind: "course", progress, back: { kind: "none" } })}
           onOpenTutor={() => setTab("tutor")}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
           onOpenSearch={() => setOverlay({ kind: "search" })}
@@ -576,10 +576,10 @@ export default function App() {
       {tab === "music" ? (
         <Music
           settings={settings}
-          topics={topics}
+          courses={courses}
           openSongId={musicSong}
           onSongOpened={clearMusicSong}
-          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: { kind: "none" } })}
+          onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })}
           onOpenSettings={() => setTab("settings")}
           onOpenPlayer={() => setOverlay({ kind: "player", back: { kind: "none" } })}
         />
@@ -590,8 +590,8 @@ export default function App() {
           hasApiKey={settings.hasApiKey}
           hasModel={settings.aiModel.length > 0}
           onOpenSettings={() => setTab("settings")}
-          onOpenTopic={(topicId) => void openTopicById(topicId)}
-          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: { kind: "none" } })}
+          onOpenCourse={(courseId) => void openCourseById(courseId)}
+          onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })}
           onOpenSong={(songId) => {
             setTab("music");
             setMusicSong(songId);

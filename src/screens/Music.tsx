@@ -43,7 +43,7 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { Playlist, Settings, Song, TopicProgress } from "../lib/types";
+import type { Playlist, Settings, Song, CourseProgress } from "../lib/types";
 import { SongComposer } from "./SongComposer";
 
 /**
@@ -99,21 +99,21 @@ function NowPlaying({ onOpen }: { onOpen: () => void }) {
 
 export function Music({
   settings,
-  topics,
+  courses,
   openSongId,
   onOpenSettings,
   onSongOpened,
-  onOpenBlock,
+  onOpenLesson,
   onOpenPlayer,
 }: {
   settings: Settings;
-  topics: TopicProgress[];
+  courses: CourseProgress[];
   /** Set when the player asks to show a song's page. */
   openSongId: number | null;
   onOpenSettings: () => void;
   onSongOpened: () => void;
-  /** Opens a block's page (a song's listening block). */
-  onOpenBlock: (blockId: number) => void;
+  /** Opens a lesson's page (a song's listening lesson). */
+  onOpenLesson: (lessonId: number) => void;
   /** Opens the full player (lyrics that follow the music). */
   onOpenPlayer: () => void;
 }) {
@@ -171,7 +171,7 @@ export function Music({
     return (
       <SongComposer
         settings={settings}
-        topics={topics}
+        courses={courses}
         onCancel={back}
         onCreated={() => {
           back();
@@ -204,7 +204,7 @@ export function Music({
             onMessage={message}
             onPractise={async () => {
               try {
-                onOpenBlock((await api.blockForSong(song.id)).id);
+                onOpenLesson((await api.lessonForSong(song.id)).id);
               } catch (cause) {
                 toast(errorMessage(cause), "error");
               }
@@ -337,13 +337,13 @@ function PlayButtons({ queue }: { queue: QueueItem[] }) {
   return (
     <Inline gap={2}>
       <div className="grow">
-        <Button variant="primary" block icon={<PlayerIcon.play size={16} />} onClick={() => playQueue(queue, 0)}>
+        <Button variant="primary" wide icon={<PlayerIcon.play size={16} />} onClick={() => playQueue(queue, 0)}>
           Play
         </Button>
       </div>
       <div className="grow">
         <Button
-          block
+          wide
           icon={<PlayerIcon.shuffle />}
           onClick={() => playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })}
         >
@@ -550,7 +550,7 @@ function SongList({
             <ConfirmButton
               label={`Delete ${plural(selected.size, "song")}`}
               confirmLabel="Delete"
-              block
+              wide
               onConfirm={async () => {
                 try {
                   for (const songId of selected) await api.songDelete(songId);
@@ -583,7 +583,7 @@ function SongPage({
   onChanged: () => void;
   onDeleted: () => void;
   onMessage: (message: string, isError?: boolean) => void;
-  /** Opens (or makes) the song's listening block. */
+  /** Opens (or makes) the song's listening lesson. */
   onPractise: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -633,7 +633,7 @@ function SongPage({
       {song.status === "failed" ? (
         <Stack gap={3}>
           {song.error ? <Banner tone="error">{song.error}</Banner> : null}
-          <Button variant="primary" block loading={busy} onClick={() => act(() => api.songRetry(song.id))}>
+          <Button variant="primary" wide loading={busy} onClick={() => act(() => api.songRetry(song.id))}>
             Try again
           </Button>
         </Stack>
@@ -702,7 +702,7 @@ function SongPage({
             <ListItem
               leading={<SpeakerIcon />}
               title="Listen and answer questions"
-              subtitle="A listening block: the examiner asks about what you heard"
+              subtitle="A listening lesson: the examiner asks about what you heard"
               onClick={onPractise}
             />
           </List>
@@ -725,7 +725,7 @@ function SongPage({
                   label={`Remove take ${item.track.ord + 1}`}
                   confirmLabel="Remove"
                   question={`Remove take ${item.track.ord + 1}? The other take stays.`}
-                  block
+                  wide
                   onConfirm={() => act(() => api.songTrackDelete(item.track.id))}
                 />
               ))
@@ -734,7 +734,7 @@ function SongPage({
             label="Delete song"
             confirmLabel="Delete"
             question="Delete the song and all its takes? It also leaves your playlists."
-            block
+            wide
             onConfirm={() => act(() => api.songDelete(song.id), onDeleted)}
           />
         </Stack>
@@ -920,7 +920,7 @@ function PlaylistPage({
               </Button>
             </div>
           ) : (
-            <Button block onClick={() => setEditing(true)}>
+            <Button wide onClick={() => setEditing(true)}>
               Rename playlist
             </Button>
           )}
@@ -928,7 +928,7 @@ function PlaylistPage({
             label="Delete playlist"
             confirmLabel="Delete"
             question="Delete this playlist? Its songs stay in your library."
-            block
+            wide
             onConfirm={async () => {
               try {
                 await api.playlistDelete(playlist.id);

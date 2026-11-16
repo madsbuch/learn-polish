@@ -5,16 +5,16 @@
 use diesel::prelude::*;
 use serde::Serialize;
 
-use crate::schema::{conversation_lines, topics};
+use crate::schema::{conversation_lines, courses};
 
 #[derive(Debug, Clone, Serialize, Queryable, Selectable)]
-#[diesel(table_name = topics, check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(table_name = courses, check_for_backend(diesel::sqlite::Sqlite))]
 #[serde(rename_all = "camelCase")]
-pub struct Topic {
+pub struct Course {
     pub id: i64,
     pub ord: i64,
     pub slug: String,
-    /// Always "course" now (older databases told built-in topics from
+    /// Always "course" now (older databases told built-in courses from
     /// "programme"s; they were merged).
     pub kind: String,
     pub title_pl: String,
@@ -33,8 +33,8 @@ pub struct Word {
     pub meaning: String,
     pub pos: String,
     /// The drill it belongs to, and that drill's title.
-    pub block_id: i64,
-    pub block: String,
+    pub lesson_id: i64,
+    pub lesson: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,8 +43,8 @@ pub struct Sentence {
     pub id: i64,
     pub pl: String,
     pub meaning: String,
-    pub block_id: i64,
-    pub block: String,
+    pub lesson_id: i64,
+    pub lesson: String,
 }
 
 #[derive(Debug, Clone, Serialize, Queryable, Selectable)]
@@ -124,7 +124,7 @@ pub struct Pair {
 #[serde(rename_all = "camelCase")]
 pub struct SessionPlan {
     pub day: i64,
-    pub topic: Topic,
+    pub course: Course,
     pub dialogue: Vec<DialogueLine>,
     pub exercises: Vec<Exercise>,
     pub new_words: usize,
@@ -133,8 +133,8 @@ pub struct SessionPlan {
     pub review_sentences: usize,
     /// True when today's session has already been finished.
     pub already_completed: bool,
-    /// The drill block this session practises.
-    pub block_id: i64,
+    /// The drill lesson this session practises.
+    pub lesson_id: i64,
     /// Done before and not due: extra practice — half XP, schedule unchanged.
     pub extra: bool,
 }
@@ -165,16 +165,16 @@ pub struct DayStat {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TopicProgress {
-    pub topic: Topic,
+pub struct CourseProgress {
+    pub course: Course,
     pub total_words: i64,
     pub seen_words: i64,
     pub mastered_words: i64,
     pub total_sentences: i64,
     pub seen_sentences: i64,
-    pub total_blocks: i64,
-    /// Blocks done at least once.
-    pub started_blocks: i64,
+    pub total_lessons: i64,
+    /// Lessons done at least once.
+    pub started_lessons: i64,
     /// The course's picture: a file id, shown through the media protocol.
     pub image_file_id: Option<i64>,
     /// Active, completed or mastered, and how far along.
@@ -228,7 +228,7 @@ pub struct Settings {
     pub tz_offset_minutes: i64,
     /// Writes song lyrics; empty means "same as the tutor model".
     pub songwriter_model: String,
-    /// Plays the other side in writing blocks; empty means the tutor model.
+    /// Plays the other side in writing lessons; empty means the tutor model.
     pub partner_model: String,
     /// "Talk about it" chats; empty means the tutor model.
     pub word_chat_model: String,
@@ -286,19 +286,19 @@ pub struct Conversation {
 #[serde(rename_all = "camelCase")]
 pub struct TutorAction {
     /// courseCreated | courseUpdated | courseDeleted | settingsChanged |
-    /// songStarted | songsDeleted | block… | memory. Older messages may hold
+    /// songStarted | songsDeleted | lesson… | memory. Older messages may hold
     /// programmeCreated / programmeUpdated / programmeDeleted.
     pub kind: String,
     /// One line for the learner, e.g. "Created “Colours” — 24 words".
     pub label: String,
     #[serde(default)]
-    pub topic_id: Option<i64>,
+    pub course_id: Option<i64>,
     /// Set when the action is about a song (one the tutor started making).
     #[serde(default)]
     pub song_id: Option<i64>,
-    /// Set when the action is about a block.
+    /// Set when the action is about a lesson.
     #[serde(default)]
-    pub block_id: Option<i64>,
+    pub lesson_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

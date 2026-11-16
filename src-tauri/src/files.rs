@@ -118,13 +118,13 @@ pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
 /// Every file some row points at. This is the one list of the columns that
 /// reference files: a new one belongs here, with a foreign key in the schema.
 pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
-    use crate::schema::{song_tracks, speech_clips, topics, wiki_sources};
+    use crate::schema::{song_tracks, speech_clips, courses, wiki_sources};
     let mut ids: std::collections::HashSet<i64> =
         speech_clips::table.select(speech_clips::file_id).load::<i64>(conn)?.into_iter().collect();
     let takes: Vec<(Option<i64>, Option<i64>)> =
         song_tracks::table.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?;
     ids.extend(takes.into_iter().flat_map(|(audio, image)| [audio, image]).flatten());
-    ids.extend(topics::table.select(topics::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
+    ids.extend(courses::table.select(courses::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
     ids.extend(wiki_sources::table.select(wiki_sources::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
     Ok(ids)
 }

@@ -18,8 +18,8 @@ import { useEffect } from "react";
 
 import { useBackHandler } from "../lib/back";
 import { playComplete } from "../lib/sounds";
-import { dayToDate } from "../lib/blocks";
-import type { BlockResult, SessionResult } from "../lib/types";
+import { dayToDate } from "../lib/lessons";
+import type { LessonResult, SessionResult } from "../lib/types";
 
 const OUTCOME = {
   pass: "Passed",
@@ -35,10 +35,10 @@ export function SessionSummary({
 }: {
   result: SessionResult;
   sessionXp: number;
-  /** The block's verdict and when it checks in next. */
+  /** The lesson's verdict and when it checks in next. */
   outcome?: {
     title: string;
-    result: BlockResult;
+    result: LessonResult;
     nextDueDay: number | null;
     /** Extra practice: the schedule did not move. */
     extra?: boolean;
@@ -75,10 +75,10 @@ export function SessionSummary({
       </Stack>
 
       {(result.milestones ?? []).map((milestone) => (
-        <Banner key={`${milestone.topicId}-${milestone.mastered}`} tone="ok">
+        <Banner key={`${milestone.courseId}-${milestone.mastered}`} tone="ok">
           {milestone.mastered
             ? `🏆 You mastered “${milestone.title}” — everything in it holds.`
-            : `🎉 You completed “${milestone.title}”! It moves to your completed courses; its blocks still come back now and then.`}
+            : `🎉 You completed “${milestone.title}”! It moves to your completed courses; its lessons still come back now and then.`}
         </Banner>
       ))}
 
@@ -127,7 +127,7 @@ export function SessionSummary({
         </Section>
       ) : null}
 
-      <Button variant="primary" size="lg" block onClick={onDone}>
+      <Button variant="primary" size="lg" wide onClick={onDone}>
         Done
       </Button>
     </Screen>

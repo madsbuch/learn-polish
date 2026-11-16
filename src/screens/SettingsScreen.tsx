@@ -283,7 +283,7 @@ export function SettingsScreen({
               </Field>
               <Button
                 variant="primary"
-                block
+                wide
                 loading={busy === "save-key"}
                 disabled={keyDraft.trim().length === 0}
                 onClick={() =>
@@ -312,7 +312,7 @@ export function SettingsScreen({
               <b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.
             </p>
             <p>
-              <b>Writing partner</b> plays the other person in writing blocks. <b>Talk about it</b>{" "}
+              <b>Writing partner</b> plays the other person in writing lessons. <b>Talk about it</b>{" "}
               chats with you about a word or sentence. Both are short replies, so a small, fast
               model is enough; pick one marked 🛠 so it can still make a drill when you ask.
             </p>
@@ -455,7 +455,7 @@ export function SettingsScreen({
               </Field>
               <Button
                 variant="primary"
-                block
+                wide
                 loading={busy === "kie-save"}
                 disabled={kieDraft.trim().length === 0}
                 onClick={() =>
@@ -621,7 +621,7 @@ export function SettingsScreen({
           />
         </List>
         <Button
-          block
+          wide
           icon={<PlayerIcon.download />}
           loading={busy === "export"}
           onClick={() =>
@@ -640,7 +640,7 @@ export function SettingsScreen({
           label="Reset progress"
           confirmLabel="Erase progress"
           question="Erase every review, streak and achievement, the daily focus and the tutor conversation? Courses, memories and songs stay."
-          block
+          wide
           onConfirm={() =>
             run("reset", async () => {
               await api.resetProgress();

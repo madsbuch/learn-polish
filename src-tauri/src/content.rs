@@ -4,16 +4,16 @@
 
 use serde::Deserialize;
 
-pub struct TopicFiles {
+pub struct CourseFiles {
     pub slug: &'static str,
     pub words: &'static str,
     pub sentences: &'static str,
     pub conversation: &'static str,
 }
 
-macro_rules! topic {
+macro_rules! course {
     ($slug:literal, $file:literal) => {
-        TopicFiles {
+        CourseFiles {
             slug: $slug,
             words: include_str!(concat!("../test-fixtures/retired-courses/words/", $file, ".tsv")),
             sentences: include_str!(concat!("../test-fixtures/retired-courses/sentences/", $file, ".tsv")),
@@ -22,17 +22,17 @@ macro_rules! topic {
     };
 }
 
-pub const TOPICS: &[TopicFiles] = &[
-    topic!("basics", "01-basics"),
-    topic!("family", "02-family"),
-    topic!("food", "03-food"),
-    topic!("shopping", "04-shopping"),
-    topic!("travel", "05-travel"),
-    topic!("home", "06-home"),
-    topic!("work", "07-work"),
-    topic!("health", "08-health"),
-    topic!("time-nature", "09-time-nature"),
-    topic!("leisure", "10-leisure"),
+pub const COURSES: &[CourseFiles] = &[
+    course!("basics", "01-basics"),
+    course!("family", "02-family"),
+    course!("food", "03-food"),
+    course!("shopping", "04-shopping"),
+    course!("travel", "05-travel"),
+    course!("home", "06-home"),
+    course!("work", "07-work"),
+    course!("health", "08-health"),
+    course!("time-nature", "09-time-nature"),
+    course!("leisure", "10-leisure"),
 ];
 
 /// The starter lessons, written once on a fresh install.
@@ -110,29 +110,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_topic_parses_and_is_substantial() {
-        assert_eq!(TOPICS.len(), 10);
+    fn every_course_parses_and_is_substantial() {
+        assert_eq!(COURSES.len(), 10);
         let mut total_words = 0;
-        for topic in TOPICS {
-            let words = parse_words(topic.words);
-            let sentences = parse_sentences(topic.sentences);
-            let convo: Conversation = serde_json::from_str(topic.conversation)
-                .unwrap_or_else(|e| panic!("{} conversation: {e}", topic.slug));
+        for course in COURSES {
+            let words = parse_words(course.words);
+            let sentences = parse_sentences(course.sentences);
+            let convo: Conversation = serde_json::from_str(course.conversation)
+                .unwrap_or_else(|e| panic!("{} conversation: {e}", course.slug));
 
-            assert!(words.len() >= 190, "{} has {} words", topic.slug, words.len());
-            assert_eq!(sentences.len(), 20, "{}", topic.slug);
-            assert!(convo.lines.len() >= 10, "{}", topic.slug);
-            assert_eq!(convo.slug, topic.slug);
+            assert!(words.len() >= 190, "{} has {} words", course.slug, words.len());
+            assert_eq!(sentences.len(), 20, "{}", course.slug);
+            assert!(convo.lines.len() >= 10, "{}", course.slug);
+            assert_eq!(convo.slug, course.slug);
 
             // Every speaker needs a gender, or their lines get the wrong voice.
             for line in &convo.lines {
                 let gender = convo.speakers.get(&line.speaker).unwrap_or_else(|| {
-                    panic!("{}: speaker '{}' has no gender", topic.slug, line.speaker)
+                    panic!("{}: speaker '{}' has no gender", course.slug, line.speaker)
                 });
                 assert!(
                     gender == "f" || gender == "m",
                     "{}: '{}' has gender '{gender}'",
-                    topic.slug,
+                    course.slug,
                     line.speaker
                 );
             }
@@ -144,8 +144,8 @@ mod tests {
     #[test]
     fn headwords_are_globally_unique() {
         let mut seen = std::collections::HashSet::new();
-        for topic in TOPICS {
-            for word in parse_words(topic.words) {
+        for course in COURSES {
+            for word in parse_words(course.words) {
                 assert!(seen.insert(word.pl.to_string()), "duplicate: {}", word.pl);
             }
         }

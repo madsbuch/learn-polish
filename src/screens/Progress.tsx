@@ -1,6 +1,6 @@
-import { TopicList } from "../components/TopicList";
+import { CourseList } from "../components/CourseList";
 import { Card, Inline, Progress as Meter, Screen, Section, Stack, Stat, StatGrid, Text } from "../design";
-import type { Stats, TopicProgress } from "../lib/types";
+import type { Stats, CourseProgress } from "../lib/types";
 /** 18 weeks of activity, oldest first, in Sunday-aligned columns. */
 function Heatmap({ stats }: { stats: Stats }) {
   const byDay = new Map(stats.history.map((entry) => [entry.day, entry]));
@@ -48,13 +48,13 @@ function Measure({
 
 export function Progress({
   stats,
-  topics,
-  onOpenTopic,
+  courses,
+  onOpenCourse,
   onBack,
 }: {
   stats: Stats;
-  topics: TopicProgress[];
-  onOpenTopic: (progress: TopicProgress) => void;
+  courses: CourseProgress[];
+  onOpenCourse: (progress: CourseProgress) => void;
   onBack: () => void;
 }) {
   return (
@@ -87,8 +87,8 @@ export function Progress({
         </Card>
       </Section>
 
-      <Section title="Topics">
-        <TopicList entries={topics} onOpen={onOpenTopic} />
+      <Section title="Courses">
+        <CourseList entries={courses} onOpen={onOpenCourse} />
       </Section>
 
       <Section title="Achievements">
