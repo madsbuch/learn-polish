@@ -83,7 +83,7 @@ mod tests {
         assert_eq!(sentences::table.count().get_result::<i64>(&mut conn).unwrap(), 4);
         assert_eq!(conversation_lines::table.count().get_result::<i64>(&mut conn).unwrap(), 6);
         assert_eq!(lessons::table.count().get_result::<i64>(&mut conn).unwrap(), 4);
-        assert_eq!(lessons::table.filter(lessons::kind.ne("drill")).count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(lessons::table.filter(lessons::lesson_type.eq_any(["study", "writing", "listening"])).count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert!(!crate::lessons::overview(&mut conn).unwrap().next.is_empty());
         crate::stats::collect(&mut conn).unwrap();
         // Reopening neither duplicates the demo nor overwrites a learner's rename.

@@ -40,9 +40,7 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
     }
     let base = match kind {
         "intro" | "sentenceIntro" | "pictureIntro" => 2,
-        "recognise" | "wordPick" => 6,
-        "hearPick" | "picturePick" => 8,
-        "pictureType" => 14,
+        "recognise" | "wordPick" | "picturePick" => 6,
         "produce" => 8,
         "dialogueGap" => 10,
         "wordOrder" => 12,
@@ -230,7 +228,7 @@ struct Counts {
 }
 
 fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
-    let dialogues = lessons::table.filter(lessons::format.eq("dialogue"));
+    let dialogues = lessons::table.filter(lessons::lesson_type.eq("dialogue"));
     Ok(Counts {
         words_total: words::table.count().get_result(conn)?,
         words_seen: reviews::table.filter(reviews::kind.eq("word")).count().get_result(conn)?,
@@ -248,7 +246,7 @@ fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
         days_done: day_log::table.filter(day_log::completed.eq(1)).count().get_result(conn)?,
         checkins_passed: passed(conn, None)?,
         writing_passed: passed(conn, Some("writing"))?,
-        listening_passed: passed(conn, Some("song"))?,
+        listening_passed: passed(conn, Some("listening"))?,
         songs_made: songs::table.filter(songs::status.eq("ready")).count().get_result(conn)?,
         tutor_lessons: lessons::table.filter(lessons::origin.eq("tutor")).count().get_result(conn)?,
         courses_finished: courses_finished(conn)?,
@@ -262,7 +260,7 @@ fn passed(conn: &mut Conn, format: Option<&str>) -> Result<i64> {
         .filter(checkins::result.eq("pass"))
         .into_boxed();
     if let Some(format) = format {
-        query = query.filter(lessons::format.eq(format));
+        query = query.filter(lessons::lesson_type.eq(format));
     }
     Ok(query.count().get_result(conn)?)
 }

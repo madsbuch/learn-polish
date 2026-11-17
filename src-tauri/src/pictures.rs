@@ -197,23 +197,19 @@ pub struct WordPictureChanged {
     pub file_id: Option<i64>,
 }
 
-/// A word is worth a picture in a word drill when it is a noun: things, not
-/// actions or qualities, which a picture cannot show without ambiguity.
-pub fn picturable(pos: &str) -> bool {
-    pos.starts_with('n') && pos != "num"
-}
-
-/// The words of a lesson still without a picture. A picture lesson draws
-/// every word; a word drill only its nouns.
+/// The words of a picture lesson still without a picture (none for any
+/// other type: only picture lessons have pictures).
 pub fn missing(conn: &mut Conn, lesson_id: i64) -> Result<Vec<i64>> {
-    let format: String = lessons::table.find(lesson_id).select(lessons::format).first(conn)?;
-    let rows: Vec<(i64, String)> = words::table
+    let lesson_type: String = lessons::table.find(lesson_id).select(lessons::lesson_type).first(conn)?;
+    if lesson_type != "pictures" {
+        return Ok(Vec::new());
+    }
+    Ok(words::table
         .filter(words::lesson_id.eq(lesson_id))
         .filter(words::image_file_id.is_null())
         .order((words::ord, words::id))
-        .select((words::id, words::pos))
-        .load(conn)?;
-    Ok(rows.into_iter().filter(|(_, pos)| format == "pictures" || picturable(pos)).map(|(id, _)| id).collect())
+        .select(words::id)
+        .load(conn)?)
 }
 
 /// Draws the given words' pictures in the background, a few at a time, each
@@ -261,7 +257,7 @@ pub fn draw_missing_in_background(app: &tauri::AppHandle) {
     let lessons: Vec<i64> = {
         let mut guard = db.lock();
         lessons::table
-            .filter(lessons::format.eq("pictures"))
+            .filter(lessons::lesson_type.eq("pictures"))
             .select(lessons::id)
             .load(&mut *guard)
             .unwrap_or_default()
@@ -274,8 +270,8 @@ pub fn draw_missing_in_background(app: &tauri::AppHandle) {
     }
 }
 
-/// Adds pictures to a lesson: every word of a picture lesson, the nouns of a
-/// word drill. Drawn in the background; returns how many are on the way.
+/// Draws a picture lesson's missing pictures in the background; returns how
+/// many are on the way.
 #[tauri::command]
 pub async fn lesson_add_pictures(app: tauri::AppHandle, db: State<'_, Db>, lesson_id: i64) -> Result<usize> {
     let missing = {

@@ -2,6 +2,7 @@ mod agent;
 mod ai;
 mod bench;
 mod lessons;
+mod lesson_types;
 mod cast;
 mod commands;
 #[cfg(test)]
@@ -137,6 +138,7 @@ pub fn run() {
             wiki::fact_check_lesson,
             pictures::course_picture_delete,
             pictures::lesson_add_pictures,
+            lesson_types::lesson_types,
             pictures::word_picture_draw,
             pictures::word_picture_delete,
             tutor::app_visibility,
@@ -278,7 +280,7 @@ mod integration {
         let mut conn = scratch_db("lessons");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let list = lessons::for_course(&mut conn, basics).unwrap();
-        let count = |format: &str| list.iter().filter(|b| b.format == format).count();
+        let count = |format: &str| list.iter().filter(|b| b.lesson_type == format).count();
         assert_eq!(count("dialogue"), 1);
         assert!(count("words") + count("typing") >= 20, "words come in eights");
         assert!(count("typing") > 0 && count("words") > count("typing"), "every third batch is typed");
@@ -286,7 +288,7 @@ mod integration {
         assert!(list.iter().all(|b| b.due_day.is_none()), "nothing is scheduled before it is done");
 
         // A word drill is small: eight new words, met then recognised, and a memory round.
-        let words = list.iter().find(|b| b.format == "words").unwrap();
+        let words = list.iter().find(|b| b.lesson_type == "words").unwrap();
         assert_eq!(words.complexity, "low");
         let plan = session::build_lesson(&mut conn, words.id).unwrap();
         assert_eq!(plan.new_words, 8);
@@ -295,13 +297,13 @@ mod integration {
         assert!(plan.exercises.iter().any(|e| e.kind == "memory"));
 
         // The dialogue drill reads first, then drills its lines.
-        let dialogue = list.iter().find(|b| b.format == "dialogue").unwrap();
+        let dialogue = list.iter().find(|b| b.lesson_type == "dialogue").unwrap();
         let plan = session::build_lesson(&mut conn, dialogue.id).unwrap();
         assert_eq!(plan.exercises[0].kind, "dialogueRead");
         assert!(plan.exercises.iter().any(|e| e.kind == "dialogueGap"));
 
         // Sentences: build each, then fill gaps from a bank that holds every answer.
-        let sentences = list.iter().find(|b| b.format == "sentences").unwrap();
+        let sentences = list.iter().find(|b| b.lesson_type == "sentences").unwrap();
         assert_eq!(sentences.complexity, "medium");
         let plan = session::build_lesson(&mut conn, sentences.id).unwrap();
         assert!(plan.exercises.iter().any(|e| e.kind == "wordOrder"));
@@ -319,7 +321,7 @@ mod integration {
         let grammar = grammar_course(&mut conn);
         let lessons = lessons::for_course(&mut conn, grammar).unwrap();
         assert!(lessons.len() >= 7);
-        assert!(lessons.iter().all(|b| b.kind == "study" && b.origin == "starter"));
+        assert!(lessons.iter().all(|b| b.lesson_type == "study" && b.origin == "starter"));
         let overview = lessons::overview(&mut conn).unwrap();
         assert!(overview.due.is_empty(), "nothing is due on a fresh install");
         assert_eq!(overview.next[0].course_id, Some(basics), "the course starts at the beginning");
@@ -443,7 +445,7 @@ mod integration {
             .get_result(&mut conn)
             .unwrap();
         assert_eq!(czesc, 1);
-        let dialogues = lessons::for_course(&mut conn, basics).unwrap().iter().filter(|b| b.format == "dialogue").count();
+        let dialogues = lessons::for_course(&mut conn, basics).unwrap().iter().filter(|b| b.lesson_type == "dialogue").count();
         assert_eq!(dialogues, 1, "the existing conversation is kept, not doubled");
         assert_eq!(t::courses::table.filter(t::courses::slug.eq("grammar-essentials")).count().get_result::<i64>(&mut conn).unwrap(), 0);
 
@@ -462,7 +464,7 @@ mod integration {
         let words = lessons::for_course(&mut conn, basics)
             .unwrap()
             .into_iter()
-            .find(|b| b.format == "words")
+            .find(|b| b.lesson_type == "words")
             .unwrap();
         let plan = session::build_lesson(&mut conn, words.id).unwrap();
         for exercise in plan.exercises.iter().filter(|e| e.item_kind == "word") {
@@ -721,7 +723,7 @@ mod integration {
         let drill = lessons::for_course(&mut conn, basics)
             .unwrap()
             .into_iter()
-            .find(|b| b.kind == "drill" && b.format == "words")
+            .find(|b| b.lesson_type == "words")
             .unwrap();
         let word: i64 = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
         let answer = |kind: &str, extra: bool| practice::SubmitAnswer {
@@ -955,7 +957,7 @@ mod integration {
     fn mastery_is_earned_by_passing_without_waiting() {
         let mut conn = scratch_db("mastery-now");
         let course = db::require_course_id(&mut conn, 1).unwrap();
-        let drill = lessons::for_course(&mut conn, course).unwrap().into_iter().find(|l| l.format != "writing").unwrap();
+        let drill = lessons::for_course(&mut conn, course).unwrap().into_iter().find(|l| l.lesson_type != "writing").unwrap();
         // All in one day: the first pass, then same-day passes — extra
         // practice, which leaves the schedule alone but still counts.
         let first = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
@@ -963,7 +965,7 @@ mod integration {
         let due = first.lesson.due_day;
         let mut passes = 1;
         let mut lesson = first.lesson;
-        while !lessons::is_mastered(lesson.passed, lesson.mastery, &lesson.format, lesson.support_level) {
+        while !lessons::is_mastered(lesson.passed, lesson.mastery, &lesson.lesson_type, lesson.support_level) {
             let done = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
             assert!(done.extra, "same-day replays are extra practice");
             lesson = done.lesson;
@@ -975,7 +977,7 @@ mod integration {
         // A fail costs points; a partial earns none.
         let failed = practice::lesson_finish_in(&mut conn, drill.id, 0, 10).unwrap();
         assert_eq!(failed.lesson.mastery, 80);
-        assert!(!lessons::is_mastered(failed.lesson.passed, failed.lesson.mastery, &failed.lesson.format, failed.lesson.support_level));
+        assert!(!lessons::is_mastered(failed.lesson.passed, failed.lesson.mastery, &failed.lesson.lesson_type, failed.lesson.support_level));
     }
 
     #[test]
@@ -1209,12 +1211,12 @@ mod integration {
         assert_eq!((made["lessons"].as_i64(), made["writing"].as_bool()), (Some(2), Some(true)), "{made}");
         let course = made["created"]["course_id"].as_i64().unwrap();
         let path: Vec<(String, String)> =
-            lessons::for_course(&mut conn, course).unwrap().into_iter().map(|b| (b.format, b.title)).collect();
+            lessons::for_course(&mut conn, course).unwrap().into_iter().map(|b| (b.lesson_type, b.title)).collect();
         let formats: Vec<&str> = path.iter().map(|(f, _)| f.as_str()).collect();
         assert_eq!(formats.first(), Some(&"dialogue"), "the conversation first: {path:?}");
         assert_eq!(formats.last(), Some(&"writing"), "writing last: {path:?}");
         assert_eq!(formats[1], "words");
-        assert_eq!(formats[2], "", "the first lesson once the first words are in: {path:?}");
+        assert_eq!(formats[2], "study", "the first lesson once the first words are in: {path:?}");
         assert!(formats.contains(&"typing"), "every third batch of words is typed: {path:?}");
         assert_eq!(formats.iter().filter(|f| **f == "words" || **f == "typing").count(), 3);
     }
@@ -1265,7 +1267,7 @@ mod integration {
         let drill = lessons::for_course(&mut conn, basics)
             .unwrap()
             .into_iter()
-            .find(|b| b.kind == "drill")
+            .find(|b| b.engine == "exercises")
             .unwrap();
         assert!(wiki::store(&mut conn, drill.id, &article, None, None).is_err());
 
@@ -1392,8 +1394,77 @@ mod integration {
         assert_eq!((after.clips, after.unused_clips), (1, 0), "the used clip stays");
     }
 
+    /// Every registered lesson type can be made and practised, and every
+    /// exercise a drill can produce is one the screens know how to show
+    /// (src/lib/types.ts lists them; src/exercises/ must draw each, or the
+    /// frontend build fails). A new type without a sample here fails too.
     #[test]
-    fn picture_lessons_teach_by_picture_sound_and_word() {
+    fn every_lesson_type_can_be_made_and_practised() {
+        let mut conn = scratch_db("lesson-types");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into() };
+        let sentence = |pl: &str, en: &str| courses::NewSentence { pl: pl.into(), en: en.into() };
+        let line = |speaker: &str, pl: &str, en: &str| courses::NewLine { speaker: speaker.into(), gender: "f".into(), pl: pl.into(), en: en.into() };
+        let screens = include_str!("../../src/lib/types.ts");
+        let mut ids = std::collections::HashSet::new();
+        for (n, kind) in lesson_types::REGISTRY.iter().enumerate() {
+            assert!(ids.insert(kind.id), "two types called {}", kind.id);
+            assert!(tutor::rules().contains(&format!("- {} (", kind.id)), "the tutor knows {}", kind.id);
+            assert!(!kind.sections.is_empty() && !kind.description.is_empty());
+            let lesson = if kind.is_drill() {
+                let items = courses::Items {
+                    words: (0..6).map(|i| word(&format!("słowo{n}x{i}"), &format!("word {n}/{i}"))).collect(),
+                    sentences: [
+                        ("Mój brat lubi kawę.", "My brother likes coffee."),
+                        ("Dzisiaj pada deszcz.", "Today it is raining."),
+                        ("Gdzie jest dworzec?", "Where is the station?"),
+                        ("Kupuję chleb w piekarni.", "I buy bread at the bakery."),
+                        ("Mieszkamy w małym domu.", "We live in a small house."),
+                        ("Czytam ciekawą książkę.", "I am reading an interesting book."),
+                    ]
+                    .iter()
+                    .map(|(pl, en)| sentence(&format!("{pl} {n}"), en))
+                    .collect(),
+                    dialogue: (0..4).map(|i| line(if i % 2 == 0 { "Ola" } else { "Jan" }, &format!("Linia {n}x{i} rozmowy."), &format!("Line {i}."))).collect(),
+                };
+                let (lesson, _) = lessons::create_drill(&mut conn, course, kind.name, "", kind.id, "low", &items, None, "tutor").unwrap();
+                if kind.id == "pictures" {
+                    for id in t::words::table.filter(t::words::lesson_id.eq(lesson.id)).select(t::words::id).load::<i64>(&mut conn).unwrap() {
+                        let file = files::store(&mut conn, files::WORD_IMAGE, &format!("p{id}.jpg"), "image/jpeg", &id.to_le_bytes()).unwrap();
+                        diesel::update(t::words::table.find(id)).set(t::words::image_file_id.eq(file)).execute(&mut conn).unwrap();
+                    }
+                }
+                let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
+                assert!(!plan.exercises.is_empty(), "{} builds exercises", kind.id);
+                for exercise in &plan.exercises {
+                    assert!(screens.contains(&format!("\"{}\"", exercise.kind)), "the screens know the {} exercise ({})", exercise.kind, kind.id);
+                }
+                lesson
+            } else {
+                let lesson = match kind.id {
+                    "study" => lessons::create_study(&mut conn, serde_json::from_value(serde_json::json!({
+                        "title": "Być", "complexity": "low", "content": "Jestem, jesteś.", "objectives": ["Conjugate być"], "course_id": course
+                    })).unwrap(), "tutor").unwrap(),
+                    "writing" => lessons::create_writing(&mut conn, serde_json::from_value(serde_json::json!({
+                        "title": "Neighbour", "complexity": "low", "content": "Meet a neighbour.", "objectives": ["Say your name"], "course_id": course
+                    })).unwrap(), "tutor").unwrap(),
+                    "listening" => {
+                        let song = songs::insert_song(&mut conn, &songs::SongDraft { title: "Kawa".into(), ..Default::default() }, "V6").unwrap();
+                        lessons::create_listening(&mut conn, song, None, None, Some(course), "tutor").unwrap()
+                    }
+                    other => panic!("add a sample for the new conversation type '{other}' here"),
+                };
+                assert!(session::build_lesson(&mut conn, lesson.id).is_err(), "{} is not drilled", kind.id);
+                lesson
+            };
+            assert_eq!((lesson.lesson_type.as_str(), lesson.engine), (kind.id, kind.engine()));
+            assert_eq!(lesson.period_days, kind.default_period(&lesson.complexity), "{}", kind.id);
+        }
+        assert_eq!(lesson_types::lesson_types().len(), lesson_types::REGISTRY.len());
+    }
+
+    #[test]
+    fn picture_lessons_link_each_word_with_its_picture() {
         let mut conn = scratch_db("pictures");
         let course = db::require_course_id(&mut conn, 1).unwrap();
         let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into() };
@@ -1417,11 +1488,18 @@ mod integration {
         let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
         let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
         assert_eq!(kinds.iter().filter(|k| **k == "pictureIntro").count(), 4, "{kinds:?}");
-        assert_eq!(kinds.iter().filter(|k| **k == "intro").count(), 1, "the undrawn word is met as in a words drill: {kinds:?}");
-        let hear = plan.exercises.iter().find(|e| e.kind == "hearPick").expect("hear it, pick the picture");
-        assert_eq!(hear.options.len(), 4);
-        assert_eq!(hear.option_images.iter().flatten().count(), 4, "every option is a picture");
-        assert!(hear.options.contains(&hear.answer));
+        assert!(kinds.iter().all(|k| ["pictureIntro", "picturePick", "wordPick", "memory"].contains(k)), "word and picture only, and the undrawn word waits: {kinds:?}");
+        // Known words come back the other way round: the word, pick its picture.
+        for id in &ids[..4] {
+            for _ in 0..1 {
+                practice::submit_answer_in(&mut conn, practice::SubmitAnswer { kind: "picturePick".into(), item_kind: "word".into(), item_id: *id, expected: "x".into(), given: "x".into(), ..Default::default() }).unwrap();
+            }
+        }
+        let again = session::build_lesson(&mut conn, lesson.id).unwrap();
+        let pick = again.exercises.iter().find(|e| e.kind == "wordPick").expect("see the word, pick its picture");
+        assert_eq!(pick.options.len(), 4);
+        assert_eq!(pick.option_images.iter().flatten().count(), 4, "every option is a picture");
+        assert!(pick.options.contains(&pick.answer));
         let intro = plan.exercises.iter().find(|e| e.kind == "pictureIntro").unwrap();
         assert!(intro.image.is_some() && !intro.meaning.is_empty(), "English is there, behind a tap");
         let memory = plan.exercises.iter().find(|e| e.kind == "memory").expect("a memory round of pictures");
@@ -1439,16 +1517,16 @@ mod integration {
         }).unwrap();
         assert_eq!(met.xp_gained, 0);
 
-        // A word drill given pictures draws only its nouns, and works as before.
+        // Word drills are as they were: no pictures to draw, no picture exercises.
         let drill_items = courses::Items {
             words: vec![word("chleb", "bread"), courses::NewWord { pl: "jeść".into(), en: "to eat".into(), pos: "v".into() }],
             sentences: vec![],
             dialogue: vec![],
         };
         let (drill, _) = lessons::create_drill(&mut conn, course, "Food", "", "words", "low", &drill_items, None, "tutor").unwrap();
-        assert_eq!(pictures::missing(&mut conn, drill.id).unwrap().len(), 1, "nouns only");
+        assert!(pictures::missing(&mut conn, drill.id).unwrap().is_empty());
         let plain = session::build_lesson(&mut conn, drill.id).unwrap();
-        assert!(plain.exercises.iter().all(|e| !e.kind.starts_with("picture") && e.kind != "hearPick" && e.kind != "wordPick"));
+        assert!(plain.exercises.iter().all(|e| !e.kind.starts_with("picture") && e.kind != "wordPick" && e.image.is_none()));
     }
 
     #[test]
@@ -1464,7 +1542,6 @@ mod integration {
         assert_eq!((back.width(), back.height()), (512, 384), "fits 512, keeps its shape");
         assert_eq!(image::guess_format(&small).unwrap(), image::ImageFormat::Jpeg);
         assert!(pictures::word_prompt("krzesło", "chair").contains("No text"));
-        assert!(pictures::picturable("n-f") && !pictures::picturable("v") && !pictures::picturable("num"));
     }
 
     #[test]
@@ -1614,7 +1691,7 @@ mod integration {
 
         // It is cut into drills, and they are offered first.
         let list = lessons::for_course(&mut conn, course_id).unwrap();
-        let formats: Vec<&str> = list.iter().map(|b| b.format.as_str()).collect();
+        let formats: Vec<&str> = list.iter().map(|b| b.lesson_type.as_str()).collect();
         assert_eq!(formats, vec!["dialogue", "words", "sentences"]);
         assert_eq!(lessons::overview(&mut conn).unwrap().next[0].course_id, Some(course_id));
         let plan = session::build_lesson(&mut conn, list[1].id).unwrap();
@@ -1658,7 +1735,7 @@ mod integration {
         let mut conn = scratch_db("membership");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let family = db::require_course_id(&mut conn, 2).unwrap();
-        let lesson = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
+        let lesson = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
         let words = lessons::detail(&mut conn, lesson.id).unwrap().words;
 
         // Shared: one lesson, listed in both, with one schedule.
@@ -1744,7 +1821,7 @@ mod integration {
         assert_eq!(study["_action"]["kind"], "lessonCreated", "{study}");
         let study_id = study["_action"]["lessonId"].as_i64().unwrap();
         let lesson = lessons::load(&mut conn, study_id).unwrap();
-        assert_eq!((lesson.kind.as_str(), lesson.complexity.as_str(), lesson.period_days), ("study", "low", 5));
+        assert_eq!((lesson.lesson_type.as_str(), lesson.complexity.as_str(), lesson.period_days), ("study", "low", 5));
         // Without a course it is filed in "Grammar & culture".
         assert_eq!(lesson.course_title.as_deref(), Some("Grammar & culture"));
 
@@ -1774,7 +1851,7 @@ mod integration {
         );
         let drill_id = drill["_action"]["lessonId"].as_i64().unwrap();
         let lesson = lessons::load(&mut conn, drill_id).unwrap();
-        assert_eq!((lesson.format.as_str(), lesson.items), ("memory", 4));
+        assert_eq!((lesson.lesson_type.as_str(), lesson.items), ("memory", 4));
         assert_eq!(lessons::for_course(&mut conn, lesson.course_id.unwrap()).unwrap().len(), 1);
         let plan = session::build_lesson(&mut conn, drill_id).unwrap();
         assert!(plan.exercises.iter().all(|e| e.kind == "memory"));
@@ -1842,7 +1919,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         );
         let id = made["created"]["lesson_id"].as_i64().unwrap_or_else(|| panic!("{made}"));
         let detail = lessons::detail(&mut conn, id).unwrap();
-        assert_eq!((detail.lesson.kind.as_str(), detail.lesson.format.as_str()), ("study", "writing"));
+        assert_eq!((detail.lesson.lesson_type.as_str(), detail.lesson.engine), ("writing", "conversation"));
         assert_eq!(detail.objectives.len(), 2);
         let writing = courses::writing_course(&mut conn).unwrap();
         assert_eq!(detail.lesson.course_ids, vec![writing], "filed in Writing by default");
@@ -1877,7 +1954,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let loose = lessons::create_listening(&mut conn, 2, None, None, None, "tutor").unwrap();
         crate::playlists::create(&mut conn, "Rano", &[]).unwrap();
         let starter = starter_lesson(&mut conn);
-        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.format == "words").unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
 
         let prompt = tutor::system_prompt(&mut conn).unwrap();
         assert!(prompt.contains("Pierwsze spotkanie") && prompt.contains("Wants to order food"));
@@ -2011,7 +2088,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let made = tutor::run_tool_for_test(&mut conn, "create_listening_lesson", serde_json::json!({ "song_id": 1, "complexity": "high" }));
         let id = made["_action"]["lessonId"].as_i64().expect("made");
         let lesson = lessons::load(&mut conn, id).unwrap();
-        assert_eq!((lesson.kind.as_str(), lesson.format.as_str(), lesson.song_id), ("study", "song", Some(1)));
+        assert_eq!((lesson.lesson_type.as_str(), lesson.song_id), ("listening", Some(1)));
         assert!(lessons::detail(&mut conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
         // One per song: asking again returns the same lesson.
         assert_eq!(lessons::create_listening(&mut conn, 1, None, None, None, "tutor").unwrap().id, id);

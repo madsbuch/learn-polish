@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { Avatar, Badge, ListItem } from "../design";
 import { complexityTone, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { Lesson } from "../lib/types";
-import { DrillIcon, NavIcon, StudyIcon, WriteIcon } from "./icons";
+import { lessonType } from "../lib/lessonTypes";
+import { DrillIcon, NavIcon, PictureIcon, StudyIcon, WriteIcon } from "./icons";
 
 /**
  * A lesson in a list: what kind it is, how long it takes, and when it is due.
@@ -47,9 +48,16 @@ export function LessonRow({
   );
 }
 
-/** What kind of lesson it is, as an icon. */
-export function LessonIcon({ lesson }: { lesson: Pick<Lesson, "kind" | "format"> }) {
-  if (lesson.format === "song") return <NavIcon.songs />;
-  if (lesson.format === "writing") return <WriteIcon />;
-  return lesson.kind === "study" ? <StudyIcon /> : <DrillIcon />;
+/** Each type's icon, by the icon name it registers (lesson_types). */
+const TYPE_ICONS: Record<string, () => ReactNode> = {
+  drill: () => <DrillIcon />,
+  study: () => <StudyIcon />,
+  write: () => <WriteIcon />,
+  song: () => <NavIcon.songs />,
+  picture: () => <PictureIcon />,
+};
+
+/** What type of lesson it is, as an icon. */
+export function LessonIcon({ lesson }: { lesson: Pick<Lesson, "type" | "engine"> }) {
+  return (TYPE_ICONS[lessonType(lesson).icon] ?? TYPE_ICONS.drill)();
 }

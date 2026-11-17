@@ -1,13 +1,10 @@
 //! Lessons: the unit of learning.
 //!
-//! A lesson is small and has one job. A **drill** is mechanical practice on a
-//! handful of words or sentences (flashcards, memory cards, gaps, a
-//! dialogue). A **study** lesson is a short lesson — a conjugation, a grammar
-//! point, a bit of culture — checked by an examiner agent that interviews the
-//! learner. A **writing** lesson is a study lesson of its own format: a
-//! situation played out in writing, in Polish only, with an AI partner, until
-//! the learner has done what the lesson asks (say where they live, order a
-//! meal, …).
+//! A lesson is small and has one job, and its **type** says which (see
+//! lesson_types): a drill of exercises on a handful of words or sentences
+//! (words, pictures, typing, memory cards, sentences, gaps, a conversation),
+//! or a check-in with the examiner — a study text, a song to listen to, or a
+//! situation played out in writing with a partner.
 //!
 //! Every lesson has a **complexity** (low ≈ 1–2 minutes, medium ≈ 5–10, high
 //! ≈ 20+), set by how hard its subject is, and its own **check-in period**.
@@ -33,7 +30,6 @@ pub const SENTENCES_PER_LESSON: usize = 5;
 /// Longest gap between check-ins, however often a lesson was passed.
 const MAX_INTERVAL: i64 = 120;
 
-pub const FORMATS: &[&str] = &["words", "memory", "typing", "sentences", "gaps", "dialogue", "pictures"];
 
 /// What a listening lesson checks, by complexity: understanding first, then
 /// picking out words, then the grammar of what was sung.
@@ -54,26 +50,16 @@ fn listening_objectives(complexity: &str) -> Vec<String> {
 }
 pub const COMPLEXITIES: &[&str] = &["low", "medium", "high"];
 
-/// A sensible check-in period for a new lesson, in days.
-pub fn default_period(kind: &str, complexity: &str) -> i64 {
-    match (kind, complexity) {
-        ("drill", "low") => 2,
-        ("drill", "medium") => 4,
-        ("drill", _) => 7,
-        (_, "low") => 5,
-        (_, "medium") => 7,
-        _ => 10,
-    }
-}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Lesson {
     pub id: i64,
-    /// "drill" | "study"
-    pub kind: String,
-    /// For drills: words | memory | typing | sentences | gaps | dialogue.
-    pub format: String,
+    /// Its type: one of lesson_types::REGISTRY.
+    #[serde(rename = "type")]
+    pub lesson_type: String,
+    /// How it is practised, from its type: "exercises" | "conversation".
+    pub engine: &'static str,
     pub title: String,
     pub summary: String,
     /// "low" | "medium" | "high"
@@ -120,8 +106,6 @@ pub struct WordPicture {
     pub word: String,
     pub meaning: String,
     pub image: Option<i64>,
-    /// A noun: worth a picture in a word drill.
-    pub picturable: bool,
 }
 
 /// A lesson with everything its page shows.
@@ -179,8 +163,7 @@ pub struct Overview {
 #[diesel(table_name = lessons, check_for_backend(diesel::sqlite::Sqlite))]
 struct LessonRow {
     id: i64,
-    kind: String,
-    format: String,
+    lesson_type: String,
     title: String,
     summary: String,
     complexity: String,
@@ -204,8 +187,7 @@ struct LessonRow {
 #[diesel(table_name = lessons)]
 struct NewLesson<'a> {
     slug: Option<&'a str>,
-    kind: &'a str,
-    format: &'a str,
+    lesson_type: &'a str,
     ord: i64,
     title: &'a str,
     summary: &'a str,
@@ -263,8 +245,8 @@ fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
                 course_ids: courses.iter().map(|c| c.0).collect(),
                 items: items.get(&row.id).copied().unwrap_or(0),
                 id: row.id,
-                kind: row.kind,
-                format: row.format,
+                engine: crate::lesson_types::get(&row.lesson_type).map_or("exercises", |t| t.engine()),
+                lesson_type: row.lesson_type,
                 title: row.title,
                 summary: row.summary,
                 complexity: row.complexity,
@@ -329,16 +311,10 @@ pub fn detail(conn: &mut Conn, id: i64) -> Result<LessonDetail> {
     let word_pictures = words::table
         .filter(words::lesson_id.eq(id))
         .order((words::ord, words::id))
-        .select((words::id, words::pl, words::en, words::pos, words::image_file_id))
-        .load::<(i64, String, String, String, Option<i64>)>(conn)?
+        .select((words::id, words::pl, words::en, words::image_file_id))
+        .load::<(i64, String, String, Option<i64>)>(conn)?
         .into_iter()
-        .map(|(word_id, word, meaning, pos, image)| WordPicture {
-            word_id,
-            word,
-            meaning,
-            image,
-            picturable: crate::pictures::picturable(&pos),
-        })
+        .map(|(word_id, word, meaning, image)| WordPicture { word_id, word, meaning, image })
         .collect();
     Ok(LessonDetail {
         word_pictures,
@@ -549,10 +525,12 @@ pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
     }
 }
 
-/// Whether a lesson is mastered: passed, with full mastery points, and — for
-/// writing — written without help (see examiner's support levels).
-pub fn is_mastered(passed: bool, mastery: i64, format: &str, support_level: i64) -> bool {
-    passed && mastery >= MASTERY_FULL && (format != "writing" || support_level >= 2)
+/// Whether a lesson is mastered: passed, with full mastery points, and —
+/// for a type that asks it (writing) — done without help (see examiner's
+/// support levels).
+pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level: i64) -> bool {
+    let unaided = crate::lesson_types::get(lesson_type).is_ok_and(|t| t.unaided_to_master);
+    passed && mastery >= MASTERY_FULL && (!unaided || support_level >= 2)
 }
 
 /// Adds a check-in's mastery points to a lesson, as it stood before the
@@ -575,18 +553,6 @@ pub fn is_extra_practice(lesson: &Lesson, today: i64) -> bool {
     lesson.reps > 0 && lesson.last_day == Some(today) && lesson.last_result.as_deref() == Some("pass")
 }
 
-/// About how many minutes a lesson takes, by its kind and complexity: what
-/// the daily budget is counted in.
-pub fn minutes_for(kind: &str, complexity: &str) -> i64 {
-    match (kind, complexity) {
-        ("drill", "low") => 2,
-        ("drill", "medium") => 4,
-        ("drill", _) => 8,
-        (_, "low") => 5,
-        (_, "medium") => 10,
-        _ => 20,
-    }
-}
 
 /// Records a check-in and schedules the next one (`ace`: a pass with
 /// nothing to fix). An early pass never brings the next check-in closer
@@ -624,7 +590,7 @@ pub fn record_graded(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -
     if result == "pass" {
         diesel::update(lessons::table.find(lesson_id)).set(lessons::passed.eq(1)).execute(conn)?;
     }
-    crate::plan::log_minutes(conn, today, minutes_for(&lesson.kind, &lesson.complexity), early)?;
+    crate::plan::log_minutes(conn, today, crate::lesson_types::minutes(&lesson.lesson_type, &lesson.complexity), early)?;
     load(conn, lesson_id)
 }
 
@@ -678,7 +644,7 @@ pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Le
     }
     let period = input
         .period_days
-        .unwrap_or_else(|| default_period("study", &input.complexity))
+        .unwrap_or_else(|| crate::lesson_types::get("study").map_or(7, |t| t.default_period(&input.complexity)))
         .clamp(1, 60);
     let course_id = match input.course_id {
         Some(id) => {
@@ -690,7 +656,7 @@ pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Le
     let id = insert(
         conn,
         NewLesson {
-            kind: "study",
+            lesson_type: "study",
             title: &title,
             summary: &clean(&input.summary),
             complexity: &input.complexity,
@@ -748,14 +714,13 @@ pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Resul
     let id = insert(
         conn,
         NewLesson {
-            kind: "study",
-            format: "writing",
+            lesson_type: "writing",
             title: &title,
             summary: &clean(&input.summary),
             complexity: &input.complexity,
             content: input.content.trim(),
             objectives: &serde_json::to_string(&goals)?,
-            period_days: input.period_days.unwrap_or_else(|| default_period("study", &input.complexity)).clamp(1, 60),
+            period_days: input.period_days.unwrap_or_else(|| crate::lesson_types::get("writing").map_or(7, |t| t.default_period(&input.complexity))).clamp(1, 60),
             origin,
             created_at: db::now_secs(),
             ..Default::default()
@@ -806,14 +771,13 @@ pub fn create_listening(
     let id = insert(
         conn,
         NewLesson {
-            kind: "study",
-            format: "song",
+            lesson_type: "listening",
             title: &format!("Listen: {title}"),
             summary: "Listen to the song, then answer questions about what you heard.",
             complexity,
             content: &content,
             objectives: &serde_json::to_string(&listening_objectives(complexity))?,
-            period_days: default_period("study", complexity),
+            period_days: crate::lesson_types::get("listening").map_or(7, |t| t.default_period(complexity)),
             origin,
             created_at: db::now_secs(),
             song_id: Some(song_id),
@@ -833,23 +797,23 @@ pub fn create_drill(
     course_id: i64,
     title: &str,
     summary: &str,
-    format: &str,
+    lesson_type: &str,
     complexity: &str,
     items: &crate::courses::Items,
     period_days: Option<i64>,
     origin: &str,
 ) -> Result<(Lesson, i64)> {
-    if !FORMATS.contains(&format) {
-        return Err(Error::msg(format!("Unknown drill format '{format}'.")));
+    let kind = crate::lesson_types::get(lesson_type)?;
+    if !kind.is_drill() {
+        return Err(Error::msg(format!("'{lesson_type}' is not a drill: it is made with its own tool.")));
     }
     check_complexity(complexity)?;
     crate::courses::require_open_course(conn, course_id)?;
-    let period = period_days.unwrap_or_else(|| default_period("drill", complexity)).clamp(1, 60);
+    let period = period_days.unwrap_or_else(|| kind.default_period(complexity)).clamp(1, 60);
     let id = insert(
         conn,
         NewLesson {
-            kind: "drill",
-            format,
+            lesson_type,
             title: &clean(title),
             summary: &clean(summary),
             complexity,
@@ -1007,7 +971,7 @@ pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
         let added: Option<i64> = diesel::insert_or_ignore_into(lessons::table)
             .values(NewLesson {
                 slug: Some(&slug),
-                kind: "study",
+                lesson_type: "study",
                 ord: ord as i64,
                 title: &file.title,
                 summary: &file.summary,

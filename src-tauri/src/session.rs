@@ -13,27 +13,27 @@ use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Course};
 
 const DIALOGUE_GAPS: usize = 3;
 /// Cards in the memory game: this many Polish/English pairs.
-const MEMORY_PAIRS: usize = 6;
+pub(crate) const MEMORY_PAIRS: usize = 6;
 /// Sentences in a fill-the-gaps exercise.
-const GAP_SENTENCES: usize = 4;
+pub(crate) const GAP_SENTENCES: usize = 4;
 /// Once an item has survived this many correct reps we stop showing multiple
 /// choice and make the learner produce it from memory.
 const TYPING_THRESHOLD: i64 = 3;
 
-struct WordRow {
-    id: i64,
-    pl: String,
-    meaning: String,
-    pos: String,
-    reps: i64,
+pub struct WordRow {
+    pub id: i64,
+    pub pl: String,
+    pub meaning: String,
+    pub pos: String,
+    pub reps: i64,
     /// Its picture, when it has one.
-    image: Option<i64>,
+    pub image: Option<i64>,
 }
 
-struct SentenceRow {
-    id: i64,
-    pl: String,
-    meaning: String,
+pub struct SentenceRow {
+    pub id: i64,
+    pub pl: String,
+    pub meaning: String,
 }
 
 pub fn load_course(conn: &mut Conn, course_id: i64) -> Result<Course> {
@@ -82,7 +82,7 @@ fn courses_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<i64>> {
         .load(conn)?)
 }
 
-fn word_intro(w: &WordRow) -> Exercise {
+pub(crate) fn word_intro(w: &WordRow) -> Exercise {
     Exercise {
         key: format!("w{}-intro", w.id),
         kind: "intro".into(),
@@ -96,15 +96,14 @@ fn word_intro(w: &WordRow) -> Exercise {
         tokens: vec![],
         gaps: vec![],
         pairs: vec![],
-        // A word that has a picture shows it as it is introduced.
-        image: w.image,
+        image: None,
         option_images: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
 }
 
-fn typing(w: &WordRow) -> Exercise {
+pub(crate) fn typing(w: &WordRow) -> Exercise {
     Exercise {
         key: format!("w{}-type", w.id),
         kind: "type".into(),
@@ -125,7 +124,7 @@ fn typing(w: &WordRow) -> Exercise {
     }
 }
 
-fn sentence_intro(s: &SentenceRow) -> Exercise {
+pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
     Exercise {
         key: format!("s{}-intro", s.id),
         kind: "sentenceIntro".into(),
@@ -148,7 +147,7 @@ fn sentence_intro(s: &SentenceRow) -> Exercise {
 
 /// The practice step for a word the learner has met: harder the better they
 /// know it — recognise it, then pick it, then type it from memory.
-fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
+pub(crate) fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
     if w.reps >= TYPING_THRESHOLD {
         typing(w)
     } else if w.reps >= 1 {
@@ -158,7 +157,7 @@ fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> E
     }
 }
 
-fn lesson_words(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(WordRow, bool)>> {
+pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(WordRow, bool)>> {
     let rows: Vec<(i64, String, String, String, Option<i64>)> = words::table
         .filter(words::lesson_id.eq(lesson_id))
         .order((words::ord, words::id))
@@ -174,7 +173,7 @@ fn lesson_words(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(WordRow, bool)>>
         .collect())
 }
 
-fn lesson_sentences(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
+pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
     let rows: Vec<(i64, String, String)> = sentences::table
         .filter(sentences::lesson_id.eq(lesson_id))
         .order((sentences::ord, sentences::id))
@@ -192,174 +191,115 @@ fn lesson_sentences(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(SentenceRow,
 
 /// The exercises of one drill lesson. Small on purpose: a low lesson is a
 /// minute or two of taps, never the whole course at once.
+/// What a drill has to work with: the lesson, its course, its words and
+/// sentences (each with whether it is new), and decoys for choices. Each
+/// lesson type builds its exercises from this (see lesson_types).
+pub struct Drill<'a> {
+    pub lesson: &'a crate::lessons::Lesson,
+    pub course: &'a Course,
+    pub words: Vec<(WordRow, bool)>,
+    pub sentences: Vec<(SentenceRow, bool)>,
+    pub pool: Distractors,
+}
+
+/// A drill's exercises, and the dialogue it shows (conversation drills).
+#[derive(Default)]
+pub struct Built {
+    pub exercises: Vec<Exercise>,
+    pub dialogue: Vec<DialogueLine>,
+}
+
+/// The exercises of one drill lesson, built by its type. Small on purpose:
+/// a low lesson is a minute or two of taps, never the whole course at once.
 pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
     let lesson = crate::lessons::load(conn, lesson_id)?;
-    if lesson.kind != "drill" {
-        return Err(crate::error::Error::msg("Study lessons are checked by the examiner, not drilled."));
-    }
+    let lesson_type = crate::lesson_types::get(&lesson.lesson_type)?;
+    let crate::lesson_types::Run::Exercises(build) = lesson_type.run else {
+        return Err(crate::error::Error::msg("This lesson is a conversation with the examiner, not a drill."));
+    };
     let course_id = lesson
         .course_id
         .ok_or_else(|| crate::error::Error::msg("This drill has no words to practise."))?;
     let course = load_course(conn, course_id)?;
     let today = db::today(conn);
-    let pool = distractor_pool(conn, lesson_id)?;
-    let rng = &mut rand::rng();
-
-    let words = lesson_words(conn, lesson_id)?;
-    let sentences = lesson_sentences(conn, lesson_id)?;
-    let mut exercises: Vec<Exercise> = Vec::new();
-    let mut dialogue = Vec::new();
-
-    match lesson.format.as_str() {
-        "words" | "typing" => {
-            // New words are introduced first, in order; known ones are
-            // practised in a shuffled order.
-            let mut known = Vec::new();
-            for (w, is_new) in &words {
-                if *is_new {
-                    exercises.push(word_intro(w));
-                    exercises.push(if lesson.format == "typing" { typing(w) } else { recognise(w, &pool, rng) });
-                } else {
-                    known.push(if lesson.format == "typing" { typing(w) } else { practise_word(w, &pool, rng) });
-                }
-            }
-            known.shuffle(rng);
-            exercises.extend(known);
-            if lesson.format == "words" {
-                let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
-                exercises.extend(memory_game(&all, format!("b{lesson_id}-memory"), lesson_id, rng));
-            }
-        }
-        "pictures" => {
-            // Picture, sound and word together, English behind a tap. A word
-            // whose picture is not drawn yet is practised as in a words drill.
-            let images = picture_pool(conn, lesson_id)?;
-            let mut known = Vec::new();
-            for (w, is_new) in &words {
-                if w.image.is_none() {
-                    if *is_new {
-                        exercises.push(word_intro(w));
-                        exercises.push(recognise(w, &pool, rng));
-                    } else {
-                        known.push(practise_word(w, &pool, rng));
-                    }
-                } else if *is_new {
-                    exercises.push(picture_intro(w));
-                    exercises.push(practise_picture(w, &pool, &images, rng));
-                } else {
-                    known.push(practise_picture(w, &pool, &images, rng));
-                }
-            }
-            known.shuffle(rng);
-            exercises.extend(known);
-            let pictured: Vec<&WordRow> = words.iter().map(|(w, _)| w).filter(|w| w.image.is_some()).collect();
-            exercises.extend(picture_memory(&pictured, format!("b{lesson_id}-pictures"), lesson_id, rng));
-        }
-        "memory" => {
-            let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
-            for (n, chunk) in all.chunks(MEMORY_PAIRS).enumerate() {
-                exercises.extend(memory_game(chunk, format!("b{lesson_id}-memory-{n}"), lesson_id, rng));
-            }
-        }
-        "sentences" | "gaps" => {
-            if lesson.format == "sentences" {
-                for (s, is_new) in &sentences {
-                    if *is_new {
-                        exercises.push(sentence_intro(s));
-                    }
-                    exercises.push(word_order(s));
-                }
-            }
-            let rows: Vec<&SentenceRow> = sentences.iter().map(|(s, _)| s).collect();
-            for chunk in rows.chunks(GAP_SENTENCES) {
-                exercises.extend(gap_fill(conn, lesson_id, chunk, true, rng)?);
-            }
-        }
-        "dialogue" => {
-            dialogue = lesson_lines(conn, lesson_id)?;
-            if !dialogue.is_empty() {
-                exercises.push(Exercise {
-                    key: format!("d{lesson_id}-read"),
-                    kind: "dialogueRead".into(),
-                    item_kind: "dialogue".into(),
-                    item_id: lesson_id,
-                    is_new: true,
-                    prompt: course.title.clone(),
-                    hint: course.summary.clone(),
-                    answer: String::new(),
-                    options: vec![],
-                    tokens: vec![],
-                    gaps: vec![],
-                    pairs: vec![],
-                    image: None,
-                    option_images: vec![],
-                    pl: course.title_pl.clone(),
-                    meaning: course.summary.clone(),
-                });
-            }
-            exercises.extend(dialogue_gaps(&dialogue, lesson_id, rng));
-        }
-        other => return Err(crate::error::Error::msg(format!("Unknown drill format '{other}'."))),
-    }
-
-    let new_words = words.iter().filter(|(_, n)| *n).count();
-    let new_sentences = sentences.iter().filter(|(_, n)| *n).count();
+    let drill = Drill {
+        lesson: &lesson,
+        course: &course,
+        words: lesson_words(conn, lesson_id)?,
+        sentences: lesson_sentences(conn, lesson_id)?,
+        pool: distractor_pool(conn, lesson_id)?,
+    };
+    let built = build(conn, &drill)?;
+    let new_words = drill.words.iter().filter(|(_, n)| *n).count();
+    let new_sentences = drill.sentences.iter().filter(|(_, n)| *n).count();
+    let (review_words, review_sentences) = (drill.words.len() - new_words, drill.sentences.len() - new_sentences);
     Ok(SessionPlan {
         day: today,
         course,
-        dialogue,
+        dialogue: built.dialogue,
         new_words,
-        review_words: words.len() - new_words,
+        review_words,
         new_sentences,
-        review_sentences: sentences.len() - new_sentences,
-        exercises,
+        review_sentences,
+        exercises: built.exercises,
         already_completed: false,
         lesson_id,
         extra: crate::lessons::is_extra_practice(&lesson, today),
     })
 }
 
-/// Picture lessons: a new word, seen, heard and read at once. Its English is
-/// there behind a tap.
-fn picture_intro(w: &WordRow) -> Exercise {
-    Exercise { key: format!("w{}-picture-intro", w.id), kind: "pictureIntro".into(), ..word_intro(w) }
+/// A conversation drill's opening card: read the whole dialogue.
+pub(crate) fn dialogue_read(lesson_id: i64, course: &Course) -> Exercise {
+    Exercise {
+        key: format!("d{lesson_id}-read"),
+        kind: "dialogueRead".into(),
+        item_kind: "dialogue".into(),
+        item_id: lesson_id,
+        is_new: true,
+        prompt: course.title.clone(),
+        hint: course.summary.clone(),
+        answer: String::new(),
+        options: vec![],
+        tokens: vec![],
+        gaps: vec![],
+        pairs: vec![],
+        image: None,
+        option_images: vec![],
+        pl: course.title_pl.clone(),
+        meaning: course.summary.clone(),
+    }
 }
 
-/// The practice step for a pictured word, harder the better it is known:
-/// hear it and pick its picture, read it and pick its picture, see the
-/// picture and pick the word, then type it from the picture (or, now and
-/// then, hear it again). Falls back when there are too few pictures to
-/// choose from.
-fn practise_picture(w: &WordRow, pool: &Distractors, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Exercise {
-    let kind = match w.reps {
-        0 => "hearPick",
-        1 => "wordPick",
-        2 => "picturePick",
-        _ if rng.random_bool(0.5) => "hearPick",
-        _ => "pictureType",
-    };
+/// Picture lessons: a new word, seen, heard and read at once. Its English is
+/// there behind a tap.
+pub(crate) fn picture_intro(w: &WordRow) -> Exercise {
+    Exercise { key: format!("w{}-picture-intro", w.id), kind: "pictureIntro".into(), image: w.image, ..word_intro(w) }
+}
+
+/// The practice step for a pictured word: see the picture and pick the word,
+/// or see the word and pick the picture — in turn, as the word comes back.
+/// With too few pictures to choose from, the picture is shown and the word
+/// picked.
+pub(crate) fn practise_picture(w: &WordRow, pool: &Distractors, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Exercise {
+    let kind = if w.reps % 2 == 0 { "picturePick" } else { "wordPick" };
     let base = Exercise {
         key: format!("w{}-{kind}", w.id),
         kind: kind.into(),
+        is_new: false,
         image: w.image,
         answer: w.pl.clone(),
         prompt: w.pl.clone(),
         ..word_intro(w)
     };
-    let base = Exercise { is_new: false, ..base };
-    match kind {
-        "hearPick" | "wordPick" => match picture_options(w, images, rng) {
-            Some((options, option_images)) => Exercise { options, option_images, ..base },
-            None => Exercise { kind: "picturePick".into(), options: options(&w.pl, &pool.polish, rng), ..base },
-        },
-        "picturePick" => Exercise { options: options(&w.pl, &pool.polish, rng), ..base },
-        _ => base,
+    match picture_options(w, images, rng) {
+        Some((options, option_images)) if kind == "wordPick" => Exercise { options, option_images, ..base },
+        _ => Exercise { kind: "picturePick".into(), key: format!("w{}-picturePick", w.id), options: options(&w.pl, &pool.polish, rng), ..base },
     }
 }
 
 /// Four pictures to choose from: the word's and three others', each of a
 /// different word. None with fewer than four.
-fn picture_options(w: &WordRow, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Option<(Vec<String>, Vec<Option<i64>>)> {
+pub(crate) fn picture_options(w: &WordRow, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Option<(Vec<String>, Vec<Option<i64>>)> {
     let mut decoys: Vec<&(String, i64)> =
         images.iter().filter(|(pl, image)| pl != &w.pl && Some(*image) != w.image).collect();
     decoys.shuffle(rng);
@@ -382,7 +322,7 @@ fn picture_options(w: &WordRow, images: &[(String, i64)], rng: &mut impl rand::R
 
 /// The pictured words of every course the lesson is in: decoys for the
 /// picture choices.
-fn picture_pool(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(String, i64)>> {
+pub(crate) fn picture_pool(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(String, i64)>> {
     let courses = courses_of(conn, lesson_id)?;
     let ids: Vec<i64> = course_words::table
         .filter(course_words::course_id.eq_any(courses))
@@ -397,7 +337,7 @@ fn picture_pool(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(String, i64)>> {
 }
 
 /// The memory round of a picture lesson: pictures to match with their words.
-fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
     let mut pool: Vec<&&WordRow> = words.iter().collect();
     pool.shuffle(rng);
     let mut pairs: Vec<Pair> = Vec::new();
@@ -433,13 +373,13 @@ fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl 
     })
 }
 
-struct Distractors {
-    meanings: Vec<String>,
-    polish: Vec<String>,
+pub struct Distractors {
+    pub meanings: Vec<String>,
+    pub polish: Vec<String>,
 }
 
 /// Decoys come from the words of every course the lesson is in.
-fn distractor_pool(conn: &mut Conn, lesson_id: i64) -> Result<Distractors> {
+pub(crate) fn distractor_pool(conn: &mut Conn, lesson_id: i64) -> Result<Distractors> {
     let courses = courses_of(conn, lesson_id)?;
     let rows: Vec<(String, String)> = course_words::table
         .filter(course_words::course_id.eq_any(courses))
@@ -468,7 +408,7 @@ fn options(answer: &str, pool: &[String], rng: &mut impl rand::Rng) -> Vec<Strin
     all
 }
 
-fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
+pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
     Exercise {
         key: format!("w{}-recognise", w.id),
         kind: "recognise".into(),
@@ -489,7 +429,7 @@ fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exerc
     }
 }
 
-fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
+pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
     Exercise {
         key: format!("w{}-produce", w.id),
         kind: "produce".into(),
@@ -510,7 +450,7 @@ fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercis
     }
 }
 
-fn word_order(s: &SentenceRow) -> Exercise {
+pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
     let mut tokens: Vec<String> = s.pl.split_whitespace().map(str::to_string).collect();
     tokens.shuffle(&mut rand::rng());
     Exercise {
@@ -534,7 +474,7 @@ fn word_order(s: &SentenceRow) -> Exercise {
 }
 
 /// Blanks out a few lines of the conversation and asks which one belongs.
-fn dialogue_gaps(
+pub(crate) fn dialogue_gaps(
     dialogue: &[DialogueLine],
     lesson_id: i64,
     rng: &mut impl rand::Rng,
@@ -582,7 +522,7 @@ fn short_gloss(meaning: &str) -> String {
 }
 
 /// Face-down cards: find each Polish word's English partner.
-fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
     let mut pool: Vec<&&WordRow> = words.iter().collect();
     pool.shuffle(rng);
     let mut pairs: Vec<Pair> = Vec::new();
@@ -663,7 +603,7 @@ fn make_gap(pl: &str, meaning: &str, course_words: &std::collections::HashSet<St
 
 /// A few of the course's sentences with a word missing from each, and a word
 /// bank of the missing words plus two that do not belong.
-fn gap_fill(
+pub(crate) fn gap_fill(
     conn: &mut Conn,
     lesson_id: i64,
     session: &[&SentenceRow],

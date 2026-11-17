@@ -93,8 +93,6 @@ The app:
   wiki_read — and attach the article to the lesson with attach_source (existing lessons too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
   language hook (the city in \"w Krakowie\", \"z Krakowa\").
-- For everyday objects, a picture lesson (create_picture_lesson) teaches by picture, sound and \
-  word together. Use it only for concrete things that are unmistakable in a picture.
 - Polish must be correct, with diacritics. Words in dictionary form, lowercase, with a short \
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
@@ -120,7 +118,16 @@ The app:
 /// The whole prompt in one string, for tests.
 #[cfg(test)]
 pub(crate) fn system_prompt(conn: &mut Conn) -> Result<String> {
-    Ok(format!("{RULES}\n\n{}", learner_state(conn)?))
+    // The lesson types come from their registry, so a new type is known to
+    // the tutor without editing these rules.
+    Ok(format!("{}\n\n{}", rules(), learner_state(conn)?))
+}
+
+/// The tutor's standing rules, with the lesson types from their registry —
+/// a new type is known to the tutor without editing the rules. The same from
+/// turn to turn, so it can be cached.
+pub(crate) fn rules() -> String {
+    format!("{RULES}\n- The lesson types:\n{}", crate::lesson_types::for_tutor())
 }
 
 /// What changes from turn to turn: the learner's numbers, what is due, the
@@ -136,7 +143,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
             b.id,
             b.title,
             b.complexity,
-            b.kind,
+            b.lesson_type,
             b.course_title.clone().unwrap_or_default(),
             b.last_result.as_ref().map(|r| format!(", last check-in: {r}")).unwrap_or_default()
         )
@@ -173,7 +180,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     for (id, title, complexity, reps, course_ord, list_ord, course) in course_lessons::table
         .inner_join(lessons_table::table)
         .inner_join(courses_table::table)
-        .filter(lessons_table::kind.eq("study"))
+        .filter(lessons_table::lesson_type.eq("study"))
         .order((courses_table::ord, course_lessons::ord))
         .select((
             lessons_table::id,
@@ -535,7 +542,11 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "properties": {
                     "title": { "type": "string" },
                     "summary": { "type": "string" },
-                    "format": { "type": "string", "enum": ["words", "memory", "typing", "sentences", "gaps"], "description": "words: cards + multiple choice + memory round; memory: memory cards only; typing: type each word; sentences: build them + gaps; gaps: fill-the-gaps only" },
+                    "format": {
+                        "type": "string",
+                        "enum": crate::lesson_types::item_types().filter(|t| t.id != "dialogue").map(|t| t.id).collect::<Vec<_>>(),
+                        "description": crate::lesson_types::item_types().filter(|t| t.id != "dialogue").map(|t| format!("{}: {}", t.id, t.description)).collect::<Vec<_>>().join(" "),
+                    },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
@@ -548,12 +559,11 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "create_picture_lesson",
             "Making the picture lesson…",
-            "Make a picture lesson: 4–10 everyday objects, each drawn as a picture, learnt by \
-             picture, sound and word together — English only behind a tap. Only concrete things you \
-             can point at (food, furniture, clothes, tools, animals), each unmistakable on its own: \
-             no actions, qualities, places or ideas. Pictures are drawn in the background (about \
-             4 cents each). To add pictures to an existing word drill, the learner taps Add \
-             pictures on its page.",
+            "Make a picture lesson: 4–10 everyday objects, each drawn as a picture; the learner \
+             links each word with its picture (see the picture, pick the word; see the word, pick \
+             the picture). Only concrete things you can point at (food, furniture, clothes, tools, \
+             animals), each unmistakable on its own: no actions, qualities, places or ideas. \
+             Pictures are drawn in the background (about 4 cents each).",
             json!({
                 "type": "object",
                 "properties": {
@@ -1312,8 +1322,7 @@ fn complexity_label(complexity: &str) -> &'static str {
 fn lesson_json(lesson: &lessons::Lesson) -> Value {
     json!({
         "lesson_id": lesson.id,
-        "kind": lesson.kind,
-        "format": lesson.format,
+        "type": lesson.lesson_type,
         "title": lesson.title,
         "summary": lesson.summary,
         "complexity": lesson.complexity,
@@ -1327,7 +1336,7 @@ fn lesson_json(lesson: &lessons::Lesson) -> Value {
         "made_by": lesson.origin,
         "challenge": lesson.challenge,
         "passed": lesson.passed,
-        "writing_support": (lesson.format == "writing").then(|| ["guided", "supported", "free"][lesson.support_level.clamp(0, 2) as usize]),
+        "writing_support": (lesson.lesson_type == "writing").then(|| ["guided", "supported", "free"][lesson.support_level.clamp(0, 2) as usize]),
     })
 }
 
@@ -1762,7 +1771,7 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 )?,
                 _ => {
                     let ids: Vec<i64> = lessons_table::table
-                        .filter(lessons_table::kind.eq("study"))
+                        .filter(lessons_table::lesson_type.eq("study"))
                         .order((lessons_table::ord, lessons_table::id))
                         .select(lessons_table::id)
                         .load(conn)?;
@@ -2944,7 +2953,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     let (wire, model, word_chat) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let mut prompt = RULES.to_string();
+        let mut prompt = rules();
         let state = learner_state(conn)?;
         // A chat about one word: talk about it, don't lecture.
         let about: Option<String> = tutor_conversations::table

@@ -21,7 +21,7 @@ use diesel::prelude::*;
 use diesel::upsert::excluded;
 use serde::Serialize;
 
-use crate::lessons::minutes_for;
+use crate::lesson_types::minutes as minutes_for;
 use crate::db::{self, Conn};
 use crate::error::Result;
 use crate::schema::{lessons, day_log};
@@ -47,7 +47,7 @@ pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: i64) -> Result<i
     let booked: Vec<(i64, String, String)> = lessons::table
         .filter(lessons::due_day.between(from, to))
         .filter(lessons::id.ne(lesson_id))
-        .select((lessons::due_day.assume_not_null(), lessons::kind, lessons::complexity))
+        .select((lessons::due_day.assume_not_null(), lessons::lesson_type, lessons::complexity))
         .load(conn)?;
     let load = |day: i64| -> i64 {
         booked.iter().filter(|(d, _, _)| *d == day).map(|(_, kind, complexity)| minutes_for(kind, complexity)).sum()
@@ -91,7 +91,7 @@ pub fn budget(conn: &mut Conn, today: i64) -> Result<i64> {
 #[derive(Queryable)]
 struct Scheduled {
     id: i64,
-    kind: String,
+    lesson_type: String,
     complexity: String,
     due_day: Option<i64>,
     last_day: Option<i64>,
@@ -108,7 +108,7 @@ fn scheduled(conn: &mut Conn, until: i64) -> Result<Vec<Scheduled>> {
         .filter(lessons::due_day.le(until))
         .select((
             lessons::id,
-            lessons::kind,
+            lessons::lesson_type,
             lessons::complexity,
             lessons::due_day,
             lessons::last_day,
@@ -157,7 +157,7 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
         if minutes >= budget {
             break;
         }
-        minutes += minutes_for(&lesson.kind, &lesson.complexity);
+        minutes += minutes_for(&lesson.lesson_type, &lesson.complexity);
         ids.push(lesson.id);
     }
     db::set_setting(conn, "plan_ids", &serde_json::to_string(&ids)?)?;
@@ -208,7 +208,7 @@ pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
         .into_iter()
         .filter(|b| b.last_day != Some(today) && !list.contains(&b.id))
         .partition(|b| b.due_day.is_some_and(|d| d <= today));
-    let behind_minutes = due.iter().map(|b| minutes_for(&b.kind, &b.complexity)).sum();
+    let behind_minutes = due.iter().map(|b| minutes_for(&b.lesson_type, &b.complexity)).sum();
     let mut upcoming = upcoming;
     upcoming.sort_by(|a, b| a.due_day.cmp(&b.due_day).then(risk(b, today).total_cmp(&risk(a, today))));
     let more = by_risk(due, today).into_iter().chain(upcoming).take(MORE).map(|b| b.id).collect();

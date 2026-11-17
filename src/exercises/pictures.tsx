@@ -1,0 +1,87 @@
+import { useState } from "react";
+
+import { SlowButton, SpeakButton } from "../components/ui";
+import { Button, Inline, Text } from "../design";
+import { PictureCard, PictureOptions, Options, pickedAnswer, readingAnswer } from "./shared";
+import { defineExercise, type ExerciseProps } from "./types";
+
+/*
+ * Picture lessons: meet it (picture, sound, word); hear it and pick its
+ * picture; read it and pick its picture; see the picture and pick the word;
+ * type the word from the picture. The English stays out of the way — the
+ * picture carries the meaning.
+ */
+
+/** A new word from its picture. The English is shown only when asked for. */
+function PictureIntroCard({ exercise }: ExerciseProps) {
+  // Lives with the card, so it starts hidden again on every new card.
+  const [showMeaning, setShowMeaning] = useState(false);
+  return (
+    <>
+      <Text variant="eyebrow">New word</Text>
+      <div className="prompt-card">
+        <PictureCard exercise={exercise} />
+        <Text variant="display" selectable>
+          {exercise.pl}
+        </Text>
+        <Inline gap={2} justify="center">
+          <SpeakButton text={exercise.pl} variant="tinted" />
+          <SlowButton text={exercise.pl} variant="tinted" />
+        </Inline>
+        <Text variant="caption" tone="faint">
+          {exercise.hint}
+        </Text>
+        {showMeaning ? (
+          <Text variant="lead" tone="dim" weight="medium">
+            {exercise.meaning}
+          </Text>
+        ) : (
+          <Button size="sm" onClick={() => setShowMeaning(true)}>
+            Show English
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+export const pictureIntro = defineExercise({
+  kinds: ["pictureIntro"],
+  reading: true,
+  speakOnShow: true,
+  ...readingAnswer,
+  render: (props) => <PictureIntroCard {...props} />,
+});
+
+/** Read the word and pick its picture. */
+export const wordPick = defineExercise({
+  kinds: ["wordPick"],
+  ...pickedAnswer,
+  render: (props) => (
+    <>
+      <Text variant="eyebrow">Which picture is it?</Text>
+      <div className="prompt-card">
+        <Text variant="display" selectable>
+          {props.exercise.prompt}
+        </Text>
+        <SpeakButton text={props.exercise.prompt} variant="tinted" />
+      </div>
+      <PictureOptions {...props} />
+    </>
+  ),
+});
+
+/** See the picture and pick the word. */
+export const picturePick = defineExercise({
+  kinds: ["picturePick"],
+  ...pickedAnswer,
+  render: (props) => (
+    <>
+      <Text variant="eyebrow">What is this?</Text>
+      <div className="prompt-card">
+        <PictureCard exercise={props.exercise} />
+      </div>
+      <Options {...props} />
+    </>
+  ),
+});

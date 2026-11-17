@@ -308,8 +308,10 @@ CREATE TABLE IF NOT EXISTS speech_clips (
 CREATE TABLE IF NOT EXISTS lessons (
     id            INTEGER PRIMARY KEY,
     slug          TEXT    UNIQUE,                -- starter lessons: lesson/<slug>
-    kind          TEXT    NOT NULL,              -- drill | study
-    format        TEXT    NOT NULL DEFAULT '',   -- drills: words | memory | typing | sentences | gaps | dialogue; 'song' for listening
+    -- What it is and how it is practised: one of lesson_types::REGISTRY
+    -- (words | pictures | typing | memory | sentences | gaps | dialogue |
+    -- study | listening | writing).
+    lesson_type   TEXT    NOT NULL DEFAULT '',
     ord           INTEGER NOT NULL DEFAULT 0,
     title         TEXT    NOT NULL,
     summary       TEXT    NOT NULL DEFAULT '',
@@ -579,6 +581,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
         upgrade_to_lessons_and_courses(conn)?;
     }
     conn.batch_execute(SCHEMA)?;
+    flatten_lesson_types(conn)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
     add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
@@ -874,6 +877,26 @@ fn adopt_loose_tutor_messages(conn: &mut Conn) -> Result<()> {
     Ok(())
 }
 
+/// Lessons had a kind (drill | study) and, under it, a format — two levels,
+/// where writing and listening were "study" with a format. Now one type says
+/// it all: a drill's format is its type; study, writing and listening are
+/// their own.
+fn flatten_lesson_types(conn: &mut Conn) -> Result<()> {
+    if !add_column(conn, "lessons", "lesson_type", "TEXT NOT NULL DEFAULT ''")? {
+        return Ok(());
+    }
+    conn.batch_execute(
+        "UPDATE lessons SET lesson_type = CASE
+             WHEN kind = 'drill' THEN format
+             WHEN format = 'writing' THEN 'writing'
+             WHEN format = 'song' THEN 'listening'
+             ELSE 'study' END;
+         ALTER TABLE lessons DROP COLUMN kind;
+         ALTER TABLE lessons DROP COLUMN format;",
+    )?;
+    Ok(())
+}
+
 fn table_exists(conn: &mut Conn, table: &str) -> Result<bool> {
     let found = diesel::sql_query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
         .bind::<Text, _>(table)
@@ -1086,7 +1109,7 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
             .bind::<Text, _>(format)
             .bind::<Text, _>(title)
             .bind::<Text, _>(complexity)
-            .bind::<BigInt, _>(crate::lessons::default_period("drill", complexity))
+            .bind::<BigInt, _>(crate::lesson_types::get("words").map_or(2, |t| t.default_period(complexity)))
             .bind::<BigInt, _>(now)
             .get_result::<legacy::Id>(tx)?
             .id;
@@ -1254,7 +1277,7 @@ pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
         let has_dialogue = course_lessons::table
             .inner_join(lessons::table)
             .filter(course_lessons::course_id.eq(course_id))
-            .filter(lessons::format.eq("dialogue"))
+            .filter(lessons::lesson_type.eq("dialogue"))
             .count()
             .get_result::<i64>(conn)?
             > 0;
@@ -1391,6 +1414,30 @@ pub fn require_course_id(conn: &mut Conn, ord: i64) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two levels (kind, format) become one type: a drill's format is its
+    /// type; study lessons become study, writing or listening.
+    #[test]
+    fn lesson_kinds_and_formats_flatten_into_types() {
+        use diesel::Connection;
+        let mut conn = Conn::establish(":memory:").unwrap();
+        conn.batch_execute(
+            "CREATE TABLE lessons (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, format TEXT NOT NULL DEFAULT '', song_id INTEGER);
+             INSERT INTO lessons VALUES (1, 'drill', 'words', NULL), (2, 'drill', 'dialogue', NULL),
+                 (3, 'study', '', NULL), (4, 'study', 'writing', NULL), (5, 'study', 'song', 7);",
+        )
+        .unwrap();
+        flatten_lesson_types(&mut conn).unwrap();
+        let types: Vec<String> = crate::schema::lessons::table
+            .select(crate::schema::lessons::lesson_type)
+            .order(crate::schema::lessons::id)
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(types, ["words", "dialogue", "study", "writing", "listening"]);
+        assert!(types.iter().all(|t| crate::lesson_types::get(t).is_ok()));
+        // Run again (every start): nothing changes.
+        flatten_lesson_types(&mut conn).unwrap();
+    }
 
     /// `crate::schema` is what queries are checked against at compile time;
     /// this checks it against the database the app actually creates. Every

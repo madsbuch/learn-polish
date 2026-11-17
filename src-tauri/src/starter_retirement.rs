@@ -53,12 +53,16 @@ fn fingerprint(conn: &mut Conn, course_id: i64) -> Result<Option<String>> {
         {
             return Ok(None);
         }
-        let lesson: (Option<String>, String, String, String, String, String, String, String, i64, String, i64, Option<i64>) = lessons::table
+        let mut lesson: (Option<String>, String, String, String, String, String, String, String, i64, String, i64, Option<i64>) = lessons::table
             .find(lesson_id)
-            .select((lessons::slug, lessons::kind, lessons::format, lessons::title, lessons::summary,
+            .select((lessons::slug, lessons::lesson_type, lessons::lesson_type, lessons::title, lessons::summary,
                 lessons::complexity, lessons::content, lessons::objectives, lessons::period_days,
                 lessons::origin, lessons::challenge, lessons::song_id))
             .first(conn)?;
+        // The fingerprints were taken when a lesson had a kind and a format:
+        // they are rebuilt from its type, so the old courses still match.
+        let (kind, format) = legacy_kind_and_format(&lesson.1);
+        (lesson.1, lesson.2) = (kind.to_string(), format);
         if lesson.9 != "starter" || lesson.11.is_some() {
             return Ok(None);
         }
@@ -75,6 +79,17 @@ fn fingerprint(conn: &mut Conn, course_id: i64) -> Result<Option<String>> {
         definition.push(serde_json::to_value((ord, lesson, vocabulary, phrases, dialogue))?);
     }
     Ok(Some(format!("{:x}", Sha256::digest(serde_json::to_vec(&definition)?))))
+}
+
+/// A type as the kind (drill | study) and format it was stored as before
+/// lesson types were flattened.
+fn legacy_kind_and_format(lesson_type: &str) -> (&'static str, String) {
+    match lesson_type {
+        "study" => ("study", String::new()),
+        "writing" => ("study", "writing".into()),
+        "listening" => ("study", "song".into()),
+        drill => ("drill", drill.to_string()),
+    }
 }
 
 fn retire_matching(conn: &mut Conn, manifest: &[(&str, &str)]) -> Result<()> {

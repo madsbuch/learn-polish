@@ -28,12 +28,16 @@ test fixtures and is excluded from production builds.
 
 ## Lessons
 
-Learning happens in **lessons**: small units with one job each.
+Learning happens in **lessons**: small units with one job each. Every lesson
+has one **type**, from a single flat list, and the type says everything about
+it — how it is practised, what its page shows, what mastering it takes (see
+[ADDING_A_LESSON_TYPE.md](ADDING_A_LESSON_TYPE.md)).
 
-- **Drills** are mechanical practice on a handful of items, in one format:
-  *words* (new-word cards, multiple choice, typing once known, a memory round),
-  *memory* cards, *typing*, *sentences* (build them, then fill gaps), *gaps*,
-  or a *dialogue* (read it, then fill its lines).
+- **Drills** are practice on a handful of items: *words* (new-word cards,
+  multiple choice, typing once known, a memory round), *pictures* (everyday
+  objects, each drawn once: see the picture and pick the word, see the word
+  and pick the picture), *memory* cards, *typing*, *sentences* (build them,
+  then fill gaps), *gaps*, or a *dialogue* (read it, then fill its lines).
 - **Study lessons** are short texts — a conjugation, a grammar point, a bit of
   culture — with objectives. Their check-in is an interview: an **examiner**
   agent asks one question at a time (more, and harder ones, the more complex the
@@ -436,7 +440,8 @@ src-tauri/src/
   db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), one-time demo setup
   courses.rs     courses: the folders lessons are listed in; cutting items into drills; moving lessons
   lessons.rs     lessons: what they own, their check-in schedule, the home screen's lists
-  session.rs     a drill's exercises, by format
+  lesson_types/  every lesson type, one module each, and their registry
+  session.rs     the building blocks of a drill's exercises
   practice.rs    doing a lesson: checking answers, finishing a drill, the results
   srs.rs         the per-item scheduler inside drills
   stats.rs       XP, levels, streaks, achievements, per-course progress
@@ -461,6 +466,7 @@ src/
   lib/back.ts              Android's back button over in-app pages
   lib/player.ts            the app-wide music player and queue
   screens/                 one file per screen (Exercises, LessonPage, Session, CheckIn, Tutor, Music…)
+  exercises/               one module per exercise kind, and their registry (Session draws them)
   components/              pieces shared between screens (Markdown, SetExercises, Cover…)
 ```
 

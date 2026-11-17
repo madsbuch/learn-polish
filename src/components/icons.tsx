@@ -327,6 +327,17 @@ export function WriteIcon() {
   );
 }
 
+/** A picture: a framed landscape (picture lessons). */
+export function PictureIcon() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <circle cx="9" cy="10" r="1.8" />
+      <path d="M4 17.5l5-5 4 4 2.5-2.5 5 4.5" />
+    </Glyph>
+  );
+}
+
 /** Slowly: a tortoise — read at a glance, at any size. */
 export function SlowIcon() {
   return (

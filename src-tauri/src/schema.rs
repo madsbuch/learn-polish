@@ -154,8 +154,7 @@ diesel::table! {
     lessons (id) {
         id -> BigInt,
         slug -> Nullable<Text>,
-        kind -> Text,
-        format -> Text,
+        lesson_type -> Text,
         ord -> BigInt,
         title -> Text,
         summary -> Text,

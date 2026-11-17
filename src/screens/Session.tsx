@@ -1,36 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { WordChat } from "../components/WordChat";
 import { WrongAnswerReview } from "../components/WrongAnswerReview";
-import { GapFill, Memory } from "../components/SetExercises";
 import { CloseIcon } from "../components/icons";
-import { SlowButton, SpeakButton } from "../components/ui";
-import {
-  Badge,
-  Banner,
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  IconButton,
-  Progress,
-  Stack,
-  Text,
-  Inline,
-} from "../design";
-import { fileUrl } from "../lib/files";
+import { Badge, Banner, Button, EmptyState, IconButton, Progress, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
 import { playCorrect, playWrong } from "../lib/sounds";
+import { EXERCISES, type AnswerState, type ExerciseProps } from "../exercises";
 
-/** Cards that only show something; they are not scored. */
-const READING_KINDS = new Set(["dialogueRead", "intro", "sentenceIntro", "pictureIntro"]);
-/** Typed answers: the keyboard opens for these. */
-const TYPED_KINDS = new Set(["type", "pictureType"]);
-
+/*
+ * The practice session: a shell that steps through the plan's exercises. Each
+ * kind of exercise lives in its own module under src/exercises (how it is
+ * drawn, what its answer is, whether it is only read); this screen keeps what
+ * every card shares — the top bar, the verdict, the foot button, submitting
+ * answers and moving on.
+ */
 
 type Phase = "answering" | "checked";
 
@@ -62,14 +49,14 @@ export function Session({
 
   // The chat about the current word, when open.
   const [talking, setTalking] = useState(false);
-  // Picture lessons: the English, shown only when asked for.
-  const [showMeaning, setShowMeaning] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const exercise: Exercise | undefined = plan.exercises[index];
   const total = plan.exercises.length;
+  // The module that draws and scores this kind of exercise.
+  const module = exercise ? EXERCISES[exercise.kind] : undefined;
 
   // Reset every per-card piece of state when we move on.
   useEffect(() => {
@@ -81,10 +68,9 @@ export function Session({
     setGapsFilled([]);
     setMemoryTurns(null);
     setTalking(false);
-    setShowMeaning(false);
     setError(null);
     bodyRef.current?.scrollTo({ top: 0 });
-    if (exercise && TYPED_KINDS.has(exercise.kind)) {
+    if (module?.typed) {
       // A short delay lets the card render before the keyboard opens.
       const timer = setTimeout(() => inputRef.current?.focus(), 120);
       return () => clearTimeout(timer);
@@ -95,56 +81,18 @@ export function Session({
   // Pronounce new material as it appears — hearing it first anchors the
   // spelling. Failures stay silent here; the 🔊 button is where they surface.
   useEffect(() => {
-    if (
-      exercise &&
-      (exercise.kind === "intro" ||
-        exercise.kind === "sentenceIntro" ||
-        exercise.kind === "pictureIntro" ||
-        exercise.kind === "hearPick")
-    ) {
+    if (exercise && EXERCISES[exercise.kind].speakOnShow) {
       speakQuietly(exercise.pl);
     }
   }, [exercise]);
 
-  const given = useMemo(() => {
-    if (!exercise) return "";
-    switch (exercise.kind) {
-      case "type":
-      case "pictureType":
-        return typed;
-      case "wordOrder":
-        return built.map((i) => exercise.tokens[i]).join(" ");
-      case "recognise":
-      case "produce":
-      case "dialogueGap":
-      case "hearPick":
-      case "wordPick":
-      case "picturePick":
-        return picked ?? "";
-      case "gapFill":
-        return exercise.gaps
-          .map((_, i) => (gapsFilled[i] == null ? "" : exercise.options[gapsFilled[i]!]))
-          .join(" | ");
-      case "memory":
-        return memoryTurns === null ? "" : "done";
-      default:
-        return exercise.answer;
-    }
-  }, [exercise, typed, built, picked, gapsFilled, memoryTurns]);
-
-  const canSubmit = exercise
-    ? exercise.kind === "gapFill"
-      ? exercise.gaps.every((_, i) => gapsFilled[i] != null)
-      : exercise.kind === "intro" ||
-        exercise.kind === "pictureIntro" ||
-        exercise.kind === "sentenceIntro" ||
-        exercise.kind === "dialogueRead" ||
-        given.trim().length > 0
-    : false;
+  const answerState: AnswerState = { picked, typed, built, gapsFilled, memoryTurns };
+  const given = exercise && module ? module.given(exercise, answerState) : "";
+  const canSubmit = exercise && module ? module.canSubmit(exercise, answerState) : false;
 
   // Finding the last pair is the answer; no separate Check tap needed.
   useEffect(() => {
-    if (exercise?.kind === "memory" && memoryTurns !== null && phase === "answering") void check();
+    if (module?.submitsItself && memoryTurns !== null && phase === "answering") void check();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memoryTurns]);
 
@@ -165,9 +113,10 @@ export function Session({
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);
-      if (answer.correct && !READING_KINDS.has(exercise.kind)) setCorrectCount((n) => n + 1);
+      const reading = EXERCISES[exercise.kind].reading;
+      if (answer.correct && !reading) setCorrectCount((n) => n + 1);
       setPhase("checked");
-      if (!READING_KINDS.has(exercise.kind)) {
+      if (!reading) {
         if (answer.correct) playCorrect();
         else playWrong();
       }
@@ -193,7 +142,7 @@ export function Session({
     }
     setBusy(true);
     try {
-      const scored = plan.exercises.filter((e) => !READING_KINDS.has(e.kind)).length;
+      const scored = plan.exercises.filter((e) => !EXERCISES[e.kind].reading).length;
       onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -202,7 +151,7 @@ export function Session({
   }
 
 
-  if (!exercise) {
+  if (!exercise || !module) {
     return (
       <div className="center-screen">
         <EmptyState
@@ -219,63 +168,26 @@ export function Session({
   }
 
   const isChecked = phase === "checked";
-  const optionState = (option: string) => {
-    if (!isChecked) return picked === option ? "picked" : "idle";
-    if (option === exercise.answer) return "right";
-    if (option === picked) return "wrong";
-    return "idle";
+  const reading = module.reading ?? false;
+
+  const exerciseProps: ExerciseProps = {
+    ...answerState,
+    exercise,
+    plan,
+    isChecked,
+    setPicked,
+    setTyped,
+    setBuilt,
+    setGapsFilled,
+    onMemoryComplete: setMemoryTurns,
+    revealAll,
+    onToggleReveal: () => setRevealAll((v) => !v),
+    inputRef,
+    onEnter: () => {
+      if (isChecked) void advance();
+      else if (canSubmit) void check();
+    },
   };
-
-  // Picture lessons: four pictures to choose from.
-  const pictureOptions = (
-    <div className="picture-options">
-      {exercise.options.map((option, i) => {
-        const image = exercise.optionImages[i];
-        return (
-          <button
-            key={option}
-            className="picture-option"
-            data-state={optionState(option)}
-            disabled={isChecked}
-            aria-label={isChecked ? option : `Picture ${i + 1}`}
-            onClick={() => setPicked(option)}
-          >
-            {image != null ? <img src={fileUrl(image)} alt="" /> : null}
-            {isChecked ? <span className="picture-option-word">{option}</span> : null}
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  // The English of a picture card, behind a tap.
-  const meaningOnTap = showMeaning ? (
-    <Text variant="lead" tone="dim" weight="medium">
-      {exercise.meaning}
-    </Text>
-  ) : (
-    <Button size="sm" onClick={() => setShowMeaning(true)}>
-      Show English
-    </Button>
-  );
-
-  const options = (
-    <div className="options">
-      {exercise.options.map((option) => (
-        <button
-          key={option}
-          className="option"
-          data-state={optionState(option)}
-          disabled={isChecked}
-          onClick={() => setPicked(option)}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
-  );
-
-  const reading = READING_KINDS.has(exercise.kind);
 
   return (
     <div className="session">
@@ -290,262 +202,7 @@ export function Session({
       <div className="session-body fade-in" key={exercise.key} ref={bodyRef}>
         {error ? <Banner tone="error">{error}</Banner> : null}
 
-        {exercise.kind === "dialogueRead" ? (
-          <>
-            <Stack gap={1}>
-              <Text variant="eyebrow">Today's conversation</Text>
-              <h1>{exercise.pl}</h1>
-              <Text variant="small" tone="dim" as="p">
-                {exercise.hint}
-              </Text>
-            </Stack>
-            <DialogueToolbar
-              lines={plan.dialogue}
-              revealAll={revealAll}
-              onToggleReveal={() => setRevealAll((v) => !v)}
-            />
-            <DialogueView lines={plan.dialogue} revealAll={revealAll} />
-          </>
-        ) : null}
-
-        {exercise.kind === "pictureIntro" ? (
-          <>
-            <Text variant="eyebrow">New word</Text>
-            <div className="prompt-card">
-              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
-              <Text variant="display" selectable>
-                {exercise.pl}
-              </Text>
-              <Inline gap={2} justify="center">
-                <SpeakButton text={exercise.pl} variant="tinted" />
-                <SlowButton text={exercise.pl} variant="tinted" />
-              </Inline>
-              <Text variant="caption" tone="faint">
-                {exercise.hint}
-              </Text>
-              {meaningOnTap}
-            </div>
-          </>
-        ) : null}
-
-        {exercise.kind === "hearPick" ? (
-          <>
-            <Text variant="eyebrow">Which one do you hear?</Text>
-            <Inline gap={2} justify="center">
-              <SpeakButton text={exercise.pl} variant="tinted" />
-              <SlowButton text={exercise.pl} variant="tinted" />
-            </Inline>
-            {pictureOptions}
-          </>
-        ) : null}
-
-        {exercise.kind === "wordPick" ? (
-          <>
-            <Text variant="eyebrow">Which picture is it?</Text>
-            <div className="prompt-card">
-              <Text variant="display" selectable>
-                {exercise.prompt}
-              </Text>
-              <SpeakButton text={exercise.prompt} variant="tinted" />
-            </div>
-            {pictureOptions}
-          </>
-        ) : null}
-
-        {exercise.kind === "picturePick" ? (
-          <>
-            <Text variant="eyebrow">What is this?</Text>
-            <div className="prompt-card">
-              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
-            </div>
-            {options}
-          </>
-        ) : null}
-
-        {exercise.kind === "pictureType" ? (
-          <>
-            <Text variant="eyebrow">Write it in Polish</Text>
-            <div className="prompt-card">
-              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
-              <Text variant="caption" tone="faint">
-                {exercise.hint}
-              </Text>
-            </div>
-            <Field label="Your answer" hint={'Polish letters are optional — "czesc" counts as "cześć".'}>
-              <input
-                ref={inputRef}
-                value={typed}
-                placeholder="Type here"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                disabled={isChecked}
-                onChange={(event) => setTyped(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    if (isChecked) void advance();
-                    else if (canSubmit) void check();
-                  }
-                }}
-              />
-            </Field>
-          </>
-        ) : null}
-
-        {exercise.kind === "intro" ? (
-          <>
-            <Text variant="eyebrow">New word</Text>
-            <div className="prompt-card">
-              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
-              <Text variant="display" selectable>
-                {exercise.pl}
-              </Text>
-              <Inline gap={2} justify="center">
-                <SpeakButton text={exercise.pl} variant="tinted" />
-                <SlowButton text={exercise.pl} variant="tinted" />
-              </Inline>
-              <Text variant="lead" tone="dim" weight="medium">
-                {exercise.meaning}
-              </Text>
-              <Text variant="caption" tone="faint">
-                {exercise.hint}
-              </Text>
-            </div>
-          </>
-        ) : null}
-
-        {exercise.kind === "sentenceIntro" ? (
-          <>
-            <Text variant="eyebrow">New sentence</Text>
-            <div className="prompt-card">
-              <Text variant="title" selectable>
-                {exercise.pl}
-              </Text>
-              <Inline gap={2} justify="center">
-                <SpeakButton text={exercise.pl} variant="tinted" />
-                <SlowButton text={exercise.pl} variant="tinted" />
-              </Inline>
-              <Text tone="dim">{exercise.meaning}</Text>
-            </div>
-          </>
-        ) : null}
-
-        {exercise.kind === "recognise" || exercise.kind === "produce" ? (
-          <>
-            <Text variant="eyebrow">
-              {exercise.kind === "recognise" ? "What does this mean?" : "How do you say this?"}
-            </Text>
-            <div className="prompt-card">
-              <Text variant="display" selectable>
-                {exercise.prompt}
-              </Text>
-              {exercise.kind === "recognise" ? <SpeakButton text={exercise.prompt} variant="tinted" /> : null}
-              <Text variant="caption" tone="faint">
-                {exercise.hint}
-              </Text>
-            </div>
-            {options}
-          </>
-        ) : null}
-
-        {exercise.kind === "dialogueGap" ? (
-          <>
-            <Text variant="eyebrow">What comes next?</Text>
-            <Card>
-              <Stack gap={1}>
-                <Text variant="caption" tone="faint">
-                  {exercise.hint}
-                </Text>
-                <Text variant="lead" weight="medium" selectable>
-                  {exercise.prompt}
-                </Text>
-              </Stack>
-            </Card>
-            {options}
-          </>
-        ) : null}
-
-        {exercise.kind === "type" ? (
-          <>
-            <Text variant="eyebrow">Write it in Polish</Text>
-            <div className="prompt-card">
-              <Text variant="display">{exercise.prompt}</Text>
-              <Text variant="caption" tone="faint">
-                {exercise.hint}
-              </Text>
-            </div>
-            <Field label="Your answer" hint={'Polish letters are optional — "czesc" counts as "cześć".'}>
-              <input
-                ref={inputRef}
-                value={typed}
-                placeholder="Type here"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                disabled={isChecked}
-                onChange={(event) => setTyped(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    if (isChecked) void advance();
-                    else if (canSubmit) void check();
-                  }
-                }}
-              />
-            </Field>
-          </>
-        ) : null}
-
-        {exercise.kind === "wordOrder" ? (
-          <>
-            <Text variant="eyebrow">Build the Polish sentence</Text>
-            <Card>
-              <Text variant="lead" weight="medium" selectable>
-                {exercise.prompt}
-              </Text>
-            </Card>
-            <div className="answer-slot">
-              {built.map((tokenIndex, position) => (
-                <button
-                  key={`${tokenIndex}-${position}`}
-                  className="token"
-                  disabled={isChecked}
-                  onClick={() => setBuilt(built.filter((_, i) => i !== position))}
-                >
-                  {exercise.tokens[tokenIndex]}
-                </button>
-              ))}
-            </div>
-            <div className="tokens">
-              {exercise.tokens.map((token, tokenIndex) => (
-                <button
-                  key={`${token}-${tokenIndex}`}
-                  className="token"
-                  data-used={built.includes(tokenIndex)}
-                  disabled={isChecked || built.includes(tokenIndex)}
-                  onClick={() => setBuilt([...built, tokenIndex])}
-                >
-                  {token}
-                </button>
-              ))}
-            </div>
-          </>
-        ) : null}
-
-        {exercise.kind === "gapFill" ? (
-          <>
-            <Text variant="eyebrow">Fill the gaps</Text>
-            <GapFill exercise={exercise} filled={gapsFilled} onChange={setGapsFilled} checked={isChecked} />
-          </>
-        ) : null}
-
-        {exercise.kind === "memory" ? (
-          <>
-            <Text variant="eyebrow">Memory · find the pairs</Text>
-            <Memory exercise={exercise} onComplete={setMemoryTurns} />
-          </>
-        ) : null}
+        {module.render(exerciseProps)}
 
         {isChecked && result && !reading ? (
           <div className="verdict pop" data-correct={result.correct}>
@@ -553,12 +210,7 @@ export function Session({
               {result.correct ? "Dobrze! ✓" : "Not quite"}
               {result.xpGained > 0 ? `  +${result.xpGained} XP` : ""}
             </Text>
-            {exercise.kind === "memory" && memoryTurns !== null ? (
-              <Text variant="small">
-                All {exercise.pairs.length} pairs in {memoryTurns} turns
-                {memoryTurns <= exercise.pairs.length + 2 ? " — a sharp memory!" : "."}
-              </Text>
-            ) : null}
+            {module.verdictNote?.(exercise, answerState)}
             {/* Always show both sides of the pair, whichever direction was asked. */}
             {!result.correct && (exercise.itemKind === "word" || exercise.itemKind === "sentence") ? (
               <WrongAnswerReview
@@ -566,7 +218,7 @@ export function Session({
                 meaning={exercise.meaning}
                 wordId={exercise.itemKind === "word" ? exercise.itemId : null}
               />
-            ) : exercise.itemKind !== "set" && (!result.correct || exercise.kind === "type") ? (
+            ) : exercise.itemKind !== "set" && (!result.correct || module.revealOnRight) ? (
               <Text variant="small" selectable>
                 {exercise.itemKind === "dialogue" ? exercise.answer : `${exercise.pl} — ${exercise.meaning}`}
               </Text>
@@ -599,13 +251,13 @@ export function Session({
             size="lg"
             wide
             loading={busy}
-            disabled={!canSubmit || exercise.kind === "memory"}
+            disabled={!canSubmit || module.submitsItself}
             onClick={async () => {
               // Reading cards have nothing to check: record them and move on.
               if ((await check()) && reading) await advance();
             }}
           >
-            {reading ? "Got it" : exercise.kind === "memory" ? "Find every pair" : "Check"}
+            {reading ? "Got it" : (module.checkLabel ?? "Check")}
           </Button>
         )}
         <Text variant="caption" tone="faint" align="center" as="div">

@@ -325,13 +325,17 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     } else {
         lessons::record_graded(conn, lesson_id, &assessment.result, ace)?
     };
-    let writing_goals = if lesson.format == "writing" { lessons::detail(conn, lesson_id)?.objectives.len() } else { 0 };
-    if lesson.format == "writing" {
-        // Help follows how it went, even on a replay the same day.
-        diesel::update(crate::schema::lessons::table.find(lesson_id))
-            .set(crate::schema::lessons::support_level.eq(next_support_level(lesson.support_level, &assessment.result)))
-            .execute(conn)?;
+    // What the lesson's type adds: a bonus per goal (writing), and what
+    // follows the verdict (writing: its help steps down or up).
+    let conversation = match &crate::lesson_types::get(&lesson.lesson_type)?.run {
+        crate::lesson_types::Run::Conversation(c) => Some(c),
+        _ => None,
+    };
+    let goals = if conversation.is_some_and(|c| c.goals_pay) { lessons::detail(conn, lesson_id)?.objectives.len() } else { 0 };
+    if let Some(after) = conversation.and_then(|c| c.after_verdict) {
+        after(conn, &lesson, &assessment.result)?;
     }
+    let writing_goals = goals;
     assessment.xp = stats::xp_for_checkin(&lesson.complexity, &assessment.result, writing_goals);
     if extra {
         assessment.xp = (assessment.xp + 1) / 2;
@@ -373,7 +377,11 @@ async fn turn(
         if let Some(text) = &user {
             append(conn, checkin_id, "user", text)?;
         }
-        let writing = detail.lesson.format == "writing";
+        // A partner in a situation (writing) rather than an examiner.
+        let writing = matches!(
+            &crate::lesson_types::get(&detail.lesson.lesson_type)?.run,
+            crate::lesson_types::Run::Conversation(c) if c.partner
+        );
         let (prompt, opening, model) = if writing {
             (writing_prompt(conn, &detail)?, OPENING, Some(crate::ai::partner_model(conn)?))
         } else {
@@ -452,7 +460,7 @@ pub async fn checkin_start(
         let mut guard = db.lock();
         let conn = &mut *guard;
         let lesson = lessons::load(conn, lesson_id)?;
-        if lesson.kind != "study" {
+        if crate::lesson_types::get(&lesson.lesson_type)?.is_drill() {
             return Err(Error::msg("Only study lessons have an interview."));
         }
         diesel::insert_into(checkins::table)

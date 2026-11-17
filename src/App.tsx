@@ -34,6 +34,7 @@ import { AudioScreen } from "./screens/AudioScreen";
 import { HowToUse } from "./screens/HowToUse";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary } from "./screens/Music";
+import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
 import { Player } from "./screens/Player";
 import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
@@ -181,6 +182,8 @@ export default function App() {
     (async () => {
       try {
         const loaded = await track("Opening your data", "init_app", initApp);
+        // The lesson types, which every lesson list and page reads.
+        await track("Loading lesson types", "lesson_types", loadLessonTypes);
         if (cancelled) return;
         setSettings(loaded);
         // Display preferences live in the database; adopt them (or seed them).
@@ -470,7 +473,8 @@ export default function App() {
               title: detail?.title ?? "Check-in",
               songId: detail?.songId ?? null,
               writing:
-                detail?.format === "writing"
+                // A type with a writing section is played out with a partner.
+                detail && lessonType(detail).sections.includes("writing")
                   ? { situation: detail.content, goals: detail.objectives, supportLevel: detail.supportLevel }
                   : null,
               back: overlay,

@@ -416,7 +416,7 @@ pub fn cut_into_drills(
         Ok(course_lessons::table
             .inner_join(lessons::table)
             .filter(course_lessons::course_id.eq(course_id))
-            .filter(lessons::format.eq(format))
+            .filter(lessons::lesson_type.eq(format))
             .order(course_lessons::ord)
             .select(lessons::id)
             .load(conn)?)
@@ -655,7 +655,7 @@ pub fn remove_items(
             .collect();
         let empty: Vec<i64> = lessons::table
             .filter(lessons::id.eq_any(&listed))
-            .filter(lessons::kind.eq("drill"))
+            .filter(lessons::lesson_type.eq_any(crate::lesson_types::REGISTRY.iter().filter(|t| t.is_drill()).map(|t| t.id)))
             .select(lessons::id)
             .load::<i64>(conn)?
             .into_iter()
@@ -687,21 +687,26 @@ pub fn rename(conn: &mut Conn, course_id: i64, title: Option<&str>, title_pl: Op
 /// comes when its words are known; listening after; writing — using it all
 /// in a situation — last.
 pub fn arrange_path(conn: &mut Conn, course_id: i64) -> Result<()> {
-    let rows: Vec<(i64, String, String, Option<i64>)> = course_lessons::table
+    let rows: Vec<(i64, String)> = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
         .order((course_lessons::ord, course_lessons::lesson_id))
-        .select((lessons::id, lessons::kind, lessons::format, lessons::song_id))
+        .select((lessons::id, lessons::lesson_type))
         .load(conn)?;
-    let pick = |test: &dyn Fn(&str, &str, Option<i64>) -> bool| -> Vec<i64> {
-        rows.iter().filter(|(_, k, f, s)| test(k, f, *s)).map(|(id, ..)| *id).collect()
+    // Each type says where it goes (lesson_types::PathGroup).
+    use crate::lesson_types::PathGroup;
+    let pick = |group: PathGroup| -> Vec<i64> {
+        rows.iter()
+            .filter(|(_, t)| crate::lesson_types::get(t).map_or(PathGroup::Study, |t| t.path) == group)
+            .map(|(id, _)| *id)
+            .collect()
     };
-    let dialogues = pick(&|k, f, _| k == "drill" && f == "dialogue");
-    let words = pick(&|k, f, _| k == "drill" && (f == "words" || f == "typing" || f == "memory"));
-    let sentences = pick(&|k, f, _| k == "drill" && (f == "sentences" || f == "gaps"));
-    let lessons = pick(&|k, f, s| k == "study" && f != "writing" && f != "song" && s.is_none());
-    let listening = pick(&|k, f, s| k == "study" && (f == "song" || s.is_some()));
-    let writing = pick(&|k, f, _| k == "study" && f == "writing");
+    let dialogues = pick(PathGroup::Dialogue);
+    let words = pick(PathGroup::Words);
+    let sentences = pick(PathGroup::Sentences);
+    let lessons = pick(PathGroup::Study);
+    let listening = pick(PathGroup::Listening);
+    let writing = pick(PathGroup::Writing);
 
     let mut path = dialogues;
     let mut lessons = lessons.into_iter();
@@ -861,7 +866,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
             lessons::challenge,
             lessons::passed,
             lessons::mastery,
-            lessons::format,
+            lessons::lesson_type,
             lessons::support_level,
             lessons::title,
         ))
@@ -871,7 +876,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
     let completed = !core.is_empty() && passed_core == core.len() as i64;
     let mastered_lessons = list
         .iter()
-        .filter(|(_, passed, mastery, format, support, _)| crate::lessons::is_mastered(*passed == 1, *mastery, format, *support))
+        .filter(|(_, passed, mastery, lesson_type, support, _)| crate::lessons::is_mastered(*passed == 1, *mastery, lesson_type, *support))
         .count();
     let mastered = completed && mastered_lessons == list.len();
     let mastery_points = list.iter().map(|l| l.2.clamp(0, crate::lessons::MASTERY_FULL)).sum();

@@ -321,7 +321,7 @@ pub fn store_for(
         Owner::Lesson(id) => {
             let kind: String = lessons::table
                 .find(id)
-                .select(lessons::kind)
+                .select(lessons::lesson_type)
                 .first(conn)
                 .optional()?
                 .ok_or_else(|| Error::msg("That lesson no longer exists."))?;

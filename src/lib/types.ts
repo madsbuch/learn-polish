@@ -75,14 +75,11 @@ export type ExerciseKind =
   | "dialogueGap"
   | "gapFill"
   | "memory"
-  // Picture lessons: meet it (picture, sound, word); hear it and pick its
-  // picture; read it and pick its picture; see the picture and pick the
-  // word; type the word from the picture.
+  // Picture lessons: meet it (picture, sound, word); see the word and pick
+  // its picture; see the picture and pick the word.
   | "pictureIntro"
-  | "hearPick"
   | "wordPick"
-  | "picturePick"
-  | "pictureType";
+  | "picturePick";
 
 export interface Exercise {
   key: string;
@@ -145,9 +142,10 @@ export type LessonResult = "pass" | "partial" | "fail";
 /** A unit of learning in a course: a drill, or a study, writing or listening lesson. */
 export interface Lesson {
   id: number;
-  kind: "drill" | "study";
-  /** Drills: words | memory | typing | sentences | gaps | dialogue. */
-  format: string;
+  /** Its type: one of the registered lesson types (see lib/lessonTypes.ts). */
+  type: string;
+  /** How it is practised, from its type. */
+  engine: "exercises" | "conversation";
   title: string;
   summary: string;
   complexity: Complexity;
@@ -196,14 +194,29 @@ export interface LessonDetail extends Lesson {
   wordPictures: WordPicture[];
 }
 
+/** A lesson type, as the core registers it. */
+export interface LessonTypeInfo {
+  id: string;
+  name: string;
+  /** drill | study | write | song | picture */
+  icon: string;
+  description: string;
+  engine: "exercises" | "conversation";
+  /** Mastering it also takes doing it once without help (writing). */
+  unaidedToMaster: boolean;
+  /** What its page shows, in order. */
+  sections: string[];
+  /** Its page's button, the first time and after. */
+  startLabel: string;
+  againLabel: string;
+}
+
 /** A lesson's word, with its picture if it has one. */
 export interface WordPicture {
   wordId: number;
   word: string;
   meaning: string;
   image: number | null;
-  /** A noun: worth a picture in a word drill. */
-  picturable: boolean;
 }
 
 export interface LessonOverview {

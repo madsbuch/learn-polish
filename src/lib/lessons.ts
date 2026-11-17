@@ -1,3 +1,4 @@
+import { lessonType } from "./lessonTypes";
 import type { Lesson, Complexity } from "./types";
 
 /** How long a lesson takes, by complexity. */
@@ -13,23 +14,9 @@ export function complexityTone(complexity: Complexity): "mint" | "sky" | "crimso
   return complexity === "low" ? "mint" : complexity === "medium" ? "sky" : "crimson";
 }
 
-const FORMAT_NAMES: Record<string, string> = {
-  words: "Words",
-  memory: "Memory cards",
-  typing: "Typing",
-  sentences: "Sentences",
-  gaps: "Fill the gaps",
-  dialogue: "Conversation",
-  song: "Listening",
-  writing: "Writing",
-  pictures: "Pictures",
-};
-
-/** "Study" or the drill's format, e.g. "Memory cards". */
+/** A lesson's type, by name, e.g. "Memory cards" (from the registry). */
 export function kindName(lesson: Lesson): string {
-  if (lesson.format === "song") return "Listening";
-  if (lesson.format === "writing") return "Writing";
-  return lesson.kind === "study" ? "Study" : (FORMAT_NAMES[lesson.format] ?? "Drill");
+  return lessonType(lesson).name;
 }
 
 /** When the lesson is next due, in words: "due now", "in 3 days", "new". */
@@ -48,12 +35,14 @@ export const MASTERY_FULL = 100;
 
 /**
  * Whether a lesson is mastered: passed, with full mastery points, and — for
- * writing — done without help. Mastery is earned by passing, never by
+ * a type that asks it (writing) — done without help. Mastery is earned by passing, never by
  * waiting (see `mastery_gain` in lessons.rs).
  */
 export function mastered(lesson: Lesson): boolean {
   return (
-    lesson.passed && lesson.mastery >= MASTERY_FULL && (lesson.format !== "writing" || lesson.supportLevel >= 2)
+    lesson.passed &&
+    lesson.mastery >= MASTERY_FULL &&
+    (!lessonType(lesson).unaidedToMaster || lesson.supportLevel >= 2)
   );
 }
 
@@ -64,9 +53,9 @@ export function standing(lesson: Lesson): Standing {
   return !lesson.passed ? "toPass" : mastered(lesson) ? "mastered" : "learning";
 }
 
-/** What a writing lesson still needs before it can be mastered, or null. */
+/** What a lesson done with help (writing) still needs before it can be mastered, or null. */
 export function writingStep(lesson: Lesson): string | null {
-  if (lesson.format !== "writing" || lesson.supportLevel >= 2) return null;
+  if (!lessonType(lesson).unaidedToMaster || lesson.supportLevel >= 2) return null;
   return lesson.supportLevel === 0 ? "write it without the word bank" : "write it without hints";
 }
 
