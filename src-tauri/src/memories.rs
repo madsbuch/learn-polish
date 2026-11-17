@@ -401,7 +401,7 @@ pub mod commands {
         pub memories: Vec<Memory>,
     }
 
-    fn overview(conn: &mut Conn) -> Result<MemoryOverview> {
+    pub(crate) fn overview(conn: &mut Conn) -> Result<MemoryOverview> {
         Ok(MemoryOverview { enabled: enabled(conn), memories: list(conn)? })
     }
 

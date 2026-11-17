@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { LessonRow } from "../components/LessonRow";
 import { CourseClosedCelebration } from "../components/CourseClosedCelebration";
@@ -29,6 +28,8 @@ import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
 import type { CourseClosed, Lesson, Sentence, CourseProgress, Word } from "../lib/types";
+import { onEvent } from "../lib/events";
+import { z } from "zod";
 
 export type CourseSection = "lessons" | "words" | "sentences";
 
@@ -92,7 +93,7 @@ export function CourseDetail({
 
   // Drawn in the background for a new course: show it as soon as it is in.
   useEffect(() => {
-    const off = listen<{ courseId: number; fileId: number }>("pictures://changed", (event) => {
+    const off = onEvent(z.object({ courseId: z.number(), fileId: z.number() }), "pictures://changed", (event) => {
       if (event.payload.courseId === courseId) setPicture(event.payload.fileId);
     });
     return () => {

@@ -1,9 +1,23 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
-import { Badge, Banner, Button, ConfirmButton, Field, List, ListEmpty, ListItem, Section, Sheet, Stack, Text } from "../design";
+import {
+  Badge,
+  Banner,
+  Button,
+  ConfirmButton,
+  Field,
+  List,
+  ListEmpty,
+  ListItem,
+  Section,
+  Sheet,
+  Stack,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import type { AiModel, BenchRun } from "../lib/types";
+import { onEvent } from "../lib/events";
+import { z } from "zod";
 
 const PARTS: { key: "polish" | "tools" | "rules"; label: string }[] = [
   { key: "polish", label: "Polish" },
@@ -33,14 +47,20 @@ export function Benchmark({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<BenchRun | null>(null);
 
-  const load = () => api.benchRuns().then(setRuns).catch((cause) => setError(errorMessage(cause)));
+  const load = () =>
+    api
+      .benchRuns()
+      .then(setRuns)
+      .catch((cause) => setError(errorMessage(cause)));
   useEffect(() => {
     void load();
     api
       .aiListModels()
       .then((list) => setModels(list.filter((m) => m.tools && m.voices.length === 0)))
       .catch(() => {});
-    const off = listen<{ done: number; total: number }>("bench://progress", (event) => setProgress(event.payload));
+    const off = onEvent(z.object({ done: z.number(), total: z.number() }), "bench://progress", (event) =>
+      setProgress(event.payload),
+    );
     return () => {
       void off.then((stop) => stop());
     };
@@ -68,10 +88,9 @@ export function Benchmark({ onClose }: { onClose: () => void }) {
     <Sheet title="Benchmark" onClose={onClose}>
       <Stack gap={4}>
         <Text variant="small" tone="dim">
-          About 20 short tests of the jobs this app gives a model: correct Polish (cases, verbs, fixing
-          a mistake), using the tutor's tools properly, and following the app's rules — your
-          language, short answers, staying in Polish as the writing partner. Scored by fixed rules,
-          not by another model. A run costs a few cents at most.
+          About 20 short tests of the jobs this app gives a model: correct Polish (cases, verbs, fixing a mistake),
+          using the tutor's tools properly, and following the app's rules — your language, short answers, staying in
+          Polish as the writing partner. Scored by fixed rules, not by another model. A run costs a few cents at most.
         </Text>
         <Field label="Model to test">
           <select value={model} onChange={(event) => setModel(event.target.value)} disabled={running}>

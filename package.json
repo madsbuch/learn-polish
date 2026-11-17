@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "node scripts/check-design.mjs && tsc --noEmit && vite build",
     "check:design": "node scripts/check-design.mjs",
+    "check:shapes": "cd src-tauri && cargo test --locked shapes_for_the_screens && cd .. && bun scripts/check-shapes.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev",
@@ -25,7 +26,8 @@
     "@tauri-apps/plugin-os": "^2.3.2",
     "katex": "0.16.22",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

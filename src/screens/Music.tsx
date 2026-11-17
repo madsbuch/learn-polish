@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { onSignal } from "../lib/events";
 
 import { Cover } from "../components/Cover";
 import {
@@ -188,7 +188,7 @@ export function Music({
 
   // Songs finish in the background; the backend says when.
   useEffect(() => {
-    const unlisten = listen("songs://changed", refresh);
+    const unlisten = onSignal("songs://changed", refresh);
     return () => {
       void unlisten.then((off) => off());
     };
@@ -245,11 +245,7 @@ export function Music({
       );
   }
 
-  const feedback = (
-    <>
-      {error ? <Banner tone="error">{error}</Banner> : null}
-    </>
-  );
+  const feedback = <>{error ? <Banner tone="error">{error}</Banner> : null}</>;
 
   if (view.kind === "song") {
     const song = songs?.find((entry) => entry.id === view.songId);
@@ -286,9 +282,7 @@ export function Music({
 
   if (view.kind === "article") {
     const songId = view.songId;
-    detail = (
-      <ArticleReader source={view.source} onBack={() => setView({ kind: "song", songId })} />
-    );
+    detail = <ArticleReader source={view.source} onBack={() => setView({ kind: "song", songId })} />;
   }
 
   if (view.kind === "playlist") {
@@ -301,9 +295,7 @@ export function Music({
             playlist={playlist}
             tracks={tracks}
             onChanged={(next) =>
-              setPlaylists((current) =>
-                (current ?? []).map((entry) => (entry.id === next.id ? next : entry)),
-              )
+              setPlaylists((current) => (current ?? []).map((entry) => (entry.id === next.id ? next : entry)))
             }
             onDeleted={() => {
               back();
@@ -330,17 +322,16 @@ export function Music({
       info={
         <>
           <p>
-            Short lines in English, then straight into Polish — and a Polish chorus that gets
-            stuck in your head. Play them on repeat.
+            Short lines in English, then straight into Polish — and a Polish chorus that gets stuck in your head. Play
+            them on repeat.
           </p>
           <p>
-            Make one with <b>+</b>: pick a theme and a chorus sentence, the songwriter drafts the
-            lyrics, and Suno sings two takes. Put the ones you like into playlists, and save or
-            share any take as an MP3.
+            Make one with <b>+</b>: pick a theme and a chorus sentence, the songwriter drafts the lyrics, and Suno sings
+            two takes. Put the ones you like into playlists, and save or share any take as an MP3.
           </p>
           <p>
-            Or make a <b>podcast</b>: a short spoken episode on a subject you like, written from a
-            Wikipedia article. Every sentence is said in English, then in Polish.
+            Or make a <b>podcast</b>: a short spoken episode on a subject you like, written from a Wikipedia article.
+            Every sentence is said in English, then in Polish.
           </p>
         </>
       }
@@ -615,9 +606,7 @@ function SongList({
                   leading={<Cover fileId={null} size={48} />}
                   title={song.title}
                   subtitle={song.status === "generating" ? making(song) : "Could not be made"}
-                  trailing={
-                    song.status === "generating" ? <Spinner /> : <Badge tone="crimson">Failed</Badge>
-                  }
+                  trailing={song.status === "generating" ? <Spinner /> : <Badge tone="crimson">Failed</Badge>}
                   onClick={() => onOpen(song.id)}
                 />
               );
@@ -765,7 +754,13 @@ function SongPage({
                       variant="primary"
                       size="sm"
                       icon={current && player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
-                      label={current && player.playing ? "Pause" : podcast ? "Play the episode" : `Play take ${item.track.ord + 1}`}
+                      label={
+                        current && player.playing
+                          ? "Pause"
+                          : podcast
+                            ? "Play the episode"
+                            : `Play take ${item.track.ord + 1}`
+                      }
                       onClick={() => play(item)}
                     />
                   }
@@ -875,9 +870,7 @@ function SongPage({
 function playlistItems(playlist: Playlist, tracks: Map<number, QueueItem>) {
   return playlist.entries
     .map((entry) => ({ entry, item: tracks.get(entry.trackId) }))
-    .filter((row): row is { entry: (typeof playlist.entries)[number]; item: QueueItem } =>
-      Boolean(row.item),
-    );
+    .filter((row): row is { entry: (typeof playlist.entries)[number]; item: QueueItem } => Boolean(row.item));
 }
 
 function PlaylistList({
@@ -1070,4 +1063,3 @@ function PlaylistPage({
     </>
   );
 }
-

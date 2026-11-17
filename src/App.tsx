@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { Logo, NavIcon } from "./components/icons";
 import { Banner, Stack } from "./design";
@@ -19,8 +18,6 @@ import type {
   Settings,
   Stats,
   CourseProgress,
-  TutorDone,
-  FactCheck,
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
@@ -39,6 +36,8 @@ import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
 import { Player } from "./screens/Player";
 import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
+import { onEvent, onSignal } from "./lib/events";
+import { FactCheckSchema, TutorDoneSchema } from "./lib/types";
 
 type Tab = "exercises" | "tutor" | "music" | "settings";
 
@@ -168,9 +167,15 @@ export default function App() {
     let cancelled = false;
     const track = async <T,>(label: string, command: string, run: () => Promise<T>): Promise<T> => {
       const startedAt = Date.now();
-      setBootSteps((steps) => [...steps.filter((s) => s.command !== command), { label, command, state: "pending", startedAt }]);
+      setBootSteps((steps) => [
+        ...steps.filter((s) => s.command !== command),
+        { label, command, state: "pending", startedAt },
+      ]);
       const settle = (patch: Partial<BootStep>) =>
-        !cancelled && setBootSteps((steps) => steps.map((s) => (s.command === command ? { ...s, ...patch, ms: Date.now() - startedAt } : s)));
+        !cancelled &&
+        setBootSteps((steps) =>
+          steps.map((s) => (s.command === command ? { ...s, ...patch, ms: Date.now() - startedAt } : s)),
+        );
       try {
         const value = await run();
         settle({ state: "done" });
@@ -244,9 +249,7 @@ export default function App() {
       // voice that will actually read it; everything else uses the default.
       const lines = [
         ...session.dialogue.map((line) => ({ text: line.pl, gender: line.gender })),
-        ...session.exercises
-          .filter((e) => e.itemKind !== "dialogue")
-          .map((e) => ({ text: e.pl, gender: "" })),
+        ...session.exercises.filter((e) => e.itemKind !== "dialogue").map((e) => ({ text: e.pl, gender: "" })),
       ];
       const seen = new Set<string>();
       const unique = lines.filter((line) => {
@@ -338,7 +341,7 @@ export default function App() {
   // A lesson corrected against Wikipedia in the background (the
   // three-monthly check at start).
   useEffect(() => {
-    const off = listen<FactCheck>("facts://updated", (event) => {
+    const off = onEvent(FactCheckSchema, "facts://updated", (event) => {
       toast(`“${event.payload.title}” was updated from Wikipedia`, "info");
     });
     return () => {
@@ -349,7 +352,7 @@ export default function App() {
   // A new course's picture arrived (drawn in the background): the lists
   // showing courses reload.
   useEffect(() => {
-    const off = listen("pictures://changed", () => void refresh());
+    const off = onSignal("pictures://changed", () => void refresh());
     return () => {
       void off.then((stop) => stop());
     };
@@ -358,7 +361,7 @@ export default function App() {
   // A background reply that changed things (a course, a song): every screen
   // reloads, wherever the learner is.
   useEffect(() => {
-    const off = listen<TutorDone>("tutor://done", (event) => {
+    const off = onEvent(TutorDoneSchema, "tutor://done", (event) => {
       if (event.payload.message && event.payload.message.actions.length > 0) void reloadAll();
     });
     return () => {
@@ -567,9 +570,7 @@ export default function App() {
           stats={stats}
           courses={courses}
           onBack={() => setOverlay({ kind: "none" })}
-          onOpenCourse={(progress) =>
-            setOverlay({ kind: "course", progress, back: { kind: "progress" } })
-          }
+          onOpenCourse={(progress) => setOverlay({ kind: "course", progress, back: { kind: "progress" } })}
           onOpenDay={(day) => setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })}
         />
       </div>
@@ -658,7 +659,6 @@ export default function App() {
           {error} · tap to dismiss
         </button>
       ) : null}
-
 
       <nav className="nav" aria-label="Main navigation">
         <div className="nav-brand" aria-hidden="true">

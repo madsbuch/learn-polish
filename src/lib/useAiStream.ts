@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { errorMessage } from "./api";
-import type { AgentStatus, StreamEvent } from "./types";
+import { onEvent } from "./events";
+import { AgentStatusSchema, StreamEventSchema } from "./types";
 
 let nextStreamId = 0;
 
@@ -24,7 +24,7 @@ export function useAiStream() {
 
   useEffect(() => {
     mounted.current = true;
-    const offText = listen<StreamEvent>("ai://stream", (event) => {
+    const offText = onEvent(StreamEventSchema, "ai://stream", (event) => {
       const payload = event.payload;
       if (!mounted.current || payload.id !== activeId.current) return;
       if (payload.delta) {
@@ -33,7 +33,7 @@ export function useAiStream() {
       }
       if (payload.done && payload.error) setError(payload.error);
     });
-    const offStatus = listen<AgentStatus>("agent://status", (event) => {
+    const offStatus = onEvent(AgentStatusSchema, "agent://status", (event) => {
       if (mounted.current && event.payload.id === activeId.current) setStatus(event.payload.label);
     });
     return () => {

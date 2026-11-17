@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { Button, Inline, Section, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
@@ -7,6 +6,8 @@ import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
 import type { LessonDetail } from "../lib/types";
 import { SpeakButton } from "./ui";
+import { onEvent } from "../lib/events";
+import { z } from "zod";
 
 /**
  * A picture lesson's pictures, one per word. Each can be drawn again or
@@ -22,7 +23,7 @@ export function WordPictures({ lesson, onChanged }: { lesson: LessonDetail; onCh
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
-    const off = listen<{ lessonId: number }>("pictures://word", (event) => {
+    const off = onEvent(z.object({ lessonId: z.number() }), "pictures://word", (event) => {
       if (event.payload.lessonId === lesson.id) changed.current();
     });
     return () => {

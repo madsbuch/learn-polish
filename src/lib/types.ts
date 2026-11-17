@@ -1,711 +1,813 @@
+// The shapes the Rust core sends (serde structs in src-tauri/src), as zod
+// schemas: every command result and event payload is parsed with one
+// (src/lib/api.ts, src/lib/events.ts), so a shape that drifts fails loudly
+// at the boundary instead of deep in a screen. Each type is inferred from
+// its schema.
+
+import { z } from "zod";
+
 // Mirrors the serde structs in src-tauri/src/models.rs.
-
-export interface Course {
-  id: number;
-  ord: number;
-  slug: string;
+export const CourseSchema = z.object({
+  id: z.number(),
+  ord: z.number(),
+  slug: z.string(),
   /** Always "course": every course is a course, a folder of lessons. */
-  kind: string;
-  titlePl: string;
-  title: string;
-  summary: string;
+  kind: z.string(),
+  titlePl: z.string(),
+  title: z.string(),
+  summary: z.string(),
   /** How advanced it is, A1–C2; null until it is levelled. */
-  level: string | null;
-}
+  level: z.string().nullable(),
+});
+export type Course = z.infer<typeof CourseSchema>;
 
-export interface Word {
-  id: number;
-  pl: string;
-  meaning: string;
-  pos: string;
+export const WordSchema = z.object({
+  id: z.number(),
+  pl: z.string(),
+  meaning: z.string(),
+  pos: z.string(),
   /** The drill it belongs to. */
-  lessonId: number;
-  lesson: string;
-}
+  lessonId: z.number(),
+  lesson: z.string(),
+});
+export type Word = z.infer<typeof WordSchema>;
 
-export interface Sentence {
-  id: number;
-  pl: string;
-  meaning: string;
-  lessonId: number;
-  lesson: string;
-}
+export const SentenceSchema = z.object({
+  id: z.number(),
+  pl: z.string(),
+  meaning: z.string(),
+  lessonId: z.number(),
+  lesson: z.string(),
+});
+export type Sentence = z.infer<typeof SentenceSchema>;
 
-export interface DialogueLine {
-  ord: number;
-  speaker: string;
+export const DialogueLineSchema = z.object({
+  ord: z.number(),
+  speaker: z.string(),
   /** "f" or "m" — decides which voice reads the line. */
-  gender: string;
-  pl: string;
-  meaning: string;
-}
+  gender: z.string(),
+  pl: z.string(),
+  meaning: z.string(),
+});
+export type DialogueLine = z.infer<typeof DialogueLineSchema>;
 
-export interface CataloguePage {
-  words: Word[];
-  sentences: Sentence[];
-  totalWords: number;
-  totalSentences: number;
-}
+export const CataloguePageSchema = z.object({
+  words: z.array(WordSchema),
+  sentences: z.array(SentenceSchema),
+  totalWords: z.number(),
+  totalSentences: z.number(),
+});
+export type CataloguePage = z.infer<typeof CataloguePageSchema>;
 
-export interface StreamEvent {
-  id: string;
-  delta: string;
-  done: boolean;
-  error: string | null;
-}
+export const StreamEventSchema = z.object({
+  id: z.string(),
+  delta: z.string(),
+  done: z.boolean(),
+  error: z.string().nullable(),
+});
+export type StreamEvent = z.infer<typeof StreamEventSchema>;
 
-export interface Voice {
-  name: string;
-  gender: string;
-  description: string;
-}
+export const VoiceSchema = z.object({
+  name: z.string(),
+  gender: z.string(),
+  description: z.string(),
+});
+export type Voice = z.infer<typeof VoiceSchema>;
 
 /** A line queued for synthesis, with the voice gender to read it in. */
-export interface SpeechLine {
-  text: string;
-  gender: string;
-}
+export const SpeechLineSchema = z.object({
+  text: z.string(),
+  gender: z.string(),
+});
+export type SpeechLine = z.infer<typeof SpeechLineSchema>;
 
-export type ExerciseKind =
-  | "dialogueRead"
-  | "intro"
-  | "recognise"
-  | "produce"
-  | "type"
-  | "sentenceIntro"
-  | "wordOrder"
-  | "dialogueGap"
-  | "gapFill"
-  | "memory"
-  // Picture lessons: meet it (picture, sound, word); see the word and pick
-  // its picture; see the picture and pick the word.
-  | "pictureIntro"
-  | "wordPick"
-  | "picturePick";
+export const ExerciseKindSchema = z.enum([
+  "dialogueRead",
+  "intro",
+  "recognise",
+  "produce",
+  "type",
+  "sentenceIntro",
+  "wordOrder",
+  "dialogueGap",
+  "gapFill",
+  "memory",
+  "pictureIntro",
+  "wordPick",
+  "picturePick",
+]);
+export type ExerciseKind = z.infer<typeof ExerciseKindSchema>;
 
-export interface Exercise {
-  key: string;
-  kind: ExerciseKind;
-  itemKind: "word" | "sentence" | "dialogue" | "set";
-  itemId: number;
-  isNew: boolean;
-  prompt: string;
-  hint: string;
-  answer: string;
-  options: string[];
-  tokens: string[];
-  pl: string;
-  meaning: string;
-  /** Fill-the-gaps: sentences with one word missing; the bank is `options`. */
-  gaps: Gap[];
-  /** Memory cards: the Polish/English pairs to find. */
-  pairs: Pair[];
-  /** The item's picture (a file id), when it has one. */
-  image: number | null;
-  /** Picture lessons: each option's picture, in the order of `options`. */
-  optionImages: (number | null)[];
-}
+export const GapSchema = z.object({
+  before: z.string(),
+  answer: z.string(),
+  after: z.string(),
+  meaning: z.string(),
+});
+export type Gap = z.infer<typeof GapSchema>;
 
-export interface Gap {
-  before: string;
-  answer: string;
-  after: string;
-  meaning: string;
-}
-
-export interface Pair {
-  pl: string;
-  en: string;
+export const PairSchema = z.object({
+  pl: z.string(),
+  en: z.string(),
   /** Picture lessons: the card shows this picture instead of the English. */
-  image: number | null;
-}
+  image: z.number().nullable(),
+});
+export type Pair = z.infer<typeof PairSchema>;
 
-export interface SessionPlan {
-  day: number;
-  course: Course;
-  dialogue: DialogueLine[];
-  exercises: Exercise[];
-  newWords: number;
-  reviewWords: number;
-  newSentences: number;
-  reviewSentences: number;
-  alreadyCompleted: boolean;
+export const ExerciseSchema = z.object({
+  key: z.string(),
+  kind: ExerciseKindSchema,
+  itemKind: z.enum(["word", "sentence", "dialogue", "set"]),
+  itemId: z.number(),
+  isNew: z.boolean(),
+  prompt: z.string(),
+  hint: z.string(),
+  answer: z.string(),
+  options: z.array(z.string()),
+  tokens: z.array(z.string()),
+  pl: z.string(),
+  meaning: z.string(),
+  /** Fill-the-gaps: sentences with one word missing; the bank is `options`. */
+  gaps: z.array(GapSchema),
+  /** Memory cards: the Polish/English pairs to find. */
+  pairs: z.array(PairSchema),
+  /** The item's picture (a file id), when it has one. */
+  image: z.number().nullable(),
+  /** Picture lessons: each option's picture, in the order of `options`. */
+  optionImages: z.array(z.number().nullable()),
+});
+export type Exercise = z.infer<typeof ExerciseSchema>;
+
+export const SessionPlanSchema = z.object({
+  day: z.number(),
+  course: CourseSchema,
+  dialogue: z.array(DialogueLineSchema),
+  exercises: z.array(ExerciseSchema),
+  newWords: z.number(),
+  reviewWords: z.number(),
+  newSentences: z.number(),
+  reviewSentences: z.number(),
+  alreadyCompleted: z.boolean(),
   /** The drill lesson this session practises. */
-  lessonId: number;
+  lessonId: z.number(),
   /** Done before and not due: extra practice — half XP, schedule unchanged. */
-  extra: boolean;
-}
+  extra: z.boolean(),
+});
+export type SessionPlan = z.infer<typeof SessionPlanSchema>;
 
 // ------------------------------------------------------------------ lessons
+export const ComplexitySchema = z.enum(["low", "medium", "high"]);
+export type Complexity = z.infer<typeof ComplexitySchema>;
 
-export type Complexity = "low" | "medium" | "high";
-export type LessonResult = "pass" | "partial" | "fail";
+export const LessonResultSchema = z.enum(["pass", "partial", "fail"]);
+export type LessonResult = z.infer<typeof LessonResultSchema>;
 
 /** A unit of learning in a course: a drill, or a study, writing or listening lesson. */
-export interface Lesson {
-  id: number;
+export const LessonSchema = z.object({
+  id: z.number(),
   /** Its type: one of the registered lesson types (see lib/lessonTypes.ts). */
-  type: string;
+  type: z.string(),
   /** How it is practised, from its type. */
-  engine: "exercises" | "conversation";
-  title: string;
-  summary: string;
-  complexity: Complexity;
+  engine: z.enum(["exercises", "conversation"]),
+  title: z.string(),
+  summary: z.string(),
+  complexity: ComplexitySchema,
   /** The first course it was listed in, for display. */
-  courseId: number | null;
-  courseTitle: string | null;
+  courseId: z.number().nullable(),
+  courseTitle: z.string().nullable(),
   /** Every course that lists it. */
-  courseIds: number[];
+  courseIds: z.array(z.number()),
   /** Who made it; informational — every lesson can be edited and deleted. */
-  origin: "starter" | "tutor" | "you";
-  periodDays: number;
-  intervalDays: number;
+  origin: z.enum(["starter", "tutor", "you"]),
+  periodDays: z.number(),
+  intervalDays: z.number(),
   /** Day number; null until done once. */
-  dueDay: number | null;
-  lastDay: number | null;
-  lastResult: LessonResult | null;
-  reps: number;
+  dueDay: z.number().nullable(),
+  lastDay: z.number().nullable(),
+  lastResult: LessonResultSchema.nullable(),
+  reps: z.number(),
   /** Writing lessons: 0 guided (word bank, hints), 1 supported (hints), 2 free. */
-  supportLevel: number;
+  supportLevel: z.number(),
   /** Mastered, for good (lessons.rs `stamp_mastered`). */
-  mastered: boolean;
+  mastered: z.boolean(),
   /** Beyond the course's level: needed to master it, not to complete it. */
-  challenge: boolean;
+  challenge: z.boolean(),
   /** Passed at least once. */
-  passed: boolean;
+  passed: z.boolean(),
   /** Mastery points, 0–100: every pass earns some, spaced passes more. */
-  mastery: number;
+  mastery: z.number(),
   /** Its own CEFR level, when it differs from its course's. */
-  level: string | null;
-  items: number;
+  level: z.string().nullable(),
+  items: z.number(),
   /** A listening lesson's song. */
-  songId: number | null;
-}
-
-export interface LessonDetail extends Lesson {
-  content: string;
-  objectives: string[];
-  words: [string, string][];
-  sentences: [string, string][];
-  lastFeedback: string | null;
-  /** The courses that list it: [id, English title, Polish title]. */
-  courses: [number, string, string][];
-  /** A conversation drill's dialogue. */
-  lines: DialogueLine[];
-  /** What the last check against the lesson's Wikipedia sources changed. */
-  factNote: string | null;
-  /** When the lesson was last checked against its sources (seconds). */
-  factCheckedAt: number | null;
-  /** Its words with their ids and pictures. */
-  wordPictures: WordPicture[];
-}
-
-/** What earned a day's XP (xplog.rs). */
-export interface XpDay {
-  day: number;
-  /** The day's total: kept for every day. */
-  total: number;
-  /** Whether the day has its details (days from before the log do not). */
-  detailed: boolean;
-  runs: XpRun[];
-}
-
-/** One go at a lesson, or one check-in. */
-export interface XpRun {
-  lessonId: number | null;
-  lessonTitle: string;
-  courseTitle: string | null;
-  /** Unix seconds. */
-  startedAt: number;
-  xp: number;
-  entries: XpEntry[];
-}
-
-export interface XpEntry {
-  at: number;
-  label: string;
-  xp: number;
-  /** Why it earned what it did, when that needs saying. */
-  note: string;
-}
-
-/** A day's total, for the history chart. */
-export interface XpHistoryDay {
-  day: number;
-  xp: number;
-  completed: boolean;
-  frozen: boolean;
-}
-
-/** A note in Settings → Diagnostics. */
-export interface DiagnosticEntry {
-  /** Unix seconds. */
-  at: number;
-  /** "timing" | "model reply" | "background" | "database" */
-  kind: string;
-  message: string;
-}
-
-/** A lesson type, as the core registers it. */
-export interface LessonTypeInfo {
-  id: string;
-  name: string;
-  /** drill | study | write | song | picture */
-  icon: string;
-  description: string;
-  engine: "exercises" | "conversation";
-  /** Mastering it also takes doing it once without help (writing). */
-  unaidedToMaster: boolean;
-  /** What its page shows, in order. */
-  sections: string[];
-  /** Its page's button, the first time and after. */
-  startLabel: string;
-  againLabel: string;
-  /** Minutes it takes, by complexity [low, medium, high] (lesson_types::minutes). */
-  minutes: [number, number, number];
-}
+  songId: z.number().nullable(),
+});
+export type Lesson = z.infer<typeof LessonSchema>;
 
 /** A lesson's word, with its picture if it has one. */
-export interface WordPicture {
-  wordId: number;
-  word: string;
-  meaning: string;
-  image: number | null;
-}
+export const WordPictureSchema = z.object({
+  wordId: z.number(),
+  word: z.string(),
+  meaning: z.string(),
+  image: z.number().nullable(),
+});
+export type WordPicture = z.infer<typeof WordPictureSchema>;
 
-export interface LessonOverview {
-  today: number;
+export const LessonDetailSchema = LessonSchema.extend({
+  content: z.string(),
+  objectives: z.array(z.string()),
+  words: z.array(z.tuple([z.string(), z.string()])),
+  sentences: z.array(z.tuple([z.string(), z.string()])),
+  lastFeedback: z.string().nullable(),
+  /** The courses that list it: [id, English title, Polish title]. */
+  courses: z.array(z.tuple([z.number(), z.string(), z.string()])),
+  /** A conversation drill's dialogue. */
+  lines: z.array(DialogueLineSchema),
+  /** What the last check against the lesson's Wikipedia sources changed. */
+  factNote: z.string().nullable(),
+  /** When the lesson was last checked against its sources (seconds). */
+  factCheckedAt: z.number().nullable(),
+  /** Its words with their ids and pictures. */
+  wordPictures: z.array(WordPictureSchema),
+});
+export type LessonDetail = z.infer<typeof LessonDetailSchema>;
+
+export const XpEntrySchema = z.object({
+  at: z.number(),
+  label: z.string(),
+  xp: z.number(),
+  /** Why it earned what it did, when that needs saying. */
+  note: z.string(),
+});
+export type XpEntry = z.infer<typeof XpEntrySchema>;
+
+/** One go at a lesson, or one check-in. */
+export const XpRunSchema = z.object({
+  lessonId: z.number().nullable(),
+  lessonTitle: z.string(),
+  courseTitle: z.string().nullable(),
+  /** Unix seconds. */
+  startedAt: z.number(),
+  xp: z.number(),
+  entries: z.array(XpEntrySchema),
+});
+export type XpRun = z.infer<typeof XpRunSchema>;
+
+/** What earned a day's XP (xplog.rs). */
+export const XpDaySchema = z.object({
+  day: z.number(),
+  /** The day's total: kept for every day. */
+  total: z.number(),
+  /** Whether the day has its details (days from before the log do not). */
+  detailed: z.boolean(),
+  runs: z.array(XpRunSchema),
+});
+export type XpDay = z.infer<typeof XpDaySchema>;
+
+/** A day's total, for the history chart. */
+export const XpHistoryDaySchema = z.object({
+  day: z.number(),
+  xp: z.number(),
+  completed: z.boolean(),
+  frozen: z.boolean(),
+});
+export type XpHistoryDay = z.infer<typeof XpHistoryDaySchema>;
+
+/** A note in Settings → Diagnostics. */
+export const DiagnosticEntrySchema = z.object({
+  /** Unix seconds. */
+  at: z.number(),
+  /** "timing" | "model reply" | "background" | "database" */
+  kind: z.string(),
+  message: z.string(),
+});
+export type DiagnosticEntry = z.infer<typeof DiagnosticEntrySchema>;
+
+/** A lesson type, as the core registers it. */
+export const LessonTypeInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** drill | study | write | song | picture */
+  icon: z.string(),
+  description: z.string(),
+  engine: z.enum(["exercises", "conversation"]),
+  /** Mastering it also takes doing it once without help (writing). */
+  unaidedToMaster: z.boolean(),
+  /** What its page shows, in order. */
+  sections: z.array(z.string()),
+  /** Its page's button, the first time and after. */
+  startLabel: z.string(),
+  againLabel: z.string(),
+  /** Minutes it takes, by complexity [low, medium, high] (lesson_types::minutes). */
+  minutes: z.tuple([z.number(), z.number(), z.number()]),
+});
+export type LessonTypeInfo = z.infer<typeof LessonTypeInfoSchema>;
+
+export const LessonOverviewSchema = z.object({
+  today: z.number(),
   /** Today's lessons still to do, most important first. */
-  due: Lesson[];
-  doneToday: number;
+  due: z.array(LessonSchema),
+  doneToday: z.number(),
   /** Today's lessons: how many, and how many done. */
-  planTotal: number;
-  planDone: number;
-}
+  planTotal: z.number(),
+  planDone: z.number(),
+});
+export type LessonOverview = z.infer<typeof LessonOverviewSchema>;
 
-export interface Assessment {
-  result: LessonResult;
-  summary: string;
-  strengths: string[];
-  toReview: string[];
-  nextDueDay: number;
-  xp: number;
-}
+export const AssessmentSchema = z.object({
+  result: LessonResultSchema,
+  summary: z.string(),
+  strengths: z.array(z.string()),
+  toReview: z.array(z.string()),
+  nextDueDay: z.number(),
+  xp: z.number(),
+});
+export type Assessment = z.infer<typeof AssessmentSchema>;
 
-export interface CheckinTurn {
-  checkinId: number;
-  reply: string;
-  assessment: Assessment | null;
-  firstCompletionToday: boolean;
+export const CheckinTurnSchema = z.object({
+  checkinId: z.number(),
+  reply: z.string(),
+  assessment: AssessmentSchema.nullable(),
+  firstCompletionToday: z.boolean(),
   /** What the examiner saved to or changed in memory this turn. */
-  remembered: string[];
-}
+  remembered: z.array(z.string()),
+});
+export type CheckinTurn = z.infer<typeof CheckinTurnSchema>;
 
-export interface AnswerResult {
-  correct: boolean;
-  expected: string;
-  xpGained: number;
-  totalXp: number;
-  dayXp: number;
-  level: number;
-}
+export const AnswerResultSchema = z.object({
+  correct: z.boolean(),
+  expected: z.string(),
+  xpGained: z.number(),
+  totalXp: z.number(),
+  dayXp: z.number(),
+  level: z.number(),
+});
+export type AnswerResult = z.infer<typeof AnswerResultSchema>;
 
-export interface Achievement {
-  code: string;
-  title: string;
-  description: string;
-  icon: string;
-  unlocked: boolean;
-  progress: number;
-}
+export const AchievementSchema = z.object({
+  code: z.string(),
+  title: z.string(),
+  description: z.string(),
+  icon: z.string(),
+  unlocked: z.boolean(),
+  progress: z.number(),
+});
+export type Achievement = z.infer<typeof AchievementSchema>;
 
-export interface DayStat {
-  day: number;
-  xp: number;
-  answered: number;
-  correct: number;
-  completed: boolean;
+export const DayStatSchema = z.object({
+  day: z.number(),
+  xp: z.number(),
+  answered: z.number(),
+  correct: z.number(),
+  completed: z.boolean(),
   /** Missed, but a streak freeze kept the run going. */
-  frozen: boolean;
-}
+  frozen: z.boolean(),
+});
+export type DayStat = z.infer<typeof DayStatSchema>;
 
-export interface CourseProgress {
-  course: Course;
-  totalWords: number;
-  seenWords: number;
-  masteredWords: number;
-  totalSentences: number;
-  seenSentences: number;
-  totalLessons: number;
+export const CourseProgressSchema = z.object({
+  course: CourseSchema,
+  totalWords: z.number(),
+  seenWords: z.number(),
+  masteredWords: z.number(),
+  totalSentences: z.number(),
+  seenSentences: z.number(),
+  totalLessons: z.number(),
   /** Lessons done at least once. */
-  startedLessons: number;
+  startedLessons: z.number(),
   /** The course's picture: a file id, loaded with fileUrl(). */
-  imageFileId: number | null;
+  imageFileId: z.number().nullable(),
   /** Completed: every core lesson passed once. Mastered: every lesson mastered, challenges too. */
-  status: "active" | "completed" | "mastered";
+  status: z.enum(["active", "completed", "mastered"]),
   /** Lessons needed to complete it (not challenges), and how many are passed. */
-  coreLessons: number;
-  passedCore: number;
-  challenges: number;
+  coreLessons: z.number(),
+  passedCore: z.number(),
+  challenges: z.number(),
   /** Lessons, challenges too, already mastered. */
-  masteredLessons: number;
+  masteredLessons: z.number(),
   /** Mastery points earned across its lessons, out of masteryMax (100 a lesson). */
-  masteryPoints: number;
-  masteryMax: number;
+  masteryPoints: z.number(),
+  masteryMax: z.number(),
   /** About how many minutes of practice are left to master it. */
-  minutesToMaster: number;
+  minutesToMaster: z.number(),
   /** The first core lesson, in the course's order, not passed yet. */
-  nextLesson: string | null;
+  nextLesson: z.string().nullable(),
   /** A built-in course that never ends (Grammar & culture, Listening, Writing): always active. */
-  openEnded: boolean;
+  openEnded: z.boolean(),
   /** When it was closed as mastered (Unix seconds), if it was. */
-  closedAt: number | null;
-}
+  closedAt: z.number().nullable(),
+});
+export type CourseProgress = z.infer<typeof CourseProgressSchema>;
 
 /** What the courses closed as mastered add up to, each counted once. */
-export interface MasteredSummary {
-  courses: number;
-  lessons: number;
-  words: number;
-}
+export const MasteredSummarySchema = z.object({
+  courses: z.number(),
+  lessons: z.number(),
+  words: z.number(),
+});
+export type MasteredSummary = z.infer<typeof MasteredSummarySchema>;
 
 /** A course just completed or mastered. */
 /** A course just closed as mastered, for its celebration (courses.rs CourseClosed). */
-export interface CourseClosed {
-  title: string;
-  lessons: number;
-  words: number;
-  days: number;
-  xp: number;
-}
+export const CourseClosedSchema = z.object({
+  title: z.string(),
+  lessons: z.number(),
+  words: z.number(),
+  days: z.number(),
+  xp: z.number(),
+});
+export type CourseClosed = z.infer<typeof CourseClosedSchema>;
 
-export interface Milestone {
-  courseId: number;
-  title: string;
-  mastered: boolean;
-}
+export const MilestoneSchema = z.object({
+  courseId: z.number(),
+  title: z.string(),
+  mastered: z.boolean(),
+});
+export type Milestone = z.infer<typeof MilestoneSchema>;
 
-export interface Stats {
+export const StatsSchema = z.object({
   /** The courses closed as mastered, together. */
-  mastered: MasteredSummary;
-  day: number;
-  totalXp: number;
-  dayXp: number;
+  mastered: MasteredSummarySchema,
+  day: z.number(),
+  totalXp: z.number(),
+  dayXp: z.number(),
   /** Lessons a day: how many today's list holds. */
-  dailyLessons: number;
-  level: number;
-  xpIntoLevel: number;
-  xpForNextLevel: number;
-  currentStreak: number;
+  dailyLessons: z.number(),
+  level: z.number(),
+  xpIntoLevel: z.number(),
+  xpForNextLevel: z.number(),
+  currentStreak: z.number(),
   /** Freezes kept: each covers one missed day (at most two). */
-  streakFreezes: number;
-  longestStreak: number;
-  wordsSeen: number;
-  wordsMastered: number;
-  wordsTotal: number;
-  sentencesSeen: number;
-  sentencesTotal: number;
-  dialoguesSeen: number;
-  dialoguesTotal: number;
-  dueToday: number;
-  accuracy: number;
-  completedToday: boolean;
-  history: DayStat[];
-  achievements: Achievement[];
-}
+  streakFreezes: z.number(),
+  longestStreak: z.number(),
+  wordsSeen: z.number(),
+  wordsMastered: z.number(),
+  wordsTotal: z.number(),
+  sentencesSeen: z.number(),
+  sentencesTotal: z.number(),
+  dialoguesSeen: z.number(),
+  dialoguesTotal: z.number(),
+  dueToday: z.number(),
+  accuracy: z.number(),
+  completedToday: z.boolean(),
+  history: z.array(DayStatSchema),
+  achievements: z.array(AchievementSchema),
+});
+export type Stats = z.infer<typeof StatsSchema>;
 
-export interface Settings {
+export const SongLengthSchema = z.enum(["short", "medium", "long"]);
+export type SongLength = z.infer<typeof SongLengthSchema>;
+
+export const SettingsSchema = z.object({
   /** Lessons a day: how many today's list holds. */
-  dailyLessons: number;
-  reminderHour: number;
-  reminderMinute: number;
-  remindersEnabled: boolean;
-  hasApiKey: boolean;
+  dailyLessons: z.number(),
+  reminderHour: z.number(),
+  reminderMinute: z.number(),
+  remindersEnabled: z.boolean(),
+  hasApiKey: z.boolean(),
   /** Empty until the learner loads the catalogue and picks one. */
-  aiModel: string;
-  ttsVoiceFemale: string;
-  ttsVoiceMale: string;
-  ttsSpeed: number;
-  ttsPrefetch: boolean;
-  tzOffsetMinutes: number;
+  aiModel: z.string(),
+  ttsVoiceFemale: z.string(),
+  ttsVoiceMale: z.string(),
+  ttsSpeed: z.number(),
+  ttsPrefetch: z.boolean(),
+  tzOffsetMinutes: z.number(),
   /** Empty means the songwriter uses the tutor model. */
-  songwriterModel: string;
+  songwriterModel: z.string(),
   /** Plays the other side in writing lessons; empty means the tutor model. */
-  partnerModel: string;
+  partnerModel: z.string(),
   /** "Talk about it" chats; empty means the tutor model. */
-  wordChatModel: string;
+  wordChatModel: z.string(),
   /** Models starred in the model picker, shown first. */
-  favoriteModels: string[];
+  favoriteModels: z.array(z.string()),
   /** Draws course pictures; empty means the default image model. */
-  imageModel: string;
-  hasKieKey: boolean;
-  sunoModel: string;
-  sunoModels: string[];
+  imageModel: z.string(),
+  hasKieKey: z.boolean(),
+  sunoModel: z.string(),
+  sunoModels: z.array(z.string()),
   /** What the songwriter writes for: about 2, 3 or 4–5 minutes. */
-  songLength: SongLength;
+  songLength: SongLengthSchema,
   /** Empty until first stored. */
-  theme: "" | "system" | "light" | "dark";
-  playerRepeat: "" | "off" | "all" | "one";
-}
+  theme: z.enum(["", "system", "light", "dark"]),
+  playerRepeat: z.enum(["", "off", "all", "one"]),
+});
+export type Settings = z.infer<typeof SettingsSchema>;
 
-export interface SettingsPatch {
-  dailyLessons?: number;
-  reminderHour?: number;
-  reminderMinute?: number;
-  remindersEnabled?: boolean;
-  aiModel?: string;
-  ttsVoiceFemale?: string;
-  ttsVoiceMale?: string;
-  ttsSpeed?: number;
-  ttsPrefetch?: boolean;
-  songwriterModel?: string;
-  partnerModel?: string;
-  wordChatModel?: string;
-  favoriteModels?: string[];
-  imageModel?: string;
-  sunoModel?: string;
-  songLength?: SongLength;
-  theme?: "system" | "light" | "dark";
-  playerRepeat?: "off" | "all" | "one";
-}
+export const SettingsPatchSchema = z.object({
+  dailyLessons: z.number().optional(),
+  reminderHour: z.number().optional(),
+  reminderMinute: z.number().optional(),
+  remindersEnabled: z.boolean().optional(),
+  aiModel: z.string().optional(),
+  ttsVoiceFemale: z.string().optional(),
+  ttsVoiceMale: z.string().optional(),
+  ttsSpeed: z.number().optional(),
+  ttsPrefetch: z.boolean().optional(),
+  songwriterModel: z.string().optional(),
+  partnerModel: z.string().optional(),
+  wordChatModel: z.string().optional(),
+  favoriteModels: z.array(z.string()).optional(),
+  imageModel: z.string().optional(),
+  sunoModel: z.string().optional(),
+  songLength: SongLengthSchema.optional(),
+  theme: z.enum(["system", "light", "dark"]).optional(),
+  playerRepeat: z.enum(["off", "all", "one"]).optional(),
+});
+export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 
-export interface LessonFinished extends SessionResult {
-  lesson: Lesson;
-  result: LessonResult;
-  /** Extra practice: the schedule did not move. */
-  extra: boolean;
-  /** This drill's score: right answers out of the scored cards. */
-  correct: number;
-  total: number;
-}
-
-export interface SessionResult {
-  firstCompletionToday: boolean;
-  newlyUnlocked: Achievement[];
-  stats: Stats;
+export const SessionResultSchema = z.object({
+  firstCompletionToday: z.boolean(),
+  newlyUnlocked: z.array(AchievementSchema),
+  stats: StatsSchema,
   /** Courses this completed or mastered. */
-  milestones: Milestone[];
-}
+  milestones: z.array(MilestoneSchema),
+});
+export type SessionResult = z.infer<typeof SessionResultSchema>;
 
-export interface TutorAction {
-  kind:
-    | "courseCreated"
-    | "courseUpdated"
-    | "courseDeleted"
-    // Older conversations, from before programmes became courses.
-    | "programmeCreated"
-    | "programmeUpdated"
-    | "programmeDeleted"
-    | "settingsChanged"
-    | "songStarted"
-    | "songDraft"
-    | "songsDeleted"
-    | "lessonCreated"
-    | "lessonUpdated"
-    | "lessonDeleted"
-    | "lessonScheduled"
-    | "lessonSuggested"
-    | "memory"
-    | "playlistChanged";
-  label: string;
-  courseId: number | null;
-  songId: number | null;
-  lessonId: number | null;
-}
+export const LessonFinishedSchema = SessionResultSchema.extend({
+  lesson: LessonSchema,
+  result: LessonResultSchema,
+  /** Extra practice: the schedule did not move. */
+  extra: z.boolean(),
+  /** This drill's score: right answers out of the scored cards. */
+  correct: z.number(),
+  total: z.number(),
+});
+export type LessonFinished = z.infer<typeof LessonFinishedSchema>;
 
-export interface Conversation {
-  id: number;
-  title: string;
+export const TutorActionSchema = z.object({
+  kind: z.enum([
+    "courseCreated",
+    "courseUpdated",
+    "courseDeleted",
+    "programmeCreated",
+    "programmeUpdated",
+    "programmeDeleted",
+    "settingsChanged",
+    "songStarted",
+    "songDraft",
+    "songsDeleted",
+    "lessonCreated",
+    "lessonUpdated",
+    "lessonDeleted",
+    "lessonScheduled",
+    "lessonSuggested",
+    "memory",
+    "playlistChanged",
+  ]),
+  label: z.string(),
+  courseId: z.number().nullable(),
+  songId: z.number().nullable(),
+  lessonId: z.number().nullable(),
+});
+export type TutorAction = z.infer<typeof TutorActionSchema>;
+
+export const ConversationSchema = z.object({
+  id: z.number(),
+  title: z.string(),
   /** The last thing said, shortened. */
-  preview: string;
-  messages: number;
+  preview: z.string(),
+  messages: z.number(),
   /** Seconds since the epoch. */
-  updatedAt: number;
+  updatedAt: z.number(),
   /** The tutor is working on a reply in the background. */
-  working: boolean;
+  working: z.boolean(),
   /** Why the last reply failed, if it did. */
-  error: string | null;
+  error: z.string().nullable(),
   /** "word" for a chat about a word or sentence ("Talk about it"). */
-  tag: string | null;
-}
+  tag: z.string().nullable(),
+});
+export type Conversation = z.infer<typeof ConversationSchema>;
 
 /** `tutor_talk_about`: the conversation about a word, new or carried on. */
-export interface TalkAbout {
-  conversationId: number;
-  existing: boolean;
-}
+export const TalkAboutSchema = z.object({
+  conversationId: z.number(),
+  existing: z.boolean(),
+});
+export type TalkAbout = z.infer<typeof TalkAboutSchema>;
+
+export const ChatMessageSchema = z.object({
+  id: z.number(),
+  conversationId: z.number(),
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
+  actions: z.array(TutorActionSchema),
+});
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 /** `tutor_send` returns at once; the reply follows in the background. */
-export interface TutorStarted {
-  conversationId: number;
-  message: ChatMessage;
-}
+export const TutorStartedSchema = z.object({
+  conversationId: z.number(),
+  message: ChatMessageSchema,
+});
+export type TutorStarted = z.infer<typeof TutorStartedSchema>;
 
 /** `tutor://done`: a background reply finished, or failed. */
-export interface TutorDone {
-  conversationId: number;
-  message: ChatMessage | null;
-  error: string | null;
-}
-
-export interface ChatMessage {
-  id: number;
-  conversationId: number;
-  role: "user" | "assistant";
-  content: string;
-  actions: TutorAction[];
-}
+export const TutorDoneSchema = z.object({
+  conversationId: z.number(),
+  message: ChatMessageSchema.nullable(),
+  error: z.string().nullable(),
+});
+export type TutorDone = z.infer<typeof TutorDoneSchema>;
 
 /** What a tool is doing while an agent runs (`agent://status`). */
-export interface AgentStatus {
-  id: string;
-  label: string;
-}
+export const AgentStatusSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+});
+export type AgentStatus = z.infer<typeof AgentStatusSchema>;
 
-export interface AiModel {
-  id: string;
-  name: string;
-  contextLength: number;
+export const AiModelSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  contextLength: z.number(),
   /** Dollars per input token, e.g. "0.0000003". */
-  promptPrice: string;
+  promptPrice: z.string(),
   /** Dollars per output token. */
-  completionPrice: string;
+  completionPrice: z.string(),
   /** Dollars per input token read from the provider's cache; "" when not reported. */
-  cacheReadPrice: string;
+  cacheReadPrice: z.string(),
   /** When it was added to OpenRouter (seconds since the epoch). */
-  created: number;
+  created: z.number(),
   /** Non-empty for speech models: the voice names the model accepts. */
-  voices: string[];
+  voices: z.array(z.string()),
   /** Can call tools — the tutor needs this to act in the app. */
-  tools: boolean;
+  tools: z.boolean(),
   /** Can make images — for course pictures. */
-  images: boolean;
-}
+  images: z.boolean(),
+});
+export type AiModel = z.infer<typeof AiModelSchema>;
 
-export interface AudioClip {
-  mime: string;
-  base64: string;
-  cached: boolean;
-}
+export const AudioClipSchema = z.object({
+  mime: z.string(),
+  base64: z.string(),
+  cached: z.boolean(),
+});
+export type AudioClip = z.infer<typeof AudioClipSchema>;
 
-export interface AudioCacheStats {
-  clips: number;
-  bytes: number;
-  sentencesCached: number;
-  sentencesTotal: number;
-}
+export const AudioCacheStatsSchema = z.object({
+  clips: z.number(),
+  bytes: z.number(),
+  sentencesCached: z.number(),
+  sentencesTotal: z.number(),
+});
+export type AudioCacheStats = z.infer<typeof AudioCacheStatsSchema>;
 
 /** How much of one course can be played without the network. */
-export interface CourseAudio {
-  courseId: number;
-  title: string;
-  titlePl: string;
-  total: number;
-  stored: number;
-  bytes: number;
-}
+export const CourseAudioSchema = z.object({
+  courseId: z.number(),
+  title: z.string(),
+  titlePl: z.string(),
+  total: z.number(),
+  stored: z.number(),
+  bytes: z.number(),
+});
+export type CourseAudio = z.infer<typeof CourseAudioSchema>;
 
-export interface AudioOverview {
-  clips: number;
-  bytes: number;
-  courses: CourseAudio[];
+export const AudioOverviewSchema = z.object({
+  clips: z.number(),
+  bytes: z.number(),
+  courses: z.array(CourseAudioSchema),
   /** Clips no course uses with the current voices. */
-  unusedClips: number;
-  unusedBytes: number;
-}
+  unusedClips: z.number(),
+  unusedBytes: z.number(),
+});
+export type AudioOverview = z.infer<typeof AudioOverviewSchema>;
 
-export interface AudioItem {
-  kind: "word" | "sentence" | "line";
-  text: string;
-  gender: string;
-  stored: boolean;
-  bytes: number;
-}
+export const AudioItemSchema = z.object({
+  kind: z.enum(["word", "sentence", "line"]),
+  text: z.string(),
+  gender: z.string(),
+  stored: z.boolean(),
+  bytes: z.number(),
+});
+export type AudioItem = z.infer<typeof AudioItemSchema>;
 
 /** A Wikipedia article a study lesson or a podcast is built on. */
-export interface WikiSource {
-  id: number;
-  lessonId: number | null;
-  songId: number | null;
-  lang: string;
-  title: string;
-  url: string;
-  summary: string;
-  imageFileId: number | null;
+export const WikiSourceSchema = z.object({
+  id: z.number(),
+  lessonId: z.number().nullable(),
+  songId: z.number().nullable(),
+  lang: z.string(),
+  title: z.string(),
+  url: z.string(),
+  summary: z.string(),
+  imageFileId: z.number().nullable(),
   /** Polish Wikipedia has it too. */
-  polishTitle: string | null;
-  checkedAt: number;
-}
+  polishTitle: z.string().nullable(),
+  checkedAt: z.number(),
+});
+export type WikiSource = z.infer<typeof WikiSourceSchema>;
 
 /** A source's article, for the reader. */
-export interface ArticleView {
-  lang: string;
-  title: string;
-  url: string;
+export const ArticleViewSchema = z.object({
+  lang: z.string(),
+  title: z.string(),
+  url: z.string(),
   /** Markdown: shown when the layout is not known. */
-  content: string;
+  content: z.string(),
   /** The article as Wikipedia lays it out (HTML), drawn by WikiArticle. */
-  html: string | null;
-}
+  html: z.string().nullable(),
+});
+export type ArticleView = z.infer<typeof ArticleViewSchema>;
 
 /** An article found on Wikipedia. */
-export interface WikiHit {
-  title: string;
-  snippet: string;
-}
+export const WikiHitSchema = z.object({
+  title: z.string(),
+  snippet: z.string(),
+});
+export type WikiHit = z.infer<typeof WikiHitSchema>;
 
 /** The outcome of checking a lesson against its sources. */
-export interface FactCheck {
-  lessonId: number;
-  title: string;
-  updated: boolean;
-  note: string | null;
-}
+export const FactCheckSchema = z.object({
+  lessonId: z.number(),
+  title: z.string(),
+  updated: z.boolean(),
+  note: z.string().nullable(),
+});
+export type FactCheck = z.infer<typeof FactCheckSchema>;
 
-export interface CacheProgress {
-  done: number;
-  total: number;
-  failed: number;
-  finished: boolean;
-  error: string | null;
-}
+export const CacheProgressSchema = z.object({
+  done: z.number(),
+  total: z.number(),
+  failed: z.number(),
+  finished: z.boolean(),
+  error: z.string().nullable(),
+});
+export type CacheProgress = z.infer<typeof CacheProgressSchema>;
 
 // ------------------------------------------------------------------ songs
 
 /** One phrase: sung in English, then in Polish (choruses: Polish only). */
-export interface SongLine {
-  en: string;
-  pl: string;
+export const SongLineSchema = z.object({
+  en: z.string(),
+  pl: z.string(),
   /** In a podcast with a cast: who says it (absent or "": the narrator). */
-  speaker?: string;
+  speaker: z.string().optional(),
   /** In a podcast: how it is said ("surprised"). */
-  how?: string;
-}
+  how: z.string().optional(),
+});
+export type SongLine = z.infer<typeof SongLineSchema>;
 
-export type SongSectionKind = "verse" | "chorus" | "bridge" | "intro" | "outro";
+export const SongSectionKindSchema = z.enum(["verse", "chorus", "bridge", "intro", "outro"]);
+export type SongSectionKind = z.infer<typeof SongSectionKindSchema>;
 
-export interface SongSection {
-  kind: SongSectionKind;
-  lines: SongLine[];
-}
+export const SongSectionSchema = z.object({
+  kind: SongSectionKindSchema,
+  lines: z.array(SongLineSchema),
+});
+export type SongSection = z.infer<typeof SongSectionSchema>;
 
-export interface SongDraft {
-  title: string;
-  chorusPl: string;
-  chorusEn: string;
-  style: string;
-  /** "f", "m" or "" for no preference. */
-  vocalGender: string;
-  sections: SongSection[];
-  /** The course it is filed in (through its listening lesson). */
-  courseId?: number | null;
-  /** How it came about — kept with the song; pass it back unchanged. */
-  origin?: SongOrigin;
-  /** "podcast" for a spoken episode; "song" (or absent) for a song. */
-  kind?: "song" | "podcast" | "";
-  /** For a podcast: how its audio is put together. */
-  podcast?: PodcastAudio | null;
-}
+/** A host or a character in a podcast. */
+export const CastMemberSchema = z.object({
+  name: z.string(),
+  /** "f" or "m". */
+  gender: z.string(),
+  /** How they come across, in a word ("curious"). */
+  character: z.string(),
+  /** The voice they speak in; chosen when the episode is recorded. */
+  voice: z.string(),
+});
+export type CastMember = z.infer<typeof CastMemberSchema>;
+
+/** How a podcast episode's audio is put together. */
+export const PodcastAudioSchema = z.object({
+  /** The English is said before each Polish sentence; off: only Polish is heard. */
+  english: z.boolean(),
+  /** Seconds of silence after the English, before the Polish. */
+  pause: z.number(),
+  /** How many times the Polish is said. */
+  repeats: z.number(),
+  /** The Polish read slowly. */
+  slow: z.boolean(),
+  /** "two" voices (English and Polish apart) or "one". */
+  voices: z.enum(["one", "two"]),
+  /** Who speaks besides the narrator, each in a voice of their own. */
+  cast: z.array(CastMemberSchema).optional(),
+});
+export type PodcastAudio = z.infer<typeof PodcastAudioSchema>;
+
+/** A news story a podcast told, as the news index had it. */
+export const NewsItemSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  /** The outlet's address, e.g. "pap.pl". */
+  outlet: z.string(),
+  /** "2026-11-16". */
+  date: z.string(),
+  image: z.string(),
+  summary: z.string(),
+});
+export type NewsItem = z.infer<typeof NewsItemSchema>;
+
+/** An article a podcast was written from. */
+export const PodcastSourceSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  /** "en" or "pl". */
+  lang: z.string(),
+});
+export type PodcastSource = z.infer<typeof PodcastSourceSchema>;
 
 /** Everything that went into making a song, besides its lyrics and style. */
 export interface SongOrigin {
@@ -744,275 +846,318 @@ export interface SongOrigin {
   /** Revisions and edits after the first draft, each with the draft before it. */
   steps?: { kind: string; by: string; text: string; model: string; before: SongDraft | null }[];
 }
+export const SongOriginSchema: z.ZodType<SongOrigin> = z.object({
+  brief: z.string(),
+  requestedStyle: z.string(),
+  requestedVocalGender: z.string(),
+  requestedChorus: z.string(),
+  length: z.string(),
+  songwriterModel: z.string(),
+  revisions: z.array(z.string()),
+  /** What a podcast was written from: its Wikipedia article (and the Polish one). */
+  sources: z.array(PodcastSourceSchema).optional(),
+  sourceImage: z.string().optional(),
+  requestedArticles: z.array(z.string()).optional(),
+  story: z.boolean().optional(),
+  requestedCast: z.string().optional(),
+  /** Made from today's news, and the stories it told. */
+  news: z.boolean().optional(),
+  newsItems: z.array(NewsItemSchema).optional(),
+  /** "composer" or "tutor". */
+  madeBy: z.string().optional(),
+  /** What the lyrics or script had to meet (the tutor's). */
+  requirements: z.string().optional(),
+  /** The song or podcast this one varies. */
+  basedOn: z.number().nullable().optional(),
+  /** Everything the writer was given besides the request. */
+  given: z
+    .object({
+      words: z.array(z.string()),
+      sentences: z.array(z.string()),
+      weakWords: z.array(z.string()),
+      existingChoruses: z.array(z.string()),
+      memories: z.array(z.string()),
+      reading: z.string(),
+    })
+    .optional(),
+  instructionsVersion: z.string().optional(),
+  /** Revisions and edits after the first draft, each with the draft before it. */
+  steps: z
+    .array(
+      z.object({
+        kind: z.string(),
+        by: z.string(),
+        text: z.string(),
+        model: z.string(),
+        before: z.lazy(() => SongDraftSchema).nullable(),
+      }),
+    )
+    .optional(),
+});
 
-/** A news story a podcast told, as the news index had it. */
-export interface NewsItem {
-  title: string;
-  url: string;
-  /** The outlet's address, e.g. "pap.pl". */
-  outlet: string;
-  /** "2026-11-16". */
-  date: string;
-  image: string;
-  summary: string;
-}
-
-/** An article a podcast was written from. */
-export interface PodcastSource {
-  title: string;
-  url: string;
-  /** "en" or "pl". */
-  lang: string;
-}
-
-/** How a podcast episode's audio is put together. */
-export interface PodcastAudio {
-  /** The English is said before each Polish sentence; off: only Polish is heard. */
-  english: boolean;
-  /** Seconds of silence after the English, before the Polish. */
-  pause: number;
-  /** How many times the Polish is said. */
-  repeats: number;
-  /** The Polish read slowly. */
-  slow: boolean;
-  /** "two" voices (English and Polish apart) or "one". */
-  voices: "one" | "two";
-  /** Who speaks besides the narrator, each in a voice of their own. */
-  cast?: CastMember[];
-}
-
-/** A host or a character in a podcast. */
-export interface CastMember {
-  name: string;
-  /** "f" or "m". */
-  gender: string;
-  /** How they come across, in a word ("curious"). */
-  character: string;
-  /** The voice they speak in; chosen when the episode is recorded. */
-  voice: string;
-}
+export const SongDraftSchema = z.object({
+  title: z.string(),
+  chorusPl: z.string(),
+  chorusEn: z.string(),
+  style: z.string(),
+  /** "f", "m" or "" for no preference. */
+  vocalGender: z.string(),
+  sections: z.array(SongSectionSchema),
+  /** The course it is filed in (through its listening lesson). */
+  courseId: z.number().nullable().optional(),
+  /** How it came about — kept with the song; pass it back unchanged. */
+  origin: SongOriginSchema.optional(),
+  /** "podcast" for a spoken episode; "song" (or absent) for a song. */
+  kind: z.enum(["song", "podcast", ""]).optional(),
+  /** For a podcast: how its audio is put together. */
+  podcast: PodcastAudioSchema.nullable().optional(),
+});
+export type SongDraft = z.infer<typeof SongDraftSchema>;
 
 /** Who talks in a podcast. */
-export type PodcastCast = "narrator" | "hosts" | "characters";
+export const PodcastCastSchema = z.enum(["narrator", "hosts", "characters"]);
+export type PodcastCast = z.infer<typeof PodcastCastSchema>;
 
 /** "pairs": English then Polish; "immersion": only Polish, in simpler sentences. */
-export type PodcastFormat = "pairs" | "immersion";
+export const PodcastFormatSchema = z.enum(["pairs", "immersion"]);
+export type PodcastFormat = z.infer<typeof PodcastFormatSchema>;
 
-export interface PodcastRequest {
-  topic?: string;
+export const PodcastRequestSchema = z.object({
+  topic: z.string().optional(),
   /** English Wikipedia article titles to write from (0–5). */
-  articles?: string[];
+  articles: z.array(z.string()).optional(),
   /** A short made-up story, from no articles. */
-  story?: boolean;
+  story: z.boolean().optional(),
   /** Who talks; absent: hosts for articles, characters for a story. */
-  cast?: PodcastCast;
+  cast: PodcastCastSchema.optional(),
   /** Today's news from Polish outlets (about `topic`, if given). */
-  news?: boolean;
-  format?: PodcastFormat;
-  length?: SongLength;
-  vocalGender?: string;
-  previous?: SongDraft;
-  feedback?: string;
-}
+  news: z.boolean().optional(),
+  format: PodcastFormatSchema.optional(),
+  length: SongLengthSchema.optional(),
+  vocalGender: z.string().optional(),
+  previous: SongDraftSchema.optional(),
+  feedback: z.string().optional(),
+});
+export type PodcastRequest = z.infer<typeof PodcastRequestSchema>;
 
 /** A subject the learner might like an episode about. */
-export interface TopicIdea {
-  topic: string;
+export const TopicIdeaSchema = z.object({
+  topic: z.string(),
   /** None: a story. */
-  articles: string[];
-  why: string;
-}
-
-export interface SongTrack {
-  id: number;
-  songId: number;
-  ord: number;
-  /** The take's audio and cover art: file ids, loaded with fileUrl(). */
-  audioFileId: number;
-  imageFileId: number | null;
-  /** Copies on disk, only for Android's native player. */
-  audioPath: string;
-  imagePath: string | null;
-  duration: number;
-  playCount: number;
-  /** Lyrics timed to this take, once Suno's word timings are known. */
-  lines: TimedLine[] | null;
-}
+  articles: z.array(z.string()),
+  why: z.string(),
+});
+export type TopicIdea = z.infer<typeof TopicIdeaSchema>;
 
 /** One sung line and when it is sung. */
-export interface TimedLine {
-  start: number;
-  end: number;
-  text: string;
+export const TimedLineSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+  text: z.string(),
   /** "pl", "en", or "" for ad-libs that are not in the lyrics. */
-  lang: string;
+  lang: z.string(),
   /** For a Polish line, its English meaning. */
-  gloss: string | null;
+  gloss: z.string().nullable(),
   /** Set on the first line of a section, e.g. "Chorus". */
-  section: string | null;
+  section: z.string().nullable(),
   /** In a podcast with a cast: who says it. */
-  speaker?: string | null;
-}
+  speaker: z.string().nullable().optional(),
+});
+export type TimedLine = z.infer<typeof TimedLineSchema>;
 
-export interface Song extends SongDraft {
-  id: number;
-  status: "generating" | "ready" | "failed";
-  error: string | null;
-  createdAt: number;
-  tracks: SongTrack[];
-}
+export const SongTrackSchema = z.object({
+  id: z.number(),
+  songId: z.number(),
+  ord: z.number(),
+  /** The take's audio and cover art: file ids, loaded with fileUrl(). */
+  audioFileId: z.number(),
+  imageFileId: z.number().nullable(),
+  /** Copies on disk, only for Android's native player. */
+  audioPath: z.string(),
+  imagePath: z.string().nullable(),
+  duration: z.number(),
+  playCount: z.number(),
+  /** Lyrics timed to this take, once Suno's word timings are known. */
+  lines: z.array(TimedLineSchema).nullable(),
+});
+export type SongTrack = z.infer<typeof SongTrackSchema>;
 
-export interface PlaylistEntry {
+export const SongSchema = SongDraftSchema.extend({
+  id: z.number(),
+  status: z.enum(["generating", "ready", "failed"]),
+  error: z.string().nullable(),
+  createdAt: z.number(),
+  tracks: z.array(SongTrackSchema),
+});
+export type Song = z.infer<typeof SongSchema>;
+
+export const PlaylistEntrySchema = z.object({
   /** The entry itself; the same take may be in a playlist twice. */
-  id: number;
-  trackId: number;
-}
+  id: z.number(),
+  trackId: z.number(),
+});
+export type PlaylistEntry = z.infer<typeof PlaylistEntrySchema>;
 
-export interface Playlist {
-  id: number;
-  name: string;
-  entries: PlaylistEntry[];
-}
+export const PlaylistSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  entries: z.array(PlaylistEntrySchema),
+});
+export type Playlist = z.infer<typeof PlaylistSchema>;
 
-export type SongLength = "short" | "medium" | "long";
-
-export interface DraftRequest {
-  length?: SongLength;
-  brief?: string;
-  chorusPl?: string;
-  style?: string;
-  vocalGender?: string;
-  previous?: SongDraft;
-  feedback?: string;
-}
+export const DraftRequestSchema = z.object({
+  length: SongLengthSchema.optional(),
+  brief: z.string().optional(),
+  chorusPl: z.string().optional(),
+  style: z.string().optional(),
+  vocalGender: z.string().optional(),
+  previous: SongDraftSchema.optional(),
+  feedback: z.string().optional(),
+});
+export type DraftRequest = z.infer<typeof DraftRequestSchema>;
 
 // ------------------------------------------------------------------ casting
 
 /** A Sonos room or group. */
-export interface CastDevice {
-  id: string;
-  name: string;
-  baseUrl: string;
-}
+export const CastDeviceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  baseUrl: z.string(),
+});
+export type CastDevice = z.infer<typeof CastDeviceSchema>;
 
-export interface CastItem {
-  trackId: number;
-  title: string;
-  artist: string;
-}
+export const CastItemSchema = z.object({
+  trackId: z.number(),
+  title: z.string(),
+  artist: z.string(),
+});
+export type CastItem = z.infer<typeof CastItemSchema>;
 
-export interface CastState {
-  device: CastDevice;
-  items: CastItem[];
-  index: number;
-  trackId: number | null;
-  playing: boolean;
-  transport: string;
-  position: number;
-  duration: number;
+export const CastStateSchema = z.object({
+  device: CastDeviceSchema,
+  items: z.array(CastItemSchema),
+  index: z.number(),
+  trackId: z.number().nullable(),
+  playing: z.boolean(),
+  transport: z.string(),
+  position: z.number(),
+  duration: z.number(),
   /** 0–100, or -1 when the speaker did not say. */
-  volume: number;
-  repeat: string;
+  volume: z.number(),
+  repeat: z.string(),
   /** The speaker has moved on to something that is not ours. */
-  detached: boolean;
-}
+  detached: z.boolean(),
+});
+export type CastState = z.infer<typeof CastStateSchema>;
 
 /** What one AI feature cost, over a day or a window. */
-export interface FeatureCost {
-  feature: string;
-  costUsd: number;
-  calls: number;
+export const FeatureCostSchema = z.object({
+  feature: z.string(),
+  costUsd: z.number(),
+  calls: z.number(),
   /** Requests whose price the provider did not report (speech). */
-  unpriced: number;
-}
+  unpriced: z.number(),
+});
+export type FeatureCost = z.infer<typeof FeatureCostSchema>;
 
-export interface DayCost {
-  day: number;
-  costUsd: number;
-  calls: number;
-  features: FeatureCost[];
-}
+export const DayCostSchema = z.object({
+  day: z.number(),
+  costUsd: z.number(),
+  calls: z.number(),
+  features: z.array(FeatureCostSchema),
+});
+export type DayCost = z.infer<typeof DayCostSchema>;
 
-export interface CostSummary {
-  today: number;
-  days: number;
-  todayUsd: number;
-  totalUsd: number;
-  allTimeUsd: number;
-  features: FeatureCost[];
+export const CostSummarySchema = z.object({
+  today: z.number(),
+  days: z.number(),
+  todayUsd: z.number(),
+  totalUsd: z.number(),
+  allTimeUsd: z.number(),
+  features: z.array(FeatureCostSchema),
   /** Days with any AI use, newest first. */
-  perDay: DayCost[];
-}
+  perDay: z.array(DayCostSchema),
+});
+export type CostSummary = z.infer<typeof CostSummarySchema>;
 
-export type MemoryCategory = "goal" | "preference" | "context" | "strength" | "struggle";
+export const MemoryCategorySchema = z.enum(["goal", "preference", "context", "strength", "struggle"]);
+export type MemoryCategory = z.infer<typeof MemoryCategorySchema>;
 
 /** One fact the agents remember about the learner. */
-export interface Memory {
-  id: number;
-  content: string;
-  category: MemoryCategory;
+export const MemorySchema = z.object({
+  id: z.number(),
+  content: z.string(),
+  category: MemoryCategorySchema,
   /** "tutor", "examiner" or "you". */
-  source: string;
-  createdAt: number;
-  updatedAt: number;
-}
+  source: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+export type Memory = z.infer<typeof MemorySchema>;
 
-export interface MemoryOverview {
-  enabled: boolean;
-  memories: Memory[];
-}
+export const MemoryOverviewSchema = z.object({
+  enabled: z.boolean(),
+  memories: z.array(MemorySchema),
+});
+export type MemoryOverview = z.infer<typeof MemoryOverviewSchema>;
 
 /** A phrase with its meaning. */
-export interface Phrase {
-  pl: string;
-  en: string;
-}
+export const PhraseSchema = z.object({
+  pl: z.string(),
+  en: z.string(),
+});
+export type Phrase = z.infer<typeof PhraseSchema>;
 
 /** A writing goal's help: a way to start, and words to use. */
-export interface GoalHelp {
-  goal: string;
-  starter: Phrase;
-  words: Phrase[];
-}
+export const GoalHelpSchema = z.object({
+  goal: z.string(),
+  starter: PhraseSchema,
+  words: z.array(PhraseSchema),
+});
+export type GoalHelp = z.infer<typeof GoalHelpSchema>;
 
 /** Tokens one feature used lately: what a month with another model is estimated from. */
-export interface FeatureUsage {
-  feature: string;
-  requests: number;
-  tokensIn: number;
-  tokensCached: number;
-  tokensOut: number;
+export const FeatureUsageSchema = z.object({
+  feature: z.string(),
+  requests: z.number(),
+  tokensIn: z.number(),
+  tokensCached: z.number(),
+  tokensOut: z.number(),
   /** Days the counts cover. */
-  days: number;
-}
+  days: z.number(),
+});
+export type FeatureUsage = z.infer<typeof FeatureUsageSchema>;
 
 /** One benchmark item's outcome. */
-export interface BenchItem {
-  part: "polish" | "tools" | "rules";
-  name: string;
+export const BenchItemSchema = z.object({
+  part: z.enum(["polish", "tools", "rules"]),
+  name: z.string(),
   /** 0–1. */
-  score: number;
-  note: string;
-  answer: string;
-}
+  score: z.number(),
+  note: z.string(),
+  answer: z.string(),
+});
+export type BenchItem = z.infer<typeof BenchItemSchema>;
 
 /** A benchmark run on one model. */
-export interface BenchRun {
-  id: number;
-  model: string;
-  createdAt: number;
-  score: number;
-  polish: number;
-  tools: number;
-  rules: number;
+export const BenchRunSchema = z.object({
+  id: z.number(),
+  model: z.string(),
+  createdAt: z.number(),
+  score: z.number(),
+  polish: z.number(),
+  tools: z.number(),
+  rules: z.number(),
   /** Average seconds per reply. */
-  seconds: number;
-  costUsd: number | null;
-  items: BenchItem[];
-}
+  seconds: z.number(),
+  costUsd: z.number().nullable(),
+  items: z.array(BenchItemSchema),
+});
+export type BenchRun = z.infer<typeof BenchRunSchema>;
 
 /** A sentence that uses a word, shown when the word is answered wrong. */
-export interface WordExample {
-  pl: string;
-  en: string;
-}
+export const WordExampleSchema = z.object({
+  pl: z.string(),
+  en: z.string(),
+});
+export type WordExample = z.infer<typeof WordExampleSchema>;

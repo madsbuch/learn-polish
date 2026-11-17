@@ -14,12 +14,13 @@
 import { useSyncExternalStore } from "react";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 
-import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 
 import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
 import type { CastDevice, CastState, Song, SongTrack } from "./types";
+import { onEvent } from "./events";
+import { CastStateSchema } from "./types";
 
 export type RepeatMode = "all" | "one" | "off";
 
@@ -207,7 +208,7 @@ let castListening = false;
 function listenCast() {
   if (castListening) return;
   castListening = true;
-  void listen<CastState | null>("cast://state", (event) => applyCast(event.payload));
+  void onEvent(CastStateSchema.nullable(), "cast://state", (event) => applyCast(event.payload));
 }
 
 function applyCast(cast: CastState | null) {
@@ -491,9 +492,7 @@ export function syncLibrary(songs: Song[]) {
     stopPlayback();
     return;
   }
-  const queue = state.queue
-    .map((item) => tracks.get(item.track.id))
-    .filter((item): item is QueueItem => Boolean(item));
+  const queue = state.queue.map((item) => tracks.get(item.track.id)).filter((item): item is QueueItem => Boolean(item));
   set({ queue, index: current ? queue.findIndex((i) => i.track.id === current.track.id) : -1 });
 }
 
@@ -515,8 +514,7 @@ export function libraryQueue(songs: Song[], chosen?: SongTrack): QueueItem[] {
   return songs
     .filter((song) => song.status === "ready")
     .map((song) => {
-      const track =
-        chosen && chosen.songId === song.id ? chosen : preferredTake(song);
+      const track = chosen && chosen.songId === song.id ? chosen : preferredTake(song);
       return track ? { song, track } : null;
     })
     .filter((item): item is QueueItem => item !== null);
@@ -563,8 +561,7 @@ function updateMediaMetadata(item: QueueItem) {
       title: item.song.title,
       artist: item.song.chorusPl,
       album: "Polski",
-      artwork:
-        item.track.imageFileId !== null ? [{ src: fileUrl(item.track.imageFileId), sizes: "512x512" }] : [],
+      artwork: item.track.imageFileId !== null ? [{ src: fileUrl(item.track.imageFileId), sizes: "512x512" }] : [],
     });
   } catch {
     /* MediaMetadata missing in some webviews */

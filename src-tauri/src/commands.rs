@@ -26,7 +26,7 @@ use crate::stats;
 // Setup and settings
 // ---------------------------------------------------------------------------
 
-fn read_settings(conn: &mut Conn) -> Result<Settings> {
+pub(crate) fn read_settings(conn: &mut Conn) -> Result<Settings> {
     Ok(Settings {
         daily_lessons: crate::plan::daily_count(conn),
         reminder_hour: db::get_setting_i64(conn, "reminder_hour", 19),

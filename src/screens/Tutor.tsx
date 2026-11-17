@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon } from "../components/icons";
 import { Composer } from "../components/Composer";
@@ -30,7 +29,9 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { useTutorJob } from "../lib/tutorJob";
 import { ensurePermission } from "../lib/notifications";
-import type { ChatMessage, Conversation, TutorAction, TutorDone } from "../lib/types";
+import type { ChatMessage, Conversation, TutorAction } from "../lib/types";
+import { onEvent } from "../lib/events";
+import { TutorDoneSchema } from "../lib/types";
 
 const STARTERS = [
   "Build me a course for learning the colours",
@@ -39,7 +40,6 @@ const STARTERS = [
   "Make me a song about ordering coffee",
   "When do I use “ty” and when “pan” or “pani”?",
 ];
-
 
 /** "3 min ago", "yesterday", "12 Nov" — for the conversation list. */
 function when(seconds: number): string {
@@ -108,7 +108,7 @@ export function Tutor({
   useEffect(refresh, [refresh]);
   // A reply finished in the background: the list's "writing…" changes.
   useEffect(() => {
-    const off = listen<TutorDone>("tutor://done", () => refresh());
+    const off = onEvent(TutorDoneSchema, "tutor://done", () => refresh());
     return () => {
       void off.then((stop) => stop());
     };
@@ -126,8 +126,8 @@ export function Tutor({
             </Button>
           }
         >
-          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can
-          build courses, lessons and songs for you.
+          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can build courses, lessons and
+          songs for you.
         </EmptyState>
       </Screen>
     );
@@ -184,7 +184,9 @@ export function Tutor({
         title="Tutor"
         info={<TutorInfo />}
         footer={
-          inSplit ? undefined : <Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />
+          inSplit ? undefined : (
+            <Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />
+          )
         }
         actions={
           inSplit ? (
@@ -231,25 +233,25 @@ export function Tutor({
               {conversations
                 .filter((c) => filter === "all" || c.tag === filter)
                 .map((conversation) => (
-                <ListItem
-                  key={conversation.id}
-                  oneLine
-                  title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
-                  subtitle={
-                    conversation.working
-                      ? "The tutor is writing…"
-                      : [
-                          conversation.tag === "word" ? "Word" : null,
-                          when(conversation.updatedAt),
-                          conversation.error ? "didn't finish" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")
-                  }
-                  selected={current === conversation.id}
-                  onClick={() => setOpen(conversation.id)}
-                />
-              ))}
+                  <ListItem
+                    key={conversation.id}
+                    oneLine
+                    title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
+                    subtitle={
+                      conversation.working
+                        ? "The tutor is writing…"
+                        : [
+                            conversation.tag === "word" ? "Word" : null,
+                            when(conversation.updatedAt),
+                            conversation.error ? "didn't finish" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                    }
+                    selected={current === conversation.id}
+                    onClick={() => setOpen(conversation.id)}
+                  />
+                ))}
             </List>
           </Section>
         )}
@@ -545,7 +547,6 @@ function Chat({
           />
         </Sheet>
       ) : null}
-
     </Screen>
   );
 }
@@ -564,8 +565,8 @@ function TutorInfo() {
         <li>Explain grammar, words and phrases</li>
       </ul>
       <p>
-        It needs a model that can use tools (marked 🛠 in Settings). It runs on your own
-        OpenRouter key, which never leaves the app's core.
+        It needs a model that can use tools (marked 🛠 in Settings). It runs on your own OpenRouter key, which never
+        leaves the app's core.
       </p>
     </>
   );

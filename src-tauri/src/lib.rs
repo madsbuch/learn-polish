@@ -2238,6 +2238,69 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         session::build_lesson(&mut conn, drill.id).unwrap();
     }
 
+    /// Writes what the core sends the screens, for each shape, to
+    /// target/shapes: `bun run check:shapes` parses every file with its zod
+    /// schema (src/lib/types.ts), so the schemas cannot drift from the structs.
+    #[test]
+    fn shapes_for_the_screens() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/shapes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, value: &dyn erased::Shape| {
+            std::fs::write(dir.join(format!("{name}.json")), value.json()).unwrap();
+        };
+        mod erased {
+            pub trait Shape {
+                fn json(&self) -> String;
+            }
+            impl<T: serde::Serialize> Shape for T {
+                fn json(&self) -> String {
+                    serde_json::to_string_pretty(self).unwrap()
+                }
+            }
+        }
+
+        let mut conn = scratch_db("shapes");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        crate::memories::add(&mut conn, "Wants to order food in Kraków", "goal", "tutor").unwrap();
+        conn.batch_execute(&format!(
+            r#"INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, course_id)
+               VALUES (1, 'Kawa', 'Poproszę kawę', 'A coffee, please', 'pop',
+                       '[{{"kind":"chorus","lines":[{{"en":"A coffee, please","pl":"Poproszę kawę"}}]}}]',
+                       '', 'V6', 'ready', 0, {basics});"#
+        ))
+        .unwrap();
+        lessons::create_listening(&mut conn, 1, None, None, None, "tutor").unwrap();
+        crate::playlists::create(&mut conn, "Rano", &[]).unwrap();
+        let all = lessons::for_course(&mut conn, basics).unwrap();
+        let drill = all.iter().find(|l| l.lesson_type == "words").unwrap().clone();
+        let finished = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        let today = db::today(&mut conn);
+
+        write("Settings", &commands::read_settings(&mut conn).unwrap());
+        write("LessonOverview", &lessons::overview(&mut conn).unwrap());
+        write("Lesson.list", &all);
+        write("LessonDetail", &lessons::detail(&mut conn, drill.id).unwrap());
+        write("LessonFinished", &finished);
+        write("CourseProgress.list", &stats::course_progress(&mut conn).unwrap());
+        write("Stats", &stats::collect(&mut conn).unwrap());
+        write("Word.list", &commands::browse_words_in(&mut conn, Some(basics), String::new(), 50).unwrap());
+        write("Sentence.list", &commands::browse_sentences_in(&mut conn, basics).unwrap());
+        write("CataloguePage", &commands::browse_catalogue_in(&mut conn, None, String::new(), 10).unwrap());
+        write("SessionPlan", &session::build_lesson(&mut conn, drill.id).unwrap());
+        write("LessonTypeInfo.list", &crate::lesson_types::lesson_types());
+        write("Song.list", &songs::list_songs(&mut conn, false).unwrap());
+        write("Playlist.list", &playlists::list(&mut conn).unwrap());
+        write("MemoryOverview", &crate::memories::commands::overview(&mut conn).unwrap());
+        write("XpDay", &crate::xplog::day(&mut conn, today).unwrap());
+        write("XpHistoryDay.list", &crate::xplog::history(&mut conn, 30).unwrap());
+        write("CostSummary", &crate::costs::summary(&mut conn, 30).unwrap());
+        write("AudioOverview", &speech::audio_overview_in(&mut conn).unwrap());
+        write("AudioItem.list", &speech::course_audio_in(&mut conn, basics).unwrap());
+        write("AudioCacheStats", &speech::audio_cache_stats_in(&mut conn).unwrap());
+        write("Conversation.list", &tutor::list_conversations(&mut conn).unwrap());
+        write("DiagnosticEntry.list", &crate::diagnostics::entries());
+    }
+
     #[test]
     fn the_tutor_manages_playlists_by_song() {
         let mut conn = scratch_db("tutor-playlists");

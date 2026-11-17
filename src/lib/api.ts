@@ -1,60 +1,97 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
+import { z } from "zod";
 
 import type {
-  CourseClosed,
-  DiagnosticEntry,
-  XpDay,
-  XpHistoryDay,
-  LessonTypeInfo,
-  WordExample,
   MemoryCategory,
-  MemoryOverview,
-  CostSummary,
-  AiModel,
-  Lesson,
-  LessonDetail,
-  LessonFinished,
-  LessonOverview,
-  CheckinTurn,
-  AnswerResult,
-  AudioCacheStats,
-  AudioItem,
-  ArticleView,
-  FactCheck,
-  WikiSource,
-  TutorStarted,
-  TalkAbout,
-  FeatureUsage,
-  BenchRun,
-  GoalHelp,
-  AudioOverview,
-  AudioClip,
-  CacheProgress,
-  CataloguePage,
   CastDevice,
-  CastState,
-  ChatMessage,
-  Conversation,
   DraftRequest,
-  Playlist,
   PodcastAudio,
   PodcastRequest,
-  TopicIdea,
-  WikiHit,
-  Song,
   SongDraft,
-  TimedLine,
   SpeechLine,
-  Voice,
-  Sentence,
-  SessionPlan,
-  SessionResult,
-  Settings,
   SettingsPatch,
-  Stats,
-  CourseProgress,
-  Word,
 } from "./types";
+import {
+  AiModelSchema,
+  AnswerResultSchema,
+  ArticleViewSchema,
+  AudioCacheStatsSchema,
+  AudioClipSchema,
+  AudioItemSchema,
+  AudioOverviewSchema,
+  BenchRunSchema,
+  CacheProgressSchema,
+  CastDeviceSchema,
+  CastStateSchema,
+  CataloguePageSchema,
+  ChatMessageSchema,
+  CheckinTurnSchema,
+  ConversationSchema,
+  CostSummarySchema,
+  CourseClosedSchema,
+  CourseProgressSchema,
+  DiagnosticEntrySchema,
+  FactCheckSchema,
+  FeatureUsageSchema,
+  GoalHelpSchema,
+  LessonSchema,
+  LessonDetailSchema,
+  LessonFinishedSchema,
+  LessonOverviewSchema,
+  LessonTypeInfoSchema,
+  MemoryOverviewSchema,
+  PlaylistSchema,
+  SentenceSchema,
+  SessionPlanSchema,
+  SessionResultSchema,
+  SettingsSchema,
+  SongSchema,
+  SongDraftSchema,
+  SpeechLineSchema,
+  StatsSchema,
+  TalkAboutSchema,
+  TimedLineSchema,
+  TopicIdeaSchema,
+  TutorStartedSchema,
+  VoiceSchema,
+  WikiHitSchema,
+  WikiSourceSchema,
+  WordSchema,
+  WordExampleSchema,
+  XpDaySchema,
+  XpHistoryDaySchema,
+} from "./types";
+
+/** A command's result that did not have the shape its schema says. */
+export class ShapeError extends Error {
+  constructor(command: string, issues: z.ZodIssue[]) {
+    const where = issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join(".") || "(result)"}: ${issue.message}`)
+      .join("; ");
+    super(`The app's core sent an unexpected answer to ${command} (${where}).`);
+    this.name = "ShapeError";
+  }
+}
+
+/**
+ * Runs a command in the Rust core and checks its result against `schema`:
+ * nothing crosses into the screens unchecked.
+ */
+async function call<S extends z.ZodTypeAny>(schema: S, command: string, args?: InvokeArgs): Promise<z.infer<S>> {
+  const raw: unknown = await invoke<unknown>(command, args);
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    console.error(command, parsed.error.issues, raw);
+    throw new ShapeError(command, parsed.error.issues);
+  }
+  return parsed.data;
+}
+
+/** Runs a command whose result is nothing (Rust's `()`); nothing is read back. */
+async function run(command: string, args?: InvokeArgs): Promise<void> {
+  await invoke<unknown>(command, args);
+}
 
 /** Minutes to add to UTC to get local time — the backend needs it to know when
  *  "today" starts, and it can't determine that reliably by itself. */
@@ -63,10 +100,9 @@ function tzOffsetMinutes(): number {
 }
 
 export const api = {
-  init: () => invoke<Settings>("init_app", { tzOffsetMinutes: tzOffsetMinutes() }),
-  getSettings: () => invoke<Settings>("get_settings"),
-  updateSettings: (patch: SettingsPatch) => invoke<Settings>("update_settings", { patch }),
-
+  init: () => call(SettingsSchema, "init_app", { tzOffsetMinutes: tzOffsetMinutes() }),
+  getSettings: () => call(SettingsSchema, "get_settings"),
+  updateSettings: (patch: SettingsPatch) => call(SettingsSchema, "update_settings", { patch }),
 
   submitAnswer: (answer: {
     kind: string;
@@ -80,78 +116,76 @@ export const api = {
     /** The lesson, and this go at it: for the XP log. */
     lessonId?: number;
     run?: string;
-  }) => invoke<AnswerResult>("submit_answer", { answer }),
-  xpDay: (day: number) => invoke<XpDay>("xp_day", { day }),
-  xpHistory: (days: number) => invoke<XpHistoryDay[]>("xp_history", { days }),
-  lessonsOverview: () => invoke<LessonOverview>("lessons_overview"),
-  lessonsForCourse: (courseId: number) => invoke<Lesson[]>("lessons_for_course", { courseId }),
+  }) => call(AnswerResultSchema, "submit_answer", { answer }),
+  xpDay: (day: number) => call(XpDaySchema, "xp_day", { day }),
+  xpHistory: (days: number) => call(z.array(XpHistoryDaySchema), "xp_history", { days }),
+  lessonsOverview: () => call(LessonOverviewSchema, "lessons_overview"),
+  lessonsForCourse: (courseId: number) => call(z.array(LessonSchema), "lessons_for_course", { courseId }),
   /** A course's lessons, most important first, the mastered ones last. */
-  lessonsByImportance: (courseId: number) => invoke<Lesson[]>("lessons_by_importance", { courseId }),
-  lessonDetail: (lessonId: number) => invoke<LessonDetail>("lesson_detail", { lessonId }),
-  lessonTypes: () => invoke<LessonTypeInfo[]>("lesson_types"),
-  diagnostics: () => invoke<DiagnosticEntry[]>("diagnostics_list"),
-  diagnosticsClear: () => invoke<void>("diagnostics_clear"),
-  lessonSession: (lessonId: number) => invoke<SessionPlan>("lesson_session", { lessonId }),
+  lessonsByImportance: (courseId: number) => call(z.array(LessonSchema), "lessons_by_importance", { courseId }),
+  lessonDetail: (lessonId: number) => call(LessonDetailSchema, "lesson_detail", { lessonId }),
+  lessonTypes: () => call(z.array(LessonTypeInfoSchema), "lesson_types"),
+  diagnostics: () => call(z.array(DiagnosticEntrySchema), "diagnostics_list"),
+  diagnosticsClear: () => run("diagnostics_clear"),
+  lessonSession: (lessonId: number) => call(SessionPlanSchema, "lesson_session", { lessonId }),
   /** A drill is done: its score schedules the next check-in. */
   lessonFinish: (lessonId: number, correct: number, total: number) =>
-    invoke<LessonFinished>("lesson_finish", { lessonId, correct, total }),
+    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, total }),
   lessonSetPeriod: (lessonId: number, periodDays: number) =>
-    invoke<Lesson>("lesson_set_period", { lessonId, periodDays }),
-  lessonDelete: (lessonId: number) => invoke<void>("lesson_delete", { lessonId }),
+    call(LessonSchema, "lesson_set_period", { lessonId, periodDays }),
+  lessonDelete: (lessonId: number) => run("lesson_delete", { lessonId }),
   /** A challenge: needed to master its courses, not to complete them. */
   lessonSetChallenge: (lessonId: number, challenge: boolean) =>
-    invoke<Lesson>("lesson_set_challenge", { lessonId, challenge }),
-  lessonAddToCourse: (lessonId: number, courseId: number) =>
-    invoke<void>("lesson_add_to_course", { lessonId, courseId }),
+    call(LessonSchema, "lesson_set_challenge", { lessonId, challenge }),
+  lessonAddToCourse: (lessonId: number, courseId: number) => run("lesson_add_to_course", { lessonId, courseId }),
   /** True when it was the lesson's last course, so the lesson was deleted. */
   lessonRemoveFromCourse: (lessonId: number, courseId: number) =>
-    invoke<boolean>("lesson_remove_from_course", { lessonId, courseId }),
+    call(z.boolean(), "lesson_remove_from_course", { lessonId, courseId }),
   /** The listening lesson for a song, made on first ask. */
-  lessonForSong: (songId: number) => invoke<Lesson>("lesson_for_song", { songId }),
+  lessonForSong: (songId: number) => call(LessonSchema, "lesson_for_song", { songId }),
   checkinStart: (lessonId: number, streamId: string) =>
-    invoke<CheckinTurn>("checkin_start", { lessonId, streamId }),
+    call(CheckinTurnSchema, "checkin_start", { lessonId, streamId }),
   checkinSend: (checkinId: number, message: string, streamId: string) =>
-    invoke<CheckinTurn>("checkin_send", { checkinId, message, streamId }),
+    call(CheckinTurnSchema, "checkin_send", { checkinId, message, streamId }),
   /** Ends a writing conversation; the partner gives its verdict. */
-  checkinEnd: (checkinId: number, streamId: string) =>
-    invoke<CheckinTurn>("checkin_end", { checkinId, streamId }),
+  checkinEnd: (checkinId: number, streamId: string) => call(CheckinTurnSchema, "checkin_end", { checkinId, streamId }),
   /** A writing lesson's word bank (made once, then kept). */
-  writingScaffold: (lessonId: number) => invoke<GoalHelp[]>("writing_scaffold", { lessonId }),
+  writingScaffold: (lessonId: number) => call(z.array(GoalHelpSchema), "writing_scaffold", { lessonId }),
   /** A hint for the next message in a writing conversation. */
-  writingHint: (checkinId: number) => invoke<string>("writing_hint", { checkinId }),
+  writingHint: (checkinId: number) => call(z.string(), "writing_hint", { checkinId }),
   /** Two sentences that use a word, shown after it is answered wrong. */
-  wordExamples: (wordId: number) => invoke<WordExample[]>("word_examples", { wordId }),
+  wordExamples: (wordId: number) => call(z.array(WordExampleSchema), "word_examples", { wordId }),
   /** Adds audio players to a lesson's Polish examples (its text otherwise unchanged). */
-  lessonAddPlayers: (lessonId: number) => invoke<LessonDetail>("lesson_add_players", { lessonId }),
+  lessonAddPlayers: (lessonId: number) => call(LessonDetailSchema, "lesson_add_players", { lessonId }),
   /** The summary after a conversation lesson; new achievements are those since it began. */
   checkinSummary: (checkinId: number, firstCompletionToday: boolean) =>
-    invoke<SessionResult>("checkin_summary", { checkinId, firstCompletionToday }),
+    call(SessionResultSchema, "checkin_summary", { checkinId, firstCompletionToday }),
 
-  getStats: () => invoke<Stats>("get_stats"),
-  getCourseProgress: () => invoke<CourseProgress[]>("get_course_progress"),
+  getStats: () => call(StatsSchema, "get_stats"),
+  getCourseProgress: () => call(z.array(CourseProgressSchema), "get_course_progress"),
   browseWords: (courseId: number | null, query: string, limit = 300) =>
-    invoke<Word[]>("browse_words", { courseId, query, limit }),
+    call(z.array(WordSchema), "browse_words", { courseId, query, limit }),
   browseCatalogue: (courseId: number | null, query: string, limit = 200) =>
-    invoke<CataloguePage>("browse_catalogue", { courseId, query, limit }),
-  browseSentences: (courseId: number) => invoke<Sentence[]>("browse_sentences", { courseId }),
-  resetProgress: () => invoke<void>("reset_progress"),
+    call(CataloguePageSchema, "browse_catalogue", { courseId, query, limit }),
+  browseSentences: (courseId: number) => call(z.array(SentenceSchema), "browse_sentences", { courseId }),
+  resetProgress: () => run("reset_progress"),
 
-  aiSetKey: (key: string) => invoke<Settings>("ai_set_key", { key }),
-  aiClearKey: () => invoke<Settings>("ai_clear_key"),
-  aiTestKey: () => invoke<string>("ai_test_key"),
-  aiListModels: () => invoke<AiModel[]>("ai_list_models"),
+  aiSetKey: (key: string) => call(SettingsSchema, "ai_set_key", { key }),
+  aiClearKey: () => call(SettingsSchema, "ai_clear_key"),
+  aiTestKey: () => call(z.string(), "ai_test_key"),
+  aiListModels: () => call(z.array(AiModelSchema), "ai_list_models"),
   /** Tokens each feature used over the last 30 days. */
-  aiUsage: () => invoke<FeatureUsage[]>("ai_usage"),
+  aiUsage: () => call(z.array(FeatureUsageSchema), "ai_usage"),
   /** Runs the benchmark on a model (progress: `bench://progress`). */
-  benchRun: (model: string) => invoke<BenchRun>("bench_run", { model }),
-  benchRuns: () => invoke<BenchRun[]>("bench_runs"),
-  benchDelete: (id: number) => invoke<void>("bench_delete", { id }),
+  benchRun: (model: string) => call(BenchRunSchema, "bench_run", { model }),
+  benchRuns: () => call(z.array(BenchRunSchema), "bench_runs"),
+  benchDelete: (id: number) => run("bench_delete", { id }),
   /**
    * Opens the tutor conversation about a word or sentence — or carries on the
    * one already about it. A new one starts with the tutor talking.
    */
   tutorTalkAbout: (itemKind: string, itemId: number, polish?: string, meaning?: string) =>
-    invoke<TalkAbout>("tutor_talk_about", { itemKind, itemId, polish: polish ?? null, meaning: meaning ?? null }),
+    call(TalkAboutSchema, "tutor_talk_about", { itemKind, itemId, polish: polish ?? null, meaning: meaning ?? null }),
 
   /**
    * Stores the message and starts the reply in the background; `conversationId`
@@ -159,125 +193,117 @@ export const api = {
    * `tutor-<conversation id>` and arrives as `tutor://done`.
    */
   tutorSend: (message: string, conversationId: number | null) =>
-    invoke<TutorStarted>("tutor_send", { message, conversationId }),
+    call(TutorStartedSchema, "tutor_send", { message, conversationId }),
   /** Asks again after a reply failed. */
-  tutorRetry: (conversationId: number) => invoke<void>("tutor_retry", { conversationId }),
+  tutorRetry: (conversationId: number) => run("tutor_retry", { conversationId }),
   /** Whether the app is on screen: off screen, finished replies notify. */
-  appVisibility: (visible: boolean) => invoke<void>("app_visibility", { visible }),
+  appVisibility: (visible: boolean) => run("app_visibility", { visible }),
   /** A study lesson's Wikipedia sources. */
-  lessonSources: (lessonId: number) => invoke<WikiSource[]>("lesson_sources", { lessonId }),
+  lessonSources: (lessonId: number) => call(z.array(WikiSourceSchema), "lesson_sources", { lessonId }),
   /** A source's article, in its own language or in Polish. */
-  sourceArticle: (sourceId: number, polish: boolean) => invoke<ArticleView>("source_article", { sourceId, polish }),
-  sourceRemove: (sourceId: number) => invoke<void>("source_remove", { sourceId }),
+  sourceArticle: (sourceId: number, polish: boolean) => call(ArticleViewSchema, "source_article", { sourceId, polish }),
+  sourceRemove: (sourceId: number) => run("source_remove", { sourceId }),
   /** Checks a lesson's lesson against its sources now. */
-  factCheckLesson: (lessonId: number) => invoke<FactCheck>("fact_check_lesson", { lessonId }),
+  factCheckLesson: (lessonId: number) => call(FactCheckSchema, "fact_check_lesson", { lessonId }),
   /** Draws a new picture for a course; returns its file id. */
-  coursePicture: (courseId: number) => invoke<number>("course_picture", { courseId }),
+  coursePicture: (courseId: number) => call(z.number(), "course_picture", { courseId }),
   /** Draws the pictures a lesson lacks, in the background; resolves to how many. */
-  lessonAddPictures: (lessonId: number) => invoke<number>("lesson_add_pictures", { lessonId }),
-  wordPictureDraw: (wordId: number) => invoke<number>("word_picture_draw", { wordId }),
-  wordPictureDelete: (wordId: number) => invoke<void>("word_picture_delete", { wordId }),
-  coursePictureDelete: (courseId: number) => invoke<void>("course_picture_delete", { courseId }),
-  tutorConversations: () => invoke<Conversation[]>("tutor_conversations"),
-  tutorHistory: (conversationId: number) =>
-    invoke<ChatMessage[]>("tutor_history", { conversationId }),
-  tutorRename: (conversationId: number, title: string) =>
-    invoke<void>("tutor_rename", { conversationId, title }),
-  tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
-  courseDelete: (courseId: number) => invoke<void>("course_delete", { courseId }),
+  lessonAddPictures: (lessonId: number) => call(z.number(), "lesson_add_pictures", { lessonId }),
+  wordPictureDraw: (wordId: number) => call(z.number(), "word_picture_draw", { wordId }),
+  wordPictureDelete: (wordId: number) => run("word_picture_delete", { wordId }),
+  coursePictureDelete: (courseId: number) => run("course_picture_delete", { courseId }),
+  tutorConversations: () => call(z.array(ConversationSchema), "tutor_conversations"),
+  tutorHistory: (conversationId: number) => call(z.array(ChatMessageSchema), "tutor_history", { conversationId }),
+  tutorRename: (conversationId: number, title: string) => run("tutor_rename", { conversationId, title }),
+  tutorDelete: (conversationId: number) => run("tutor_delete", { conversationId }),
+  courseDelete: (courseId: number) => run("course_delete", { courseId }),
   /** Closes a mastered course: a trophy, out of play, for good. */
-  courseClose: (courseId: number) => invoke<CourseClosed>("course_close", { courseId }),
+  courseClose: (courseId: number) => call(CourseClosedSchema, "course_close", { courseId }),
   courseRename: (courseId: number, title: string, titlePl: string, summary: string) =>
-    invoke<void>("course_rename", { courseId, title, titlePl, summary }),
+    run("course_rename", { courseId, title, titlePl, summary }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */
-  exportDatabase: (includeKeys: boolean) =>
-    invoke<string | null>("export_database", { includeKeys }),
+  exportDatabase: (includeKeys: boolean) => call(z.string().nullable(), "export_database", { includeKeys }),
 
-  memoriesOverview: () => invoke<MemoryOverview>("memories_overview"),
-  memoriesSetEnabled: (enabled: boolean) =>
-    invoke<MemoryOverview>("memories_set_enabled", { enabled }),
+  memoriesOverview: () => call(MemoryOverviewSchema, "memories_overview"),
+  memoriesSetEnabled: (enabled: boolean) => call(MemoryOverviewSchema, "memories_set_enabled", { enabled }),
   memoryAdd: (content: string, category: MemoryCategory) =>
-    invoke<MemoryOverview>("memory_add", { content, category }),
+    call(MemoryOverviewSchema, "memory_add", { content, category }),
   memoryUpdate: (id: number, content: string, category: MemoryCategory) =>
-    invoke<MemoryOverview>("memory_update", { id, content, category }),
-  memoryDelete: (id: number) => invoke<MemoryOverview>("memory_delete", { id }),
-  memoriesClear: () => invoke<MemoryOverview>("memories_clear"),
+    call(MemoryOverviewSchema, "memory_update", { id, content, category }),
+  memoryDelete: (id: number) => call(MemoryOverviewSchema, "memory_delete", { id }),
+  memoriesClear: () => call(MemoryOverviewSchema, "memories_clear"),
 
-  costsSummary: (days: number) => invoke<CostSummary>("costs_summary", { days }),
+  costsSummary: (days: number) => call(CostSummarySchema, "costs_summary", { days }),
 
-  listVoices: () => invoke<Voice[]>("list_voices"),
-  previewVoice: (voice: string, text: string) =>
-    invoke<AudioClip>("preview_voice", { voice, text }),
+  listVoices: () => call(z.array(VoiceSchema), "list_voices"),
+  previewVoice: (voice: string, text: string) => call(AudioClipSchema, "preview_voice", { voice, text }),
   /** A line's clip; `slow` is its slow, clearly spoken version (stored apart). */
-  speak: (text: string, gender?: string, slow = false) => invoke<AudioClip>("speak", { text, gender, slow }),
+  speak: (text: string, gender?: string, slow = false) => call(AudioClipSchema, "speak", { text, gender, slow }),
   /** `force` makes stored lines again too, replacing their clips. */
-  cacheAudio: (lines: SpeechLine[], force = false) => invoke<CacheProgress>("cache_audio", { lines, force }),
+  cacheAudio: (lines: SpeechLine[], force = false) => call(CacheProgressSchema, "cache_audio", { lines, force }),
   /** Downloads a session's audio in the background; returns at once. */
-  prefetchAudio: (lines: SpeechLine[]) => invoke<void>("prefetch_audio", { lines }),
+  prefetchAudio: (lines: SpeechLine[]) => run("prefetch_audio", { lines }),
   /** Makes one line's audio again, replacing the stored clip. */
-  respeak: (text: string, gender: string) => invoke<AudioClip>("respeak", { text, gender }),
-  audioOverview: () => invoke<AudioOverview>("audio_overview"),
-  courseAudio: (courseId: number) => invoke<AudioItem[]>("course_audio", { courseId }),
+  respeak: (text: string, gender: string) => call(AudioClipSchema, "respeak", { text, gender }),
+  audioOverview: () => call(AudioOverviewSchema, "audio_overview"),
+  courseAudio: (courseId: number) => call(z.array(AudioItemSchema), "course_audio", { courseId }),
   /** Deletes clips no course uses; returns how many went. */
-  deleteUnusedAudio: () => invoke<number>("delete_unused_audio"),
-  courseAudioLines: (courseId: number) => invoke<SpeechLine[]>("course_audio_lines", { courseId }),
-  audioCacheStats: () => invoke<AudioCacheStats>("audio_cache_stats"),
-  clearAudioCache: () => invoke<void>("clear_audio_cache"),
+  deleteUnusedAudio: () => call(z.number(), "delete_unused_audio"),
+  courseAudioLines: (courseId: number) => call(z.array(SpeechLineSchema), "course_audio_lines", { courseId }),
+  audioCacheStats: () => call(AudioCacheStatsSchema, "audio_cache_stats"),
+  clearAudioCache: () => run("clear_audio_cache"),
 
-  kieSetKey: (key: string) => invoke<Settings>("kie_set_key", { key }),
-  kieClearKey: () => invoke<Settings>("kie_clear_key"),
-  kieCredits: () => invoke<number>("kie_credits"),
+  kieSetKey: (key: string) => call(SettingsSchema, "kie_set_key", { key }),
+  kieClearKey: () => call(SettingsSchema, "kie_clear_key"),
+  kieCredits: () => call(z.number(), "kie_credits"),
   /** The saved API keys as a QR code (SVG markup) for another device to scan. */
-  keysShareQr: () => invoke<string>("keys_share_qr"),
+  keysShareQr: () => call(z.string(), "keys_share_qr"),
   /** Saves the API keys from a QR code scanned off another device. */
-  keysImport: (payload: string) => invoke<Settings>("keys_import", { payload }),
-  songsList: () => invoke<Song[]>("songs_list"),
-  songDraft: (request: DraftRequest) => invoke<SongDraft>("song_draft", { request }),
-  songCreate: (draft: SongDraft) => invoke<Song>("song_create", { draft }),
-  songRetry: (songId: number) => invoke<Song>("song_retry", { songId }),
-  songDelete: (songId: number) => invoke<void>("song_delete", { songId }),
-  songTrackDelete: (trackId: number) => invoke<void>("song_track_delete", { trackId }),
-  songTrackPlayed: (trackId: number) => invoke<void>("song_track_played", { trackId }),
-  podcastTopics: () => invoke<TopicIdea[]>("podcast_topics"),
-  podcastDraft: (request: PodcastRequest) => invoke<SongDraft>("podcast_draft", { request }),
-  podcastCreate: (draft: SongDraft) => invoke<Song>("podcast_create", { draft }),
+  keysImport: (payload: string) => call(SettingsSchema, "keys_import", { payload }),
+  songsList: () => call(z.array(SongSchema), "songs_list"),
+  songDraft: (request: DraftRequest) => call(SongDraftSchema, "song_draft", { request }),
+  songCreate: (draft: SongDraft) => call(SongSchema, "song_create", { draft }),
+  songRetry: (songId: number) => call(SongSchema, "song_retry", { songId }),
+  songDelete: (songId: number) => run("song_delete", { songId }),
+  songTrackDelete: (trackId: number) => run("song_track_delete", { trackId }),
+  songTrackPlayed: (trackId: number) => run("song_track_played", { trackId }),
+  podcastTopics: () => call(z.array(TopicIdeaSchema), "podcast_topics"),
+  podcastDraft: (request: PodcastRequest) => call(SongDraftSchema, "podcast_draft", { request }),
+  podcastCreate: (draft: SongDraft) => call(SongSchema, "podcast_create", { draft }),
   /** Makes a whole episode in the background: written, then recorded. */
-  podcastMake: (request: PodcastRequest) => invoke<Song>("podcast_make", { request }),
-  songSources: (songId: number) => invoke<WikiSource[]>("song_sources", { songId }),
+  podcastMake: (request: PodcastRequest) => call(SongSchema, "podcast_make", { request }),
+  songSources: (songId: number) => call(z.array(WikiSourceSchema), "song_sources", { songId }),
   /** One of an episode's articles, kept now if it is not yet, for the reader. */
   songSourceOpen: (songId: number, lang: string, title: string) =>
-    invoke<WikiSource>("song_source_open", { songId, lang, title }),
-  wikiFind: (query: string) => invoke<WikiHit[]>("wiki_find", { query }),
+    call(WikiSourceSchema, "song_source_open", { songId, lang, title }),
+  wikiFind: (query: string) => call(z.array(WikiHitSchema), "wiki_find", { query }),
   /** Puts an episode's audio together again, with new settings if given. */
   podcastRerender: (songId: number, audio?: PodcastAudio) =>
-    invoke<Song>("podcast_rerender", { songId, audio: audio ?? null }),
-  songTrackLyrics: (trackId: number) =>
-    invoke<TimedLine[] | null>("song_track_lyrics", { trackId }),
+    call(SongSchema, "podcast_rerender", { songId, audio: audio ?? null }),
+  songTrackLyrics: (trackId: number) => call(z.array(TimedLineSchema).nullable(), "song_track_lyrics", { trackId }),
 
-  playlistsList: () => invoke<Playlist[]>("playlists_list"),
+  playlistsList: () => call(z.array(PlaylistSchema), "playlists_list"),
   playlistCreate: (name: string, trackIds: number[] = []) =>
-    invoke<Playlist>("playlist_create", { name, trackIds }),
-  playlistRename: (playlistId: number, name: string) =>
-    invoke<Playlist>("playlist_rename", { playlistId, name }),
-  playlistDelete: (playlistId: number) => invoke<void>("playlist_delete", { playlistId }),
+    call(PlaylistSchema, "playlist_create", { name, trackIds }),
+  playlistRename: (playlistId: number, name: string) => call(PlaylistSchema, "playlist_rename", { playlistId, name }),
+  playlistDelete: (playlistId: number) => run("playlist_delete", { playlistId }),
   playlistAdd: (playlistId: number, trackIds: number[]) =>
-    invoke<Playlist>("playlist_add", { playlistId, trackIds }),
+    call(PlaylistSchema, "playlist_add", { playlistId, trackIds }),
   playlistRemove: (playlistId: number, entryId: number) =>
-    invoke<Playlist>("playlist_remove", { playlistId, entryId }),
+    call(PlaylistSchema, "playlist_remove", { playlistId, entryId }),
   playlistMove: (playlistId: number, entryId: number, delta: number) =>
-    invoke<Playlist>("playlist_move", { playlistId, entryId, delta }),
+    call(PlaylistSchema, "playlist_move", { playlistId, entryId, delta }),
   /** Resolves to where the file went, or null if the dialog was cancelled. */
-  songTrackSave: (trackId: number) => invoke<string | null>("song_track_save", { trackId }),
-  songTrackShareFile: (trackId: number) =>
-    invoke<string>("song_track_share_file", { trackId }),
+  songTrackSave: (trackId: number) => call(z.string().nullable(), "song_track_save", { trackId }),
+  songTrackShareFile: (trackId: number) => call(z.string(), "song_track_share_file", { trackId }),
 
-  castDiscover: (address?: string) => invoke<CastDevice[]>("cast_discover", { address }),
+  castDiscover: (address?: string) => call(z.array(CastDeviceSchema), "cast_discover", { address }),
   castStart: (device: CastDevice, trackIds: number[], index: number, repeat: string) =>
-    invoke<CastState>("cast_start", { device, trackIds, index, repeat }),
-  castCommand: (action: string, value?: number) => invoke<void>("cast_command", { action, value }),
-  castSetRepeat: (repeat: string) => invoke<void>("cast_set_repeat", { repeat }),
-  castState: () => invoke<CastState | null>("cast_state"),
-  castControlInfo: () => invoke<{ port: number; token: string }>("cast_control_info"),
+    call(CastStateSchema, "cast_start", { device, trackIds, index, repeat }),
+  castCommand: (action: string, value?: number) => run("cast_command", { action, value }),
+  castSetRepeat: (repeat: string) => run("cast_set_repeat", { repeat }),
+  castState: () => call(CastStateSchema.nullable(), "cast_state"),
+  castControlInfo: () => call(z.object({ port: z.number(), token: z.string() }), "cast_control_info"),
 };
 
 /** Tauri rejects with a plain string built from our Error::Display impl. */

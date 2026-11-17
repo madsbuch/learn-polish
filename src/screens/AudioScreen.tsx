@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { CheckIcon, PlayerIcon } from "../components/icons";
 import { SpeakButton } from "../components/ui";
@@ -24,6 +23,8 @@ import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import { playClip, speak } from "../lib/speech";
 import type { AudioItem, AudioOverview, CacheProgress, CourseAudio } from "../lib/types";
+import { onEvent } from "../lib/events";
+import { CacheProgressSchema } from "../lib/types";
 
 export function megabytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -40,7 +41,7 @@ const KIND_NAMES: Record<AudioItem["kind"], string> = {
 function useCacheProgress(onFinished: () => void): CacheProgress | null {
   const [progress, setProgress] = useState<CacheProgress | null>(null);
   useEffect(() => {
-    const unlisten = listen<CacheProgress>("tts://progress", (event) => {
+    const unlisten = onEvent(CacheProgressSchema, "tts://progress", (event) => {
       setProgress(event.payload);
       if (event.payload.finished) onFinished();
     });
@@ -57,8 +58,7 @@ function Downloading({ progress }: { progress: CacheProgress | null }) {
     <Stack gap={1}>
       <Progress value={progress.done} max={Math.max(1, progress.total)} />
       <Text variant="caption" tone="faint">
-        Downloading {progress.done} of {progress.total}…
-        {progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
+        Downloading {progress.done} of {progress.total}…{progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
       </Text>
     </Stack>
   );
@@ -126,8 +126,8 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
       nav={false}
       info={
         <p>
-          A line's audio is made the first time it's played, then kept: it replays instantly,
-          for free and offline. Download a course to have all of it ready ahead of time.
+          A line's audio is made the first time it's played, then kept: it replays instantly, for free and offline.
+          Download a course to have all of it ready ahead of time.
         </p>
       }
     >
@@ -183,16 +183,13 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
               title="Not used"
               info={
                 <p>
-                  Clips no course uses with your current voices: lines read in a voice you no
-                  longer use, deleted words and sentences, and voice samples.
+                  Clips no course uses with your current voices: lines read in a voice you no longer use, deleted words
+                  and sentences, and voice samples.
                 </p>
               }
             >
               <List>
-                <SettingRow
-                  label={`${overview.unusedClips} clips`}
-                  value={megabytes(overview.unusedBytes)}
-                />
+                <SettingRow label={`${overview.unusedClips} clips`} value={megabytes(overview.unusedBytes)} />
               </List>
               <ConfirmButton
                 label="Delete unused clips"
@@ -359,8 +356,7 @@ function CourseAudioPage({
             />
           ) : null}
           <Text variant="small" tone="dim" as="p">
-            Tap a line to download it again — if it was read with the wrong accent, or says
-            something else.
+            Tap a line to download it again — if it was read with the wrong accent, or says something else.
           </Text>
 
           <Segmented
@@ -421,7 +417,13 @@ function CourseAudioPage({
               {selected.gender === "m" ? " · male voice" : ""} ·{" "}
               {selected.stored ? `downloaded, ${megabytes(selected.bytes)}` : "not downloaded"}
             </Text>
-            <Button wide icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))}>
+            <Button
+              wide
+              icon={<PlayerIcon.play size={16} />}
+              onClick={() =>
+                speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))
+              }
+            >
               Play
             </Button>
             <Button
