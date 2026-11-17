@@ -123,8 +123,7 @@ pub async fn course_picture_delete(db: State<'_, Db>, course_id: i64) -> Result<
 
 /// How every word picture is drawn, so a lesson's pictures read as one set.
 pub const WORD_STYLE: &str = "Style: a flat, colourful vector illustration with simple shapes and soft \
-    light. Show only this one object, whole and centred, filling most of the frame (little empty \
-    space around it), on a plain light background: no other \
+    light. Show only this one object, whole and centred, on a plain light background: no other \
     objects, no scene, no people unless the object cannot be shown without them. Square. No text, \
     letters, words or numbers anywhere in the image.";
 
