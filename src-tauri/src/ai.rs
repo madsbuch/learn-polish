@@ -531,7 +531,7 @@ pub async fn complete_with(
 /// A completion whose answer must be a JSON object: JSON mode where the
 /// provider has it, and room to spare — reasoning models (Gemini Flash and
 /// others) spend part of `max_tokens` thinking, and a JSON answer cut off
-/// halfway is useless. Read the reply with [`json_value`].
+/// halfway is useless. Read the reply with [`json_in`].
 pub async fn complete_json(key: &str, model: &str, messages: &[Wire], max_tokens: u32) -> Result<Reply> {
     let format = JSON_OBJECT;
     request(key, model, messages, 0.3, max_tokens, Some(format)).await
