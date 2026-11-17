@@ -470,14 +470,14 @@ fn read_draft(reply: &str) -> Result<SongDraft> {
 // Songwriter prompt
 // ---------------------------------------------------------------------------
 
-const SONGWRITER_RULES: &str = r#"You write songs that teach Polish to an adult beginner who speaks English. The learner will listen to each song many times, so it must be catchy, simple and correct.
+const SONGWRITER_RULES: &str = r#"You write songs that teach Polish to an adult who speaks English, at the level the brief gives (a beginner when it gives none). The learner will listen to each song many times, so it must be catchy, clear and correct.
 
 How the songs work:
 - Verses are made of pairs: a short English line, then the same meaning in Polish. Both are sung, English first. 2–7 words per line.
 - The chorus is ONE Polish sentence (the hook) that the learner should get stuck in their head. It is sung only in Polish, usually 2–4 times. Give its English meaning.
 - Follow the structure and length given in the brief exactly; Suno sings as long as the lyrics are.
-- Polish must be natural, grammatical and use correct diacritics (ą ć ę ł ń ó ś ź ż). Prefer the present tense and everyday words.
-- Reuse the target words; repeating a word across verses helps it stick.
+- Polish must be natural, grammatical and use correct diacritics (ą ć ę ł ń ó ś ź ż). Write at the brief's level — never simpler than it asks: for a beginner, the present tense and everyday words; higher up, the grammar and vocabulary of that level.
+- Words the requirements name come first. The target words are extras to reuse where they fit; repeating a word across verses helps it stick.
 - style is a Suno style prompt under 200 characters: genre, tempo, mood, voice. Always include "clear vocals" and "clear diction". Never name real artists.
 
 Reply with ONLY a JSON object, no prose, in exactly this shape:

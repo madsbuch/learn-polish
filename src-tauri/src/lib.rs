@@ -1365,7 +1365,7 @@ mod integration {
                 }
             }),
         );
-        assert_eq!((made["lessons"].as_i64(), made["writing"].as_bool()), (Some(2), Some(true)), "{made}");
+        assert_eq!((made["study_lessons_made"].as_i64(), made["writing"].as_bool()), (Some(2), Some(true)), "{made}");
         let course = made["created"]["course_id"].as_i64().unwrap();
         assert_eq!(session::load_course(&mut conn, course).unwrap().level.as_deref(), Some("A1"), "made at its level");
         let path: Vec<(String, String)> =

@@ -96,7 +96,9 @@ How to run the check-in:
 - Don't reveal answers to questions you have not asked yet. Keep messages short.
 - When you have enough evidence — or the learner asks to stop — call finish_assessment. \
   pass: every objective shown, at most small slips. partial: some objectives shaky. \
-  fail: most not shown. Be honest; a pass that isn't earned helps nobody.
+  fail: most not shown. aced: a pass with nothing worth going over again — it brings the \
+  lesson back later and earns more mastery, so set it only when that is true. Be honest; a \
+  pass that isn't earned helps nobody.
 
 The lesson: {title} (complexity: {complexity})
 Objectives:
@@ -146,13 +148,35 @@ pub fn next_support_level(level: i64, result: &str) -> i64 {
     }
 }
 
-/// How simply the partner writes, by complexity.
-fn partner_level(complexity: &str) -> &'static str {
-    match complexity {
-        "low" => "A1: very short, simple sentences, the most common words, present tense",
-        "medium" => "A2: short everyday sentences; past and future are fine",
-        _ => "B1: natural everyday Polish, as you would write to a foreigner who speaks it reasonably",
-    }
+/// How the partner writes: at the lesson's CEFR level (its own, else its
+/// course's) — never below what the learner asked for. While the learner is
+/// guided (help level 0) it keeps to the simplest sentences of that level.
+/// Without a level, a beginner's.
+fn partner_level(conn: &mut Conn, lesson: &lessons::LessonDetail) -> Result<String> {
+    let level = match &lesson.lesson.level {
+        Some(level) => Some(level.clone()),
+        None => match lesson.lesson.course_id {
+            Some(id) => crate::schema::courses::table
+                .find(id)
+                .select(crate::schema::courses::level)
+                .first::<Option<String>>(conn)
+                .optional()?
+                .flatten(),
+            None => None,
+        },
+    };
+    let style = match level.as_deref().unwrap_or("A1") {
+        "A1" => "A1: very short, simple sentences, the most common words, present tense",
+        "A2" => "A2: short everyday sentences; past and future are fine",
+        "B1" => "B1: natural everyday Polish, as you would write to a foreigner who speaks it reasonably",
+        "B2" => "B2: natural Polish at normal pace, idiom included, as to someone fluent in everyday life",
+        _ => "C1–C2: fully natural Polish, as to a native speaker",
+    };
+    Ok(if lesson.lesson.support_level == 0 {
+        format!("{style} — while they are guided, the simplest sentences of that level")
+    } else {
+        style.to_string()
+    })
 }
 
 /// What the app tells the partner when the learner ends the conversation.
@@ -186,23 +210,23 @@ How to play it:
   question that invites it — but never say it for them or put words in their mouth.
 - As soon as the learner has got every goal across in understandable Polish, reply once in \
   character to close the exchange naturally, and in the same message call finish_assessment.
-  pass: every goal reached in Polish. partial: reached, but only with a lot of help, or some \
-  goals only half there. fail: the goals not reached when the learner ended it.
+  pass: every goal reached in understandable Polish. partial: some goals only half there. \
+  fail: the goals not reached when the learner ended it. The help the app gives (word bank, \
+  hints) never makes a pass partial — only what the learner got across counts.
   In the verdict (in English), summary says how it went; to_review lists their actual \
-  mistakes as \"what they wrote → correct Polish\" — the conversation itself corrected nothing.
+  mistakes as \"what they wrote → correct Polish\" — the conversation itself corrected nothing. \
+  aced: a pass with nothing worth going over again (it brings the lesson back later and earns \
+  more mastery) — small slips that never got in the way don't stop it.
 - Messages starting with \"(The app:\" come from the app, not the learner: follow them.
-{previous}",
+{previous}{memory}",
         scenario = lesson.content,
         goals = lesson.objectives.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n"),
-        level = if lesson.lesson.support_level == 0 {
-            "A1: very short, simple sentences, the most common words, present tense"
-        } else {
-            partner_level(&lesson.lesson.complexity)
-        },
+        level = partner_level(conn, lesson)?,
         support = support_rules(lesson.lesson.support_level),
         previous = previous_feedback(conn, lesson.lesson.id)?
             .map(|feedback| format!("\nLast time's verdict, for your judgement only: {feedback}"))
             .unwrap_or_default(),
+        memory = memory_section(conn)?,
     ))
 }
 
@@ -244,7 +268,8 @@ fn tools() -> Vec<Tool> {
                 "result": { "type": "string", "enum": ["pass", "partial", "fail"] },
                 "summary": { "type": "string", "description": "Two or three sentences to the learner: how it went." },
                 "strengths": { "type": "array", "items": { "type": "string" } },
-                "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely." }
+                "aced": { "type": "boolean", "description": "A pass with nothing worth going over again: the lesson comes back later and earns more mastery. False when to_review has anything that matters." },
+                "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely (shown to the learner)." }
             },
             "required": ["result", "summary"]
         }),
@@ -260,6 +285,9 @@ pub struct Assessment {
     pub strengths: Vec<String>,
     #[serde(default, alias = "to_review")]
     pub to_review: Vec<String>,
+    /// A pass with nothing worth going over again (the examiner says so).
+    #[serde(default)]
+    pub aced: bool,
     /// Filled in when recorded.
     #[serde(default)]
     pub next_due_day: i64,
@@ -318,7 +346,8 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     let current = lessons::load(conn, lesson_id)?;
     let extra = lessons::is_extra_practice(&current, today);
     // A pass with nothing left to review is an ace: the gap grows faster.
-    let ace = assessment.result == "pass" && assessment.to_review.is_empty();
+    // An ace is the examiner's call, made knowing what it does.
+    let ace = assessment.result == "pass" && assessment.aced;
     let lesson = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
         lessons::credit_mastery(conn, &current, &assessment.result, ace, today)?;

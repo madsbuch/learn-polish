@@ -25,11 +25,6 @@ pub fn normalize(level: &str) -> Option<&'static str> {
     LEVELS.iter().copied().find(|l| upper.starts_with(l))
 }
 
-/// A level's place on the scale.
-fn step(level: &str) -> Option<usize> {
-    LEVELS.iter().position(|l| *l == level)
-}
-
 /// Sets a course's level, as the tutor (or the learner) says it is.
 pub fn set_course_level(conn: &mut Conn, course_id: i64, level: &str) -> Result<&'static str> {
     crate::courses::require_open_course(conn, course_id)?;
@@ -52,8 +47,12 @@ pub fn set_lesson_level(conn: &mut Conn, lesson_id: i64, level: Option<&str>) ->
 fn material(conn: &mut Conn, course_id: i64) -> Result<String> {
     let (title, summary): (String, String) =
         courses::table.find(course_id).select((courses::title_en, courses::summary_en)).first(conn)?;
+    // Challenges are beyond the course's level by design: they would pull
+    // the reading up, so the check reads the core only.
     let ids: Vec<i64> = course_lessons::table
+        .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
+        .filter(lessons::challenge.eq(0))
         .select(course_lessons::lesson_id)
         .load(conn)?;
     let listed: Vec<(String, String, String)> = lessons::table
@@ -99,15 +98,13 @@ pub struct Checked {
 }
 
 /// What a checked level does to a course's own: an unlevelled course takes
-/// it; one the tutor levelled keeps its level unless the check is more
-/// than a step away.
+/// it; a level that was given — by the learner, or the tutor on their
+/// behalf — always stands (PRINCIPLES.md: levels never limit, and the app
+/// is not paternal). The check only fills in what is missing.
 pub fn reconcile(given: Option<&str>, checked: &'static str) -> Checked {
     match given.and_then(normalize) {
         None => Checked { level: checked, changed: true },
-        Some(given) => match (step(given), step(checked)) {
-            (Some(a), Some(b)) if a.abs_diff(b) > 1 => Checked { level: checked, changed: true },
-            _ => Checked { level: given, changed: false },
-        },
+        Some(given) => Checked { level: given, changed: false },
     }
 }
 
@@ -161,6 +158,8 @@ pub fn check_unchecked_in_background(app: &tauri::AppHandle) {
             }
             courses::table
                 .filter(courses::level_checked_at.is_null())
+                // A given level stands: only unlevelled courses are checked.
+                .filter(courses::level.is_null())
                 .filter(courses::closed_at.is_null())
                 // A folder of one-offs has no level of its own.
                 .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED))
@@ -190,7 +189,7 @@ mod tests {
         assert_eq!(reconcile(Some("A2"), "B1"), Checked { level: "A2", changed: false });
         assert_eq!(reconcile(Some("A2"), "A1"), Checked { level: "A2", changed: false });
         // Further apart, the check wins; an unlevelled course takes it.
-        assert_eq!(reconcile(Some("A1"), "B2"), Checked { level: "B2", changed: true });
+        assert_eq!(reconcile(Some("A1"), "B2"), Checked { level: "A1", changed: false }, "a given level stands");
         assert_eq!(reconcile(None, "A2"), Checked { level: "A2", changed: true });
     }
 }
