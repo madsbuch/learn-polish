@@ -25,7 +25,8 @@ pub const TYPE: LessonType = LessonType {
     id: "pictures",                // stored in lessons.lesson_type
     name: "Pictures",              // what the learner sees
     icon: "picture",               // drill | study | write | song | picture | …
-    description: "…",              // read by the tutor, and shown in the app
+    description: "…",              // for the learner ("How to use") and the tutor
+    tutor_hint: "…",               // for the tutor only: when to use it (or "")
     run: Run::Exercises(build),    // or Run::Conversation(Conversation { … })
     path: PathGroup::Words,        // where it goes in a course's path
     takes_items: false,            // offered by the tutor's create_drill_lesson

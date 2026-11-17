@@ -15,7 +15,8 @@ pub const TYPE: LessonType = LessonType {
     id: "pictures",
     name: "Pictures",
     icon: "picture",
-    description: "Everyday objects, each drawn as a picture: see the picture and pick the word, see the word and pick the picture. Only concrete things you can point at, each unmistakable on its own.",
+    description: "Everyday objects, each drawn as a picture: see the picture and pick the word, see the word and pick the picture.",
+    tutor_hint: "Only concrete things you can point at, each unmistakable on its own (create_picture_lesson).",
     run: Run::Exercises(build),
     path: PathGroup::Words,
     // Made with its own tutor tool (create_picture_lesson), objects only.

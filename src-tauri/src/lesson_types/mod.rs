@@ -85,8 +85,10 @@ pub struct LessonType {
     pub name: &'static str,
     /// For the screens: drill | study | write | song | picture.
     pub icon: &'static str,
-    /// What it is and when to use it — read by the tutor, shown in the app.
+    /// What it is, for the learner (the "How to use" page) and the tutor.
     pub description: &'static str,
+    /// For the tutor only: when to use it, what to put in it.
+    pub tutor_hint: &'static str,
     pub run: Run,
     pub path: PathGroup,
     /// Takes words, sentences or dialogue lines when it is made (the tutor's
@@ -198,5 +200,14 @@ pub fn lesson_types() -> Vec<TypeInfo> {
 
 /// The lesson types, as the tutor's instructions list them.
 pub fn for_tutor() -> String {
-    REGISTRY.iter().map(|t| format!("  - {} ({}): {}", t.id, t.name, t.description)).collect::<Vec<_>>().join("\n")
+    REGISTRY
+        .iter()
+        .map(|t| match t.tutor_hint {
+            "" => format!("  - {} ({}): {}", t.id, t.name, t.description),
+            hint => format!("  - {} ({}): {} {hint}", t.id, t.name, t.description),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
+
+

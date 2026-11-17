@@ -10,6 +10,7 @@ pub const TYPE: LessonType = LessonType {
     name: "Conversation",
     icon: "drill",
     description: "A short everyday conversation: read and hear it, then say what comes next, line by line.",
+    tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Dialogue,
     takes_items: true,

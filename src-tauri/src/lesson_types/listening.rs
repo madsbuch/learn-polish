@@ -7,6 +7,7 @@ pub const TYPE: LessonType = LessonType {
     name: "Listening",
     icon: "song",
     description: "A song or podcast to listen to, then the examiner asks about what was heard: meaning, missing words, translation, grammar.",
+    tutor_hint: "",
     run: Run::Conversation(Conversation { partner: false, goals_pay: false, after_verdict: None }),
     path: PathGroup::Listening,
     takes_items: false,

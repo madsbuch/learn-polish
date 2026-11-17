@@ -13,6 +13,7 @@ pub const TYPE: LessonType = LessonType {
     name: "Words",
     icon: "drill",
     description: "Learn a handful of words: cards, then multiple choice, then typing them from memory, and a memory round.",
+    tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Words,
     takes_items: true,

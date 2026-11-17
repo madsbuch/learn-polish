@@ -10,6 +10,7 @@ pub const TYPE: LessonType = LessonType {
     name: "Fill the gaps",
     icon: "drill",
     description: "Sentences with a word missing, chosen from a word bank.",
+    tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Sentences,
     takes_items: true,

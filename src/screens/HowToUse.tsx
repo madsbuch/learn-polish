@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
-import { Card, Screen, Section, Stack, Text } from "../design";
+import { LessonIcon } from "../components/LessonRow";
+import { Avatar, Badge, Card, List, ListItem, Screen, Section, Stack, Text } from "../design";
+import { allLessonTypes } from "../lib/lessonTypes";
 
 /** The language taught, and the app's name, as the guide says them. */
 const LANGUAGE = "Polish";
@@ -71,18 +73,29 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
       <Part title="Courses and lessons">
         <P>
           A <strong>course</strong> is a theme, and lists its lessons in order. A{" "}
-          <strong>lesson</strong> is one thing to do:
-        </P>
-        <P>
-          <strong>Drills</strong> practise a handful of words, sentences or a dialogue — cards,
-          multiple choice, typing, building sentences, filling gaps. <strong>Study</strong> lessons
-          are a short text, followed by a few questions from the examiner.{" "}
-          <strong>Listening</strong> lessons play a song or podcast and ask what you heard.{" "}
-          <strong>Writing</strong> lessons are a situation played out in writing, with a partner who
-          understands only {LANGUAGE}.
+          <strong>lesson</strong> is one thing to do, of one of the types below: a <em>drill</em> you
+          tap through, or a <em>check-in</em> — a conversation with the examiner.
         </P>
         <P>Each lesson is marked quick, medium or deep, by how much thought it takes.</P>
       </Part>
+
+      <Section title="Lesson types">
+        <List>
+          {allLessonTypes().map((type) => (
+            <ListItem
+              key={type.id}
+              leading={
+                <Avatar>
+                  <LessonIcon lesson={{ type: type.id, engine: type.engine }} />
+                </Avatar>
+              }
+              title={type.name}
+              subtitle={type.description}
+              trailing={<Badge tone="sky">{type.engine === "conversation" ? "Check-in" : "Drill"}</Badge>}
+            />
+          ))}
+        </List>
+      </Section>
 
       <Part title="Completing and mastering">
         <P>

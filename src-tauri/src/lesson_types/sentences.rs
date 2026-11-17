@@ -10,6 +10,7 @@ pub const TYPE: LessonType = LessonType {
     name: "Sentences",
     icon: "drill",
     description: "Build sentences from their words, then fill the gaps in them.",
+    tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Sentences,
     takes_items: true,

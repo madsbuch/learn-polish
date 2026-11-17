@@ -10,6 +10,7 @@ pub const TYPE: LessonType = LessonType {
     name: "Memory cards",
     icon: "drill",
     description: "A memory game: turn cards to match each word with its meaning.",
+    tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Words,
     takes_items: true,
