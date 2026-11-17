@@ -57,7 +57,7 @@ it — how it is practised, what its page shows, what mastering it takes (see
   rozumiem…". The conversation ends, with a verdict and corrections, as soon
   as you have got every goal across (or when you tap End). The partner runs on
   its own model (Settings → Writing partner), so a small, fast one can be used.
-  Writing lessons without a course go in *Writing*.
+  Writing lessons without a course go in *Other lessons*.
 
 Every lesson has a **complexity** — low (1–2 min), medium (5–10 min) or deep
 (20+ min) — set by how hard its subject is, not by how much is in it. And every
@@ -81,12 +81,12 @@ already teaches. A lesson can be listed in **several courses** (one lesson, one
 schedule, shown in each); it can be moved between courses, and taking it out
 of its last course deletes it, with its words and their history. On a lesson's
 page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it.
-A study lesson the tutor writes without a better home goes in *Grammar &
-culture*. A song remembers the course whose words it uses, and
+Grammar, culture, listening and writing lessons belong in the course whose
+material they use; one that fits no course goes in *Other lessons*, a single
+folder at the bottom of the course list that never ends. A song remembers the course whose words it uses, and
 its listening lesson is filed there; like any lesson it can be moved or shared
 afterwards. The tutor files songs itself: it picks the course a new song fits,
-and reads the lyrics of songs left in *Listening* to move them where they
-belong. The
+and offers to file lessons left in *Other lessons* where they belong. The
 **tutor** builds more: courses on any theme, single drills in a chosen format,
 and study lessons with their own text and objectives.
 

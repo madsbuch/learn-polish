@@ -94,7 +94,11 @@ The app:
 - A mastered course moves to Mastered by itself: it becomes a trophy and its lessons never \
   come back. Closed courses are finished — never add to or change them. To revisit a closed \
   course's theme, make a new course a level up: build on what it taught (get_course shows it), \
-  don't repeat its words and lessons. Grammar & culture, Listening and Writing never end.
+  don't repeat its words and lessons.
+- Grammar, culture, listening and writing lessons belong in the course whose material they \
+  explain or use: the accusative in the bakery course, a logician's podcast in the logic course. \
+  Give their course_id. Only a lesson that truly fits no course goes in \"Other lessons\" (the \
+  folder for one-offs, which never ends); offer to move those to a course when one fits.
 - Culture and facts (cities, history, customs): write the study lesson from Wikipedia — wiki_search, \
   wiki_read — and attach the article to the lesson with attach_source (existing lessons too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
@@ -224,7 +228,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let song_count: i64 = songs_table::table.filter(songs_table::status.ne("draft")).count().get_result(conn)?;
     let unsorted: i64 = course_lessons::table
         .inner_join(courses_table::table)
-        .filter(courses_table::slug.eq("listening"))
+        .filter(courses_table::slug.eq(courses::OTHER))
         .count()
         .get_result(conn)?;
     let playlists = playlists::list(conn)?;
@@ -254,8 +258,8 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         unsorted = match unsorted {
             0 => String::new(),
             n => format!(
-                "; {n} listening lesson{} still in \"Listening\" with no course — when it fits the \
-                 conversation, offer to read their lyrics and file them",
+                "; {n} lesson{} in \"Other lessons\" with no course — when it fits the \
+                 conversation, offer to file them in the course they belong to",
                 if n == 1 { " is" } else { "s are" }
             ),
         },
@@ -543,7 +547,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "content": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
                     "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–5 things the learner should be able to do afterwards" },
                     "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
-                    "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Grammar & culture\"" }
+                    "course_id": { "type": "integer", "description": "The course it explains: give it. Leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "summary", "complexity", "content", "objectives"]
             }),

@@ -62,6 +62,15 @@ pub struct PictureChanged {
 /// without asking. A failure (no key, a model that draws nothing) is only
 /// logged: the course is there either way, and its page can try again.
 pub fn draw_in_background(app: &tauri::AppHandle, course_id: i64) {
+    {
+        // A folder of one-offs (Other lessons) gets no picture.
+        use tauri::Manager;
+        let slug: Option<String> =
+            courses::table.find(course_id).select(courses::slug).first(&mut *app.state::<Db>().lock()).optional().ok().flatten();
+        if slug.is_some_and(|s| crate::courses::OPEN_ENDED.contains(&s.as_str())) {
+            return;
+        }
+    }
     let busy = crate::work::begin(app, "Drawing a course picture…");
     let app = app.clone();
     tauri::async_runtime::spawn(async move {

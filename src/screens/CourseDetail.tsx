@@ -150,7 +150,7 @@ export function CourseDetail({
       backdrop={picture !== null ? fileUrl(picture) : null}
     >
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {picture !== null ? null : (
+      {picture !== null || progress.openEnded ? null : (
         <Button wide icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
           {drawing ? "Drawing a picture…" : "Make a picture for this course"}
         </Button>

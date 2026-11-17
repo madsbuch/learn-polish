@@ -160,6 +160,8 @@ pub fn check_unchecked_in_background(app: &tauri::AppHandle) {
             }
             courses::table
                 .filter(courses::level_checked_at.is_null())
+                // A folder of one-offs has no level of its own.
+                .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED))
                 .order(courses::id)
                 .select(courses::id)
                 .load(&mut *guard)

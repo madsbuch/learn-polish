@@ -128,7 +128,12 @@ pub fn require_open_course(conn: &mut Conn, course_id: i64) -> Result<String> {
 
 /// The built-in courses that never end (slugs): the tutor keeps adding to
 /// them, so they are not completed, mastered or closed.
-pub const OPEN_ENDED: [&str; 3] = ["lessons", "listening", "writing"];
+/// The one folder for lessons that belong to no course (see [`other_course`]).
+pub const OTHER: &str = "other";
+/// Built-in courses that never end: just the Other lessons folder.
+pub const OPEN_ENDED: [&str; 1] = [OTHER];
+/// The built-in folders there were before Other lessons, merged into it.
+pub const OLD_FOLDERS: [&str; 3] = ["lessons", "listening", "writing"];
 
 /// Lessons only closed courses list: retired, so check-ins no longer bring
 /// them back. A lesson an open course lists too stays.
@@ -251,22 +256,57 @@ pub fn ensure(conn: &mut Conn, slug: &str, title: &str, title_pl: &str, summary:
     insert_course(conn, Some(slug), title, title_pl, summary)
 }
 
-/// Where a study lesson goes when no course was chosen.
-pub fn grammar_culture_course(conn: &mut Conn) -> Result<i64> {
-    ensure(conn, "lessons", GRAMMAR_CULTURE.0, GRAMMAR_CULTURE.1, "Lessons on grammar, verbs and culture.")
+/// Where a lesson goes that belongs to no course: a song to listen to, a
+/// situation to write, a question answered on its own. A folder, not a
+/// course — it never ends, and the course list shows it last.
+pub fn other_course(conn: &mut Conn) -> Result<i64> {
+    ensure(conn, OTHER, OTHER_TITLES.0, OTHER_TITLES.1, "One-off lessons that belong to no course.")
 }
 
-/// The open-ended course's English and Polish titles.
+/// The Other lessons folder's English and Polish titles.
+pub const OTHER_TITLES: (&str, &str) = ("Other lessons", "Inne lekcje");
+
+/// The open-ended course of older databases ("Grammar & culture"), for
+/// upgrades from before courses (db.rs).
 pub const GRAMMAR_CULTURE: (&str, &str) = ("Grammar & culture", "Gramatyka i kultura");
 
-/// Where listening lessons for songs go.
-pub fn listening_course(conn: &mut Conn) -> Result<i64> {
-    ensure(conn, "listening", "Listening", "Słuchanie", "Listen to your songs and answer questions about them.")
-}
-
-/// Where writing lessons go when no course is given.
-pub fn writing_course(conn: &mut Conn) -> Result<i64> {
-    ensure(conn, "writing", "Writing", "Pisanie", "Write your way through everyday situations, in Polish only.")
+/// Moves the lessons of the old built-in folders (Grammar & culture,
+/// Listening, Writing) into Other lessons, keeping their order, and removes
+/// the empty folders. Lessons, their history and mastery are untouched.
+pub fn merge_old_folders(conn: &mut Conn) -> Result<()> {
+    let old: Vec<i64> =
+        courses::table.filter(courses::slug.eq_any(OLD_FOLDERS)).order(courses::id).select(courses::id).load(conn)?;
+    if old.is_empty() {
+        return Ok(());
+    }
+    conn.transaction::<_, Error, _>(|conn| {
+        let other = other_course(conn)?;
+        let mut ord: i64 = course_lessons::table
+            .filter(course_lessons::course_id.eq(other))
+            .select(max(course_lessons::ord))
+            .first::<Option<i64>>(conn)?
+            .unwrap_or(0);
+        for folder in &old {
+            let lessons: Vec<i64> = course_lessons::table
+                .filter(course_lessons::course_id.eq(folder))
+                .order(course_lessons::ord)
+                .select(course_lessons::lesson_id)
+                .load(conn)?;
+            for lesson in lessons {
+                ord += 1;
+                diesel::insert_or_ignore_into(course_lessons::table)
+                    .values((
+                        course_lessons::course_id.eq(other),
+                        course_lessons::lesson_id.eq(lesson),
+                        course_lessons::ord.eq(ord),
+                    ))
+                    .execute(conn)?;
+            }
+            diesel::delete(course_lessons::table.filter(course_lessons::course_id.eq(folder))).execute(conn)?;
+            diesel::delete(courses::table.find(folder)).execute(conn)?;
+        }
+        Ok(())
+    })
 }
 
 /// Where the starter lessons are. Dated like the other starter courses, so
@@ -314,7 +354,7 @@ pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()>
         .execute(conn)?;
     // A listening lesson filed in a real course gives a song without one its
     // course, so the song is known to belong there from now on.
-    let is_listening = courses::table.find(course_id).select(courses::slug).first::<String>(conn)? == "listening";
+    let is_listening = OPEN_ENDED.contains(&courses::table.find(course_id).select(courses::slug).first::<String>(conn)?.as_str());
     let song: Option<i64> = lessons::table.find(lesson_id).select(lessons::song_id).first(conn).optional()?.flatten();
     if let (Some(song), false) = (song, is_listening) {
         diesel::update(songs::table.find(song).filter(songs::course_id.is_null()))

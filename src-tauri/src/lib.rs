@@ -451,7 +451,7 @@ mod integration {
             t::course_lessons::table.select(t::course_lessons::lesson_id).load::<i64>(&mut conn).unwrap().into_iter().collect();
         let all: Vec<i64> = t::lessons::table.select(t::lessons::id).load(&mut conn).unwrap();
         assert!(all.iter().all(|id| listed.contains(id)), "every block is in a course");
-        assert_eq!(lessons::load(&mut conn, 300).unwrap().course_title.as_deref(), Some("Grammar & culture"));
+        assert_eq!(lessons::load(&mut conn, 300).unwrap().course_title.as_deref(), Some("Other lessons"));
         assert_eq!(lessons::detail(&mut conn, 300).unwrap().last_feedback.as_deref(), Some("Good."));
         let kinds: i64 =
             t::courses::table.filter(t::courses::kind.ne("course")).count().get_result(&mut conn).unwrap();
@@ -521,6 +521,35 @@ mod integration {
         assert_eq!(failed.due_day, Some(today + 1));
         let passed = lessons::record(&mut conn, words.id, "pass").unwrap();
         assert!(passed.interval_days >= words.period_days);
+    }
+
+    #[test]
+    fn the_old_built_in_folders_merge_into_other_lessons() {
+        let mut conn = scratch_db("other-lessons");
+        let real = db::require_course_id(&mut conn, 1).unwrap();
+        let shared = lessons::for_course(&mut conn, real).unwrap()[0].id;
+        // The three folders of before, each with a lesson; one lesson is in a
+        // real course too.
+        let mut moved = Vec::new();
+        for (n, slug) in courses::OLD_FOLDERS.iter().enumerate() {
+            let folder = courses::ensure(&mut conn, slug, slug, slug, "").unwrap();
+            let lesson = lessons::create_study(&mut conn, serde_json::from_value(serde_json::json!({
+                "title": format!("Lesson {n}"), "complexity": "low", "content": "x", "objectives": ["y"], "course_id": folder
+            })).unwrap(), "tutor").unwrap();
+            moved.push(lesson.id);
+        }
+        let first_folder: i64 = t::courses::table.filter(t::courses::slug.eq("lessons")).select(t::courses::id).first(&mut conn).unwrap();
+        courses::add_lesson(&mut conn, first_folder, shared).unwrap();
+
+        courses::merge_old_folders(&mut conn).unwrap();
+        courses::merge_old_folders(&mut conn).unwrap();
+        let other = courses::other_course(&mut conn).unwrap();
+        let in_other: Vec<i64> = lessons::for_course(&mut conn, other).unwrap().iter().map(|l| l.id).collect();
+        assert!(moved.iter().all(|id| in_other.contains(id)), "every lesson moves, in order: {in_other:?}");
+        assert!(lessons::load(&mut conn, shared).unwrap().course_ids.contains(&real), "a lesson keeps its real course");
+        let left: i64 = t::courses::table.filter(t::courses::slug.eq_any(courses::OLD_FOLDERS)).count().get_result(&mut conn).unwrap();
+        assert_eq!(left, 0, "the old folders are gone");
+        assert!(courses::status(&mut conn, other).unwrap().open_ended, "a folder that never ends");
     }
 
     #[test]
@@ -1175,7 +1204,7 @@ mod integration {
         assert!(courses::undo_close(&mut conn, course).unwrap_err().to_string().contains("final"));
 
         // The built-in courses that never end are never completed or closed.
-        let grammar = courses::grammar_culture_course(&mut conn).unwrap();
+        let grammar = courses::other_course(&mut conn).unwrap();
         let essentials = grammar_course(&mut conn);
         let study = lessons::for_course(&mut conn, essentials).unwrap()[0].id;
         courses::add_lesson(&mut conn, grammar, study).unwrap();
@@ -1980,8 +2009,8 @@ mod integration {
         let study_id = study["_action"]["lessonId"].as_i64().unwrap();
         let lesson = lessons::load(&mut conn, study_id).unwrap();
         assert_eq!((lesson.lesson_type.as_str(), lesson.complexity.as_str(), lesson.period_days), ("study", "low", 5));
-        // Without a course it is filed in "Grammar & culture".
-        assert_eq!(lesson.course_title.as_deref(), Some("Grammar & culture"));
+        // Without a course it is filed in "Other lessons".
+        assert_eq!(lesson.course_title.as_deref(), Some("Other lessons"));
 
         // A study lesson without objectives is refused: the examiner needs them.
         let refused = tutor::run_tool_for_test(
@@ -2079,7 +2108,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let detail = lessons::detail(&mut conn, id).unwrap();
         assert_eq!((detail.lesson.lesson_type.as_str(), detail.lesson.engine), ("writing", "conversation"));
         assert_eq!(detail.objectives.len(), 2);
-        let writing = courses::writing_course(&mut conn).unwrap();
+        let writing = courses::other_course(&mut conn).unwrap();
         assert_eq!(detail.lesson.course_ids, vec![writing], "filed in Writing by default");
 
         let prompt = examiner::writing_prompt(&mut conn, &detail).unwrap();
@@ -2116,7 +2145,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
 
         let prompt = tutor::system_prompt(&mut conn).unwrap();
         assert!(prompt.contains("Pierwsze spotkanie") && prompt.contains("Wants to order food"));
-        assert!(prompt.contains("still in \"Listening\""), "unsorted songs are pointed out");
+        assert!(prompt.contains("in \"Other lessons\" with no course"), "lessons without a course are pointed out");
         for lesson in [&starter, &filed, &loose] {
             let detail = lessons::detail(&mut conn, lesson.id).unwrap();
             assert!(!examiner::system_prompt(&mut conn, &detail).unwrap().is_empty());
@@ -2250,8 +2279,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         assert!(lessons::detail(&mut conn, id).unwrap().objectives.len() >= 6, "high asks about grammar too");
         // One per song: asking again returns the same lesson.
         assert_eq!(lessons::create_listening(&mut conn, 1, None, None, None, "tutor").unwrap().id, id);
-        // A song without a course files it in "Listening"; it goes when the song goes.
-        assert_eq!(lesson.course_title.as_deref(), Some("Listening"));
+        // A song without a course files it in "Other lessons"; it goes when the song goes.
+        assert_eq!(lesson.course_title.as_deref(), Some("Other lessons"));
 
         // A song written from a course's words files it in that course.
         let food = db::require_course_id(&mut conn, 3).unwrap();
@@ -2286,10 +2315,10 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         )
         .unwrap();
         let lesson = lessons::create_listening(&mut conn, 4, None, None, None, "you").unwrap();
-        assert_eq!(lesson.course_title.as_deref(), Some("Listening"));
+        assert_eq!(lesson.course_title.as_deref(), Some("Other lessons"));
         let song = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": 4 }));
         assert_eq!(song["lyrics"][0]["lines"][0]["pl"], "Gdzie jest dworzec?");
-        assert_eq!(song["filed"]["listening_lesson_in"][0]["title"], "Listening");
+        assert_eq!(song["filed"]["listening_lesson_in"][0]["title"], "Other lessons");
         assert!(song["filed"]["written_from_course"].is_null());
         let travel = db::require_course_id(&mut conn, 5).unwrap();
         let listening = lesson.course_id.unwrap();
@@ -2373,9 +2402,12 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let study = lessons::detail(&mut conn, 10).unwrap();
         assert_eq!(study.content, "**Mam** — I have", "a study lesson keeps its text");
         assert!(study.lesson.passed);
+        // The old built-in folder (course 1, Grammar & culture) is merged
+        // into Other lessons; the lesson stays in both of its courses.
+        let other: i64 = t::courses::table.filter(t::courses::slug.eq(courses::OTHER)).select(t::courses::id).first(&mut conn).unwrap();
         let mut shared = study.lesson.course_ids.clone();
         shared.sort();
-        assert_eq!(shared, vec![1, 2], "a lesson stays in every course that listed it");
+        assert_eq!(shared, vec![2, other], "a lesson stays in every course that listed it");
         let bread: i64 = t::course_words::table
             .filter(t::course_words::course_id.eq(2))
             .filter(t::course_words::pl.eq("chleb"))
@@ -2387,8 +2419,9 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         assert_eq!(checkin, 10);
         let source: Option<i64> = t::wiki_sources::table.select(t::wiki_sources::lesson_id).first(&mut conn).unwrap();
         assert_eq!(source, Some(10));
-        let title: String = t::courses::table.find(1).select(t::courses::title_en).first(&mut conn).unwrap();
-        assert_eq!(title, "Grammar & culture");
+        let title: String = t::courses::table.find(other).select(t::courses::title_en).first(&mut conn).unwrap();
+        assert_eq!(title, "Other lessons");
+        assert!(t::courses::table.find(1).select(t::courses::id).first::<i64>(&mut conn).optional().unwrap().is_none(), "the old folder is gone");
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
 
         // References follow the renamed tables: deleting a lesson still

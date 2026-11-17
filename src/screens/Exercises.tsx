@@ -79,8 +79,15 @@ export function Exercises({
   const goalPct = finished || stats.completedToday ? 100 : Math.round((doneCount / Math.max(1, total)) * 100);
   // Courses closed as mastered leave the list for their own shelf; the rest
   // stay, completed and mastered ones after those still being worked on.
-  const open = courses.filter((t) => t.closedAt === null);
-  const active = [...open.filter((t) => t.status === "active"), ...open.filter((t) => t.status !== "active")];
+  // The folder of one-offs (Other lessons) comes last of all, and only
+  // when it has lessons.
+  const open = courses.filter((t) => t.closedAt === null && !t.openEnded);
+  const folders = courses.filter((t) => t.openEnded && t.totalLessons > 0);
+  const active = [
+    ...open.filter((t) => t.status === "active"),
+    ...open.filter((t) => t.status !== "active"),
+    ...folders,
+  ];
   const mastered = courses.filter((t) => t.closedAt !== null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0));
   const [showMastered, setShowMastered] = useState(false);
   // The next of today's lessons; when they are done, nothing more.

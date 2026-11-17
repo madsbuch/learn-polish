@@ -598,7 +598,7 @@ pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Le
             crate::courses::require_open_course(conn, id)?;
             id
         }
-        None => crate::courses::grammar_culture_course(conn)?,
+        None => crate::courses::other_course(conn)?,
     };
     let id = insert(
         conn,
@@ -656,7 +656,7 @@ pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Resul
             crate::courses::require_open_course(conn, id)?;
             id
         }
-        None => crate::courses::writing_course(conn)?,
+        None => crate::courses::other_course(conn)?,
     };
     let id = insert(
         conn,
@@ -713,7 +713,7 @@ pub fn create_listening(
             crate::courses::require_open_course(conn, id)?;
             id
         }
-        None => crate::courses::listening_course(conn)?,
+        None => crate::courses::other_course(conn)?,
     };
     let id = insert(
         conn,

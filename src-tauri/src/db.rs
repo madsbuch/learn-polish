@@ -1270,6 +1270,8 @@ fn initialize_courses(conn: &mut Conn) -> Result<()> {
         set_setting(conn, "starter_seeded", "1")?;
     }
     crate::starter_retirement::run(conn)?;
+    // One folder for lessons with no course, instead of three.
+    crate::courses::merge_old_folders(conn)?;
     crate::demo_course::seed_once(conn)
 }
 
@@ -1371,11 +1373,11 @@ pub fn unify_courses(conn: &mut Conn) -> Result<()> {
             (loose.iter().filter(|(_, slug, ..)| starter(slug)).map(|b| b.0).collect(), crate::courses::grammar_course),
             (
                 loose.iter().filter(|(_, slug, song, _)| !starter(slug) && song.is_some()).map(|b| b.0).collect(),
-                crate::courses::listening_course,
+                crate::courses::other_course,
             ),
             (
                 loose.iter().filter(|(_, slug, song, _)| !starter(slug) && song.is_none()).map(|b| b.0).collect(),
-                crate::courses::grammar_culture_course,
+                crate::courses::other_course,
             ),
         ];
         for (ids, course) in groups {

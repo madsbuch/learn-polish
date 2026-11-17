@@ -38,32 +38,45 @@ export function CourseList({
 }) {
   return (
     <div className="course-grid">
-      {entries.map((entry) => (
-        <List key={entry.course.id}>
-          <ListItem
-            backdrop={entry.imageFileId !== null ? fileUrl(entry.imageFileId) : null}
-            leading={
-              entry.imageFileId !== null ? undefined : (
-                <Avatar muted={entry.startedLessons === 0 && entry.status === "active"}>
-                  {(entry.course.titlePl || entry.course.title).charAt(0).toUpperCase()}
-                </Avatar>
-              )
-            }
-            title={entry.course.title}
-            subtitle={
-              <Stack gap={2}>
-                <span>{courseLine(entry)}</span>
-                {entry.status === "active" ? (
-                  <Progress value={entry.passedCore} max={Math.max(1, entry.coreLessons)} size="sm" />
-                ) : entry.status === "completed" && entry.closedAt === null ? (
-                  <Progress value={entry.masteryPoints} max={Math.max(1, entry.masteryMax)} size="sm" tone="gold" />
-                ) : null}
-              </Stack>
-            }
-            onClick={() => onOpen(entry)}
-          />
-        </List>
-      ))}
+      {entries.map((entry) =>
+        entry.openEnded ? (
+          // The folder of one-offs (Other lessons): a plain row, no progress.
+          <List key={entry.course.id}>
+            <ListItem
+              leading={<Avatar muted>📁</Avatar>}
+              title={entry.course.title}
+              subtitle={`${entry.totalLessons} lesson${entry.totalLessons === 1 ? "" : "s"} that belong to no course`}
+              chevron
+              onClick={() => onOpen(entry)}
+            />
+          </List>
+        ) : (
+          <List key={entry.course.id}>
+            <ListItem
+              backdrop={entry.imageFileId !== null ? fileUrl(entry.imageFileId) : null}
+              leading={
+                entry.imageFileId !== null ? undefined : (
+                  <Avatar muted={entry.startedLessons === 0 && entry.status === "active"}>
+                    {(entry.course.titlePl || entry.course.title).charAt(0).toUpperCase()}
+                  </Avatar>
+                )
+              }
+              title={entry.course.title}
+              subtitle={
+                <Stack gap={2}>
+                  <span>{courseLine(entry)}</span>
+                  {entry.status === "active" ? (
+                    <Progress value={entry.passedCore} max={Math.max(1, entry.coreLessons)} size="sm" />
+                  ) : entry.status === "completed" && entry.closedAt === null ? (
+                    <Progress value={entry.masteryPoints} max={Math.max(1, entry.masteryMax)} size="sm" tone="gold" />
+                  ) : null}
+                </Stack>
+              }
+              onClick={() => onOpen(entry)}
+            />
+          </List>
+        ),
+      )}
     </div>
   );
 }
