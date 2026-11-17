@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { LessonRow } from "../components/LessonRow";
+import { CourseClosedCelebration } from "../components/CourseClosedCelebration";
 import { LevelInfo } from "../components/LevelInfo";
 import { SparkIcon } from "../components/icons";
 import { SlowButton, SpeakButton } from "../components/ui";
@@ -27,13 +28,10 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
-import { toast } from "../lib/toast";
-import type { Lesson, Sentence, CourseProgress, Word } from "../lib/types";
+import type { CourseClosed, Lesson, Sentence, CourseProgress, Word } from "../lib/types";
 
 export type CourseSection = "lessons" | "words" | "sentences";
 
-/** How long after closing Undo is offered (courses.rs UNDO_CLOSE_SECS). */
-const UNDO_CLOSE_SECS = 10 * 60;
 
 /**
  * A course: the lessons it lists, in its order. Words and sentences belong to
@@ -73,6 +71,7 @@ export function CourseDetail({
   // The picture's file id.
   const [picture, setPicture] = useState<number | null>(progress.imageFileId);
   const [drawing, setDrawing] = useState(false);
+  const [celebrating, setCelebrating] = useState<CourseClosed | null>(null);
 
   async function drawPicture() {
     setDrawing(true);
@@ -181,16 +180,8 @@ export function CourseDetail({
           closedAt={closedAt}
           onClose={() =>
             act(async () => {
-              await api.courseClose(courseId);
+              setCelebrating(await api.courseClose(courseId));
               setClosedAt(Math.floor(Date.now() / 1000));
-              toast("Closed as mastered — it is in Mastered now. 🏆");
-              onChanged();
-            })
-          }
-          onUndo={() =>
-            act(async () => {
-              await api.courseUndoClose(courseId);
-              setClosedAt(null);
               onChanged();
             })
           }
@@ -335,6 +326,7 @@ export function CourseDetail({
           </Stack>
         </Sheet>
       ) : null}
+      {celebrating ? <CourseClosedCelebration closed={celebrating} onDone={() => setCelebrating(null)} /> : null}
     </Screen>
   );
 }
@@ -349,22 +341,18 @@ function CourseStanding({
   closedAt,
   onShowLeft,
   onClose,
-  onUndo,
 }: {
   lessons: Lesson[];
   openEnded: boolean;
   closedAt: number | null;
   onShowLeft: () => void;
   onClose: () => void;
-  onUndo: () => void;
 }) {
   const core = lessons.filter((lesson) => !lesson.challenge);
   const passed = core.filter((lesson) => lesson.passed).length;
   const left = core.length - passed;
   const masteredCount = lessons.filter(mastered).length;
   if (closedAt !== null) {
-    // Undo is for a mis-tap: offered for the first minutes only (as the core allows).
-    const fresh = Date.now() / 1000 - closedAt < UNDO_CLOSE_SECS;
     return (
       <Banner tone="ok">
         <Stack gap={2}>
@@ -372,16 +360,9 @@ function CourseStanding({
             {`🏆 Mastered — closed ${dayToDate(Math.floor(closedAt / 86_400))}`}
           </Text>
           <Text variant="small" as="div">
-            Its lessons no longer come back in your check-ins. To revisit this theme, ask the tutor
-            for a new course — it builds on this one.
+            Closed for good: its lessons no longer come back. To revisit this theme, ask the tutor for
+            a new course — it builds on this one.
           </Text>
-          {fresh ? (
-            <Inline>
-              <Button size="sm" onClick={onUndo}>
-                Undo
-              </Button>
-            </Inline>
-          ) : null}
         </Stack>
       </Banner>
     );
@@ -414,11 +395,11 @@ function CourseStanding({
     return (
       <Stack gap={2}>
         <Text variant="small" weight="bold" as="div">
-          🏆 Mastered — every lesson in it.
+          🏆 Ready to close — you mastered every lesson in it.
         </Text>
         <Text variant="small" tone="dim" as="div">
-          Close it to keep it as a trophy in Mastered: its lessons leave your check-ins. Closing is
-          final — to come back to this theme, ask the tutor for a new course.
+          Close it to celebrate and keep it as a trophy in Mastered. Closing is final — to come back to
+          this theme, ask the tutor for a new course.
         </Text>
         <Button variant="primary" wide onClick={onClose}>
           Close as mastered 🏆

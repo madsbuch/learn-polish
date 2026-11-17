@@ -32,6 +32,7 @@ fn step(level: &str) -> Option<usize> {
 
 /// Sets a course's level, as the tutor (or the learner) says it is.
 pub fn set_course_level(conn: &mut Conn, course_id: i64, level: &str) -> Result<&'static str> {
+    crate::courses::require_open_course(conn, course_id)?;
     let level = normalize(level).ok_or_else(|| Error::msg(format!("'{level}' is not a level: use A1–C2.")))?;
     diesel::update(courses::table.find(course_id)).set(courses::level.eq(level)).execute(conn)?;
     Ok(level)
@@ -160,6 +161,7 @@ pub fn check_unchecked_in_background(app: &tauri::AppHandle) {
             }
             courses::table
                 .filter(courses::level_checked_at.is_null())
+                .filter(courses::closed_at.is_null())
                 // A folder of one-offs has no level of its own.
                 .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED))
                 .order(courses::id)

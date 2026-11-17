@@ -84,7 +84,7 @@ pub struct Lesson {
     pub reps: i64,
     /// How fast its gaps grow (see plan.rs).
     pub ease: f64,
-    /// Writing lessons: 0 guided, 1 supported, 2 free.
+    /// Writing lessons: 0 guided, 1 supported, 2 free, 3 passed free.
     pub support_level: i64,
     /// Beyond the course's level: needed to master the course, not to
     /// complete it.
@@ -93,6 +93,8 @@ pub struct Lesson {
     pub passed: bool,
     /// Mastery points, 0 to [`MASTERY_FULL`] (see [`mastery_gain`]).
     pub mastery: i64,
+    /// Mastered: for good — mastery is never lost (see [`stamp_mastered`]).
+    pub mastered: bool,
     /// Its own CEFR level, when it differs from its course's (levels.rs).
     pub level: Option<String>,
     pub items: i64,
@@ -174,6 +176,7 @@ struct LessonRow {
     mastery: i64,
     level: Option<String>,
     song_id: Option<i64>,
+    mastered_at: Option<i64>,
 }
 
 /// A new `lessons` row.
@@ -258,6 +261,7 @@ fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
                 mastery: row.mastery,
                 level: row.level,
                 song_id: row.song_id,
+                mastered: row.mastered_at.is_some(),
             }
         })
         .collect())
@@ -477,16 +481,35 @@ pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
 /// support levels).
 pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level: i64) -> bool {
     let unaided = crate::lesson_types::get(lesson_type).is_ok_and(|t| t.unaided_to_master);
-    passed && mastery >= MASTERY_FULL && (!unaided || support_level >= 2)
+    passed && mastery >= MASTERY_FULL && (!unaided || support_level >= 3)
+}
+
+/// Marks a lesson mastered once it has earned it. Mastery is for good
+/// (PRINCIPLES.md): once stamped, nothing — a fail included — takes it
+/// away, and nothing changes its points or help level again.
+pub fn stamp_mastered(conn: &mut Conn, lesson_id: i64) -> Result<bool> {
+    let (passed, mastery, lesson_type, support, at): (i64, i64, String, i64, Option<i64>) = lessons::table
+        .find(lesson_id)
+        .select((lessons::passed, lessons::mastery, lessons::lesson_type, lessons::support_level, lessons::mastered_at))
+        .first(conn)?;
+    if at.is_some() || !is_mastered(passed == 1, mastery, &lesson_type, support) {
+        return Ok(false);
+    }
+    diesel::update(lessons::table.find(lesson_id)).set(lessons::mastered_at.eq(crate::db::now_secs())).execute(conn)?;
+    Ok(true)
 }
 
 /// Adds a check-in's mastery points to a lesson, as it stood before the
 /// check-in. Every check-in counts, extra practice too.
 pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64) -> Result<()> {
+    if before.mastered {
+        return Ok(());
+    }
     let elapsed = before.last_day.map_or(0, |last| today - last);
     let gain = mastery_gain(Grade::of(result, ace), before.passed, elapsed);
     let mastery = (before.mastery + gain).clamp(0, MASTERY_FULL);
     diesel::update(lessons::table.find(before.id)).set(lessons::mastery.eq(mastery)).execute(conn)?;
+    stamp_mastered(conn, before.id)?;
     Ok(())
 }
 
@@ -538,6 +561,7 @@ pub fn record_graded(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -
         diesel::update(lessons::table.find(lesson_id)).set(lessons::passed.eq(1)).execute(conn)?;
     }
     crate::plan::log_minutes(conn, today, crate::lesson_types::minutes(&lesson.lesson_type, &lesson.complexity), early)?;
+    stamp_mastered(conn, lesson_id)?;
     load(conn, lesson_id)
 }
 

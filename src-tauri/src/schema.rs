@@ -194,6 +194,7 @@ diesel::table! {
         passed -> BigInt,
         mastery -> BigInt,
         level -> Nullable<Text>,
+        mastered_at -> Nullable<BigInt>,
     }
 }
 

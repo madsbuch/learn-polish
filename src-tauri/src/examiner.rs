@@ -136,11 +136,12 @@ fn support_rules(level: i64) -> &'static str {
 }
 
 /// The support level after a writing check-in: a pass takes away a layer of
-/// help next time, a fail adds one back, a partial stays.
+/// help next time, a fail adds one back, a partial stays. Level 3 is level
+/// 2 (writing on your own) passed: what mastering writing asks.
 pub fn next_support_level(level: i64, result: &str) -> i64 {
     match result {
-        "pass" => (level + 1).min(2),
-        "fail" => (level - 1).max(0),
+        "pass" => (level + 1).min(3),
+        "fail" => (level.min(2) - 1).max(0),
         _ => level,
     }
 }
@@ -737,7 +738,9 @@ mod tests {
     fn writing_help_steps_down_as_the_learner_passes() {
         assert_eq!(next_support_level(0, "pass"), 1);
         assert_eq!(next_support_level(1, "pass"), 2);
-        assert_eq!(next_support_level(2, "pass"), 2);
+        assert_eq!(next_support_level(2, "pass"), 3);
+        assert_eq!(next_support_level(3, "pass"), 3);
+        assert_eq!(next_support_level(3, "fail"), 1);
         assert_eq!(next_support_level(1, "partial"), 1);
         assert_eq!(next_support_level(1, "fail"), 0);
         assert_eq!(next_support_level(0, "fail"), 0);

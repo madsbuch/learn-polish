@@ -1383,3 +1383,76 @@ html.scanning #root {
   padding: var(--space-4) var(--gutter) calc(var(--safe-bottom) + var(--space-6));
   background: var(--bg);
 }
+
+/* ===================================================== course closed */
+
+.course-closed {
+  position: fixed;
+  inset: 0;
+  top: var(--app-offset-top, 0px);
+  bottom: auto;
+  height: var(--app-height, 100%);
+  z-index: var(--z-sheet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6) var(--gutter);
+  background: radial-gradient(circle at 50% 35%, var(--bg-glow), transparent 60%), var(--bg);
+  overflow: hidden;
+  animation: fade 0.3s ease-out;
+}
+.course-closed > :last-child {
+  position: relative;
+  width: 100%;
+  max-width: var(--sheet-width);
+}
+.course-closed-trophy {
+  font-size: calc(var(--space-8) * 2.4);
+  line-height: 1;
+  animation: trophy-rise 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.course-closed-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.course-closed-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.course-closed-confetti i {
+  position: absolute;
+  top: calc(var(--space-4) * -1);
+  left: var(--x);
+  width: var(--space-2);
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--colour);
+  opacity: 0;
+  animation: confetti-fall 2.6s ease-in var(--delay) 2 both;
+}
+@keyframes trophy-rise {
+  from {
+    transform: translateY(40%) scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(calc(var(--spin) + 540deg));
+    opacity: 0.8;
+  }
+}

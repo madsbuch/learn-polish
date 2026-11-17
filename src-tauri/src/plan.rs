@@ -73,21 +73,18 @@ pub fn log_minutes(conn: &mut Conn, day: i64, minutes: i64, early: bool) -> Resu
 #[derive(Queryable)]
 struct Scheduled {
     id: i64,
-    lesson_type: String,
     due_day: Option<i64>,
     last_day: Option<i64>,
     interval_days: i64,
     ease: f64,
     last_result: Option<String>,
-    passed: i64,
-    mastery: i64,
-    support_level: i64,
+    mastered_at: Option<i64>,
     challenge: i64,
 }
 
 impl Scheduled {
     fn mastered(&self) -> bool {
-        crate::lessons::is_mastered(self.passed == 1, self.mastery, &self.lesson_type, self.support_level)
+        self.mastered_at.is_some()
     }
 }
 
@@ -102,15 +99,12 @@ fn in_play_or_not(conn: &mut Conn) -> Result<Vec<Scheduled>> {
     Ok(lessons::table
         .select((
             lessons::id,
-            lessons::lesson_type,
             lessons::due_day,
             lessons::last_day,
             lessons::interval_days,
             lessons::ease,
             lessons::last_result,
-            lessons::passed,
-            lessons::mastery,
-            lessons::support_level,
+            lessons::mastered_at,
             lessons::challenge,
         ))
         .load::<Scheduled>(conn)?)
@@ -156,14 +150,16 @@ fn new_lessons(conn: &mut Conn, playing: &HashSet<i64>, limit: usize) -> Result<
         .select(courses::id)
         .load::<i64>(conn)?
     {
-        let ids: Vec<i64> = course_lessons::table
+        let listed: Vec<(i64, i64, i64, Option<i64>)> = course_lessons::table
             .inner_join(lessons::table)
             .filter(course_lessons::course_id.eq(course))
-            .filter(lessons::due_day.is_null())
-            .filter(lessons::challenge.eq(0))
             .order((course_lessons::ord, lessons::id))
-            .select(lessons::id)
+            .select((lessons::id, lessons::challenge, lessons::passed, lessons::due_day))
             .load(conn)?;
+        // Challenges come once the course's other lessons are passed: they
+        // are needed to master it, so the daily list offers them then.
+        let core_passed = listed.iter().filter(|l| l.1 == 0).all(|l| l.2 == 1);
+        let ids = listed.into_iter().filter(|l| l.3.is_none() && (l.1 == 0 || core_passed)).map(|l| l.0);
         for id in ids {
             if found.len() == limit {
                 return Ok(found);

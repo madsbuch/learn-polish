@@ -91,10 +91,12 @@ The app:
 - Levels describe material; they never limit it. Make exactly what the learner asks for, at \
   whatever level they ask — never refuse, water down or second-guess a harder request. When no \
   level is asked for, fit what they have been doing; \"harder\" means a level up.
-- A mastered course moves to Mastered by itself: it becomes a trophy and its lessons never \
-  come back. Closed courses are finished — never add to or change them. To revisit a closed \
-  course's theme, make a new course a level up: build on what it taught (get_course shows it), \
-  don't repeat its words and lessons.
+- Mastery is for good: a mastered lesson never comes back and never loses its mastery. When \
+  every lesson of a course is mastered, it is ready to close; the learner closes it themselves \
+  (\"Close as mastered\", their celebration) and it becomes a trophy. Closed is closed: never \
+  add to or change a closed course. Revisiting a subject is your job, not the course's — when \
+  a closed course is getting old, or the learner brings up its theme, offer a new course on it, \
+  a level up: build on what it taught (get_course shows it), don't repeat its words and lessons.
 - Grammar, culture, listening and writing lessons belong in the course whose material they \
   explain or use: the accusative in the bakery course, a logician's podcast in the logic course. \
   Give their course_id. Only a lesson that truly fits no course goes in \"Other lessons\" (the \
@@ -1661,6 +1663,9 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
         }
         "edit_course" => {
             let args: EditArgs = parse(arguments)?;
+            // A closed course is not changed at all: check before writing
+            // anything, so an edit never half-applies.
+            courses::require_open_course(conn, args.course_id)?;
             if let Some(level) = &args.level {
                 crate::levels::set_course_level(conn, args.course_id, level)?;
             }

@@ -126,8 +126,6 @@ pub fn require_open_course(conn: &mut Conn, course_id: i64) -> Result<String> {
     Ok(title)
 }
 
-/// The built-in courses that never end (slugs): the tutor keeps adding to
-/// them, so they are not completed, mastered or closed.
 /// The one folder for lessons that belong to no course (see [`other_course`]).
 pub const OTHER: &str = "other";
 /// Built-in courses that never end: just the Other lessons folder.
@@ -146,14 +144,25 @@ pub fn retired_lessons(conn: &mut Conn) -> Result<std::collections::HashSet<i64>
     Ok(listed.into_iter().filter(|(id, closed)| closed.is_some() && !open.contains(id)).map(|(id, _)| id).collect())
 }
 
-/// How long after closing a course "Undo" still opens it again.
-pub const UNDO_CLOSE_SECS: i64 = 10 * 60;
+/// A course just closed, for its celebration.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseClosed {
+    pub title: String,
+    pub lessons: i64,
+    pub words: i64,
+    /// Days from the course's making to its closing (at least 1).
+    pub days: i64,
+    /// XP its lessons earned.
+    pub xp: i64,
+}
 
-/// Closes a mastered course: it moves to the Mastered section as a trophy,
-/// stays readable, and its lessons leave the check-ins (unless an open
-/// course lists them too). Only a mastered course, and not a built-in one
-/// that never ends, can be closed.
-pub fn close(conn: &mut Conn, course_id: i64) -> Result<()> {
+/// Closes a mastered course — the learner's own celebration, and final
+/// (PRINCIPLES.md: closed is closed). It moves to the Mastered section as a
+/// trophy, stays readable, and its lessons leave play (unless an open course
+/// lists them too). Only a mastered course, and not the Other lessons
+/// folder, can be closed. To revisit its theme, the tutor makes a new course.
+pub fn close(conn: &mut Conn, course_id: i64) -> Result<CourseClosed> {
     let title = require_open_course(conn, course_id)?;
     let current = status(conn, course_id)?;
     if current.open_ended {
@@ -162,25 +171,22 @@ pub fn close(conn: &mut Conn, course_id: i64) -> Result<()> {
     if current.status != "mastered" {
         return Err(Error::msg(format!("“{title}” is not mastered yet, so it cannot be closed.")));
     }
-    diesel::update(courses::table.find(course_id)).set(courses::closed_at.eq(db::now_secs())).execute(conn)?;
-    Ok(())
-}
-
-/// Opens a course closed a moment ago again — for a mis-tap; after
-/// [`UNDO_CLOSE_SECS`] closing is final.
-pub fn undo_close(conn: &mut Conn, course_id: i64) -> Result<()> {
-    let title = require_course(conn, course_id)?;
-    let closed: Option<i64> = courses::table.find(course_id).select(courses::closed_at).first(conn)?;
-    match closed {
-        None => Ok(()),
-        Some(at) if db::now_secs() - at <= UNDO_CLOSE_SECS => {
-            diesel::update(courses::table.find(course_id)).set(courses::closed_at.eq(None::<i64>)).execute(conn)?;
-            Ok(())
-        }
-        Some(_) => Err(Error::msg(format!(
-            "“{title}” was closed a while ago, and that is final. To revisit its theme, ask the tutor for a new course."
-        ))),
-    }
+    let now = db::now_secs();
+    diesel::update(courses::table.find(course_id)).set(courses::closed_at.eq(now)).execute(conn)?;
+    let ids: Vec<i64> =
+        course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?;
+    let words: i64 = words::table.filter(words::lesson_id.eq_any(&ids)).count().get_result(conn)?;
+    let earned: Vec<(i64, i64)> = crate::schema::xp_log::table
+        .filter(crate::schema::xp_log::lesson_id.eq_any(&ids))
+        .select((crate::schema::xp_log::day, crate::schema::xp_log::xp))
+        .load(conn)?;
+    let xp = earned.iter().map(|e| e.1).sum();
+    // From the first day its lessons were practised (or, before the XP log,
+    // the day it was made) to today.
+    let today = db::today(conn);
+    let made: i64 = courses::table.find(course_id).select(courses::created_at).first(conn)?;
+    let first = earned.iter().map(|e| e.0).min().unwrap_or(if made > 0 { made.div_euclid(86_400) } else { today });
+    Ok(CourseClosed { title, lessons: ids.len() as i64, words, days: (today - first + 1).max(1), xp })
 }
 
 /// The position after the last course.
@@ -367,6 +373,7 @@ pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()>
 /// Takes a lesson out of a course. Out of its last course, the lesson is
 /// deleted with its words, sentences and history; returns true then.
 pub fn remove_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<bool> {
+    require_open_course(conn, course_id)?;
     let removed = diesel::delete(course_lessons::table.find((course_id, lesson_id))).execute(conn)?;
     if removed == 0 {
         return Err(Error::msg("That lesson is not in that course."));
@@ -388,6 +395,7 @@ pub fn move_lesson(conn: &mut Conn, lesson_id: i64, from: i64, to: i64) -> Resul
     if from == to {
         return Ok(());
     }
+    require_open_course(conn, from)?;
     conn.transaction::<_, Error, _>(|conn| {
         add_lesson(conn, to, lesson_id)?;
         remove_lesson(conn, from, lesson_id)?;
@@ -708,7 +716,7 @@ pub fn remove_items(
 }
 
 pub fn rename(conn: &mut Conn, course_id: i64, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<CourseSummary> {
-    require_course(conn, course_id)?;
+    require_open_course(conn, course_id)?;
     let course = courses::table.find(course_id);
     if let Some(title) = title.map(clean).filter(|t| !t.is_empty()) {
         diesel::update(course).set(courses::title_en.eq(title)).execute(conn)?;
@@ -829,14 +837,8 @@ pub mod commands {
 
     /// Closes a mastered course (see [`super::close`]).
     #[tauri::command]
-    pub async fn course_close(db: State<'_, Db>, course_id: i64) -> Result<()> {
+    pub async fn course_close(db: State<'_, Db>, course_id: i64) -> Result<super::CourseClosed> {
         super::close(&mut db.lock(), course_id)
-    }
-
-    /// Opens a course closed a moment ago again.
-    #[tauri::command]
-    pub async fn course_undo_close(db: State<'_, Db>, course_id: i64) -> Result<()> {
-        super::undo_close(&mut db.lock(), course_id)
     }
 
     /// Lists a lesson in another course too.
@@ -901,7 +903,7 @@ pub struct CourseStatus {
 }
 
 pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
-    let list: Vec<(i64, i64, i64, String, i64, String, String)> = course_lessons::table
+    let list: Vec<(i64, i64, i64, String, Option<i64>, String, String)> = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
         .order((course_lessons::ord, lessons::id))
@@ -910,7 +912,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
             lessons::passed,
             lessons::mastery,
             lessons::lesson_type,
-            lessons::support_level,
+            lessons::mastered_at,
             lessons::title,
             lessons::complexity,
         ))
@@ -919,7 +921,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
     // about 35 (lessons::mastery_gain).
     let minutes_to_master = list
         .iter()
-        .filter(|(_, passed, mastery, lesson_type, support, ..)| !crate::lessons::is_mastered(*passed == 1, *mastery, lesson_type, *support))
+        .filter(|l| l.4.is_none())
         .map(|(_, passed, mastery, lesson_type, _, _, complexity)| {
             let left = crate::lessons::MASTERY_FULL - (*mastery).clamp(0, crate::lessons::MASTERY_FULL);
             let passes = if *passed == 1 {
@@ -931,12 +933,17 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
             passes.max(1) * crate::lesson_types::minutes(lesson_type, complexity)
         })
         .sum();
-    let core: Vec<_> = list.iter().filter(|l| l.0 == 0).collect();
+    // Its core lessons: all but challenges — or, for a course of challenges
+    // only, those, so it can be completed too.
+    let mut core: Vec<_> = list.iter().filter(|l| l.0 == 0).collect();
+    if core.is_empty() {
+        core = list.iter().collect();
+    }
     let passed_core = core.iter().filter(|l| l.1 == 1).count() as i64;
     let completed = !core.is_empty() && passed_core == core.len() as i64;
     let mastered_lessons = list
         .iter()
-        .filter(|(_, passed, mastery, lesson_type, support, ..)| crate::lessons::is_mastered(*passed == 1, *mastery, lesson_type, *support))
+        .filter(|l| l.4.is_some())
         .count();
     let mastered = completed && mastered_lessons == list.len();
     let mastery_points = list.iter().map(|l| l.2.clamp(0, crate::lessons::MASTERY_FULL)).sum();
@@ -979,17 +986,6 @@ pub struct Milestone {
 /// Courses that have reached completed or mastered since last asked: each
 /// is noted, so it is celebrated once.
 pub fn milestones(conn: &mut Conn) -> Result<Vec<Milestone>> {
-    // Courses mastered before mastering closed them: they move now.
-    let waiting: Vec<i64> = courses::table
-        .filter(courses::mastered_at.is_not_null())
-        .filter(courses::closed_at.is_null())
-        .select(courses::id)
-        .load(conn)?;
-    for id in waiting {
-        if status(conn, id)?.status == "mastered" {
-            diesel::update(courses::table.find(id)).set(courses::closed_at.eq(db::now_secs())).execute(conn)?;
-        }
-    }
     let open: Vec<(i64, String, Option<i64>, Option<i64>)> = courses::table
         .filter(courses::completed_at.is_null().or(courses::mastered_at.is_null()))
         .select((courses::id, courses::title_en, courses::completed_at, courses::mastered_at))
@@ -999,15 +995,11 @@ pub fn milestones(conn: &mut Conn) -> Result<Vec<Milestone>> {
         let status = status(conn, id)?.status;
         let now = db::now_secs();
         if status == "mastered" && mastered_at.is_none() {
-            // Mastered is done: the course moves to Mastered by itself, and
-            // its lessons never come back (to revisit the theme, the tutor
-            // makes a new course on it).
+            // Mastered: ready to close. Closing is the learner's own
+            // celebration ("Close as mastered", see [`close`]); mastery is
+            // for good, so it stays ready until they do.
             diesel::update(courses::table.find(id))
-                .set((
-                    courses::mastered_at.eq(now),
-                    courses::completed_at.eq(completed_at.unwrap_or(now)),
-                    courses::closed_at.eq(now),
-                ))
+                .set((courses::mastered_at.eq(now), courses::completed_at.eq(completed_at.unwrap_or(now))))
                 .execute(conn)?;
             reached.push(Milestone { course_id: id, title, mastered: true });
         } else if status != "active" && completed_at.is_none() {

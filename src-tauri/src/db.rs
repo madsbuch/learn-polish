@@ -674,6 +674,17 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "courses", "level", "TEXT")?;
     add_column(conn, "courses", "level_checked_at", "INTEGER")?;
     add_column(conn, "lessons", "level", "TEXT")?;
+    if add_column(conn, "lessons", "mastered_at", "INTEGER")? {
+        // Mastery became permanent (PRINCIPLES.md): a lesson mastered by the
+        // old rule stays mastered. Writing then needed only help level 2; it
+        // now needs a pass without help (level 3), which those have earned.
+        conn.batch_execute(
+            "UPDATE lessons SET support_level = 3
+                 WHERE lesson_type = 'writing' AND passed = 1 AND mastery >= 100 AND support_level >= 2;
+             UPDATE lessons SET mastered_at = strftime('%s','now')
+                 WHERE passed = 1 AND mastery >= 100 AND (lesson_type <> 'writing' OR support_level >= 3);",
+        )?;
+    }
     add_column(conn, "songs", "kind", "TEXT NOT NULL DEFAULT 'song'")?;
     add_column(conn, "songs", "podcast", "TEXT NOT NULL DEFAULT '{}'")?;
     add_column(conn, "song_tracks", "timed_lines", "TEXT")?;

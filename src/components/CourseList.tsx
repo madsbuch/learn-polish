@@ -15,7 +15,7 @@ function statusLine(entry: CourseProgress): string {
     const level = entry.course.level ? ` · ${entry.course.level}` : "";
     return `🏆 ${entry.course.titlePl}${level} · mastered ${dayToDate(Math.floor(entry.closedAt / 86_400))}`;
   }
-  if (entry.status === "mastered") return "🏆 Mastered · ready to close";
+  if (entry.status === "mastered") return "🏆 Ready to close";
   if (entry.status === "completed") {
     const pct = Math.floor((entry.masteryPoints / Math.max(1, entry.masteryMax)) * 100);
     return `✓ Completed · ${pct}% mastered · ${entry.masteredLessons} of ${entry.coreLessons + entry.challenges} lessons`;

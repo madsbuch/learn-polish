@@ -167,6 +167,8 @@ export interface Lesson {
   reps: number;
   /** Writing lessons: 0 guided (word bank, hints), 1 supported (hints), 2 free. */
   supportLevel: number;
+  /** Mastered, for good (lessons.rs `stamp_mastered`). */
+  mastered: boolean;
   /** Beyond the course's level: needed to master it, not to complete it. */
   challenge: boolean;
   /** Passed at least once. */
@@ -366,6 +368,15 @@ export interface MasteredSummary {
 }
 
 /** A course just completed or mastered. */
+/** A course just closed as mastered, for its celebration (courses.rs CourseClosed). */
+export interface CourseClosed {
+  title: string;
+  lessons: number;
+  words: number;
+  days: number;
+  xp: number;
+}
+
 export interface Milestone {
   courseId: number;
   title: string;

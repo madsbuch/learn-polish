@@ -170,7 +170,6 @@ pub fn run() {
             tutor::tutor_delete,
             courses::commands::course_delete,
             courses::commands::course_close,
-            courses::commands::course_undo_close,
             courses::commands::lesson_add_to_course,
             courses::commands::lesson_remove_from_course,
             courses::commands::course_rename,
@@ -967,9 +966,10 @@ mod integration {
         let (slipping, mastered) = (all[all.len() - 1], all[0]);
         diesel::update(schema::lessons::table.find(slipping)).set(schema::lessons::last_result.eq("partial")).execute(&mut conn).unwrap();
         diesel::update(schema::lessons::table.find(mastered))
-            .set((schema::lessons::mastery.eq(100), schema::lessons::support_level.eq(2)))
+            .set((schema::lessons::mastery.eq(100), schema::lessons::support_level.eq(3)))
             .execute(&mut conn)
             .unwrap();
+        assert!(lessons::stamp_mastered(&mut conn, mastered).unwrap());
 
         let first = plan::plan(&mut conn, today).unwrap();
         assert_eq!(first.left.len(), plan::DEFAULT_DAILY as usize, "five, not everything due");
@@ -1064,9 +1064,10 @@ mod integration {
         assert!(ids.len() >= 2);
         let set = |conn: &mut db::Conn, id: i64, passed: i64, mastery: i64| {
             diesel::update(t::lessons::table.find(id))
-                .set((t::lessons::passed.eq(passed), t::lessons::mastery.eq(mastery), t::lessons::support_level.eq(2)))
+                .set((t::lessons::passed.eq(passed), t::lessons::mastery.eq(mastery), t::lessons::support_level.eq(3)))
                 .execute(conn)
                 .unwrap();
+            lessons::stamp_mastered(conn, id).unwrap();
         };
         courses::milestones(&mut conn).unwrap();
         let fresh = courses::status(&mut conn, course).unwrap();
@@ -1102,7 +1103,11 @@ mod integration {
         set(&mut conn, *challenge, 1, 100);
         assert_eq!(courses::status(&mut conn, course).unwrap().status, "mastered");
         assert!(courses::milestones(&mut conn).unwrap().iter().any(|m| m.course_id == course && m.mastered));
-        assert!(courses::status(&mut conn, course).unwrap().closed_at.is_some(), "mastered: it moves to Mastered by itself");
+        assert!(courses::status(&mut conn, course).unwrap().closed_at.is_none(), "mastered: ready to close, by the learner");
+        let closed = courses::close(&mut conn, course).unwrap();
+        assert_eq!(closed.lessons, ids.len() as i64);
+        assert!(closed.days >= 1);
+        assert!(courses::status(&mut conn, course).unwrap().closed_at.is_some());
 
         // Passing a lesson marks it passed.
         diesel::update(t::lessons::table.find(core[0])).set(t::lessons::passed.eq(0)).execute(&mut conn).unwrap();
@@ -1122,7 +1127,7 @@ mod integration {
         let due = first.lesson.due_day;
         let mut passes = 1;
         let mut lesson = first.lesson;
-        while !lessons::is_mastered(lesson.passed, lesson.mastery, &lesson.lesson_type, lesson.support_level) {
+        while !lesson.mastered {
             let done = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
             assert!(done.extra, "same-day replays are extra practice");
             lesson = done.lesson;
@@ -1131,10 +1136,11 @@ mod integration {
         }
         assert_eq!((passes, lesson.mastery, lesson.due_day), (8, 100, due), "crammed: 30 + 7 × 10, schedule untouched");
 
-        // A fail costs points; a partial earns none.
+        // Mastery is for good: a fail afterwards takes nothing away.
         let failed = practice::lesson_finish_in(&mut conn, drill.id, 0, 10).unwrap();
-        assert_eq!(failed.lesson.mastery, 80);
-        assert!(!lessons::is_mastered(failed.lesson.passed, failed.lesson.mastery, &failed.lesson.lesson_type, failed.lesson.support_level));
+        assert_eq!((failed.lesson.mastery, failed.lesson.mastered), (100, true));
+        let failed = lessons::record(&mut conn, drill.id, "fail").unwrap();
+        assert_eq!((failed.mastery, failed.mastered), (100, true), "not on a real check-in either");
     }
 
     #[test]
@@ -1149,13 +1155,14 @@ mod integration {
                 .set((
                     t::lessons::passed.eq(1),
                     t::lessons::interval_days.eq(gap),
-                    t::lessons::support_level.eq(2),
+                    t::lessons::support_level.eq(3),
                     t::lessons::mastery.eq(if gap >= 30 { 100 } else { 50 }),
                     t::lessons::due_day.eq(Some(today)),
                     t::lessons::last_day.eq(Some(today - gap)),
                 ))
                 .execute(conn)
                 .unwrap();
+            lessons::stamp_mastered(conn, id).unwrap();
         };
         for id in &ids {
             hold(&mut conn, *id, 3);
@@ -1193,15 +1200,6 @@ mod integration {
         assert_eq!((summary.courses, summary.lessons), (1, ids.len() as i64));
         assert_eq!(stats::collect(&mut conn).unwrap().mastered, summary);
 
-        // Undo, for a mis-tap; after the window, closing is final.
-        courses::undo_close(&mut conn, course).unwrap();
-        assert!(courses::status(&mut conn, course).unwrap().closed_at.is_none());
-        courses::close(&mut conn, course).unwrap();
-        diesel::update(t::courses::table.find(course))
-            .set(t::courses::closed_at.eq(Some(db::now_secs() - courses::UNDO_CLOSE_SECS - 1)))
-            .execute(&mut conn)
-            .unwrap();
-        assert!(courses::undo_close(&mut conn, course).unwrap_err().to_string().contains("final"));
 
         // The built-in courses that never end are never completed or closed.
         let grammar = courses::other_course(&mut conn).unwrap();

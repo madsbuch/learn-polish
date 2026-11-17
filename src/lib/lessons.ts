@@ -35,15 +35,11 @@ export const MASTERY_FULL = 100;
 
 /**
  * Whether a lesson is mastered: passed, with full mastery points, and — for
- * a type that asks it (writing) — done without help. Mastery is earned by passing, never by
- * waiting (see `mastery_gain` in lessons.rs).
+ * a type that asks it (writing) — done once without help. Mastery is earned by passing, never
+ * by waiting, and once earned it is for good (lessons.rs `stamp_mastered`).
  */
 export function mastered(lesson: Lesson): boolean {
-  return (
-    lesson.passed &&
-    lesson.mastery >= MASTERY_FULL &&
-    (!lessonType(lesson).unaidedToMaster || lesson.supportLevel >= 2)
-  );
+  return lesson.mastered;
 }
 
 /** Where a lesson stands in its course: still to pass, being mastered, or mastered. */
@@ -55,8 +51,12 @@ export function standing(lesson: Lesson): Standing {
 
 /** What a lesson done with help (writing) still needs before it can be mastered, or null. */
 export function writingStep(lesson: Lesson): string | null {
-  if (!lessonType(lesson).unaidedToMaster || lesson.supportLevel >= 2) return null;
-  return lesson.supportLevel === 0 ? "write it without the word bank" : "write it without hints";
+  if (!lessonType(lesson).unaidedToMaster || lesson.supportLevel >= 3) return null;
+  return lesson.supportLevel === 0
+    ? "write it without the word bank"
+    : lesson.supportLevel === 1
+      ? "write it without hints"
+      : "pass it on your own";
 }
 
 /**
@@ -73,9 +73,10 @@ export function passesLeft(lesson: Lesson): { now: number; spaced: number } {
 /** A lesson's standing in words, for a course's list. */
 export function standingText(lesson: Lesson, today: number): string {
   if (!lesson.passed) return lesson.reps === 0 ? "Not tried yet" : "Needs another go";
+  // Mastered is for good: it never comes back, so it has no next date.
+  if (mastered(lesson)) return "Mastered";
   const due = dueLabel(lesson, today);
   const back = due === "due now" ? "due now" : `back ${due}`;
-  if (mastered(lesson)) return `Mastered · ${back}`;
   if (lesson.mastery < MASTERY_FULL) {
     const { now, spaced } = passesLeft(lesson);
     const passes = now === spaced ? `${now} more ${now === 1 ? "pass" : "passes"}` : `${spaced}–${now} more passes`;

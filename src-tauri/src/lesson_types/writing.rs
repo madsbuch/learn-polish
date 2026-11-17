@@ -24,11 +24,17 @@ pub const TYPE: LessonType = LessonType {
     again_label: "Write it again",
 };
 
-/// Help follows how it went, even on a replay the same day.
+/// Help follows how it went, even on a replay the same day; a pass without
+/// help (level 2 to 3) can master the lesson. A mastered lesson's help no
+/// longer moves: mastery is for good.
 fn step_help(conn: &mut Conn, lesson: &Lesson, result: &str) -> Result<()> {
     use crate::schema::lessons;
+    if lesson.mastered {
+        return Ok(());
+    }
     diesel::update(lessons::table.find(lesson.id))
         .set(lessons::support_level.eq(crate::examiner::next_support_level(lesson.support_level, result)))
         .execute(conn)?;
+    crate::lessons::stamp_mastered(conn, lesson.id)?;
     Ok(())
 }
