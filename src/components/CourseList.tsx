@@ -10,7 +10,8 @@ function courseLine(entry: CourseProgress): string {
   }
   if (entry.status === "mastered") return "🏆 Mastered · ready to close";
   if (entry.status === "completed") {
-    return `✓ Completed · keep it up · mastery ${entry.holding} of ${entry.coreLessons + entry.challenges}`;
+    const pct = Math.floor((entry.masteryPoints / Math.max(1, entry.masteryMax)) * 100);
+    return `✓ Completed · ${pct}% mastered · ${entry.masteredLessons} of ${entry.coreLessons + entry.challenges} lessons`;
   }
   const left = entry.coreLessons - entry.passedCore;
   if (entry.coreLessons === 0) return entry.course.titlePl;
@@ -48,7 +49,7 @@ export function CourseList({
                 {entry.status === "active" ? (
                   <Progress value={entry.passedCore} max={Math.max(1, entry.coreLessons)} size="sm" />
                 ) : entry.status === "completed" && entry.closedAt === null ? (
-                  <Progress value={entry.holding} max={Math.max(1, entry.coreLessons + entry.challenges)} size="sm" tone="gold" />
+                  <Progress value={entry.masteryPoints} max={Math.max(1, entry.masteryMax)} size="sm" tone="gold" />
                 ) : null}
               </Stack>
             }

@@ -25,7 +25,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
-import { dayToDate, holds, standing, standingText, writingStep } from "../lib/lessons";
+import { dayToDate, mastered, MASTERY_FULL, passesLeft, standing, standingText, writingStep } from "../lib/lessons";
 import { toast } from "../lib/toast";
 import type { Lesson, Sentence, CourseProgress, Word } from "../lib/types";
 
@@ -161,6 +161,7 @@ export function CourseDetail({
       {lessons && lessons.length > 0 ? (
         <CourseStanding
           lessons={lessons}
+          onOpenLesson={onOpenLesson}
           openEnded={progress.openEnded}
           closedAt={closedAt}
           onClose={() =>
@@ -324,9 +325,10 @@ export function CourseDetail({
 }
 
 /**
- * How far the course is. Passing each core lesson once completes it, and the
- * header counts that; after that it counts towards mastering — everything,
- * challenges too, holding at long gaps — and says what stands in the way.
+ * How far the course is, as a path: ① learn it (pass each core lesson once:
+ * completed), ② master it (mastery points from passing — practising now
+ * gets there, spaced check-ins in fewer passes), ③ the steps that are not
+ * just more passes: writing without help, the challenges.
  */
 function CourseStanding({
   lessons,
@@ -335,6 +337,7 @@ function CourseStanding({
   onShowLeft,
   onClose,
   onUndo,
+  onOpenLesson,
 }: {
   lessons: Lesson[];
   openEnded: boolean;
@@ -342,11 +345,12 @@ function CourseStanding({
   onShowLeft: () => void;
   onClose: () => void;
   onUndo: () => void;
+  onOpenLesson: (lessonId: number) => void;
 }) {
   const core = lessons.filter((lesson) => !lesson.challenge);
   const passed = core.filter((lesson) => lesson.passed).length;
   const left = core.length - passed;
-  const holding = lessons.filter(holds).length;
+  const masteredCount = lessons.filter(mastered).length;
   if (closedAt !== null) {
     // Undo is for a mis-tap: offered for the first minutes only (as the core allows).
     const fresh = Date.now() / 1000 - closedAt < UNDO_CLOSE_SECS;
@@ -383,7 +387,7 @@ function CourseStanding({
       <Stack gap={2}>
         <Inline justify="between" gap={2}>
           <Text variant="small" tone="dim">
-            {`${passed} of ${core.length} passed · ${left} to go`}
+            {`① Learn it: ${passed} of ${core.length} passed · ${left} to go`}
           </Text>
           {left > 0 ? (
             <Button size="sm" onClick={onShowLeft}>
@@ -392,14 +396,17 @@ function CourseStanding({
           ) : null}
         </Inline>
         <Progress value={passed} max={Math.max(1, core.length)} size="sm" />
+        <Text variant="small" tone="dim" as="div">
+          Then master it: every pass adds mastery, until each lesson is mastered.
+        </Text>
       </Stack>
     );
   }
-  if (holding === lessons.length) {
+  if (masteredCount === lessons.length) {
     return (
       <Stack gap={2}>
         <Text variant="small" weight="bold" as="div">
-          🏆 Mastered — everything holds.
+          🏆 Mastered — every lesson in it.
         </Text>
         <Text variant="small" tone="dim" as="div">
           Close it to keep it as a trophy in Mastered: its lessons leave your check-ins. Closing is
@@ -411,36 +418,68 @@ function CourseStanding({
       </Stack>
     );
   }
-  // What stands in the way of mastering: a writing lesson still done with
-  // help, a challenge not passed; the rest only needs time.
-  const blockers = [
-    ...lessons.filter((lesson) => lesson.passed && writingStep(lesson)).map((l) => `“${l.title}”: ${writingStep(l)} once.`),
-    ...lessons.filter((lesson) => lesson.challenge && !lesson.passed).map((l) => `Challenge “${l.title}”: pass it once.`),
+  const points = lessons.reduce((sum, lesson) => sum + Math.min(Math.max(lesson.mastery, 0), MASTERY_FULL), 0);
+  const max = lessons.length * MASTERY_FULL;
+  const pct = Math.floor((points / Math.max(1, max)) * 100);
+  const needPoints = lessons.filter((lesson) => lesson.mastery < MASTERY_FULL || !lesson.passed);
+  const now = needPoints.reduce((sum, lesson) => sum + passesLeft(lesson).now, 0);
+  const spaced = needPoints.reduce((sum, lesson) => sum + passesLeft(lesson).spaced, 0);
+  // The steps that more passes alone do not take: writing without help, and
+  // the challenges, each a lesson to open.
+  const steps = [
+    ...lessons
+      .filter((lesson) => lesson.passed && writingStep(lesson))
+      .map((lesson) => ({ lesson, text: `“${lesson.title}”: ${writingStep(lesson)}` })),
+    ...lessons
+      .filter((lesson) => lesson.challenge && !lesson.passed)
+      .map((lesson) => ({ lesson, text: `Challenge “${lesson.title}”: pass it` })),
   ];
   return (
-    <Stack gap={2}>
+    <Stack gap={3}>
       <Text variant="small" tone="dim" as="div">
-        {`✓ Completed · mastery: ${holding} of ${lessons.length} holding`}
+        {`① Learn it ✓ all ${core.length} passed`}
       </Text>
-      <Progress value={holding} max={lessons.length} size="sm" tone="gold" />
-      {blockers.slice(0, 3).map((line) => (
-        <Text key={line} variant="small" as="div">
-          {line}
-        </Text>
-      ))}
-      {blockers.length === 0 ? (
-        <Text variant="small" tone="dim" as="div">
-          The rest needs only time: each check-in you pass spaces a lesson out further, until it comes back
-          a month apart.
-        </Text>
+      <Stack gap={2}>
+        <Inline justify="between" gap={2}>
+          <Text variant="small" weight="bold">
+            ② Master it
+          </Text>
+          <Text variant="small" tone="dim">
+            {`${pct}% · ${masteredCount} of ${lessons.length} lessons mastered`}
+          </Text>
+        </Inline>
+        <Progress value={points} max={Math.max(1, max)} size="sm" tone="gold" />
+        {needPoints.length > 0 ? (
+          <Text variant="small" tone="dim" as="div">
+            {spaced === now
+              ? `Every pass adds mastery: about ${now} more ${now === 1 ? "pass" : "passes"} in all.`
+              : `Every pass adds mastery. Fastest: practise its lessons now, about ${now} more passes in all. ` +
+                `Fewest: let your check-ins space them out, about ${spaced}.`}
+          </Text>
+        ) : null}
+      </Stack>
+      {steps.length > 0 ? (
+        <Stack gap={2}>
+          <Text variant="small" weight="bold" as="div">
+            ③ Use it freely
+          </Text>
+          {steps.map(({ lesson, text }) => (
+            <Inline key={lesson.id} justify="between" gap={2}>
+              <Text variant="small">{text}</Text>
+              <Button size="sm" onClick={() => onOpenLesson(lesson.id)}>
+                Practise
+              </Button>
+            </Inline>
+          ))}
+        </Stack>
       ) : null}
     </Stack>
   );
 }
 
 /**
- * A course's lessons by what is left: to pass (what completing needs), passed
- * and being kept up, holding for good — then the challenges.
+ * A course's lessons by what is left: to pass (what completing needs), being
+ * mastered, mastered — then the challenges.
  */
 function CourseLessons({
   lessons,
@@ -457,8 +496,8 @@ function CourseLessons({
   const core = lessons.filter((lesson) => !lesson.challenge);
   const challenges = lessons.filter((lesson) => lesson.challenge);
   const toPass = core.filter((lesson) => standing(lesson) === "toPass");
-  const passed = core.filter((lesson) => standing(lesson) === "passed");
-  const holdingNow = core.filter((lesson) => standing(lesson) === "holding");
+  const learning = core.filter((lesson) => standing(lesson) === "learning");
+  const masteredNow = core.filter((lesson) => standing(lesson) === "mastered");
   const row = (lesson: Lesson) => {
     const where = standing(lesson);
     return (
@@ -468,10 +507,10 @@ function CourseLessons({
         today={today}
         status={closed ? (lesson.passed ? "Mastered" : "Not passed") : standingText(lesson, today)}
         trailing={
-          where === "holding" ? (
-            <Badge tone="gold">✓ Holds</Badge>
-          ) : where === "passed" ? (
-            <Badge tone="mint">✓ Passed</Badge>
+          where === "mastered" ? (
+            <Badge tone="gold">✓ Mastered</Badge>
+          ) : where === "learning" ? (
+            <Badge tone="mint">{`${Math.min(lesson.mastery, MASTERY_FULL)}%`}</Badge>
           ) : undefined
         }
         onOpen={(l) => onOpen(l.id)}
@@ -485,23 +524,24 @@ function CourseLessons({
           <List>{toPass.map(row)}</List>
         </Section>
       ) : null}
-      {passed.length > 0 ? (
+      {learning.length > 0 ? (
         <Section
-          title={`Passed — keep it up · ${passed.length}`}
+          title={`Passed — mastering · ${learning.length}`}
           info={
             <p>
-              Passed once, and coming back in your check-ins further apart each time. A lesson holds
-              for good once it comes back a month apart (writing: done without the word bank and
-              hints).
+              Every pass adds mastery points, up to 100. The first pass gives 30; another the same day
+              10; one a day or more later 15 to 35, the longer the gap the more. A fail takes 20 away.
+              So you can master a lesson today by practising it, or in fewer passes by letting your
+              check-ins space it out. Writing also needs doing once without help.
             </p>
           }
         >
-          <List>{passed.map(row)}</List>
+          <List>{learning.map(row)}</List>
         </Section>
       ) : null}
-      {holdingNow.length > 0 ? (
-        <Section title={`Holding · ${holdingNow.length}`}>
-          <List>{holdingNow.map(row)}</List>
+      {masteredNow.length > 0 ? (
+        <Section title={`Mastered · ${masteredNow.length}`}>
+          <List>{masteredNow.map(row)}</List>
         </Section>
       ) : null}
       {challenges.length > 0 ? (

@@ -339,7 +339,9 @@ CREATE TABLE IF NOT EXISTS lessons (
     -- master it.
     challenge     INTEGER NOT NULL DEFAULT 0,
     -- Passed at least once.
-    passed        INTEGER NOT NULL DEFAULT 0
+    passed        INTEGER NOT NULL DEFAULT 0,
+    -- Mastery points, 0–100, earned by passing it (see lessons::mastery_gain).
+    mastery       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS lessons_due ON lessons(due_day);
 
@@ -600,6 +602,17 @@ fn migrate(conn: &mut Conn) -> Result<()> {
         // Before this was kept: a lesson last passed, or done more than once,
         // has been passed.
         conn.batch_execute("UPDATE lessons SET passed = 1 WHERE last_result = 'pass' OR reps > 1")?;
+    }
+    if add_column(conn, "lessons", "mastery", "INTEGER NOT NULL DEFAULT 0")? {
+        // Mastery used to mean coming back a month apart. A lesson that already
+        // did keeps its mastery; any other passed lesson keeps credit for its
+        // passes (30 for the first, 25 for each one after), short of mastered.
+        conn.batch_execute(
+            "UPDATE lessons SET mastery = CASE
+                 WHEN passed = 1 AND interval_days >= 30 THEN 100
+                 WHEN passed = 1 THEN min(90, 30 + 25 * max(reps - 1, 0))
+                 ELSE 0 END",
+        )?;
     }
     add_column(conn, "day_log", "minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "ai_costs", "tokens_in", "INTEGER NOT NULL DEFAULT 0")?;

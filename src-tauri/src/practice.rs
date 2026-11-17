@@ -228,7 +228,13 @@ pub fn lesson_finish_in(conn: &mut Conn, lesson_id: i64, correct: i64, total: i6
     let extra = lessons::is_extra_practice(&current, today);
     // Nearly all right is an ace: the gap grows faster.
     let ace = total > 0 && correct * 100 >= total * 95;
-    let lesson = if extra { current } else { lessons::record_graded(conn, lesson_id, result, ace)? };
+    let lesson = if extra {
+        // Extra practice leaves the schedule alone, but still earns mastery.
+        lessons::credit_mastery(conn, &current, result, ace, today)?;
+        lessons::load(conn, lesson_id)?
+    } else {
+        lessons::record_graded(conn, lesson_id, result, ace)?
+    };
     let first = stats::mark_practised(conn, today)?;
     Ok(LessonFinished { lesson, result: result.into(), extra, correct, total, session: finish_up(conn, &before, first)? })
 }

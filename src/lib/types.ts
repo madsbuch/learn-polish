@@ -157,6 +157,8 @@ export interface Lesson {
   challenge: boolean;
   /** Passed at least once. */
   passed: boolean;
+  /** Mastery points, 0–100: every pass earns some, spaced passes more. */
+  mastery: number;
   items: number;
   /** A listening lesson's song. */
   songId: number | null;
@@ -253,14 +255,17 @@ export interface CourseProgress {
   startedLessons: number;
   /** The course's picture: a file id, loaded with fileUrl(). */
   imageFileId: number | null;
-  /** Completed: every core lesson passed once. Mastered: everything holds, challenges too. */
+  /** Completed: every core lesson passed once. Mastered: every lesson mastered, challenges too. */
   status: "active" | "completed" | "mastered";
   /** Lessons needed to complete it (not challenges), and how many are passed. */
   coreLessons: number;
   passedCore: number;
   challenges: number;
-  /** Lessons, challenges too, that already hold the way mastering needs. */
-  holding: number;
+  /** Lessons, challenges too, already mastered. */
+  masteredLessons: number;
+  /** Mastery points earned across its lessons, out of masteryMax (100 a lesson). */
+  masteryPoints: number;
+  masteryMax: number;
   /** The first core lesson, in the course's order, not passed yet. */
   nextLesson: string | null;
   /** A built-in course that never ends (Grammar & culture, Listening, Writing): always active. */

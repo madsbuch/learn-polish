@@ -80,7 +80,8 @@ The app:
   situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
   To grow a course, add to it rather than making a new one.
 - Courses are made to be finished: the learner completes one by passing each lesson once, and \
-  masters it when everything holds at long gaps (writing done without help). Keep the core at \
+  masters it when every lesson has full mastery points, earned by passing it again — spaced \
+  passes earn more, but no waiting is needed (writing done without help). Keep the core at \
   the learner's level; a lesson clearly beyond it (a free conversation in a beginner course, a \
   deep lesson) is a challenge — set challenge with update_lesson. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.

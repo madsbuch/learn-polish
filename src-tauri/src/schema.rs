@@ -177,6 +177,7 @@ diesel::table! {
         scaffold -> Nullable<Text>,
         challenge -> BigInt,
         passed -> BigInt,
+        mastery -> BigInt,
     }
 }
 

@@ -826,12 +826,9 @@ mod tests {
 // Finishing a course
 // ---------------------------------------------------------------------------
 
-/// A course's gap at which a lesson counts as held for good.
-pub const MASTERED_GAP: i64 = 30;
-
 /// Where a course stands: active, completed (every core lesson passed once)
-/// or mastered (everything — challenges too — passed and holding at long
-/// gaps, writing done without help).
+/// or mastered (every lesson — challenges too — mastered: full mastery
+/// points, writing done without help; see [`crate::lessons::is_mastered`]).
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CourseStatus {
@@ -841,20 +838,18 @@ pub struct CourseStatus {
     pub core_lessons: i64,
     pub passed_core: i64,
     pub challenges: i64,
-    /// Lessons, challenges too, that already hold the way mastering needs.
-    pub holding: i64,
+    /// Lessons, challenges too, already mastered.
+    pub mastered_lessons: i64,
+    /// Mastery points earned across its lessons, out of [`Self::mastery_max`]:
+    /// moves with every pass, so the way to mastering it shows.
+    pub mastery_points: i64,
+    pub mastery_max: i64,
     /// The first core lesson, in the course's order, not passed yet.
     pub next_lesson: Option<String>,
     /// A built-in course that never ends (see [`OPEN_ENDED`]): always active.
     pub open_ended: bool,
     /// When it was closed as mastered, if it was.
     pub closed_at: Option<i64>,
-}
-
-/// Whether a lesson holds the way mastering a course needs: passed, at a gap
-/// of a month or more, and — for writing — done without help.
-pub fn holds(passed: bool, gap: i64, format: &str, support_level: i64) -> bool {
-    passed && gap >= MASTERED_GAP && (format != "writing" || support_level >= 2)
 }
 
 pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
@@ -865,7 +860,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
         .select((
             lessons::challenge,
             lessons::passed,
-            lessons::interval_days,
+            lessons::mastery,
             lessons::format,
             lessons::support_level,
             lessons::title,
@@ -874,8 +869,12 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
     let core: Vec<_> = list.iter().filter(|l| l.0 == 0).collect();
     let passed_core = core.iter().filter(|l| l.1 == 1).count() as i64;
     let completed = !core.is_empty() && passed_core == core.len() as i64;
-    let holding = list.iter().filter(|(_, passed, gap, format, support, _)| holds(*passed == 1, *gap, format, *support)).count();
-    let mastered = completed && holding == list.len();
+    let mastered_lessons = list
+        .iter()
+        .filter(|(_, passed, mastery, format, support, _)| crate::lessons::is_mastered(*passed == 1, *mastery, format, *support))
+        .count();
+    let mastered = completed && mastered_lessons == list.len();
+    let mastery_points = list.iter().map(|l| l.2.clamp(0, crate::lessons::MASTERY_FULL)).sum();
     let (slug, closed_at): (String, Option<i64>) =
         courses::table.find(course_id).select((courses::slug, courses::closed_at)).first(conn)?;
     let open_ended = OPEN_ENDED.contains(&slug.as_str());
@@ -895,7 +894,9 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
         core_lessons: core.len() as i64,
         passed_core,
         challenges: (list.len() - core.len()) as i64,
-        holding: holding as i64,
+        mastered_lessons: mastered_lessons as i64,
+        mastery_points,
+        mastery_max: list.len() as i64 * crate::lessons::MASTERY_FULL,
         next_lesson: core.iter().find(|l| l.1 == 0).map(|l| l.5.clone()),
     })
 }

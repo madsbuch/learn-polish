@@ -326,6 +326,7 @@ pub(crate) fn reset_progress_in(conn: &mut Conn) -> Result<()> {
                 lessons::last_result.eq(None::<String>),
                 lessons::reps.eq(0),
                 lessons::interval_days.eq(0),
+                lessons::mastery.eq(0),
             ))
             .execute(conn)?;
         Ok(())

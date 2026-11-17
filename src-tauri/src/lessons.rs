@@ -105,6 +105,8 @@ pub struct Lesson {
     pub challenge: bool,
     /// Passed at least once.
     pub passed: bool,
+    /// Mastery points, 0 to [`MASTERY_FULL`] (see [`mastery_gain`]).
+    pub mastery: i64,
     pub items: i64,
     /// A listening lesson's song.
     pub song_id: Option<i64>,
@@ -178,6 +180,7 @@ struct LessonRow {
     support_level: i64,
     challenge: i64,
     passed: i64,
+    mastery: i64,
     song_id: Option<i64>,
 }
 
@@ -261,6 +264,7 @@ fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
                 support_level: row.support_level,
                 challenge: row.challenge == 1,
                 passed: row.passed == 1,
+                mastery: row.mastery,
                 song_id: row.song_id,
             }
         })
@@ -482,6 +486,55 @@ pub fn next_gap(grade: Grade, reps_before: i64, interval: i64, period: i64, ease
     (gap.min(MAX_INTERVAL), ease.clamp(MIN_EASE, MAX_EASE))
 }
 
+/// The mastery points at which a lesson is mastered.
+pub const MASTERY_FULL: i64 = 100;
+
+/// The gap, in days, at which a pass earns its most mastery points.
+const MASTERY_SPACED_DAYS: i64 = 14;
+
+/// The mastery points a check-in earns (or, for a fail, costs).
+///
+/// Mastery is earned by passing, not by waiting: practising now gets there,
+/// it only takes more passes than letting the check-ins space them out.
+/// The first pass earns 30. A later pass on the same day as the last
+/// attempt earns 10; one a day or more later earns 15, plus up to 20 more
+/// as the gap grows to two weeks — remembering it after a while is better
+/// evidence than getting it right twice in a row. An ace earns a quarter
+/// more; a partial earns nothing; a fail costs 20.
+///
+/// Spaced out, that is three passes (30 + 35 + 35); a day apart, six; all
+/// in one sitting, eight.
+pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
+    let base = match grade {
+        Grade::Partial => return 0,
+        Grade::Fail => return -20,
+        Grade::Ace | Grade::Pass if !passed_before => 30,
+        Grade::Ace | Grade::Pass if elapsed <= 0 => 10,
+        Grade::Ace | Grade::Pass => 15 + 20 * elapsed.min(MASTERY_SPACED_DAYS) / MASTERY_SPACED_DAYS,
+    };
+    if grade == Grade::Ace {
+        (base * 5 + 2) / 4
+    } else {
+        base
+    }
+}
+
+/// Whether a lesson is mastered: passed, with full mastery points, and — for
+/// writing — written without help (see examiner's support levels).
+pub fn is_mastered(passed: bool, mastery: i64, format: &str, support_level: i64) -> bool {
+    passed && mastery >= MASTERY_FULL && (format != "writing" || support_level >= 2)
+}
+
+/// Adds a check-in's mastery points to a lesson, as it stood before the
+/// check-in. Every check-in counts, extra practice too.
+pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64) -> Result<()> {
+    let elapsed = before.last_day.map_or(0, |last| today - last);
+    let gain = mastery_gain(Grade::of(result, ace), before.passed, elapsed);
+    let mastery = (before.mastery + gain).clamp(0, MASTERY_FULL);
+    diesel::update(lessons::table.find(before.id)).set(lessons::mastery.eq(mastery)).execute(conn)?;
+    Ok(())
+}
+
 /// Doing a lesson again on a day it was already passed is extra practice:
 /// it counts for the day, but does not move the schedule (three quick
 /// replays must not send it months away). After a fail or a partial, doing
@@ -519,6 +572,7 @@ pub fn record_graded(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -
     }
     let lesson = load(conn, lesson_id)?;
     let today = db::today(conn);
+    credit_mastery(conn, &lesson, result, ace, today)?;
     let grade = Grade::of(result, ace);
     let elapsed = lesson.last_day.map_or(0, |last| today - last);
     let (gap, ease) = next_gap(grade, lesson.reps, lesson.interval_days, lesson.period_days, lesson.ease, elapsed);
@@ -1002,6 +1056,33 @@ pub mod commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mastery_is_earned_faster_when_spaced_but_never_needs_waiting() {
+        use Grade::*;
+        assert_eq!(mastery_gain(Pass, false, 0), 30);
+        assert_eq!(mastery_gain(Ace, false, 0), 38);
+        assert_eq!(mastery_gain(Pass, true, 0), 10);
+        assert_eq!(mastery_gain(Pass, true, 1), 16);
+        assert_eq!(mastery_gain(Pass, true, 7), 25);
+        assert_eq!(mastery_gain(Pass, true, 14), 35);
+        assert_eq!(mastery_gain(Pass, true, 60), 35);
+        assert_eq!(mastery_gain(Ace, true, 14), 44);
+        assert_eq!(mastery_gain(Partial, true, 14), 0);
+        assert_eq!(mastery_gain(Fail, true, 14), -20);
+        let passes = |gap: i64| {
+            let (mut points, mut n) = (mastery_gain(Pass, false, 0), 1);
+            while points < MASTERY_FULL {
+                points += mastery_gain(Pass, true, gap);
+                n += 1;
+            }
+            n
+        };
+        assert_eq!((passes(14), passes(1), passes(0)), (3, 6, 8));
+        assert!(is_mastered(true, 100, "words", 0));
+        assert!(!is_mastered(true, 100, "writing", 1), "writing also needs doing without help");
+        assert!(!is_mastered(false, 100, "words", 0));
+    }
 
     #[test]
     fn check_ins_spread_out_when_passed_and_come_back_when_failed() {

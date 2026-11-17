@@ -42,30 +42,42 @@ export function dueLabel(lesson: Lesson, today: number): string {
   return `in ${Math.round(days / 30)} months`;
 }
 
-/** The gap, in days, at which a lesson holds for mastering (courses.rs). */
-export const MASTERED_GAP = 30;
+/** The mastery points at which a lesson is mastered (lessons.rs). */
+export const MASTERY_FULL = 100;
 
 /**
- * Whether a lesson holds the way mastering its course needs: passed, at a gap
- * of a month or more, and — for writing — done without help.
+ * Whether a lesson is mastered: passed, with full mastery points, and — for
+ * writing — done without help. Mastery is earned by passing, never by
+ * waiting (see `mastery_gain` in lessons.rs).
  */
-export function holds(lesson: Lesson): boolean {
+export function mastered(lesson: Lesson): boolean {
   return (
-    lesson.passed && lesson.intervalDays >= MASTERED_GAP && (lesson.format !== "writing" || lesson.supportLevel >= 2)
+    lesson.passed && lesson.mastery >= MASTERY_FULL && (lesson.format !== "writing" || lesson.supportLevel >= 2)
   );
 }
 
-/** Where a lesson stands in its course: still to pass, passed, or holding. */
-export type Standing = "toPass" | "passed" | "holding";
+/** Where a lesson stands in its course: still to pass, being mastered, or mastered. */
+export type Standing = "toPass" | "learning" | "mastered";
 
 export function standing(lesson: Lesson): Standing {
-  return !lesson.passed ? "toPass" : holds(lesson) ? "holding" : "passed";
+  return !lesson.passed ? "toPass" : mastered(lesson) ? "mastered" : "learning";
 }
 
-/** What a writing lesson still needs before it can hold, or null. */
+/** What a writing lesson still needs before it can be mastered, or null. */
 export function writingStep(lesson: Lesson): string | null {
   if (lesson.format !== "writing" || lesson.supportLevel >= 2) return null;
   return lesson.supportLevel === 0 ? "write it without the word bank" : "write it without hints";
+}
+
+/**
+ * About how many more passes a lesson needs to be mastered: practising now
+ * (one sitting, 10 points a pass after the first) or spaced out by the
+ * check-ins (about 35). Mirrors `mastery_gain` in lessons.rs.
+ */
+export function passesLeft(lesson: Lesson): { now: number; spaced: number } {
+  const first = lesson.passed ? 0 : 1;
+  const left = Math.max(0, MASTERY_FULL - Math.max(lesson.mastery, 0) - (first ? 30 : 0));
+  return { now: first + Math.ceil(left / 10), spaced: first + Math.ceil(left / 35) };
 }
 
 /** A lesson's standing in words, for a course's list. */
@@ -73,10 +85,13 @@ export function standingText(lesson: Lesson, today: number): string {
   if (!lesson.passed) return lesson.reps === 0 ? "Not tried yet" : "Needs another go";
   const due = dueLabel(lesson, today);
   const back = due === "due now" ? "due now" : `back ${due}`;
-  if (holds(lesson)) return `Holds · ${back}`;
-  const step = writingStep(lesson);
-  if (step) return `Next: ${step} · ${back}`;
-  return `${Math.min(lesson.intervalDays, MASTERED_GAP)} of ${MASTERED_GAP} days apart · ${back}`;
+  if (mastered(lesson)) return `Mastered · ${back}`;
+  if (lesson.mastery < MASTERY_FULL) {
+    const { now, spaced } = passesLeft(lesson);
+    const passes = now === spaced ? `${now} more ${now === 1 ? "pass" : "passes"}` : `${spaced}–${now} more passes`;
+    return `Mastery ${lesson.mastery} of ${MASTERY_FULL} · ${passes} · ${back}`;
+  }
+  return `Next: ${writingStep(lesson) ?? "pass it once more"} · ${back}`;
 }
 
 /** Day number (days since the epoch, local) to a short date. */

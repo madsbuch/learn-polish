@@ -899,9 +899,9 @@ mod integration {
         let course = db::require_course_id(&mut conn, 1).unwrap();
         let ids: Vec<i64> = lessons::for_course(&mut conn, course).unwrap().iter().map(|b| b.id).collect();
         assert!(ids.len() >= 2);
-        let set = |conn: &mut db::Conn, id: i64, passed: i64, gap: i64| {
+        let set = |conn: &mut db::Conn, id: i64, passed: i64, mastery: i64| {
             diesel::update(t::lessons::table.find(id))
-                .set((t::lessons::passed.eq(passed), t::lessons::interval_days.eq(gap), t::lessons::support_level.eq(2)))
+                .set((t::lessons::passed.eq(passed), t::lessons::mastery.eq(mastery), t::lessons::support_level.eq(2)))
                 .execute(conn)
                 .unwrap();
         };
@@ -910,7 +910,7 @@ mod integration {
         assert_eq!(fresh.status, "active");
         let first_title = lessons::load(&mut conn, ids[0]).unwrap().title;
         assert_eq!(fresh.next_lesson.as_deref(), Some(first_title.as_str()), "the next is the first not passed");
-        set(&mut conn, ids[0], 1, 3);
+        set(&mut conn, ids[0], 1, 30);
         let second_title = lessons::load(&mut conn, ids[1]).unwrap().title;
         assert_eq!(courses::status(&mut conn, course).unwrap().next_lesson, Some(second_title));
 
@@ -918,24 +918,25 @@ mod integration {
         let (challenge, core) = ids.split_last().unwrap();
         lessons::update(&mut conn, *challenge, lessons::LessonChanges { challenge: Some(true), ..Default::default() }).unwrap();
         for id in core {
-            set(&mut conn, *id, 1, 3);
+            set(&mut conn, *id, 1, 30);
         }
         let status = courses::status(&mut conn, course).unwrap();
         assert_eq!(status.status, "completed");
         assert_eq!((status.passed_core, status.challenges), (core.len() as i64, 1));
-        assert_eq!((status.holding, status.next_lesson), (0, None), "passed, but not yet a month apart");
+        assert_eq!((status.mastered_lessons, status.next_lesson), (0, None), "passed, but not mastered yet");
+        assert_eq!((status.mastery_points, status.mastery_max), (30 * core.len() as i64, 100 * ids.len() as i64));
         let first = courses::milestones(&mut conn).unwrap();
         assert!(first.iter().any(|m| m.course_id == course && !m.mastered), "{first:?}");
         assert!(courses::milestones(&mut conn).unwrap().iter().all(|m| m.course_id != course), "celebrated once");
 
-        // Mastered: everything, challenge too, passed and holding at long gaps.
+        // Mastered: everything, challenge too, passed with full mastery points.
         for id in core {
-            set(&mut conn, *id, 1, 40);
+            set(&mut conn, *id, 1, 100);
         }
         let status = courses::status(&mut conn, course).unwrap();
         assert_eq!(status.status, "completed", "the challenge is not done");
-        assert_eq!(status.holding, core.len() as i64);
-        set(&mut conn, *challenge, 1, 40);
+        assert_eq!(status.mastered_lessons, core.len() as i64);
+        set(&mut conn, *challenge, 1, 100);
         assert_eq!(courses::status(&mut conn, course).unwrap().status, "mastered");
         assert!(courses::milestones(&mut conn).unwrap().iter().any(|m| m.course_id == course && m.mastered));
 
@@ -943,6 +944,33 @@ mod integration {
         diesel::update(t::lessons::table.find(core[0])).set(t::lessons::passed.eq(0)).execute(&mut conn).unwrap();
         lessons::record(&mut conn, core[0], "pass").unwrap();
         assert!(lessons::load(&mut conn, core[0]).unwrap().passed);
+    }
+
+    #[test]
+    fn mastery_is_earned_by_passing_without_waiting() {
+        let mut conn = scratch_db("mastery-now");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let drill = lessons::for_course(&mut conn, course).unwrap().into_iter().find(|l| l.format != "writing").unwrap();
+        // All in one day: the first pass, then same-day passes — extra
+        // practice, which leaves the schedule alone but still counts.
+        let first = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        assert_eq!(first.lesson.mastery, 30);
+        let due = first.lesson.due_day;
+        let mut passes = 1;
+        let mut lesson = first.lesson;
+        while !lessons::is_mastered(lesson.passed, lesson.mastery, &lesson.format, lesson.support_level) {
+            let done = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+            assert!(done.extra, "same-day replays are extra practice");
+            lesson = done.lesson;
+            passes += 1;
+            assert!(passes < 20);
+        }
+        assert_eq!((passes, lesson.mastery, lesson.due_day), (8, 100, due), "crammed: 30 + 7 × 10, schedule untouched");
+
+        // A fail costs points; a partial earns none.
+        let failed = practice::lesson_finish_in(&mut conn, drill.id, 0, 10).unwrap();
+        assert_eq!(failed.lesson.mastery, 80);
+        assert!(!lessons::is_mastered(failed.lesson.passed, failed.lesson.mastery, &failed.lesson.format, failed.lesson.support_level));
     }
 
     #[test]
@@ -958,6 +986,7 @@ mod integration {
                     t::lessons::passed.eq(1),
                     t::lessons::interval_days.eq(gap),
                     t::lessons::support_level.eq(2),
+                    t::lessons::mastery.eq(if gap >= 30 { 100 } else { 50 }),
                     t::lessons::due_day.eq(Some(today)),
                     t::lessons::last_day.eq(Some(today - gap)),
                 ))

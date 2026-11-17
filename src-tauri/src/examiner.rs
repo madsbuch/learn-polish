@@ -318,7 +318,13 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     let extra = lessons::is_extra_practice(&current, today);
     // A pass with nothing left to review is an ace: the gap grows faster.
     let ace = assessment.result == "pass" && assessment.to_review.is_empty();
-    let lesson = if extra { current } else { lessons::record_graded(conn, lesson_id, &assessment.result, ace)? };
+    let lesson = if extra {
+        // Extra practice leaves the schedule alone, but still earns mastery.
+        lessons::credit_mastery(conn, &current, &assessment.result, ace, today)?;
+        lessons::load(conn, lesson_id)?
+    } else {
+        lessons::record_graded(conn, lesson_id, &assessment.result, ace)?
+    };
     let writing_goals = if lesson.format == "writing" { lessons::detail(conn, lesson_id)?.objectives.len() } else { 0 };
     if lesson.format == "writing" {
         // Help follows how it went, even on a replay the same day.
