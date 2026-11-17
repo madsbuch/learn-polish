@@ -1745,7 +1745,7 @@ mod integration {
         assert_eq!(pick.option_images.iter().flatten().count(), 4, "every option is a picture");
         assert!(pick.options.contains(&pick.answer));
         let intro = plan.exercises.iter().find(|e| e.kind == "pictureIntro").unwrap();
-        assert!(intro.image.is_some() && !intro.meaning.is_empty(), "English is there, behind a tap");
+        assert!(intro.image.is_some() && !intro.meaning.is_empty(), "the English is shown with it");
         let memory = plan.exercises.iter().find(|e| e.kind == "memory").expect("a memory round of pictures");
         assert!(memory.pairs.iter().all(|p| p.image.is_some()));
 

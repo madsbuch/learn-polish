@@ -271,7 +271,7 @@ pub(crate) fn dialogue_read(lesson_id: i64, course: &Course) -> Exercise {
 }
 
 /// Picture lessons: a new word, seen, heard and read at once. Its English is
-/// there behind a tap.
+/// shown with it.
 pub(crate) fn picture_intro(w: &WordRow) -> Exercise {
     Exercise { key: format!("w{}-picture-intro", w.id), kind: "pictureIntro".into(), image: w.image, ..word_intro(w) }
 }
