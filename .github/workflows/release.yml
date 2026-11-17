@@ -1,7 +1,7 @@
 name: Build and publish latest
 
 # Every merge to main replaces the rolling "latest" release with fresh builds.
-# Pull requests test and compile Android too; only main publishes.
+# Pull requests test and compile Android and macOS too; only main publishes.
 on:
   push:
     branches: [main]
@@ -150,13 +150,65 @@ jobs:
           path: ${{ github.event_name == 'pull_request' && 'src-tauri/gen/android/app/build/outputs/apk/**/release/*.apk' || 'out/*' }}
           if-no-files-found: error
 
+  macos:
+    name: macOS (DMG)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      # One universal app runs natively on both Apple Silicon and Intel Macs.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - run: bun install --frozen-lockfile
+
+      # No Apple Developer ID yet, so the app is ad-hoc signed ("-"): Apple
+      # Silicon refuses to run unsigned code at all, and ad-hoc is enough to
+      # launch once Gatekeeper is told to allow it (see the release notes).
+      - name: Build the universal app and DMG
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: bun run tauri build --target universal-apple-darwin --bundles dmg --ci
+
+      - name: Collect the DMG
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          shopt -s nullglob
+          dmgs=(src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo "Expected one DMG; found ${#dmgs[@]}." >&2
+            find src-tauri/target/universal-apple-darwin/release/bundle -maxdepth 2 >&2 || true
+            exit 1
+          fi
+          cp "${dmgs[0]}" out/Polski-macos-universal.dmg
+          ls -lh out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: out/*
+          if-no-files-found: error
+
   publish:
     name: Publish latest
     permissions:
       contents: write
-    needs: [check, android]
+    needs: [check, android, macos]
     # Only main publishes. A manual run on another branch still builds the
-    # APK and keeps it as a workflow artefact, for testing before merging.
+    # APK and DMG and keeps them as workflow artefacts, for testing before merging.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     steps:
@@ -191,6 +243,13 @@ jobs:
           **Android** — download `Polski-android-universal.apk`, then open it on the
           phone and allow installation from this source. Notifications need to be
           granted once, in the app's Settings screen.
+
+          **macOS** — download `Polski-macos-universal.dmg` (Apple Silicon and Intel,
+          macOS 10.15 or later), open it and drag Polski into Applications. The app is
+          not notarized yet, so the first launch is blocked: either run
+          `xattr -dr com.apple.quarantine /Applications/Polski.app` in Terminal, or try to
+          open it once and then choose *Open Anyway* in System Settings → Privacy &
+          Security.
 
           HEADER
           {

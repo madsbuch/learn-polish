@@ -6,7 +6,7 @@ small First steps demo, and courses on any theme you like, built for you by
 the tutor.
 
 Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
-**Android** app. (Tauri can also build it for macOS locally; CI no longer does.)
+**Android** and **macOS** app.
 
 ---
 
@@ -522,14 +522,20 @@ removes only unchanged default courses while preserving customized data.
 ## Releases
 
 Every merge to `main` runs `.github/workflows/release.yml`, which tests, builds
-an Android `.apk`, and replaces the rolling
+an Android `.apk` and a macOS `.dmg`, and replaces the rolling
 [**latest**](../../releases/tag/latest) release. Pull requests run the tests
-and compile the Android app too, but only `main` publishes.
+and compile the Android and macOS apps too, but only `main` publishes.
 
 ### Installing
 
 **Android** — download `Polski-android-universal.apk` from the latest release,
 open it on the phone and allow installation from that source.
+
+**macOS** — download `Polski-macos-universal.dmg` (one universal app for Apple
+Silicon and Intel), open it and drag Polski into Applications. The app is
+ad-hoc signed but not notarized, so Gatekeeper blocks the first launch: run
+`xattr -dr com.apple.quarantine /Applications/Polski.app`, or choose *Open
+Anyway* in System Settings → Privacy & Security after the first attempt.
 
 ### Android signing
 
