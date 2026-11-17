@@ -8,6 +8,9 @@ the tutor.
 Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 **Android** and **macOS** app.
 
+The rules that settle design questions are in
+[PRINCIPLES.md](PRINCIPLES.md).
+
 ---
 
 ## What's in it
