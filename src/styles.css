@@ -157,6 +157,23 @@
   font-weight: var(--weight-bold);
   text-align: center;
 }
+/* Settings → Diagnostics: raw log lines, wrapped to fit a phone. */
+.diagnostics-log {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-soft);
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* A lesson's pictures, on its page. */
 .word-pictures {
   display: grid;
