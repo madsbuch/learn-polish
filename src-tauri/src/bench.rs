@@ -257,22 +257,45 @@ fn score_tools(task: ToolTask, turn: &ai::Turn) -> (f64, String) {
             let Some(call) = turn.tool_calls.iter().find(|c| c.function.name == wanted) else {
                 return (0.0, format!("did not call {wanted}"));
             };
-            let Ok(args) = serde_json::from_str::<Value>(&call.function.arguments) else {
+            /// What is scored of a create_course / create_writing_lesson call:
+            /// each part leniently, so one odd part costs only its points.
+            #[derive(serde::Deserialize)]
+            struct Args {
+                #[serde(default)]
+                goals: Vec<crate::wire::Lenient<serde::de::IgnoredAny>>,
+                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                scenario: Option<String>,
+                #[serde(default)]
+                words: Vec<crate::wire::Lenient<BenchWord>>,
+                #[serde(default)]
+                sentences: Vec<crate::wire::Lenient<serde::de::IgnoredAny>>,
+            }
+            #[derive(serde::Deserialize)]
+            struct BenchWord {
+                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                pl: Option<String>,
+                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                en: Option<String>,
+            }
+            let Ok(args) = serde_json::from_str::<Args>(&call.function.arguments) else {
                 return (0.1, "the call's arguments were not valid JSON".into());
             };
             let mut score: f64 = 0.3;
             let mut notes = Vec::new();
             if matches!(task, ToolTask::Writing) {
-                let goals = args["goals"].as_array().map_or(0, Vec::len);
+                let goals = args.goals.len();
                 if goals == 3 { score += 0.4 } else { notes.push(format!("{goals} goals, not 3")) }
-                if args["scenario"].as_str().is_some_and(|s| s.len() > 20) { score += 0.3 } else { notes.push("no scenario".into()) }
+                if args.scenario.is_some_and(|s| s.len() > 20) { score += 0.3 } else { notes.push("no scenario".into()) }
             } else {
-                let words = args["words"].as_array().cloned().unwrap_or_default();
-                let sentences = args["sentences"].as_array().map_or(0, Vec::len);
+                let words = args.words;
+                let sentences = args.sentences.len();
                 if words.len() == 10 { score += 0.2 } else { notes.push(format!("{} words, not 10", words.len())) }
                 if sentences == 5 { score += 0.15 } else { notes.push(format!("{sentences} sentences, not 5")) }
-                let polish: Vec<String> = words.iter().filter_map(|w| w["pl"].as_str()).map(str::to_lowercase).collect();
-                if polish.len() == words.len() && words.iter().all(|w| w["en"].as_str().is_some_and(|e| !e.is_empty())) {
+                let polish: Vec<String> =
+                    words.iter().filter_map(|w| w.0.as_ref()?.pl.as_deref()).map(str::to_lowercase).collect();
+                if polish.len() == words.len()
+                    && words.iter().all(|w| w.0.as_ref().and_then(|w| w.en.as_deref()).is_some_and(|e| !e.is_empty()))
+                {
                     score += 0.1
                 } else {
                     notes.push("words missing their Polish or English".into())

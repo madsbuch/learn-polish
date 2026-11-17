@@ -186,8 +186,8 @@ pub async fn check(db: &Db, course_id: i64) -> Result<Checked> {
     };
     let messages = [ai::Wire::system(CHECK_RULES), ai::Wire::user(text)];
     let reply = ai::complete_json(&key, &model, &messages, 300).await?;
-    let verdict = ai::json_value(&reply.text)
-        .and_then(|v| serde_json::from_value::<Verdict>(v).ok())
+    let verdict = ai::json_in::<Verdict>(&reply.text)
+        .ok()
         .and_then(|v| normalize(&v.level).map(|level| (level, v.why)));
     let Some((checked, why)) = verdict else {
         crate::diagnostics::unreadable_reply(&format!("The level check of “{title}”"), &reply.text);

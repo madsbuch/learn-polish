@@ -49,6 +49,20 @@ pub fn image_model(conn: &mut Conn) -> String {
     if model.is_empty() { DEFAULT_IMAGE_MODEL.to_string() } else { model }
 }
 
+#[derive(Serialize)]
+struct ImageRequest<'a> {
+    model: &'a str,
+    messages: [ImageAsk<'a>; 1],
+    modalities: [&'static str; 2],
+    usage: UsageRequest,
+}
+
+#[derive(Serialize)]
+struct ImageAsk<'a> {
+    role: &'static str,
+    content: &'a str,
+}
+
 /// Asks an image model for a picture. Returns its type, bytes and cost.
 pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(String, Vec<u8>, Option<f64>)> {
     let response = crate::http::api()
@@ -56,25 +70,66 @@ pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(Str
         .bearer_auth(key)
         .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": [{ "role": "user", "content": prompt }],
-            "modalities": ["image", "text"],
-            "usage": { "include": true },
-        }))
+        .json(&ImageRequest {
+            model,
+            messages: [ImageAsk { role: "user", content: prompt }],
+            modalities: ["image", "text"],
+            usage: UsageRequest { include: true },
+        })
         .send()
         .await?;
     let status = response.status();
-    let body: serde_json::Value = response
+    /// What is read of an image reply.
+    #[derive(Deserialize)]
+    struct ImageReply {
+        #[serde(default)]
+        error: Option<ImageError>,
+        #[serde(default)]
+        choices: Vec<ImageChoice>,
+        #[serde(default)]
+        usage: Option<ImageUsage>,
+    }
+    #[derive(Deserialize)]
+    struct ImageError {
+        #[serde(default)]
+        message: String,
+    }
+    #[derive(Deserialize)]
+    struct ImageChoice {
+        message: ImageMessage,
+    }
+    #[derive(Deserialize)]
+    struct ImageMessage {
+        #[serde(default)]
+        images: Vec<ImagePart>,
+    }
+    #[derive(Deserialize)]
+    struct ImagePart {
+        image_url: ImageUrl,
+    }
+    #[derive(Deserialize)]
+    struct ImageUrl {
+        url: String,
+    }
+    #[derive(Deserialize)]
+    struct ImageUsage {
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        cost: Option<f64>,
+    }
+    let body: ImageReply = response
         .json()
         .await
         .map_err(|_| Error::msg(format!("OpenRouter returned an unexpected response ({status}).")))?;
-    if let Some(message) = body.pointer("/error/message").and_then(|m| m.as_str()) {
-        return Err(Error::msg(format!("OpenRouter: {message}")));
+    if let Some(error) = body.error {
+        return Err(Error::msg(format!("OpenRouter: {}", error.message)));
     }
+    let cost = body.usage.and_then(|u| u.cost);
     let url = body
-        .pointer("/choices/0/message/images/0/image_url/url")
-        .and_then(|u| u.as_str())
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|c| c.message.images.into_iter().next())
+        .map(|image| image.image_url.url)
         .ok_or_else(|| Error::msg(format!("The model {model} sent no picture. Pick one that makes images in Settings.")))?;
     // A data URI: data:image/png;base64,....
     let (head, data) = url
@@ -86,7 +141,6 @@ pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(Str
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.trim())
         .map_err(|_| Error::msg("The picture could not be decoded."))?;
-    let cost = body.pointer("/usage/cost").and_then(|c| c.as_f64());
     Ok((mime, bytes, cost))
 }
 
@@ -207,9 +261,9 @@ pub fn voice_for(conn: &mut Conn, gender: &str) -> String {
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
-    /// The messages, as JSON: with cache marks where the provider needs them
-    /// (see [`cached_messages`]).
-    messages: serde_json::Value,
+    /// The messages, with cache marks where the provider needs them (see
+    /// [`cached_messages`]).
+    messages: Vec<Outgoing<'a>>,
     temperature: f32,
     max_tokens: u32,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -220,10 +274,20 @@ struct ChatRequest<'a> {
     /// `{"type": "json_object"}` when the answer must be JSON. Providers that
     /// cannot do it ignore it; the reply is still parsed leniently.
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<serde_json::Value>,
+    response_format: Option<ResponseFormat>,
     /// Asks OpenRouter to report what the request cost, for the cost center.
     usage: UsageRequest,
 }
+
+/// What form the answer must take.
+#[derive(Serialize, Clone, Copy, Debug)]
+pub struct ResponseFormat {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+/// A JSON object, please.
+pub const JSON_OBJECT: ResponseFormat = ResponseFormat { kind: "json_object" };
 
 #[derive(Serialize)]
 struct UsageRequest {
@@ -285,37 +349,74 @@ fn needs_cache_marks(model: &str) -> bool {
     model.starts_with("anthropic/") || model.starts_with("google/gemini")
 }
 
-/// The messages as JSON, with cache marks for providers that need them: on
+/// A message as it is sent: as stored, or — for a provider that caches only
+/// what is marked — with its text as one part carrying a cache mark.
+#[derive(Serialize, Debug)]
+pub struct Outgoing<'a> {
+    role: &'a str,
+    content: Option<Content<'a>>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    tool_calls: &'a [ToolCall],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<&'a str>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+enum Content<'a> {
+    Text(&'a str),
+    Marked([MarkedText<'a>; 1]),
+}
+
+#[derive(Serialize, Debug)]
+struct MarkedText<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    text: &'a str,
+    cache_control: CacheControl,
+}
+
+#[derive(Serialize, Debug)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+/// The messages to send, with cache marks for providers that need them: on
 /// the system prompt (the same every turn) and on the newest text message
 /// (so the next request — the next tool round or the next turn — reads
 /// everything up to it from the cache). Repeated input then costs a fraction.
-pub fn cached_messages(model: &str, messages: &[Wire]) -> serde_json::Value {
-    let mut list = serde_json::to_value(messages).unwrap_or_else(|_| serde_json::json!([]));
-    if !needs_cache_marks(model) {
-        return list;
-    }
-    let Some(items) = list.as_array_mut() else { return list };
-    let mark = |item: &mut serde_json::Value| {
-        if let Some(text) = item.get("content").and_then(|c| c.as_str()).map(str::to_string) {
-            item["content"] = serde_json::json!([
-                { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
-            ]);
+pub fn cached_messages<'a>(model: &str, messages: &'a [Wire]) -> Vec<Outgoing<'a>> {
+    let mut marked = vec![false; messages.len()];
+    if needs_cache_marks(model) {
+        if messages.first().is_some_and(|m| m.role == "system" && m.content.is_some()) {
+            marked[0] = true;
         }
-    };
-    if let Some(first) = items.first_mut().filter(|m| m["role"] == "system") {
-        mark(first);
+        // The newest plain user or assistant message (tool results and tool
+        // requests carry no plain text to mark).
+        if let Some(last) = (1..messages.len())
+            .rev()
+            .find(|&i| (messages[i].role == "user" || messages[i].role == "assistant") && messages[i].content.is_some())
+        {
+            marked[last] = true;
+        }
     }
-    // The newest plain user or assistant message (tool results and tool
-    // requests carry no plain text to mark).
-    if let Some(last) = items
-        .iter_mut()
-        .skip(1)
-        .rev()
-        .find(|m| (m["role"] == "user" || m["role"] == "assistant") && m["content"].is_string())
-    {
-        mark(last);
-    }
-    list
+    messages
+        .iter()
+        .zip(marked)
+        .map(|(m, mark)| Outgoing {
+            role: &m.role,
+            content: m.content.as_deref().map(|text| {
+                if mark {
+                    Content::Marked([MarkedText { kind: "text", text, cache_control: CacheControl { kind: "ephemeral" } }])
+                } else {
+                    Content::Text(text)
+                }
+            }),
+            tool_calls: &m.tool_calls,
+            tool_call_id: m.tool_call_id.as_deref(),
+        })
+        .collect()
 }
 
 /// One message on the wire. `content` is null on an assistant turn that only
@@ -432,7 +533,7 @@ pub async fn complete_with(
 /// others) spend part of `max_tokens` thinking, and a JSON answer cut off
 /// halfway is useless. Read the reply with [`json_value`].
 pub async fn complete_json(key: &str, model: &str, messages: &[Wire], max_tokens: u32) -> Result<Reply> {
-    let format = serde_json::json!({ "type": "json_object" });
+    let format = JSON_OBJECT;
     request(key, model, messages, 0.3, max_tokens, Some(format)).await
 }
 
@@ -442,7 +543,7 @@ async fn request(
     messages: &[Wire],
     temperature: f32,
     max_tokens: u32,
-    response_format: Option<serde_json::Value>,
+    response_format: Option<ResponseFormat>,
 ) -> Result<Reply> {
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
@@ -494,21 +595,29 @@ async fn request(
 }
 
 /// The JSON in a model's reply, which may be wrapped in prose or a code
-/// fence: the first complete object or array, read from its opening bracket
-/// (so braces in prose after it do no harm).
-pub fn json_value(text: &str) -> Option<serde_json::Value> {
+/// fence: the text of the first complete object or array, from its opening
+/// bracket (so braces in prose after it do no harm). It is only located
+/// here; read it into a struct with [`json_in`].
+pub fn json_text(text: &str) -> Option<&str> {
     let mut from = 0;
     while let Some(at) = text[from..].find(['{', '[']) {
         let start = from + at;
-        let mut values = serde_json::Deserializer::from_str(&text[start..]).into_iter::<serde_json::Value>();
+        let mut values = serde_json::Deserializer::from_str(&text[start..]).into_iter::<serde::de::IgnoredAny>();
         match values.next() {
-            Some(Ok(value)) if value.is_object() || value.is_array() => return Some(value),
+            Some(Ok(_)) => return Some(&text[start..start + values.byte_offset()]),
             // Cut off: an object inside it would only be a fragment.
             Some(Err(error)) if error.is_eof() => return None,
             _ => from = start + 1,
         }
     }
     None
+}
+
+/// The JSON in a model's reply, read as `T`: an error when there is none,
+/// or it has another shape.
+pub fn json_in<T: serde::de::DeserializeOwned>(text: &str) -> std::result::Result<T, String> {
+    let json = json_text(text).ok_or_else(|| "no JSON in the reply".to_string())?;
+    serde_json::from_str(json).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,14 +1139,20 @@ pub(crate) fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u
 mod tests {
     #[test]
     fn json_is_found_in_whatever_wraps_it() {
-        assert_eq!(json_value("{\"a\": 1}"), Some(serde_json::json!({"a": 1})));
-        assert_eq!(json_value("Sure! ```json\n{\"a\": [1, 2]}\n``` Hope it helps {x}"), Some(serde_json::json!({"a": [1, 2]})));
-        assert_eq!(json_value("[{\"a\": 1}]"), Some(serde_json::json!([{"a": 1}])));
+        assert_eq!(json_text("{\"a\": 1}"), Some("{\"a\": 1}"));
+        assert_eq!(json_text("Sure! ```json\n{\"a\": [1, 2]}\n``` Hope it helps {x}"), Some("{\"a\": [1, 2]}"));
+        assert_eq!(json_text("[{\"a\": 1}]"), Some("[{\"a\": 1}]"));
         // Prose in brackets before the JSON is skipped.
-        assert_eq!(json_value("[note] {\"a\": 1}"), Some(serde_json::json!({"a": 1})));
+        assert_eq!(json_text("[note] {\"a\": 1}"), Some("{\"a\": 1}"));
         // A cut-off answer gives nothing, not a fragment of it.
-        assert_eq!(json_value("{\"goals\": [{\"goal\": \"x\"}, {\"goal\": "), None);
-        assert_eq!(json_value("no json here"), None);
+        assert_eq!(json_text("{\"goals\": [{\"goal\": \"x\"}, {\"goal\": "), None);
+        assert_eq!(json_text("no json here"), None);
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct A {
+            a: Vec<i64>,
+        }
+        assert_eq!(json_in::<A>("Here: {\"a\": [1, 2]}"), Ok(A { a: vec![1, 2] }));
+        assert!(json_in::<A>("{\"b\": 1}").is_err(), "the wrong shape is an error");
     }
 
     use super::*;
@@ -1128,13 +1243,13 @@ mod tests {
             Wire::user("second"),
             Wire::tool_result("call_1", "{}"),
         ];
-        let marked = cached_messages("anthropic/claude-x", &messages);
+        let marked = serde_json::to_value(cached_messages("anthropic/claude-x", &messages)).unwrap();
         assert_eq!(marked[0]["content"][0]["cache_control"]["type"], "ephemeral");
         assert!(marked[1]["content"].is_string());
         assert_eq!(marked[3]["content"][0]["text"], "second");
         assert!(marked[4]["content"].is_string(), "tool results stay as they are");
         // Providers that cache on their own get the messages untouched.
-        assert!(cached_messages("openai/gpt-x", &messages)[0]["content"].is_string());
+        assert!(serde_json::to_value(cached_messages("openai/gpt-x", &messages)).unwrap()[0]["content"].is_string());
     }
 
     #[test]

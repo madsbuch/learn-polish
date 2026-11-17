@@ -228,13 +228,21 @@ pub async fn podcast_topics(db: State<'_, Db>) -> Result<Vec<TopicIdea>> {
     let messages = [ai::Wire::system(TOPIC_RULES), ai::Wire::user(brief)];
     let reply = ai::complete_json(&key, &model, &messages, 3000).await?;
     let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::SONGWRITER, &model, reply.cost, "topics", reply.tokens);
-    let value = ai::json_value(&reply.text).ok_or_else(|| {
-        crate::diagnostics::unreadable_reply("Podcast ideas", &reply.text);
-        Error::msg("No suggestions came back. Try again.")
-    })?;
-    let ideas = value.get("ideas").cloned().unwrap_or(value);
-    let ideas: Vec<TopicIdea> = serde_json::from_value(ideas).unwrap_or_default();
-    Ok(ideas.into_iter().filter(|idea| !idea.topic.trim().is_empty()).take(8).collect())
+    /// The ideas, as the writer was asked for them, or a bare list.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Ideas {
+        Wrapped { ideas: Vec<crate::wire::Lenient<TopicIdea>> },
+        List(Vec<crate::wire::Lenient<TopicIdea>>),
+    }
+    let ideas = match ai::json_in::<Ideas>(&reply.text) {
+        Ok(Ideas::Wrapped { ideas } | Ideas::List(ideas)) => ideas,
+        Err(_) => {
+            crate::diagnostics::unreadable_reply("Podcast ideas", &reply.text);
+            return Err(Error::msg("No suggestions came back. Try again."));
+        }
+    };
+    Ok(crate::wire::kept(ideas).filter(|idea| !idea.topic.trim().is_empty()).take(8).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -416,19 +424,28 @@ async fn gather_news(db: &Db, subject: &str) -> Result<(Vec<wiki::Article>, Vec<
 /// The picker's choice: stories as headline numbers (in range, each used
 /// once, at most two a story, at most six stories), and background articles.
 fn parse_picks(reply: &str, count: usize) -> (Vec<Vec<usize>>, Vec<String>) {
-    let Some(value) = ai::json_value(reply) else {
+    #[derive(Deserialize)]
+    struct Picks {
+        #[serde(default)]
+        stories: Vec<crate::wire::Lenient<Story>>,
+    }
+    #[derive(Deserialize)]
+    struct Story {
+        #[serde(default)]
+        headlines: Vec<crate::wire::Lenient<u64>>,
+        #[serde(default)]
+        background: Vec<crate::wire::Lenient<String>>,
+    }
+    let Ok(picks) = ai::json_in::<Picks>(reply) else {
         crate::diagnostics::unreadable_reply("The news stories picked", reply);
         return (Vec::new(), Vec::new());
     };
     let mut used: Vec<usize> = Vec::new();
     let mut stories = Vec::new();
     let mut background: Vec<String> = Vec::new();
-    for story in value["stories"].as_array().into_iter().flatten().take(6) {
-        let ids: Vec<usize> = story["headlines"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|n| n.as_u64().map(crate::convert::offset))
+    for story in crate::wire::kept(picks.stories).take(6) {
+        let ids: Vec<usize> = crate::wire::kept(story.headlines)
+            .map(crate::convert::offset)
             .filter(|&n| n < count)
             .collect();
         let mut fresh = Vec::new();
@@ -442,7 +459,7 @@ fn parse_picks(reply: &str, count: usize) -> (Vec<Vec<usize>>, Vec<String>) {
             continue;
         }
         stories.push(fresh);
-        for title in story["background"].as_array().into_iter().flatten().filter_map(|t| t.as_str()) {
+        for title in crate::wire::kept(story.background) {
             let title = title.trim().to_string();
             if !title.is_empty() && !background.contains(&title) && background.len() < BACKGROUND_LIMIT {
                 background.push(title);
@@ -559,12 +576,11 @@ struct ScriptPart {
 }
 
 fn parse_script(reply: &str) -> Result<Script> {
-    let script = ai::json_value(reply)
-        .ok_or_else(|| Error::msg("The writer did not return a script. Try again."))
-        .and_then(|value| {
-            serde_json::from_value(value)
-                .map_err(|e| Error::msg(format!("The writer's script was not readable ({e}). Try again.")))
-        });
+    let script = match ai::json_text(reply) {
+        None => Err(Error::msg("The writer did not return a script. Try again.")),
+        Some(json) => serde_json::from_str::<Script>(json)
+            .map_err(|e| Error::msg(format!("The writer's script was not readable ({e}). Try again."))),
+    };
     if script.is_err() {
         crate::diagnostics::unreadable_reply("A podcast script", reply);
     }

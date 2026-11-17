@@ -690,20 +690,20 @@ pub fn kie_key(conn: &mut Conn) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-struct KieEnvelope {
+struct KieEnvelope<T> {
     code: i64,
     #[serde(default)]
     msg: String,
-    #[serde(default)]
-    data: serde_json::Value,
+    data: Option<T>,
 }
 
 /// kie.ai answers HTTP 200 even for failures; the real status is in `code`.
-async fn kie_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value> {
+/// Its `data` is read as `T`.
+async fn kie_json<T: serde::de::DeserializeOwned>(request: reqwest::RequestBuilder) -> Result<T> {
     let response = request.send().await.map_err(unreachable)?;
     let status = response.status();
     let body = response.text().await.map_err(unreachable)?;
-    let envelope: KieEnvelope = serde_json::from_str(&body).map_err(|_| {
+    let envelope: KieEnvelope<T> = serde_json::from_str(&body).map_err(|_| {
         Error::msg(format!(
             "kie.ai returned an unexpected response ({status}): {}",
             body.chars().take(300).collect::<String>()
@@ -718,39 +718,70 @@ async fn kie_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value>
         };
         return Err(Error::msg(format!("kie.ai ({}): {}{hint}", envelope.code, envelope.msg)));
     }
-    Ok(envelope.data)
+    envelope.data.ok_or_else(|| Error::msg("kie.ai answered without the data it was asked for."))
 }
 
 pub async fn credits(key: &str) -> Result<f64> {
-    let data = kie_json(crate::http::downloads().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
-    data.as_f64()
-        .ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
+    let balance: crate::wire::Number =
+        kie_json(crate::http::downloads().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
+    balance.value().ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
+}
+
+/// kie.ai's answer to a new task.
+#[derive(Deserialize)]
+struct TaskCreated {
+    #[serde(rename = "taskId")]
+    task_id: String,
+}
+
+/// A kie.ai task: which of its models, and that model's input.
+#[derive(Serialize)]
+struct NewTask<'a, I: Serialize> {
+    model: &'a str,
+    input: I,
+}
+
+/// A song for Suno to sing.
+#[derive(Serialize)]
+struct SongInput<'a> {
+    custom_mode: bool,
+    instrumental: bool,
+    model: &'a str,
+    title: &'a str,
+    lyrics: String,
+    style: &'a str,
+    negative_tags: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    vocal_gender: &'a str,
+}
+
+/// A take to time the lyrics of.
+#[derive(Serialize)]
+struct TimingInput<'a> {
+    task_id: &'a str,
+    audio_id: &'a str,
 }
 
 async fn create_task(key: &str, model: &str, draft: &SongDraft) -> Result<String> {
-    let mut input = serde_json::json!({
-        "custom_mode": true,
-        "instrumental": false,
-        "model": model,
-        "title": draft.title,
-        "lyrics": render_lyrics(draft),
-        "style": draft.style,
-        "negative_tags": NEGATIVE_TAGS,
-    });
-    if !draft.vocal_gender.is_empty() {
-        input["vocal_gender"] = draft.vocal_gender.clone().into();
-    }
-    let data = kie_json(
+    let input = SongInput {
+        custom_mode: true,
+        instrumental: false,
+        model,
+        title: &draft.title,
+        lyrics: render_lyrics(draft),
+        style: &draft.style,
+        negative_tags: NEGATIVE_TAGS,
+        vocal_gender: &draft.vocal_gender,
+    };
+    let created: TaskCreated = kie_json(
         crate::http::downloads()
             .post(format!("{KIE_BASE_URL}/jobs/createTask"))
             .bearer_auth(key)
-            .json(&serde_json::json!({ "model": KIE_MUSIC_MODEL, "input": input })),
+            .json(&NewTask { model: KIE_MUSIC_MODEL, input }),
     )
-    .await?;
-    data.get("taskId")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .ok_or_else(|| Error::msg("kie.ai accepted the song but returned no task id."))
+    .await
+    .map_err(|e| Error::msg(format!("kie.ai did not start the song: {e}")))?;
+    Ok(created.task_id)
 }
 
 /// A finished take, as kie.ai reports it.
@@ -769,54 +800,72 @@ pub enum TaskState {
     Failed(String),
 }
 
-fn tracks_from(value: &serde_json::Value) -> Vec<RemoteTrack> {
-    let list = value
-        .get("data")
-        .or_else(|| value.get("sunoData"))
-        .and_then(|v| v.as_array())
-        .or_else(|| value.as_array());
-    let Some(list) = list else { return Vec::new() };
-    list.iter()
+/// A take as kie.ai lists it (snake_case or camelCase, by endpoint).
+#[derive(Debug, Default, Deserialize)]
+struct KieTrack {
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    id: Option<String>,
+    #[serde(default, alias = "audioUrl", deserialize_with = "crate::wire::lenient")]
+    audio_url: Option<String>,
+    #[serde(default, alias = "imageUrl", deserialize_with = "crate::wire::lenient")]
+    image_url: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    duration: Option<f64>,
+}
+
+/// The takes: in `data` (or `sunoData`), or a bare list.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum KieTracks {
+    Wrapped {
+        #[serde(alias = "sunoData")]
+        data: Vec<KieTrack>,
+    },
+    List(Vec<KieTrack>),
+}
+
+/// A task's `recordInfo` answer.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordInfo {
+    #[serde(default)]
+    state: String,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    response: Option<KieTracks>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    result_json: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    fail_msg: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    credits_consumed: Option<crate::wire::Number>,
+}
+
+fn tracks_from(tracks: KieTracks) -> Vec<RemoteTrack> {
+    let list = match tracks {
+        KieTracks::Wrapped { data } | KieTracks::List(data) => data,
+    };
+    list.into_iter()
         .filter_map(|item| {
-            let audio_url = item
-                .get("audio_url")
-                .or_else(|| item.get("audioUrl"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())?
-                .to_string();
+            let audio_url = item.audio_url.filter(|s| !s.is_empty())?;
             Some(RemoteTrack {
-                id: item
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .unwrap_or_else(|| audio_url.clone()),
+                id: item.id.unwrap_or_else(|| audio_url.clone()),
                 audio_url,
-                image_url: item
-                    .get("image_url")
-                    .or_else(|| item.get("imageUrl"))
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string),
-                duration: item.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                image_url: item.image_url.filter(|s| !s.is_empty()),
+                duration: item.duration.unwrap_or(0.0),
             })
         })
         .collect()
 }
 
-/// Reads a `recordInfo` payload. The tracks normally sit in `response.data`;
+/// Reads a `recordInfo` answer. The tracks normally sit in `response.data`;
 /// `resultJson` (a JSON string) is the fallback.
-pub fn parse_task(data: &serde_json::Value) -> TaskState {
-    let state = data.get("state").and_then(|v| v.as_str()).unwrap_or("");
-    match state {
+pub fn parse_task(data: RecordInfo) -> TaskState {
+    match data.state.as_str() {
         "success" => {
-            let mut tracks = data.get("response").map(tracks_from).unwrap_or_default();
+            let mut tracks = data.response.map(tracks_from).unwrap_or_default();
             if tracks.is_empty() {
-                if let Some(parsed) = data
-                    .get("resultJson")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                {
-                    tracks = tracks_from(&parsed);
+                if let Some(parsed) = data.result_json.and_then(|s| serde_json::from_str::<KieTracks>(&s).ok()) {
+                    tracks = tracks_from(parsed);
                 }
             }
             if tracks.is_empty() {
@@ -826,31 +875,22 @@ pub fn parse_task(data: &serde_json::Value) -> TaskState {
             }
         }
         "fail" => TaskState::Failed(
-            data.get("failMsg")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Suno could not make this song.")
-                .to_string(),
+            data.fail_msg.filter(|s| !s.is_empty()).unwrap_or_else(|| "Suno could not make this song.".into()),
         ),
         _ => TaskState::Pending,
     }
 }
 
-/// The kie.ai credits a finished task used, when the answer says.
-pub fn credits_consumed(data: &serde_json::Value) -> Option<f64> {
-    let value = data.get("creditsConsumed")?;
-    value.as_f64().or_else(|| value.as_str().and_then(|s| s.trim().parse().ok()))
-}
-
 async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)> {
-    let data = kie_json(
+    let data: RecordInfo = kie_json(
         crate::http::downloads()
             .get(format!("{KIE_BASE_URL}/jobs/recordInfo"))
             .query(&[("taskId", task_id)])
             .bearer_auth(key),
     )
     .await?;
-    Ok((parse_task(&data), credits_consumed(&data)))
+    let credits = data.credits_consumed.as_ref().and_then(crate::wire::Number::value);
+    Ok((parse_task(data), credits))
 }
 
 /// Downloads a file and returns its bytes and type; the caller stores them in
@@ -901,27 +941,41 @@ pub(crate) fn extension(url: &str, fallback: &str) -> String {
 
 const TIMESTAMP_MODEL: &str = "ai-music-api/timeStamped-lyrics";
 
+/// One aligned word, in either spelling.
+#[derive(Debug, Deserialize)]
+struct AlignedWord {
+    word: String,
+    #[serde(default, alias = "start_s", rename = "startS", deserialize_with = "crate::wire::lenient")]
+    start: Option<f64>,
+    #[serde(default, alias = "end_s", rename = "endS", deserialize_with = "crate::wire::lenient")]
+    end: Option<f64>,
+}
+
+/// Suno's aligned words: camelCase in the direct answer, which nests a
+/// second status around them, or snake_case (callback).
+#[derive(Debug, Default, Deserialize)]
+pub struct AlignedWords {
+    #[serde(default)]
+    code: Option<i64>,
+    #[serde(default)]
+    msg: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    data: Option<Box<AlignedWords>>,
+    #[serde(default, alias = "aligned_words", rename = "alignedWords")]
+    words: Option<Vec<AlignedWord>>,
+}
+
 /// Reads Suno's aligned words, in either the camelCase (direct answer) or
 /// snake_case (callback) spelling.
-pub fn parse_aligned_words(data: &serde_json::Value) -> Option<Vec<TimedWord>> {
-    let list = data
-        .pointer("/data/alignedWords")
-        .or_else(|| data.pointer("/data/aligned_words"))
-        .or_else(|| data.get("alignedWords"))
-        .or_else(|| data.get("aligned_words"))?
-        .as_array()?;
-    let number = |item: &serde_json::Value, a: &str, b: &str| {
-        item.get(a).or_else(|| item.get(b)).and_then(|v| v.as_f64()).unwrap_or(-1.0)
-    };
+pub fn parse_aligned_words(data: AlignedWords) -> Option<Vec<TimedWord>> {
+    let words = match data.data {
+        Some(inner) if inner.words.is_some() => inner.words,
+        _ => data.words,
+    }?;
     Some(
-        list.iter()
-            .filter_map(|item| {
-                Some(TimedWord {
-                    text: item.get("word")?.as_str()?.to_string(),
-                    start: number(item, "startS", "start_s"),
-                    end: number(item, "endS", "end_s"),
-                })
-            })
+        words
+            .into_iter()
+            .map(|w| TimedWord { text: w.word, start: w.start.unwrap_or(-1.0), end: w.end.unwrap_or(-1.0) })
             .collect(),
     )
 }
@@ -1027,24 +1081,19 @@ pub fn timed_lines(words: &[TimedWord], sections: &[SongSection]) -> Vec<TimedLi
 }
 
 async fn fetch_timestamps(key: &str, task_id: &str, audio_id: &str) -> Result<Vec<TimedWord>> {
-    let data = kie_json(
+    let data: AlignedWords = kie_json(
         crate::http::downloads()
             .post(format!("{KIE_BASE_URL}/jobs/createTask"))
             .bearer_auth(key)
-            .json(&serde_json::json!({
-                "model": TIMESTAMP_MODEL,
-                "input": { "task_id": task_id, "audio_id": audio_id },
-            })),
+            .json(&NewTask { model: TIMESTAMP_MODEL, input: TimingInput { task_id, audio_id } }),
     )
     .await?;
     // The answer nests a second status inside `data`.
-    if let Some(code) = data.get("code").and_then(|c| c.as_i64()) {
-        if code != 200 {
-            let msg = data.get("msg").and_then(|m| m.as_str()).unwrap_or("no lyrics timing");
-            return Err(Error::msg(format!("kie.ai ({code}): {msg}")));
-        }
+    if let Some(code) = data.code.filter(|c| *c != 200) {
+        let msg = data.msg.clone().unwrap_or_else(|| "no lyrics timing".into());
+        return Err(Error::msg(format!("kie.ai ({code}): {msg}")));
     }
-    parse_aligned_words(&data).ok_or_else(|| Error::msg("kie.ai returned no lyrics timing."))
+    parse_aligned_words(data).ok_or_else(|| Error::msg("kie.ai returned no lyrics timing."))
 }
 
 /// Fetches and stores one take's word timings.
@@ -1873,6 +1922,11 @@ mod tests {
         assert_eq!(clean.sections.len(), 3, "empty sections are dropped");
     }
 
+    /// A reply as it comes off the wire, into its struct.
+    fn wire<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
+        serde_json::from_value(value).unwrap()
+    }
+
     #[test]
     fn finished_tasks_yield_their_tracks() {
         let data = serde_json::json!({
@@ -1882,7 +1936,7 @@ mod tests {
                 { "id": "b", "audio_url": "https://x/b.mp3", "duration": 175.0 }
             ]}
         });
-        let TaskState::Done(tracks) = parse_task(&data) else { panic!("not done") };
+        let TaskState::Done(tracks) = parse_task(wire(data)) else { panic!("not done") };
         assert_eq!(tracks.len(), 2);
         assert_eq!(tracks[0].image_url.as_deref(), Some("https://x/a.jpeg"));
         assert_eq!(tracks[1].image_url, None);
@@ -1892,14 +1946,15 @@ mod tests {
             "state": "success",
             "resultJson": "{\"data\":[{\"id\":\"c\",\"audio_url\":\"https://x/c.mp3\"}]}"
         });
-        assert!(matches!(parse_task(&data), TaskState::Done(t) if t[0].id == "c"));
+        assert!(matches!(parse_task(wire(data)), TaskState::Done(t) if t[0].id == "c"));
 
-        assert_eq!(parse_task(&serde_json::json!({ "state": "generating" })), TaskState::Pending);
-        assert_eq!(credits_consumed(&serde_json::json!({ "creditsConsumed": 12 })), Some(12.0));
-        assert_eq!(credits_consumed(&serde_json::json!({ "creditsConsumed": "6.5" })), Some(6.5));
-        assert_eq!(credits_consumed(&serde_json::json!({})), None);
+        assert_eq!(parse_task(wire(serde_json::json!({ "state": "generating" }))), TaskState::Pending);
+        let credits = |v| wire::<RecordInfo>(v).credits_consumed.and_then(|c| c.value());
+        assert_eq!(credits(serde_json::json!({ "creditsConsumed": 12 })), Some(12.0));
+        assert_eq!(credits(serde_json::json!({ "creditsConsumed": "6.5" })), Some(6.5));
+        assert_eq!(credits(serde_json::json!({})), None);
         assert_eq!(
-            parse_task(&serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" })),
+            parse_task(wire(serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" }))),
             TaskState::Failed("lyrics rejected".into())
         );
     }
@@ -1914,12 +1969,12 @@ mod tests {
             ], "waveformData": [0, 1], "hootCer": 0.38, "isStreamed": false }
         });
         assert_eq!(
-            parse_aligned_words(&direct),
+            parse_aligned_words(wire(direct)),
             Some(vec![TimedWord { text: "[Verse]\nWaggin'".into(), start: 1.36, end: 1.79 }])
         );
         let callback = serde_json::json!({ "aligned_words": [{ "word": "Hej", "start_s": 2.0, "end_s": 2.5 }] });
-        assert_eq!(parse_aligned_words(&callback).unwrap()[0].start, 2.0);
-        assert_eq!(parse_aligned_words(&serde_json::json!({ "data": {} })), None);
+        assert_eq!(parse_aligned_words(wire(callback)).unwrap()[0].start, 2.0);
+        assert_eq!(parse_aligned_words(wire(serde_json::json!({ "data": {} }))), None);
     }
 
     fn word(text: &str, start: f64, end: f64) -> TimedWord {

@@ -52,7 +52,7 @@ pub async fn word_examples(db: State<'_, Db>, word_id: i64) -> Result<Vec<Exampl
             struct Reply {
                 examples: Vec<Example>,
             }
-            let parsed = crate::ai::json_value(&reply.text).and_then(|json| serde_json::from_value::<Reply>(json).ok());
+            let parsed = crate::ai::json_in::<Reply>(&reply.text).ok();
             if parsed.is_none() {
                 crate::diagnostics::unreadable_reply(&format!("Example sentences (from {model})"), &reply.text);
             }

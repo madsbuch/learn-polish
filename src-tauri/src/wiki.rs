@@ -7,8 +7,7 @@
 //! where each comes from.
 
 use diesel::prelude::*;
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::{self, Conn, Db};
@@ -54,7 +53,104 @@ fn api(lang: &str) -> Result<String> {
     Ok(format!("https://{lang}.wikipedia.org/w/api.php"))
 }
 
-async fn get(lang: &str, query: &[(&str, &str)]) -> Result<Value> {
+// What we read of Wikipedia's API answers (format=json, formatversion=2).
+
+#[derive(Deserialize)]
+struct ApiError {
+    #[serde(default)]
+    info: String,
+}
+
+/// Any answer: an error, if there was one, and the rest as `T`.
+#[derive(Deserialize)]
+struct Answer<T> {
+    #[serde(default)]
+    error: Option<ApiError>,
+    #[serde(flatten)]
+    body: T,
+}
+
+#[derive(Deserialize, Default)]
+struct SearchBody {
+    #[serde(default)]
+    query: Option<SearchQuery>,
+}
+
+#[derive(Deserialize, Default)]
+struct SearchQuery {
+    #[serde(default)]
+    search: Vec<RawHit>,
+}
+
+#[derive(Deserialize)]
+struct RawHit {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    snippet: String,
+}
+
+#[derive(Deserialize, Default)]
+struct PagesBody {
+    #[serde(default)]
+    query: Option<PagesQuery>,
+}
+
+#[derive(Deserialize, Default)]
+struct PagesQuery {
+    #[serde(default)]
+    pages: Vec<RawPage>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawPage {
+    #[serde(default)]
+    missing: bool,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    extract: Option<String>,
+    #[serde(default)]
+    fullurl: Option<String>,
+    #[serde(default)]
+    pageid: i64,
+    #[serde(default)]
+    revisions: Vec<RawRevision>,
+    #[serde(default)]
+    thumbnail: Option<RawThumbnail>,
+    #[serde(default)]
+    langlinks: Vec<RawLanglink>,
+}
+
+#[derive(Deserialize)]
+struct RawRevision {
+    #[serde(default)]
+    revid: i64,
+}
+
+#[derive(Deserialize)]
+struct RawThumbnail {
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct RawLanglink {
+    title: String,
+}
+
+#[derive(Deserialize, Default)]
+struct ParseBody {
+    #[serde(default)]
+    parse: Option<ParsedPage>,
+}
+
+#[derive(Deserialize)]
+struct ParsedPage {
+    #[serde(default)]
+    text: String,
+}
+
+async fn get<T: serde::de::DeserializeOwned>(lang: &str, query: &[(&str, &str)]) -> Result<T> {
     let response = crate::http::wikipedia()
         .get(api(lang)?)
         .query(&[("format", "json"), ("formatversion", "2")])
@@ -66,28 +162,24 @@ async fn get(lang: &str, query: &[(&str, &str)]) -> Result<Value> {
     if !status.is_success() {
         return Err(Error::msg(format!("Wikipedia answered {status}.")));
     }
-    let body: Value = response.json().await.map_err(|_| Error::msg("Wikipedia sent something unreadable."))?;
-    if let Some(info) = body.pointer("/error/info").and_then(Value::as_str) {
-        return Err(Error::msg(format!("Wikipedia: {info}")));
+    let answer: Answer<T> = response.json().await.map_err(|_| Error::msg("Wikipedia sent something unreadable."))?;
+    if let Some(error) = answer.error {
+        return Err(Error::msg(format!("Wikipedia: {}", error.info)));
     }
-    Ok(body)
+    Ok(answer.body)
 }
 
 /// Finds articles. Snippets come as plain text.
 pub async fn search(lang: &str, query: &str) -> Result<Vec<SearchHit>> {
-    let body = get(lang, &[("action", "query"), ("list", "search"), ("srsearch", query), ("srlimit", "6")]).await?;
+    let body: SearchBody =
+        get(lang, &[("action", "query"), ("list", "search"), ("srsearch", query), ("srlimit", "6")]).await?;
     Ok(body
-        .pointer("/query/search")
-        .and_then(Value::as_array)
-        .map(|hits| {
-            hits.iter()
-                .map(|hit| SearchHit {
-                    title: hit["title"].as_str().unwrap_or_default().to_string(),
-                    snippet: strip_tags(hit["snippet"].as_str().unwrap_or_default()),
-                })
-                .collect()
-        })
-        .unwrap_or_default())
+        .query
+        .unwrap_or_default()
+        .search
+        .into_iter()
+        .map(|hit| SearchHit { title: hit.title, snippet: strip_tags(&hit.snippet) })
+        .collect())
 }
 
 fn strip_tags(html: &str) -> String {
@@ -149,7 +241,7 @@ pub fn lead(markdown: &str) -> String {
 /// Fetches an article: its text, revision, address, picture, and the
 /// title of its Polish version.
 pub async fn fetch(lang: &str, title: &str) -> Result<Article> {
-    let body = get(
+    let body: PagesBody = get(
         lang,
         &[
             ("action", "query"),
@@ -167,24 +259,25 @@ pub async fn fetch(lang: &str, title: &str) -> Result<Article> {
     )
     .await?;
     let page = body
-        .pointer("/query/pages/0")
+        .query
+        .and_then(|q| q.pages.into_iter().next())
         .ok_or_else(|| Error::msg("Wikipedia sent no article."))?;
-    if page.get("missing").and_then(Value::as_bool) == Some(true) {
+    if page.missing {
         return Err(Error::msg(format!("There is no article called “{title}” on {lang}.wikipedia.org.")));
     }
-    let content = to_markdown(page["extract"].as_str().unwrap_or_default());
+    let content = to_markdown(page.extract.as_deref().unwrap_or_default());
     Ok(Article {
         lang: lang.to_string(),
-        title: page["title"].as_str().unwrap_or(title).to_string(),
-        url: page["fullurl"].as_str().map(str::to_string).unwrap_or_else(|| {
-            format!("https://{lang}.wikipedia.org/wiki/{}", title.replace(' ', "_"))
-        }),
-        pageid: page["pageid"].as_i64().unwrap_or_default(),
-        revid: page.pointer("/revisions/0/revid").and_then(Value::as_i64).unwrap_or_default(),
+        title: page.title.unwrap_or_else(|| title.to_string()),
+        url: page
+            .fullurl
+            .unwrap_or_else(|| format!("https://{lang}.wikipedia.org/wiki/{}", title.replace(' ', "_"))),
+        pageid: page.pageid,
+        revid: page.revisions.first().map(|r| r.revid).unwrap_or_default(),
         summary: lead(&content),
         content,
-        thumbnail: page.pointer("/thumbnail/source").and_then(Value::as_str).map(str::to_string),
-        polish_title: page.pointer("/langlinks/0/title").and_then(Value::as_str).map(str::to_string),
+        thumbnail: page.thumbnail.map(|t| t.source),
+        polish_title: page.langlinks.into_iter().next().map(|l| l.title),
         html: None,
     })
 }
@@ -193,7 +286,7 @@ pub async fn fetch(lang: &str, title: &str) -> Result<Article> {
 /// tables, the infobox and figures. The reader turns it into the app's own
 /// elements (it is never inserted as HTML).
 pub async fn fetch_html(lang: &str, title: &str) -> Result<String> {
-    let body = get(
+    let body: ParseBody = get(
         lang,
         &[
             ("action", "parse"),
@@ -205,9 +298,8 @@ pub async fn fetch_html(lang: &str, title: &str) -> Result<String> {
         ],
     )
     .await?;
-    body.pointer("/parse/text")
-        .and_then(Value::as_str)
-        .map(str::to_string)
+    body.parse
+        .map(|p| p.text)
         .filter(|html| !html.trim().is_empty())
         .ok_or_else(|| Error::msg("Wikipedia sent the article without its text."))
 }
@@ -222,10 +314,12 @@ pub async fn fetch_with_layout(lang: &str, title: &str) -> Result<Article> {
 
 /// The article's current revision, without its text: is it still the same?
 pub async fn current_revision(lang: &str, title: &str) -> Result<i64> {
-    let body = get(lang, &[("action", "query"), ("titles", title), ("redirects", "1"), ("prop", "revisions"), ("rvprop", "ids")])
-        .await?;
-    body.pointer("/query/pages/0/revisions/0/revid")
-        .and_then(Value::as_i64)
+    let body: PagesBody =
+        get(lang, &[("action", "query"), ("titles", title), ("redirects", "1"), ("prop", "revisions"), ("rvprop", "ids")])
+            .await?;
+    body.query
+        .and_then(|q| q.pages.into_iter().next())
+        .and_then(|page| page.revisions.first().map(|r| r.revid))
         .ok_or_else(|| Error::msg(format!("Wikipedia has no “{title}” any more.")))
 }
 
@@ -638,13 +732,22 @@ async fn correct_lesson(db: &Db, lesson_id: i64) -> Result<Option<String>> {
 fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
     let start = text.find('{').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
     let end = text.rfind('}').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
-    let value: Value = serde_json::from_str(&text[start..=end])
+    #[derive(Deserialize)]
+    struct Verdict {
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        outdated: Option<bool>,
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        changes: Option<String>,
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        lesson: Option<String>,
+    }
+    let verdict: Verdict = serde_json::from_str(&text[start..=end])
         .map_err(|_| Error::msg("The fact check's answer was unreadable."))?;
-    if value["outdated"].as_bool() != Some(true) {
+    if verdict.outdated != Some(true) {
         return Ok(None);
     }
-    let changes = value["changes"].as_str().unwrap_or("Corrected against Wikipedia.").trim().to_string();
-    match value["lesson"].as_str().map(str::trim).filter(|l| !l.is_empty()) {
+    let changes = verdict.changes.as_deref().unwrap_or("Corrected against Wikipedia.").trim().to_string();
+    match verdict.lesson.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
         Some(corrected) => Ok(Some((changes, corrected.to_string()))),
         None => Ok(None),
     }

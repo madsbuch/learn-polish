@@ -2,6 +2,7 @@ mod agent;
 mod ai;
 mod bench;
 mod convert;
+mod wire;
 mod lessons;
 mod levels;
 mod lesson_types;
