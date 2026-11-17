@@ -75,8 +75,10 @@ export function PictureOptions(props: ExerciseProps) {
 }
 
 /** The item's picture on the prompt card, when it has one. */
-export function PictureCard({ exercise }: { exercise: Exercise }) {
-  return exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null;
+export function PictureCard({ exercise, fill = false }: { exercise: Exercise; fill?: boolean }) {
+  if (exercise.image == null) return null;
+  // `fill`: the picture is the card itself, as large as fits above the answers.
+  return <img className={fill ? "picture-prompt" : "picture-card"} src={fileUrl(exercise.image)} alt="" />;
 }
 
 /** The box a typed answer goes in. Enter checks, or moves on once checked. */

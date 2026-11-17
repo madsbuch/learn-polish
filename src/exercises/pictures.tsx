@@ -78,9 +78,7 @@ export const picturePick = defineExercise({
   render: (props) => (
     <>
       <Text variant="eyebrow">What is this?</Text>
-      <div className="prompt-card">
-        <PictureCard exercise={props.exercise} />
-      </div>
+      <PictureCard exercise={props.exercise} fill />
       <Options {...props} />
     </>
   ),
