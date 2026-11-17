@@ -184,9 +184,14 @@
   place-items: center;
   background: var(--surface-sunken);
 }
+/* A picture fills its card inside the padding, whatever its own size: it
+   must never stretch the card or the grid (picture lessons). */
 .memory-picture {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  width: calc(100% - 2 * var(--space-2));
+  height: calc(100% - 2 * var(--space-2));
   object-fit: contain;
   border-radius: var(--radius-sm);
 }
@@ -281,10 +286,13 @@
 /* Memory cards */
 .memory-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .memory-card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
   aspect-ratio: 1 / 0.82;
   border-radius: var(--radius-md);
   padding: var(--space-2);
