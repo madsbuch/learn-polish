@@ -43,7 +43,7 @@ function RunCard({ run }: { run: XpRun }) {
 }
 
 /**
- * A day's XP: the total, and what earned it — each lesson run and check-in,
+ * A day's XP: the total, and what earned it — each drill and conversation,
  * which opens to every answer and what it earned (or why it earned nothing).
  */
 export function XpDayScreen({ day, onBack }: { day: number; onBack: () => void }) {
@@ -71,7 +71,7 @@ export function XpDayScreen({ day, onBack }: { day: number; onBack: () => void }
           title="What earned it"
           info={
             <p>
-              Each go at a lesson, and each check-in, in order. Open one to see every answer: right
+              Each go at a lesson, drill or conversation, in order. Open one to see every answer: right
               ones earn XP (harder exercises more, new items a little extra), mistakes and cards you
               only read earn nothing, and extra practice earns half.
             </p>

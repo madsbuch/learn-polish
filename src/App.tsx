@@ -472,7 +472,7 @@ export default function App() {
             setOverlay({
               kind: "checkin",
               lessonId,
-              title: detail?.title ?? "Check-in",
+              title: detail?.title ?? "Conversation",
               songId: detail?.songId ?? null,
               writing:
                 // A type with a writing section is played out with a partner.

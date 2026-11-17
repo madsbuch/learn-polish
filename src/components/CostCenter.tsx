@@ -20,7 +20,7 @@ import type { CostSummary, FeatureCost } from "../lib/types";
 
 const FEATURES: Record<string, string> = {
   tutor: "Tutor",
-  examiner: "Check-ins",
+  examiner: "Conversations",
   "writing partner": "Writing partner",
   pictures: "Course pictures",
   "fact check": "Fact checks",
@@ -96,7 +96,7 @@ export function CostCenter() {
           <>
             <p>
               Every request to an AI service is logged with the feature that made it. Chat requests
-              — the tutor, check-ins, song lyrics and explanations — are priced by OpenRouter
+              — the tutor, conversations, song lyrics and explanations — are priced by OpenRouter
               itself.
             </p>
             <p>

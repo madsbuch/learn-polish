@@ -220,7 +220,7 @@ export function Exercises({
             info={
               <p>
                 A course is a folder of lessons on one theme: drills on its words, sentences and
-                dialogue, and lessons with a check-in. Ask the tutor for a new course on anything, or to
+                dialogue, and conversations with the examiner. Ask the tutor for a new course on anything, or to
                 add lessons and drills to one you have.
               </p>
             }

@@ -7,9 +7,9 @@ use crate::session::{self, Built, Drill};
 
 pub const TYPE: LessonType = LessonType {
     id: "dialogue",
-    name: "Conversation",
+    name: "Dialogue",
     icon: "drill",
-    description: "A short everyday conversation: read and hear it, then say what comes next, line by line.",
+    description: "A short everyday dialogue: read and hear it, then say what comes next, line by line.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Dialogue,

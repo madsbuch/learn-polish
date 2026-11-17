@@ -10,7 +10,7 @@ use crate::error::Result;
 use crate::models::{Achievement, DayStat, Stats, CourseProgress};
 use crate::session;
 
-/// About ten minutes: a drill and a check-in.
+/// About ten minutes: a drill and a conversation.
 /// Streak freezes kept at most; one is earned with every seven-day run.
 pub const MAX_FREEZES: i64 = 2;
 /// A word is mastered once its review interval has reached three weeks:
@@ -259,17 +259,14 @@ fn passed(conn: &mut Conn, format: Option<&str>) -> Result<i64> {
     Ok(query.count().get_result(conn)?)
 }
 
-/// Courses of three or more lessons with every lesson started.
+/// Courses completed: every core lesson passed (courses::status). The
+/// Other lessons folder is never completed.
 fn courses_finished(conn: &mut Conn) -> Result<i64> {
-    let rows: Vec<(i64, Option<i64>)> =
-        course_lessons::table.inner_join(lessons::table).select((course_lessons::course_id, lessons::due_day)).load(conn)?;
-    let mut by_course: std::collections::HashMap<i64, (i64, i64)> = Default::default();
-    for (course, due) in rows {
-        let entry = by_course.entry(course).or_default();
-        entry.0 += 1;
-        entry.1 += i64::from(due.is_some());
-    }
-    Ok(by_course.values().filter(|(total, started)| *total >= 3 && started == total).count() as i64)
+    Ok(courses::table
+        .filter(courses::completed_at.is_not_null())
+        .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED))
+        .count()
+        .get_result(conn)?)
 }
 
 pub fn collect(conn: &mut Conn) -> Result<Stats> {
@@ -415,15 +412,15 @@ const DEFINITIONS: &[Definition] = &[
     Definition { code: "mastered_25", title: "Taking root", description: "25 words that stick for three weeks", icon: "🪴", target: 25 },
     Definition { code: "mastered_100", title: "Solid hundred", description: "100 words that stick for three weeks", icon: "💎", target: 100 },
     Definition { code: "sentences_100", title: "Sentence builder", description: "Practise a hundred sentences", icon: "🧱", target: 100 },
-    Definition { code: "all_dialogues", title: "Ten conversations", description: "Work through ten conversations", icon: "💬", target: 10 },
-    Definition { code: "checkin_first", title: "Passed!", description: "Pass your first check-in", icon: "✅", target: 1 },
-    Definition { code: "checkins_25", title: "Top of the class", description: "Pass 25 check-ins", icon: "🎓", target: 25 },
+    Definition { code: "all_dialogues", title: "Ten dialogues", description: "Work through ten dialogues", icon: "💬", target: 10 },
+    Definition { code: "checkin_first", title: "Passed!", description: "Pass your first conversation lesson", icon: "✅", target: 1 },
+    Definition { code: "checkins_25", title: "Top of the class", description: "Pass 25 conversation lessons", icon: "🎓", target: 25 },
     Definition { code: "writing_first", title: "Got it across", description: "Pass a writing lesson", icon: "✍️", target: 1 },
     Definition { code: "writing_10", title: "Pen pal", description: "Pass ten writing lessons", icon: "📝", target: 10 },
     Definition { code: "listening_first", title: "An ear for it", description: "Pass a listening lesson", icon: "🎧", target: 1 },
     Definition { code: "song_first", title: "First song", description: "Make a learning song", icon: "🎵", target: 1 },
     Definition { code: "tutor_made", title: "Made to measure", description: "Have the tutor make a lesson for you", icon: "🛠️", target: 1 },
-    Definition { code: "course_done", title: "Course complete", description: "Start every lesson of a course", icon: "🏁", target: 1 },
+    Definition { code: "course_done", title: "Course complete", description: "Pass every lesson of a course", icon: "🏁", target: 1 },
 ];
 
 fn target_for(def: &Definition, c: &Counts) -> i64 {

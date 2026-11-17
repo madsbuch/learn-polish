@@ -164,7 +164,7 @@ export function CheckIn({
   return (
     <Screen
       title={title}
-      subtitle={writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Check-in"}
+      subtitle={writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Conversation"}
       onClose={onClose}
       nav={false}
       actions={

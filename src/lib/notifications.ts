@@ -16,7 +16,7 @@ const FIRST_ID = 42;
 const DAYS_AHEAD = 7;
 
 const GENERIC = [
-  { title: "Czas na polski!", body: "A drill and a check-in — about ten minutes." },
+  { title: "Czas na polski!", body: "A drill and a conversation — about ten minutes." },
   { title: "Dzień dobry!", body: "Your lessons are waiting in Polski." },
   { title: "Pięć minut?", body: "One short drill keeps the Polish warm." },
 ];

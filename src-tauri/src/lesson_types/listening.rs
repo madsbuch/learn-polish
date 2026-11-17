@@ -14,5 +14,5 @@ pub const TYPE: LessonType = LessonType {
     unaided_to_master: false,
     sections: &["song", "objectives", "note", "sources"],
     start_label: "I've listened — check me",
-    again_label: "Check in",
+    again_label: "Talk it through again",
 };

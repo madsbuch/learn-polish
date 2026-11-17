@@ -74,9 +74,13 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
         <P>
           A <strong>course</strong> is a theme, and lists its lessons in order. A{" "}
           <strong>lesson</strong> is one thing to do, of one of the types below: a <em>drill</em> you
-          tap through, or a <em>check-in</em> — a conversation with the examiner.
+          tap through, or a <em>conversation</em> with the examiner (or, for writing, a partner).
         </P>
-        <P>Each lesson is marked quick, medium or deep, by how much thought it takes.</P>
+        <P>
+          Every lesson comes back now and then, so you meet it again before you forget it: that
+          return is its <strong>check-in</strong>. Its page shows when the next one is, and how often.
+        </P>
+        <P>Each lesson is marked quick, medium or deep, by how long it takes and how deep it goes.</P>
       </Part>
 
       <Section title="Lesson types">
@@ -91,7 +95,7 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
               }
               title={type.name}
               subtitle={type.description}
-              trailing={<Badge tone="sky">{type.engine === "conversation" ? "Check-in" : "Drill"}</Badge>}
+              trailing={<Badge tone="sky">{type.engine === "conversation" ? "Conversation" : "Drill"}</Badge>}
             />
           ))}
         </List>

@@ -96,7 +96,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
           <p>
             The tutor and the examiner keep short notes about you — your goals, what you like,
             what you find hard and what you have mastered — and both read all of them before they
-            answer. What the examiner notices in a check-in reaches the tutor, and the other way
+            answer. What the examiner notices in a conversation reaches the tutor, and the other way
             round.
           </p>
           <p>
@@ -148,7 +148,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 </Button>
               }
             >
-              As you talk to the tutor and do check-ins, they note what matters — or add something
+              As you talk to the tutor and do conversation lessons, they note what matters — or add something
               yourself, like why you are learning Polish.
             </EmptyState>
           ) : (

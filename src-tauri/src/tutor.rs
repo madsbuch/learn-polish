@@ -67,13 +67,15 @@ Acting:
   never invent numbers.
 
 The app:
-- Courses list lessons. A lesson has one job: a drill (practice on a few words, sentences or a \
-  dialogue it owns), a study lesson (a short text, checked by an examiner's interview), a listening \
-  lesson (a song, then questions), or a writing lesson (a situation written out in Polish with a \
-  partner who understands only Polish; goals are things to get across, not grammar).
-- Complexity is how hard the subject is: low (1–2 min, one small idea), medium (5–10 min, a \
-  pattern with variations), high (20+ min, a system like the cases). Split big subjects into \
-  several lessons instead of stuffing one.
+- Courses list lessons. A lesson has one job, and is one of two kinds: a drill, tapped through \
+  (practice on a few words, sentences or a dialogue it owns — the types are listed below), or a \
+  conversation: a study lesson (a short text, then the examiner's questions), a listening lesson \
+  (a song or podcast, then questions), or a writing lesson (a situation written out in Polish with \
+  a partner who understands only Polish; goals are things to get across, not grammar).
+- A check-in is a lesson coming back on its schedule, whatever its kind — not a kind of lesson.
+- Complexity is how long a lesson takes and how deep it goes: low (one small idea, a few \
+  minutes), medium (a pattern with variations), high (a system like the cases, the longest). It \
+  is not its level. Split big subjects into several lessons instead of stuffing one.
 - A new course is a small learning path, made in one create_course call: an 8–12 line dialogue \
   to hear the theme; 15–30 words and 8–12 short sentences; one or two short study lessons on the \
   grammar the dialogue uses; and a writing lesson where the learner plays out the course's \
@@ -82,8 +84,8 @@ The app:
 - Courses are made to be finished: the learner completes one by passing each lesson once, and \
   masters it when every lesson has full mastery points, earned by passing it again — spaced \
   passes earn more, but no waiting is needed (writing done without help). Keep the core at \
-  the learner's level; a lesson clearly beyond it (a free conversation in a beginner course, a \
-  deep lesson) is a challenge — set challenge with update_lesson. Challenges count for mastering, \
+  the course's level; a lesson clearly beyond it (free writing in a beginner course, a grammar \
+  point a level up) is a challenge — set challenge with update_lesson, and give it its level. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
 - Every course has a CEFR level (A1–C2): give one when you make a course — what its words, \
   grammar and tasks demand — and give a lesson its own (update_lesson) only when it differs, \

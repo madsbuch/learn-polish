@@ -123,7 +123,7 @@ export const api = {
   wordExamples: (wordId: number) => invoke<WordExample[]>("word_examples", { wordId }),
   /** Adds audio players to a lesson's Polish examples (its text otherwise unchanged). */
   lessonAddPlayers: (lessonId: number) => invoke<LessonDetail>("lesson_add_players", { lessonId }),
-  /** The summary after a check-in; new achievements are those since it began. */
+  /** The summary after a conversation lesson; new achievements are those since it began. */
   checkinSummary: (checkinId: number, firstCompletionToday: boolean) =>
     invoke<SessionResult>("checkin_summary", { checkinId, firstCompletionToday }),
 
@@ -185,7 +185,7 @@ export const api = {
     invoke<void>("tutor_rename", { conversationId, title }),
   tutorDelete: (conversationId: number) => invoke<void>("tutor_delete", { conversationId }),
   courseDelete: (courseId: number) => invoke<void>("course_delete", { courseId }),
-  /** Closes a mastered course: a trophy, out of the check-ins. Final after a few minutes. */
+  /** Closes a mastered course: a trophy, out of play, for good. */
   courseClose: (courseId: number) => invoke<CourseClosed>("course_close", { courseId }),
   courseRename: (courseId: number, title: string, titlePl: string, summary: string) =>
     invoke<void>("course_rename", { courseId, title, titlePl, summary }),

@@ -15,12 +15,12 @@ export async function loadLessonTypes(): Promise<void> {
   types = new Map(list.map((type) => [type.id, type]));
 }
 
-/** A lesson's type; an unknown one reads as a plain drill or check-in. */
+/** A lesson's type; an unknown one reads as a plain drill or conversation. */
 export function lessonType(lesson: Pick<Lesson, "type" | "engine">): LessonTypeInfo {
   return (
     types.get(lesson.type) ?? {
       id: lesson.type,
-      name: lesson.engine === "conversation" ? "Check-in" : "Drill",
+      name: lesson.engine === "conversation" ? "Conversation" : "Drill",
       icon: lesson.engine === "conversation" ? "study" : "drill",
       description: "",
       engine: lesson.engine,

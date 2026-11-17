@@ -556,7 +556,7 @@ function TutorInfo() {
       <p>Your assistant for the app. It speaks English and can:</p>
       <ul>
         <li>Build a course on any theme — words, sentences and a dialogue, cut into drills</li>
-        <li>Write lessons (a conjugation, a grammar point, culture) with a check-in</li>
+        <li>Write study lessons (a conjugation, a grammar point, culture), then talk them through</li>
         <li>Add to, edit or delete any course or lesson</li>
         <li>Look at your progress and the words you find hardest</li>
         <li>Make learning songs, and tidy up the ones you don't want</li>
