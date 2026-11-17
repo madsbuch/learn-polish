@@ -97,6 +97,15 @@ The app:
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
   to sort older ones, read their lyrics with get_song and move their lesson with move_lesson.
+- You have full control over songs and podcasts. make_song and make_podcast write and make one \
+  in one go. When it has to meet something — words from a course (get_course for them), \
+  grammar, line length, a structure — draft it first (draft_song, draft_podcast) with those \
+  constraints as requirements, read the draft, fix anything that misses them yourself \
+  (edit_song: lines, title, chorus, style, singer) or ask the writer again (revise_song), then \
+  make it with sing_song. Don't ask the learner to approve it: they delete what they don't like. \
+  Something already made is never changed: editing or revising it makes a new one based on it. \
+  Everything a song was made with is kept (get_song): to make one \"like\" another, reuse its \
+  style, singer and requirements and set based_on.
 - The Music tab also holds podcasts (make_podcast): short spoken episodes on a subject the \
   learner likes, written from Wikipedia articles (0–5), from today's Polish news (news: true — \
   \"what's going on in Poland?\"), or as a made-up story, told by a narrator, \
@@ -189,7 +198,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         })
         .collect();
 
-    let song_count: i64 = songs_table::table.count().get_result(conn)?;
+    let song_count: i64 = songs_table::table.filter(songs_table::status.ne("draft")).count().get_result(conn)?;
     let unsorted: i64 = course_lessons::table
         .inner_join(courses_table::table)
         .filter(courses_table::slug.eq("listening"))
@@ -691,7 +700,9 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "about": { "type": "string", "description": "What the song is about, in English" },
-                    "course_id": { "type": "integer", "description": "Take vocabulary from this course; the song's listening lesson is filed there too" },
+                    "requirements": { "type": "string", "description": "What the lyrics must meet, every point: words to use (e.g. a course's, from get_course), grammar, line length, structure. Kept with the song." },
+                    "based_on": { "type": "integer", "description": "The song this one varies (e.g. \"the same style as …\"): reuse its style and singer from get_song" },
+                    "course_id": { "type": "integer", "description": "The course to file its listening lesson in" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
                     "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
                     "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
@@ -740,7 +751,9 @@ pub fn tool_definitions() -> Vec<Tool> {
                         "enum": ["short", "medium", "long"],
                         "description": "pairs: short ≈ 20 sentences, medium ≈ 35, long ≈ 55; immersion: 30, 50, 80. Default medium."
                     },
-                    "course_id": { "type": "integer", "description": "Work in vocabulary from this course; its listening lesson is filed there too" },
+                    "requirements": { "type": "string", "description": "What the script must meet, every point: words to use, grammar, sentence length. Kept with it." },
+                    "based_on": { "type": "integer", "description": "The episode or song this one varies" },
+                    "course_id": { "type": "integer", "description": "The course to file its listening lesson in" },
                     "voice": { "type": "string", "enum": ["f", "m"], "description": "The Polish voice; the English uses the other" },
                     "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default false)" }
                 },
@@ -763,6 +776,123 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "english": { "type": "boolean", "description": "Say the English before each Polish sentence; off: only Polish is heard" }
                 },
                 "required": ["podcast_id"]
+            }),
+        ),
+        tool(
+            "draft_song",
+            "Writing the lyrics…",
+            "Have the songwriter write a song without singing it yet: returns the draft (title, \
+             chorus, style, singer, every line) to check against its requirements, change with \
+             edit_song or revise_song, and make with sing_song. Free until sung.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "about": { "type": "string", "description": "What the song is about, in English" },
+                    "requirements": { "type": "string", "description": "What the lyrics must meet, every point" },
+                    "based_on": { "type": "integer", "description": "The song this one varies" },
+                    "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence" },
+                    "style": { "type": "string", "description": "Musical style" },
+                    "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
+                    "length": { "type": "string", "enum": ["short", "medium", "long"] }
+                },
+                "required": ["about"]
+            }),
+        ),
+        tool(
+            "draft_podcast",
+            "Writing the script…",
+            "Have a podcast script written without recording it yet: returns the draft to check, \
+             change with edit_song or revise_song, and make with sing_song. Takes the same \
+             arguments as make_podcast.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "about": { "type": "string" },
+                    "articles": { "type": "array", "items": { "type": "string" } },
+                    "story": { "type": "boolean" },
+                    "news": { "type": "boolean" },
+                    "cast": { "type": "string", "enum": ["narrator", "hosts", "characters"] },
+                    "format": { "type": "string", "enum": ["pairs", "immersion"] },
+                    "length": { "type": "string", "enum": ["short", "medium", "long"] },
+                    "voice": { "type": "string", "enum": ["f", "m"] },
+                    "requirements": { "type": "string", "description": "What the script must meet, every point" },
+                    "based_on": { "type": "integer" }
+                },
+                "required": []
+            }),
+        ),
+        tool(
+            "revise_song",
+            "Rewriting it…",
+            "Ask the writer to rewrite a song's lyrics or a podcast's script: what to change, the \
+             rest kept (its requirements still apply). A draft changes in place; one already made \
+             gives a new draft based on it. Returns the draft.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "song_id": { "type": "integer" },
+                    "feedback": { "type": "string", "description": "What to change" }
+                },
+                "required": ["song_id", "feedback"]
+            }),
+        ),
+        tool(
+            "edit_song",
+            "Changing it…",
+            "Change a song or podcast directly — only what is given changes. sections replaces all \
+             the lyrics (a song: verse/chorus/bridge/intro/outro, each line Polish with English; a \
+             podcast: its parts, lines with speaker). A draft changes in place; one already made \
+             gives a new draft based on it. Returns the draft.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "song_id": { "type": "integer" },
+                    "title": { "type": "string" },
+                    "chorus_pl": { "type": "string" },
+                    "chorus_en": { "type": "string" },
+                    "style": { "type": "string", "description": "Song: the musical style for Suno" },
+                    "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
+                    "sections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "kind": { "type": "string" },
+                                "lines": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "pl": { "type": "string" },
+                                            "en": { "type": "string" },
+                                            "speaker": { "type": "string" },
+                                            "how": { "type": "string" }
+                                        },
+                                        "required": ["pl", "en"]
+                                    }
+                                }
+                            },
+                            "required": ["lines"]
+                        }
+                    },
+                    "note": { "type": "string", "description": "Why, in a few words (kept with it)" }
+                },
+                "required": ["song_id"]
+            }),
+        ),
+        tool(
+            "sing_song",
+            "Making it…",
+            "Make a draft: a song is sung by Suno (2–4 minutes, costs kie.ai credits), a podcast is \
+             read aloud (a few minutes). It then appears in the Music tab.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "song_id": { "type": "integer" },
+                    "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it" },
+                    "course_id": { "type": "integer", "description": "The course to file that lesson in" }
+                },
+                "required": ["song_id"]
             }),
         ),
         tool(
@@ -1173,8 +1303,13 @@ fn lesson_json(lesson: &lessons::Lesson) -> Value {
 #[derive(Deserialize)]
 struct SongArgs {
     about: String,
+    /// Where its listening lesson is filed.
     #[serde(default, rename = "course_id", alias = "topic_id")]
     course_id: Option<i64>,
+    #[serde(default)]
+    requirements: String,
+    #[serde(default)]
+    based_on: Option<i64>,
     #[serde(default)]
     chorus_pl: String,
     #[serde(default)]
@@ -1216,6 +1351,58 @@ struct PodcastArgs {
     voice: String,
     #[serde(default)]
     listening_lesson: bool,
+    #[serde(default)]
+    requirements: String,
+    #[serde(default)]
+    based_on: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct ReviseSongArgs {
+    song_id: i64,
+    feedback: String,
+}
+
+#[derive(Deserialize)]
+struct EditLine {
+    #[serde(default)]
+    pl: String,
+    #[serde(default)]
+    en: String,
+    #[serde(default)]
+    speaker: String,
+    #[serde(default)]
+    how: String,
+}
+
+#[derive(Deserialize)]
+struct EditSection {
+    #[serde(default)]
+    kind: String,
+    lines: Vec<EditLine>,
+}
+
+#[derive(Deserialize)]
+struct EditSongArgs {
+    song_id: i64,
+    title: Option<String>,
+    chorus_pl: Option<String>,
+    chorus_en: Option<String>,
+    style: Option<String>,
+    vocal_gender: Option<String>,
+    sections: Option<Vec<EditSection>>,
+    /// Why, in a few words: kept with the song.
+    #[serde(default)]
+    note: String,
+}
+
+#[derive(Deserialize)]
+struct SingSongArgs {
+    song_id: i64,
+    #[serde(default)]
+    listening_lesson: bool,
+    #[serde(default, alias = "topic_id")]
+    course_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -1723,7 +1910,7 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             ))
         }
         "list_songs" => {
-            let list: Vec<Value> = songs::list_songs(conn)?
+            let list: Vec<Value> = songs::list_songs(conn, true)?
                 .into_iter()
                 .map(|song| {
                     json!({
@@ -1772,6 +1959,17 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 "length": song.origin.length,
                 "songwriter_model": song.origin.songwriter_model,
                 "revisions": song.origin.revisions,
+                "made_by": song.origin.made_by,
+                "requirements": song.origin.requirements,
+                "based_on": song.origin.based_on,
+                "steps": song.origin.steps.iter().map(|s| json!({ "kind": s.kind, "by": s.by, "what": s.text })).collect::<Vec<_>>(),
+                "given_to_writer": {
+                    "words": song.origin.given.words,
+                    "sentences": song.origin.given.sentences,
+                    "weak_words": song.origin.given.weak_words,
+                    "memories": song.origin.given.memories,
+                },
+                "instructions_version": song.origin.instructions_version,
                 "kind": song.kind,
                 "podcast_sound": song.podcast,
                 "sources": song.origin.sources.iter().map(|s| json!({ "title": s.title, "url": s.url })).collect::<Vec<_>>(),
@@ -1984,6 +2182,214 @@ fn progress(conn: &mut Conn) -> Result<Value> {
     }))
 }
 
+/// A draft as the tutor reads it: everything it can change.
+fn draft_view(id: i64, draft: &songs::SongDraft) -> Value {
+    json!({
+        "song_id": id,
+        "status": "draft — not made yet; sing_song makes it",
+        "kind": if draft.kind == "podcast" { "podcast" } else { "song" },
+        "title": draft.title,
+        "chorus_pl": draft.chorus_pl,
+        "chorus_en": draft.chorus_en,
+        "style": draft.style,
+        "singer": singer(&draft.vocal_gender),
+        "requirements": draft.origin.requirements,
+        "based_on": draft.origin.based_on,
+        "sections": draft.sections.iter().map(|s| json!({
+            "kind": s.kind,
+            "lines": s.lines.iter().map(|l| {
+                let mut line = json!({ "pl": l.pl, "en": l.en });
+                if !l.speaker.is_empty() { line["speaker"] = json!(l.speaker); }
+                if !l.how.is_empty() { line["how"] = json!(l.how); }
+                line
+            }).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn draft_outcome(app: &tauri::AppHandle, id: i64, draft: &songs::SongDraft, label: String) -> Outcome {
+    songs::notify(app, id);
+    Outcome { result: draft_view(id, draft), action: Some(TutorAction { kind: "songDraft".into(), label, course_id: None, song_id: Some(id), lesson_id: None }) }
+}
+
+async fn draft_song(db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = async {
+        let args: SongArgs = parse(arguments)?;
+        let draft = songs::write_draft(
+            db,
+            songs::DraftRequest {
+                brief: args.about,
+                requirements: args.requirements,
+                based_on: args.based_on,
+                made_by: "tutor".into(),
+                chorus_pl: args.chorus_pl,
+                style: args.style,
+                vocal_gender: args.vocal_gender,
+                length: args.length,
+                ..Default::default()
+            },
+        )
+        .await?;
+        let draft = songs::normalize_draft(draft)?;
+        let id = songs::insert_draft(&mut db.lock(), &draft)?;
+        Ok(Outcome::data(draft_view(id, &draft)))
+    }
+    .await;
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
+async fn draft_podcast(db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = async {
+        let args: PodcastArgs = parse(arguments)?;
+        let request = crate::podcasts::PodcastRequest {
+            topic: args.about,
+            articles: if args.article.trim().is_empty() {
+                args.articles
+            } else {
+                std::iter::once(args.article).chain(args.articles).collect()
+            },
+            story: args.story,
+            cast: args.cast,
+            news: args.news,
+            format: args.format,
+            length: args.length,
+            vocal_gender: args.voice,
+            requirements: args.requirements,
+            based_on: args.based_on,
+            made_by: "tutor".into(),
+            ..Default::default()
+        };
+        let draft = crate::podcasts::write_episode(db, request).await?;
+        let id = songs::insert_draft(&mut db.lock(), &draft)?;
+        Ok(Outcome::data(draft_view(id, &draft)))
+    }
+    .await;
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
+async fn revise_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = async {
+        let args: ReviseSongArgs = parse(arguments)?;
+        let (id, previous) = songs::editable(&mut db.lock(), args.song_id, "tutor")?;
+        let revised = if previous.kind == "podcast" {
+            crate::podcasts::write_episode(
+                db,
+                crate::podcasts::PodcastRequest {
+                    previous: Some(previous),
+                    feedback: args.feedback,
+                    made_by: "tutor".into(),
+                    ..Default::default()
+                },
+            )
+            .await?
+        } else {
+            let draft = songs::write_draft(
+                db,
+                songs::DraftRequest {
+                    previous: Some(previous),
+                    feedback: args.feedback,
+                    made_by: "tutor".into(),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            songs::normalize_draft(draft)?
+        };
+        let id = songs::store_draft(&mut db.lock(), id, &revised)?;
+        Ok(draft_outcome(app, id, &revised, format!("Rewrote “{}”", revised.title)))
+    }
+    .await;
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
+fn edit_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = (|| {
+        let args: EditSongArgs = parse(arguments)?;
+        let given = [args.title.is_some(), args.chorus_pl.is_some(), args.chorus_en.is_some(), args.style.is_some(), args.vocal_gender.is_some(), args.sections.is_some()];
+        if !given.contains(&true) {
+            return Err(Error::msg("Nothing to change: give a title, chorus, style, singer or sections."));
+        }
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let (id, mut draft) = songs::editable(conn, args.song_id, "tutor")?;
+        let before = songs::bare(&draft);
+        let mut changed = Vec::new();
+        if let Some(title) = args.title {
+            draft.title = title;
+            changed.push("title");
+        }
+        if let Some(chorus) = args.chorus_pl {
+            draft.chorus_pl = chorus;
+            changed.push("chorus");
+        }
+        if let Some(chorus) = args.chorus_en {
+            draft.chorus_en = chorus;
+            changed.push("chorus meaning");
+        }
+        if let Some(style) = args.style {
+            draft.style = style;
+            changed.push("style");
+        }
+        if let Some(gender) = args.vocal_gender {
+            draft.vocal_gender = gender;
+            changed.push("singer");
+        }
+        if let Some(sections) = args.sections {
+            draft.sections = sections
+                .into_iter()
+                .map(|s| songs::SongSection {
+                    kind: if s.kind.is_empty() { "verse".into() } else { s.kind },
+                    lines: s
+                        .lines
+                        .into_iter()
+                        .map(|l| songs::SongLine { pl: l.pl, en: l.en, speaker: l.speaker, how: l.how })
+                        .collect(),
+                })
+                .collect();
+            changed.push("lyrics");
+        }
+        let what = match args.note.trim() {
+            "" => format!("Edited the {}", changed.join(", ")),
+            note => format!("Edited the {}: {note}", changed.join(", ")),
+        };
+        draft.origin.steps.push(songs::OriginStep { kind: "edit".into(), by: "tutor".into(), text: what, model: String::new(), before });
+        let draft = if draft.kind == "podcast" {
+            crate::podcasts::normalize_episode(draft)?
+        } else {
+            songs::normalize_draft(draft)?
+        };
+        let id = songs::store_draft(conn, id, &draft)?;
+        drop(guard);
+        Ok(draft_outcome(app, id, &draft, format!("Changed “{}”", draft.title)))
+    })();
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
+fn sing_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
+    let result: Result<Outcome> = (|| {
+        let args: SingSongArgs = parse(arguments)?;
+        songs::sing(app, db, args.song_id)?;
+        let song = songs::load_song(&mut db.lock(), args.song_id)?;
+        let lesson = if args.listening_lesson {
+            Some(lessons::create_listening(&mut db.lock(), song.id, None, None, args.course_id, "tutor")?)
+        } else {
+            None
+        };
+        let podcast = song.kind == "podcast";
+        Ok(Outcome::song(
+            json!({
+                "song_id": song.id,
+                "status": if podcast { "being read aloud; ready in a few minutes in the Music tab" } else { "Suno is singing it now; ready in 2–4 minutes" },
+                "listening_lesson_id": lesson.as_ref().map(|l| l.id),
+            }),
+            "songStarted",
+            if podcast { format!("Recording “{}”", song.title) } else { format!("Singing “{}”", song.title) },
+            Some(song.id),
+        ))
+    })();
+    result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
+}
+
 /// make_song needs the network twice (the songwriter, then Suno), so unlike
 /// the other tools it cannot run under the database lock.
 async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
@@ -1995,7 +2401,9 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
             db,
             songs::DraftRequest {
                 brief: args.about,
-                course_id: args.course_id,
+                requirements: args.requirements,
+                based_on: args.based_on,
+                made_by: "tutor".into(),
                 chorus_pl: args.chorus_pl,
                 style: args.style,
                 vocal_gender: args.vocal_gender,
@@ -2050,8 +2458,10 @@ fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
             news: args.news,
             format: args.format,
             length: args.length,
-            course_id: args.course_id,
             vocal_gender: args.voice,
+            requirements: args.requirements,
+            based_on: args.based_on,
+            made_by: "tutor".into(),
             ..Default::default()
         };
         // Written and recorded in the background; the episode is in the
@@ -2519,6 +2929,16 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                     make_song(app, db, &arguments).await
                 } else if name == "make_podcast" {
                     make_podcast(app, db, &arguments)
+                } else if name == "draft_song" {
+                    draft_song(db, &arguments).await
+                } else if name == "draft_podcast" {
+                    draft_podcast(db, &arguments).await
+                } else if name == "revise_song" {
+                    revise_song(app, db, &arguments).await
+                } else if name == "edit_song" {
+                    edit_song(app, db, &arguments)
+                } else if name == "sing_song" {
+                    sing_song(app, db, &arguments)
                 } else if name == "set_podcast_sound" {
                     // Starts work in the background, which takes the lock itself.
                     set_podcast_sound(app, db, &arguments)

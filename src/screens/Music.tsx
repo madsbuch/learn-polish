@@ -45,7 +45,7 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { Playlist, Settings, Song, CourseProgress, WikiSource } from "../lib/types";
+import type { Playlist, Settings, Song, WikiSource } from "../lib/types";
 import { EpisodeSources, PodcastSound } from "../components/Podcast";
 import { ArticleReader } from "../components/Sources";
 import { PodcastComposer } from "./PodcastComposer";
@@ -117,7 +117,6 @@ function NowPlaying({ onOpen }: { onOpen: () => void }) {
 
 export function Music({
   settings,
-  courses,
   openSongId,
   onOpenSettings,
   onSongOpened,
@@ -125,7 +124,6 @@ export function Music({
   onOpenPlayer,
 }: {
   settings: Settings;
-  courses: CourseProgress[];
   /** Set when the player asks to show a song's page. */
   openSongId: number | null;
   onOpenSettings: () => void;
@@ -200,7 +198,6 @@ export function Music({
       view.what === "podcast" ? (
         <PodcastComposer
           settings={settings}
-          courses={courses}
           onCancel={back}
           onCreated={created}
           onSwitch={() => setView({ kind: "compose", what: "song" })}
@@ -208,7 +205,6 @@ export function Music({
       ) : (
         <SongComposer
           settings={settings}
-          courses={courses}
           onCancel={back}
           onCreated={created}
           onSwitch={() => setView({ kind: "compose", what: "podcast" })}

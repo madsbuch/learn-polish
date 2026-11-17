@@ -144,8 +144,12 @@ pub struct PodcastRequest {
     pub format: String,
     /// "short" | "medium" | "long".
     pub length: String,
-    /// Words to draw on; none: the words the learner has practised.
-    pub course_id: Option<i64>,
+    /// What the script must meet, word for word (the tutor's).
+    pub requirements: String,
+    /// The episode or song this one varies, if any.
+    pub based_on: Option<i64>,
+    /// "composer" or "tutor"; empty: the composer.
+    pub made_by: String,
     /// The Polish voice: "f" or "m".
     pub vocal_gender: String,
     /// When refining: the current draft and what to change about it.
@@ -676,7 +680,7 @@ pub async fn podcast_draft(db: State<'_, Db>, request: PodcastRequest) -> Result
 /// The writer at work: used by the composer and by the tutor.
 pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft> {
     if let Some(previous) = &request.previous {
-        return revise(db, previous, &request.feedback).await;
+        return revise(db, previous, &request.feedback, &request.made_by).await;
     }
     let format = format_of(&request.format);
     let length = if songs::SONG_LENGTHS.contains(&request.length.as_str()) { request.length.as_str() } else { "medium" };
@@ -695,7 +699,7 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
     let (key, model, brief) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let context = songs::gather_context(conn, request.course_id)?;
+        let context = songs::gather_context(conn)?;
         let mut brief = String::new();
         let subject = match (request.news, request.topic.trim()) {
             (true, "") => format!("today's news from {}", news::PLACE),
@@ -718,21 +722,24 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
                 interests.join("\n- ")
             ));
         }
-        if let Some(course) = &context.course {
-            brief.push_str(&format!("\nTheir current course: {course}\n"));
-        }
-        if !context.words.is_empty() {
-            let words: Vec<&str> = context.words.iter().take(25).map(String::as_str).collect();
+        let words: Vec<String> = context.words.iter().take(25).cloned().collect();
+        if !words.is_empty() {
             brief.push_str(&format!("\nWords the learner knows or is learning:\n{}\n", words.join("\n")));
         }
-        if request.news {
+        let read = if request.news {
             let (y, m, d) = crate::commands::civil_date(crate::db::today(conn));
-            brief.push_str(&news_reading(&stories, &articles, &format!("{y}-{m:02}-{d:02}")));
+            news_reading(&stories, &articles, &format!("{y}-{m:02}-{d:02}"))
         } else {
-            brief.push_str(&reading(&articles, request.story));
-        }
-        (ai::api_key(conn)?, songs::songwriter_model(conn)?, brief)
+            reading(&articles, request.story)
+        };
+        brief.push_str(&read);
+        brief.push_str(&songs::requirements_text(&request.requirements));
+        // What came from the app, kept with the episode: with the request it
+        // rebuilds this prompt.
+        let given = songs::WriterInput { words, memories: interests, reading: read, ..Default::default() };
+        (ai::api_key(conn)?, songs::songwriter_model(conn)?, (brief, given))
     };
+    let (brief, given) = brief;
 
     let messages = [ai::Wire::system(WRITER_RULES), ai::Wire::user(brief)];
     let reply = ai::complete_json(&key, &model, &messages, 12_000).await?;
@@ -741,7 +748,7 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
         return Err(Error::msg("The script was cut off. Try a shorter episode."));
     }
     let mut draft = script_to_draft(parse_script(&reply.text)?, format, &request.vocal_gender);
-    draft.course_id = request.course_id;
+    draft.course_id = None;
     draft.origin = SongOrigin {
         brief: request.topic.trim().to_string(),
         length: length.to_string(),
@@ -760,6 +767,11 @@ pub async fn write_episode(db: &Db, request: PodcastRequest) -> Result<SongDraft
         requested_articles: request.articles.clone(),
         story: request.story,
         requested_cast: cast_of(&request.cast, request.story).to_string(),
+        made_by: songs::made_by(&request.made_by).into(),
+        requirements: request.requirements.trim().to_string(),
+        based_on: request.based_on,
+        given,
+        instructions_version: songs::instructions_version(WRITER_RULES),
         ..Default::default()
     };
     normalize_episode(draft)
@@ -802,7 +814,6 @@ pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> 
         .collect(),
         style: format.clone(),
         vocal_gender: if request.vocal_gender == "m" { "m".into() } else { "f".into() },
-        course_id: request.course_id,
         kind: "podcast".into(),
         podcast: Some(PodcastAudio::for_format(&format)),
         origin: SongOrigin {
@@ -812,6 +823,9 @@ pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> 
             news: request.news,
             story: request.story,
             requested_cast: cast_of(&request.cast, request.story).to_string(),
+            made_by: songs::made_by(&request.made_by).into(),
+            requirements: request.requirements.trim().to_string(),
+            based_on: request.based_on,
             ..Default::default()
         },
         ..Default::default()
@@ -839,7 +853,9 @@ async fn write_script(db: &Db, song: &Song) -> Result<()> {
         cast: song.origin.requested_cast.clone(),
         format: song.style.clone(),
         length: song.origin.length.clone(),
-        course_id: song.course_id,
+        requirements: song.origin.requirements.clone(),
+        based_on: song.origin.based_on,
+        made_by: song.origin.made_by.clone(),
         vocal_gender: song.vocal_gender.clone(),
         ..Default::default()
     };
@@ -865,7 +881,7 @@ async fn write_script(db: &Db, song: &Song) -> Result<()> {
     Ok(())
 }
 
-async fn revise(db: &Db, previous: &SongDraft, feedback: &str) -> Result<SongDraft> {
+async fn revise(db: &Db, previous: &SongDraft, feedback: &str, by: &str) -> Result<SongDraft> {
     let feedback = match feedback.trim() {
         "" => "Make it more interesting.",
         text => text,
@@ -881,9 +897,10 @@ async fn revise(db: &Db, previous: &SongDraft, feedback: &str) -> Result<SongDra
         "parts": previous.sections.iter().map(|s| serde_json::json!({ "lines": s.lines })).collect::<Vec<_>>(),
     });
     let brief = format!(
-        "{}\n\nHere is the current script:\n{}\n\nRevise it as follows, keeping everything else:\n{feedback}\n\nReturn the whole revised script as JSON.",
+        "{}\n\nHere is the current script:\n{}\n\nRevise it as follows, keeping everything else:\n{feedback}\n{}\nReturn the whole revised script as JSON.",
         format_rules(&previous.style),
-        serde_json::to_string_pretty(&current).unwrap_or_default()
+        serde_json::to_string_pretty(&current).unwrap_or_default(),
+        songs::requirements_text(&previous.origin.requirements),
     );
     let messages = [ai::Wire::system(WRITER_RULES), ai::Wire::user(brief)];
     let reply = ai::complete_json(&key, &model, &messages, 12_000).await?;
@@ -891,6 +908,13 @@ async fn revise(db: &Db, previous: &SongDraft, feedback: &str) -> Result<SongDra
     let revised = script_to_draft(parse_script(&reply.text)?, &previous.style, &previous.vocal_gender);
     let mut origin = previous.origin.clone();
     origin.revisions.push(feedback.to_string());
+    origin.steps.push(songs::OriginStep {
+        kind: "revise".into(),
+        by: songs::made_by(by).into(),
+        text: feedback.to_string(),
+        model: model.clone(),
+        before: songs::bare(previous),
+    });
     origin.songwriter_model = model;
     normalize_episode(SongDraft {
         course_id: previous.course_id,

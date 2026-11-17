@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::ai;
 use crate::files;
 use crate::db::{self, Conn, Db};
-use crate::schema::{course_sentences, course_words, reviews, sentences, song_tracks, songs, courses, words};
+use crate::schema::{courses, reviews, sentences, song_tracks, songs, words};
 use crate::error::{Error, Result};
 
 const KIE_BASE_URL: &str = "https://api.kie.ai/api/v1";
@@ -81,7 +81,7 @@ pub struct SongDraft {
     /// "f", "m" or "" for no preference.
     pub vocal_gender: String,
     pub sections: Vec<SongSection>,
-    /// The course whose words it uses: its listening lesson is filed there.
+    /// The course it is filed in (through its listening lesson), if any.
     pub course_id: Option<i64>,
     /// How the song came about: what was asked and with what. Saved with the
     /// song, so it can be made again or varied later.
@@ -124,6 +124,82 @@ pub struct SongOrigin {
     /// (their headlines, outlets, dates and links).
     pub news: bool,
     pub news_items: Vec<crate::news::Headline>,
+    /// Who made it: "composer" (the learner, on the Music tab) or "tutor".
+    pub made_by: String,
+    /// What the lyrics or script had to meet, word for word (the tutor's).
+    pub requirements: String,
+    /// The song or podcast this one varies, or was edited from.
+    pub based_on: Option<i64>,
+    /// Everything the writer was given besides the request itself. With the
+    /// request fields above and the instructions of `instructions_version`,
+    /// it rebuilds the first prompt exactly.
+    pub given: WriterInput,
+    /// Which fixed writer instructions were used: a version and a hash of
+    /// their text (see [`instructions_version`]).
+    pub instructions_version: String,
+    /// What happened after the first draft, in order: revisions asked of the
+    /// writer and edits made directly, each with the draft as it was before —
+    /// which, with the request, is that revision's whole prompt.
+    pub steps: Vec<OriginStep>,
+}
+
+/// What the writer was given from the app: the learner's words, memories and
+/// what to read. A snapshot, since all of it changes over time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WriterInput {
+    /// "Polish = English", as given.
+    pub words: Vec<String>,
+    pub sentences: Vec<String>,
+    /// Words the learner keeps forgetting.
+    pub weak_words: Vec<String>,
+    /// Choruses that already existed, to avoid.
+    pub existing_choruses: Vec<String>,
+    /// What is known about the learner (podcasts).
+    pub memories: Vec<String>,
+    /// The articles or news as the writer read them (podcasts).
+    pub reading: String,
+}
+
+/// A change after the first draft.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct OriginStep {
+    /// "revise" (asked of the writer) or "edit" (changed directly).
+    pub kind: String,
+    /// "composer" or "tutor".
+    pub by: String,
+    /// The feedback given, or what was edited.
+    pub text: String,
+    /// The model that did a revision.
+    pub model: String,
+    /// The draft before this step, without its origin.
+    pub before: Option<Box<SongDraft>>,
+}
+
+/// "tutor", or else "composer".
+pub fn made_by(by: &str) -> &'static str {
+    if by == "tutor" {
+        "tutor"
+    } else {
+        "composer"
+    }
+}
+
+/// Bump when the way a writer's prompt is put together from its inputs
+/// changes, so an old song's prompt is rebuilt with the code of its version.
+pub const PROMPT_VERSION: u32 = 1;
+
+/// "v1-1a2b3c4d": the prompt version and a hash of the fixed instructions.
+pub fn instructions_version(rules: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(rules.as_bytes());
+    format!("v{PROMPT_VERSION}-{}", hash.iter().take(4).map(|b| format!("{b:02x}")).collect::<String>())
+}
+
+/// A draft as a step's "before": without how it came about.
+pub fn bare(draft: &SongDraft) -> Option<Box<SongDraft>> {
+    Some(Box::new(SongDraft { origin: SongOrigin::default(), ..draft.clone() }))
 }
 
 /// An article a podcast was written from.
@@ -216,8 +292,13 @@ pub struct Song {
 pub struct DraftRequest {
     /// Free text: what the song should be about.
     pub brief: String,
-    /// Draw vocabulary from this conversation course.
-    pub course_id: Option<i64>,
+    /// What the lyrics must meet, word for word (the tutor's): words to use,
+    /// grammar, line length — anything.
+    pub requirements: String,
+    /// The song this one varies, if any.
+    pub based_on: Option<i64>,
+    /// "composer" or "tutor"; empty: the composer.
+    pub made_by: String,
     /// A fixed chorus sentence; empty lets the songwriter choose.
     pub chorus_pl: String,
     pub style: String,
@@ -405,53 +486,43 @@ Reply with ONLY a JSON object, no prose, in exactly this shape:
 }"#;
 
 pub(crate) struct SongContext {
-    pub(crate) course: Option<String>,
     pub(crate) words: Vec<String>,
     pub(crate) sentences: Vec<String>,
     pub(crate) weak_words: Vec<String>,
     pub(crate) existing_choruses: Vec<String>,
 }
 
-pub(crate) fn gather_context(conn: &mut Conn, course_id: Option<i64>) -> Result<SongContext> {
+impl SongContext {
+    /// The snapshot kept with the song.
+    pub(crate) fn given(&self) -> WriterInput {
+        WriterInput {
+            words: self.words.clone(),
+            sentences: self.sentences.clone(),
+            weak_words: self.weak_words.clone(),
+            existing_choruses: self.existing_choruses.clone(),
+            ..Default::default()
+        }
+    }
+}
+
+/// What the writer gets from the app: the words and sentences the learner has
+/// actually met, most recent first, and the ones they keep forgetting.
+pub(crate) fn gather_context(conn: &mut Conn) -> Result<SongContext> {
     let pair = |(pl, en): (String, String)| format!("{pl} = {en}");
-    let course = match course_id {
-        Some(id) => courses::table.find(id).select(courses::title_en).first(conn).optional()?,
-        None => None,
-    };
     let met = |kind: &'static str| reviews::kind.eq(kind);
-    let (words, sentences) = match course_id {
-        Some(id) => (
-            course_words::table
-                .filter(course_words::course_id.eq(id))
-                .order(course_words::ord)
-                .limit(40)
-                .select((course_words::pl, course_words::en))
-                .load(conn)?,
-            course_sentences::table
-                .filter(course_sentences::course_id.eq(id))
-                .order(course_sentences::ord)
-                .limit(20)
-                .select((course_sentences::pl, course_sentences::en))
-                .load(conn)?,
-        ),
-        // Without a course, sing what the learner has actually met.
-        None => (
-            words::table
-                .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
-                .order(reviews::last_day.desc())
-                .limit(40)
-                .select((words::pl, words::en))
-                .load(conn)?,
-            sentences::table
-                .inner_join(reviews::table.on(reviews::item_id.eq(sentences::id).and(met("sentence"))))
-                .order(reviews::last_day.desc())
-                .limit(20)
-                .select((sentences::pl, sentences::en))
-                .load(conn)?,
-        ),
-    };
+    let words: Vec<(String, String)> = words::table
+        .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
+        .order(reviews::last_day.desc())
+        .limit(40)
+        .select((words::pl, words::en))
+        .load(conn)?;
+    let sentences: Vec<(String, String)> = sentences::table
+        .inner_join(reviews::table.on(reviews::item_id.eq(sentences::id).and(met("sentence"))))
+        .order(reviews::last_day.desc())
+        .limit(20)
+        .select((sentences::pl, sentences::en))
+        .load(conn)?;
     Ok(SongContext {
-        course,
         words: words.into_iter().map(pair).collect(),
         sentences: sentences.into_iter().map(pair).collect(),
         weak_words: words::table
@@ -469,10 +540,19 @@ pub(crate) fn gather_context(conn: &mut Conn, course_id: Option<i64>) -> Result<
     })
 }
 
+/// The requirements, as the writer is told them.
+pub(crate) fn requirements_text(requirements: &str) -> String {
+    match requirements.trim() {
+        "" => String::new(),
+        text => format!("\nRequirements — every one of these MUST be met:\n{text}\n"),
+    }
+}
+
 fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &str) -> Vec<ai::Wire> {
     let mut brief = String::new();
     if let Some(previous) = &request.previous {
         brief.push_str("Here is the current draft:\n");
+        let requirements = requirements_text(&previous.origin.requirements);
         // How it came about is for the record, not for the songwriter.
         let previous = SongDraft { origin: SongOrigin::default(), ..previous.clone() };
         brief.push_str(&serde_json::to_string_pretty(&previous).unwrap_or_default());
@@ -482,15 +562,14 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
         } else {
             request.feedback.trim()
         });
-        brief.push_str("\n\nReturn the whole revised song as JSON.");
+        brief.push('\n');
+        brief.push_str(&requirements);
+        brief.push_str("\nReturn the whole revised song as JSON.");
         return vec![ai::Wire::system(SONGWRITER_RULES), ai::Wire::user(brief)];
     }
 
     if !request.brief.trim().is_empty() {
         brief.push_str(&format!("The song is about: {}\n", request.brief.trim()));
-    }
-    if let Some(course) = &context.course {
-        brief.push_str(&format!("Theme: {course}\n"));
     }
     brief.push_str(structure_for(length));
     brief.push('\n');
@@ -530,6 +609,7 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
             context.existing_choruses.join(" | ")
         ));
     }
+    brief.push_str(&requirements_text(&request.requirements));
     if brief.trim().is_empty() {
         brief.push_str("Write a song about everyday life for a complete beginner.\n");
     }
@@ -1097,10 +1177,112 @@ pub(crate) fn load_song(conn: &mut Conn, id: i64) -> Result<Song> {
     with_tracks(conn, row)
 }
 
-pub fn list_songs(conn: &mut Conn) -> Result<Vec<Song>> {
-    let rows = songs::table.order(songs::id.desc()).select(SongRow::as_select()).load(conn)?;
+/// The songs and podcasts in the library; with `drafts`, also the tutor's
+/// drafts not made yet (which the Music tab does not show).
+pub fn list_songs(conn: &mut Conn, drafts: bool) -> Result<Vec<Song>> {
+    let mut query = songs::table.order(songs::id.desc()).into_boxed();
+    if !drafts {
+        query = query.filter(songs::status.ne("draft"));
+    }
+    let rows = query.select(SongRow::as_select()).load(conn)?;
     rows.into_iter().map(|row| with_tracks(conn, row)).collect()
 }
+
+/// Saves a draft that is not made yet: the tutor's, to look over and change
+/// before it is sung or read. Returns its id.
+pub fn insert_draft(conn: &mut Conn, draft: &SongDraft) -> Result<i64> {
+    let model = if draft.kind == "podcast" { crate::ai::SPEECH_MODEL.to_string() } else { suno_model(conn) };
+    let id = insert_song(conn, draft, &model)?;
+    set_status(conn, id, "draft", None)?;
+    Ok(id)
+}
+
+/// Stores a changed draft in place.
+pub fn save_draft(conn: &mut Conn, id: i64, draft: &SongDraft) -> Result<()> {
+    diesel::update(songs::table.find(id))
+        .set((
+            songs::title.eq(&draft.title),
+            songs::chorus_pl.eq(&draft.chorus_pl),
+            songs::chorus_en.eq(&draft.chorus_en),
+            songs::style.eq(&draft.style),
+            songs::vocal_gender.eq(&draft.vocal_gender),
+            songs::sections.eq(serde_json::to_string(&draft.sections)?),
+            songs::lyrics.eq(render_lyrics(draft)),
+            songs::origin.eq(serde_json::to_string(&draft.origin)?),
+            songs::podcast.eq(match &draft.podcast {
+                Some(audio) => serde_json::to_string(audio)?,
+                None => "{}".to_string(),
+            }),
+        ))
+        .execute(conn)?;
+    Ok(())
+}
+
+/// The draft to change for a song: the song itself while it is a draft
+/// (`Some` of its id). One already made is never changed — its takes were
+/// sung from its lyrics — so changing it gives a new draft based on it
+/// (`None`: saved by [`store_draft`] once the change is made).
+pub fn editable(conn: &mut Conn, song_id: i64, by: &str) -> Result<(Option<i64>, SongDraft)> {
+    let song = load_song(conn, song_id)?;
+    let mut draft = draft_of(&song);
+    draft.course_id = song.course_id;
+    if song.status == "draft" {
+        return Ok((Some(song_id), draft));
+    }
+    // A podcast's sound settings and cast come along.
+    draft.origin = SongOrigin {
+        made_by: made_by(by).into(),
+        based_on: Some(song_id),
+        revisions: Vec::new(),
+        steps: Vec::new(),
+        ..song.origin.clone()
+    };
+    Ok((None, draft))
+}
+
+/// Saves a changed draft: in place, or as a new draft. Returns its id.
+pub fn store_draft(conn: &mut Conn, id: Option<i64>, draft: &SongDraft) -> Result<i64> {
+    match id {
+        Some(id) => {
+            save_draft(conn, id, draft)?;
+            Ok(id)
+        }
+        None => insert_draft(conn, draft),
+    }
+}
+
+/// Sings (or, for a podcast, reads) a draft: it joins the library and is made
+/// in the background, like any other.
+pub fn sing(app: &AppHandle, db: &Db, song_id: i64) -> Result<()> {
+    {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let song = load_song(conn, song_id)?;
+        if song.status != "draft" {
+            return Err(Error::msg("That one is already made; change it to make a new one."));
+        }
+        if song.kind == "podcast" {
+            crate::podcasts::normalize_episode(draft_of(&song))?;
+            crate::ai::api_key(conn)?;
+        } else {
+            normalize_draft(draft_of(&song))?;
+            kie_key(conn)?;
+            let model = suno_model(conn);
+            diesel::update(songs::table.find(song_id)).set(songs::suno_model.eq(model)).execute(conn)?;
+        }
+        diesel::update(songs::table.find(song_id)).set(songs::created_at.eq(db::now_secs())).execute(conn)?;
+        set_status(conn, song_id, "generating", None)?;
+    }
+    let kind: String = songs::table.find(song_id).select(songs::kind).first(&mut *db.lock())?;
+    if kind == "podcast" {
+        crate::podcasts::spawn_render(app.clone(), song_id);
+    } else {
+        spawn_generation(app.clone(), song_id);
+    }
+    notify(app, song_id);
+    Ok(())
+}
+
 
 pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Result<i64> {
     // A course that no longer exists is simply not remembered.
@@ -1342,7 +1524,7 @@ pub fn resume_pending(app: &AppHandle) {
 
 #[tauri::command]
 pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
-    list_songs(&mut db.lock())
+    list_songs(&mut db.lock(), false)
 }
 
 /// Asks the songwriter for a draft, or a revision of one.
@@ -1356,7 +1538,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (key, model, messages) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let context = gather_context(conn, request.course_id)?;
+        let context = gather_context(conn)?;
         let length = if SONG_LENGTHS.contains(&request.length.as_str()) {
             request.length.clone()
         } else {
@@ -1365,10 +1547,10 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
         (
             ai::api_key(conn)?,
             songwriter_model(conn)?,
-            (songwriter_messages(&request, &context, &length), length),
+            (songwriter_messages(&request, &context, &length), length, context.given()),
         )
     };
-    let (messages, length) = messages;
+    let (messages, length, given) = messages;
     // A long song needs room for its lyrics in the answer.
     let reply = ai::complete_with(&key, &model, &messages, 0.8, 5000).await?;
     let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::SONGWRITER, &model, reply.cost, "", reply.tokens);
@@ -1376,14 +1558,24 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
     }
-    draft.course_id = request.course_id.or(request.previous.as_ref().and_then(|p| p.course_id));
+    draft.course_id = request.previous.as_ref().and_then(|p| p.course_id);
+    let by = made_by(&request.made_by);
     draft.origin = match &request.previous {
-        // A revision keeps how the song began and adds what was changed.
+        // A revision keeps how the song began and adds what was changed,
+        // with the draft it changed (which is in its prompt).
         Some(previous) => {
-            let mut origin = previous.origin.clone();
-            origin.revisions.push(match request.feedback.trim() {
+            let feedback = match request.feedback.trim() {
                 "" => "Make it catchier.".to_string(),
                 feedback => feedback.to_string(),
+            };
+            let mut origin = previous.origin.clone();
+            origin.revisions.push(feedback.clone());
+            origin.steps.push(OriginStep {
+                kind: "revise".into(),
+                by: by.into(),
+                text: feedback,
+                model: model.clone(),
+                before: bare(previous),
             });
             origin.songwriter_model = model.clone();
             origin
@@ -1395,7 +1587,11 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
             requested_chorus: request.chorus_pl.trim().to_string(),
             length: length.clone(),
             songwriter_model: model.clone(),
-            revisions: Vec::new(),
+            made_by: by.into(),
+            requirements: request.requirements.trim().to_string(),
+            based_on: request.based_on,
+            given,
+            instructions_version: instructions_version(SONGWRITER_RULES),
             ..Default::default()
         },
     };
@@ -1561,6 +1757,43 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn the_prompt_carries_the_requirements_and_rebuilds_from_what_is_kept() {
+        let context = SongContext {
+            words: vec!["kawa = coffee".into()],
+            sentences: vec![],
+            weak_words: vec!["mleko".into()],
+            existing_choruses: vec![],
+        };
+        let request = DraftRequest { brief: "Coffee".into(), requirements: "Present tense only.".into(), ..Default::default() };
+        let prompt = songwriter_messages(&request, &context, "short");
+        let user = prompt[1].content.clone().unwrap();
+        assert!(user.contains("MUST be met:\nPresent tense only."), "{user}");
+        // What is kept rebuilds the same prompt.
+        let given = context.given();
+        let rebuilt = SongContext {
+            words: given.words,
+            sentences: given.sentences,
+            weak_words: given.weak_words,
+            existing_choruses: given.existing_choruses,
+        };
+        assert_eq!(songwriter_messages(&request, &rebuilt, "short")[1].content, prompt[1].content);
+        // A revision repeats the requirements.
+        let previous = SongDraft {
+            title: "Kawa".into(),
+            origin: SongOrigin { requirements: "Present tense only.".into(), ..Default::default() },
+            ..Default::default()
+        };
+        let revision = DraftRequest { previous: Some(previous), feedback: "Shorter lines.".into(), ..Default::default() };
+        let user = songwriter_messages(&revision, &context, "short")[1].content.clone().unwrap();
+        assert!(user.contains("Shorter lines.") && user.contains("Present tense only."), "{user}");
+        let version = instructions_version(SONGWRITER_RULES);
+        assert!(version.starts_with("v1-") && version.len() == 11, "{version}");
+        // Songs from before keep loading: the new fields are optional.
+        let old: SongOrigin = serde_json::from_str(r#"{"brief":"x","revisions":["catchier"]}"#).unwrap();
+        assert_eq!((old.made_by.as_str(), old.based_on, old.steps.len()), ("", None, 0));
     }
 
     #[test]

@@ -584,7 +584,6 @@ export default function App() {
       {tab === "music" ? (
         <Music
           settings={settings}
-          courses={courses}
           openSongId={musicSong}
           onSongOpened={clearMusicSong}
           onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })}

@@ -402,6 +402,7 @@ export interface TutorAction {
     | "programmeDeleted"
     | "settingsChanged"
     | "songStarted"
+    | "songDraft"
     | "songsDeleted"
     | "lessonCreated"
     | "lessonUpdated"
@@ -600,7 +601,7 @@ export interface SongDraft {
   /** "f", "m" or "" for no preference. */
   vocalGender: string;
   sections: SongSection[];
-  /** The course whose words it uses; its listening lesson is filed there. */
+  /** The course it is filed in (through its listening lesson). */
   courseId?: number | null;
   /** How it came about — kept with the song; pass it back unchanged. */
   origin?: SongOrigin;
@@ -628,6 +629,24 @@ export interface SongOrigin {
   /** Made from today's news, and the stories it told. */
   news?: boolean;
   newsItems?: NewsItem[];
+  /** "composer" or "tutor". */
+  madeBy?: string;
+  /** What the lyrics or script had to meet (the tutor's). */
+  requirements?: string;
+  /** The song or podcast this one varies. */
+  basedOn?: number | null;
+  /** Everything the writer was given besides the request. */
+  given?: {
+    words: string[];
+    sentences: string[];
+    weakWords: string[];
+    existingChoruses: string[];
+    memories: string[];
+    reading: string;
+  };
+  instructionsVersion?: string;
+  /** Revisions and edits after the first draft, each with the draft before it. */
+  steps?: { kind: string; by: string; text: string; model: string; before: SongDraft | null }[];
 }
 
 /** A news story a podcast told, as the news index had it. */
@@ -695,7 +714,6 @@ export interface PodcastRequest {
   news?: boolean;
   format?: PodcastFormat;
   length?: SongLength;
-  courseId?: number | null;
   vocalGender?: string;
   previous?: SongDraft;
   feedback?: string;
@@ -765,7 +783,6 @@ export type SongLength = "short" | "medium" | "long";
 export interface DraftRequest {
   length?: SongLength;
   brief?: string;
-  courseId?: number | null;
   chorusPl?: string;
   style?: string;
   vocalGender?: string;

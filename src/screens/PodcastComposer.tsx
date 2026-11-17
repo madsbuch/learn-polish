@@ -17,7 +17,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { CourseProgress, PodcastCast, PodcastFormat, Settings, SongLength, TopicIdea, WikiHit } from "../lib/types";
+import type { PodcastCast, PodcastFormat, Settings, SongLength, TopicIdea, WikiHit } from "../lib/types";
 
 const FORMAT_HINTS: Record<PodcastFormat, string> = {
   pairs: "Each sentence in English, then in Polish — like a song's verses.",
@@ -40,13 +40,11 @@ const CAST_HINTS: Record<PodcastCast, string> = {
  */
 export function PodcastComposer({
   settings,
-  courses,
   onCancel,
   onCreated,
   onSwitch,
 }: {
   settings: Settings;
-  courses: CourseProgress[];
   onCancel: () => void;
   onCreated: () => void;
   /** Makes a song instead. */
@@ -58,7 +56,6 @@ export function PodcastComposer({
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<WikiHit[] | null>(null);
   const [ideas, setIdeas] = useState<TopicIdea[] | null>(null);
-  const [courseId, setCourseId] = useState<number | null>(null);
   const [format, setFormat] = useState<PodcastFormat>("pairs");
   // Until picked, who talks follows what it is written from.
   const [castChoice, setCastChoice] = useState<PodcastCast | null>(null);
@@ -303,19 +300,6 @@ export function PodcastComposer({
                 ]}
               />
             </Field>
-            <Field label="Words from">
-              <select
-                value={courseId ?? ""}
-                onChange={(event) => setCourseId(event.target.value ? Number(event.target.value) : null)}
-              >
-                <option value="">Words I have practised</option>
-                {courses.map((entry) => (
-                  <option key={entry.course.id} value={entry.course.id}>
-                    {entry.course.titlePl} — {entry.course.title}
-                  </option>
-                ))}
-              </select>
-            </Field>
           </Stack>
         </Card>
       </Section>
@@ -337,7 +321,6 @@ export function PodcastComposer({
                 cast,
                 format,
                 length,
-                courseId,
                 vocalGender,
               });
               onCreated();
