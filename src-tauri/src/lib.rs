@@ -1057,6 +1057,46 @@ mod integration {
     }
 
     #[test]
+    fn challenges_come_once_the_rest_is_passed_and_closed_courses_stay_put() {
+        let mut conn = scratch_db("challenges");
+        let today = db::today(&mut conn);
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let ids: Vec<i64> = lessons::for_course(&mut conn, course).unwrap().iter().map(|l| l.id).collect();
+        let (challenge, core) = ids.split_last().unwrap();
+        diesel::update(t::lessons::table.find(*challenge)).set(t::lessons::challenge.eq(1)).execute(&mut conn).unwrap();
+        // Every core lesson but one passed, and not due for a while.
+        for id in &core[1..] {
+            diesel::update(t::lessons::table.find(*id))
+                .set((t::lessons::passed.eq(1), t::lessons::due_day.eq(Some(today + 30)), t::lessons::last_day.eq(Some(today - 1))))
+                .execute(&mut conn)
+                .unwrap();
+        }
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        assert!(!plan::plan(&mut conn, today).unwrap().left.contains(challenge), "not before the rest is passed");
+        diesel::update(t::lessons::table.find(core[0]))
+            .set((t::lessons::passed.eq(1), t::lessons::due_day.eq(Some(today + 30)), t::lessons::last_day.eq(Some(today - 1))))
+            .execute(&mut conn)
+            .unwrap();
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        assert!(plan::plan(&mut conn, today).unwrap().left.contains(challenge), "offered once the rest is passed");
+
+        // A course of challenges only can be completed.
+        let hard = courses::create_empty(&mut conn, "Hard things", "").unwrap();
+        courses::add_lesson(&mut conn, hard, *challenge).unwrap();
+        assert_eq!(courses::status(&mut conn, hard).unwrap().status, "active");
+        diesel::update(t::lessons::table.find(*challenge)).set(t::lessons::passed.eq(1)).execute(&mut conn).unwrap();
+        assert_eq!(courses::status(&mut conn, hard).unwrap().status, "completed");
+
+        // Closed is closed: nothing about it changes.
+        diesel::update(t::courses::table.find(hard)).set(t::courses::closed_at.eq(Some(db::now_secs()))).execute(&mut conn).unwrap();
+        assert!(courses::rename(&mut conn, hard, Some("New name"), None, None).is_err());
+        assert!(levels::set_course_level(&mut conn, hard, "B2").is_err());
+        assert!(courses::remove_lesson(&mut conn, hard, *challenge).is_err());
+        assert!(courses::move_lesson(&mut conn, *challenge, hard, course).is_err());
+        assert!(lessons::detail(&mut conn, *challenge).is_ok());
+    }
+
+    #[test]
     fn courses_complete_then_master_and_challenges_only_count_for_mastery() {
         let mut conn = scratch_db("course-status");
         let course = db::require_course_id(&mut conn, 1).unwrap();

@@ -32,7 +32,6 @@ import type { CourseClosed, Lesson, Sentence, CourseProgress, Word } from "../li
 
 export type CourseSection = "lessons" | "words" | "sentences";
 
-
 /**
  * A course: the lessons it lists, in its order. Words and sentences belong to
  * those lessons; the other tabs list them all, each leading to its lesson.
@@ -360,8 +359,8 @@ function CourseStanding({
             {`🏆 Mastered — closed ${dayToDate(Math.floor(closedAt / 86_400))}`}
           </Text>
           <Text variant="small" as="div">
-            Closed for good: its lessons no longer come back. To revisit this theme, ask the tutor for
-            a new course — it builds on this one.
+            Closed for good: its lessons no longer come back. To revisit this theme, ask the tutor for a new course — it
+            builds on this one.
           </Text>
         </Stack>
       </Banner>
@@ -398,8 +397,8 @@ function CourseStanding({
           🏆 Ready to close — you mastered every lesson in it.
         </Text>
         <Text variant="small" tone="dim" as="div">
-          Close it to celebrate and keep it as a trophy in Mastered. Closing is final — to come back to
-          this theme, ask the tutor for a new course.
+          Close it to celebrate and keep it as a trophy in Mastered. Closing is final — to come back to this theme, ask
+          the tutor for a new course.
         </Text>
         <Button variant="primary" wide onClick={onClose}>
           Close as mastered 🏆
@@ -475,10 +474,9 @@ function CourseLessons({
           title={`Lessons · ${open.length}`}
           info={
             <p>
-              Most important first: a lesson that slipped last time and is due again, then the ones
-              whose time has come, then the next new ones, then the rest. Every pass adds mastery
-              points, up to 100; a mastered lesson never comes back. Challenges are beyond the course's
-              level: not needed to complete it, but needed to master it.
+              Most important first: a lesson that slipped last time and is due again, then the ones whose time has come,
+              then the next new ones, then the rest. Every pass adds mastery points, up to 100; a mastered lesson never
+              comes back. Challenges are beyond the course's level: not needed to complete it, but needed to master it.
             </p>
           }
         >

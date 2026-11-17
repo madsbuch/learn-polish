@@ -177,6 +177,9 @@ pub struct TypeInfo {
     pub sections: &'static [&'static str],
     pub start_label: &'static str,
     pub again_label: &'static str,
+    /// Minutes it takes, by complexity [low, medium, high] — the one table
+    /// the badges, the summaries and the daily budget all use.
+    pub minutes: [i64; 3],
 }
 
 /// Every lesson type, for the screens.
@@ -194,6 +197,7 @@ pub fn lesson_types() -> Vec<TypeInfo> {
             sections: t.sections,
             start_label: t.start_label,
             again_label: t.again_label,
+            minutes: [t.minutes("low"), t.minutes("medium"), t.minutes("high")],
         })
         .collect()
 }

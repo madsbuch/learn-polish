@@ -41,7 +41,7 @@ export function LessonRow({
       }
       title={lesson.title}
       subtitle={parts.join(" · ")}
-      trailing={trailing ?? <Badge tone={complexityTone(lesson.complexity)}>{minutes(lesson.complexity)}</Badge>}
+      trailing={trailing ?? <Badge tone={complexityTone(lesson.complexity)}>{minutes(lesson)}</Badge>}
       chevron
       onClick={() => onOpen(lesson)}
     />

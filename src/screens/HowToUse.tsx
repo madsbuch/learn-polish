@@ -42,43 +42,44 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
           three beliefs:`}
         </P>
         <P>
-          <strong>Small and often beats long and rare.</strong> Every lesson does one job and takes
-          minutes. Ten minutes a day, kept up, is worth more than an hour on Sunday.
+          <strong>Small and often beats long and rare.</strong> Every lesson does one job and takes minutes. Ten minutes
+          a day, kept up, is worth more than an hour on Sunday.
         </P>
         <P>
-          <strong>Coming back is how things stick.</strong> A lesson you pass returns later, further
-          apart each time it goes well, so you meet it again just before you would forget it.
+          <strong>Coming back is how things stick.</strong> A lesson you pass returns later, further apart each time it
+          goes well, so you meet it again just before you would forget it.
         </P>
         <P>
-          <strong>Your interests are the curriculum.</strong> The tutor builds courses on whatever
-          you want to talk about — your work, a trip, football, cooking — and songs and podcasts
-          on the same. Everything can be changed or deleted: it is your app.
+          <strong>Your interests are the curriculum.</strong> The tutor builds courses on whatever you want to talk
+          about — your work, a trip, football, cooking — and songs and podcasts on the same. Everything can be changed
+          or deleted: it is your app.
         </P>
       </Part>
 
       <Part title="Your day">
         <P>
-          Open <strong>Exercises</strong>: <strong>today's lessons</strong> are there — the five
-          that matter most (you can change how many in Settings). A lesson that slipped last time
-          comes first, then the ones whose time has come, then up to two new ones.
+          Open <strong>Exercises</strong>: <strong>today's lessons</strong> are there — the five that matter most (you
+          can change how many in Settings). A lesson that slipped last time comes first, then the ones whose time has
+          come, then up to two new ones.
         </P>
         <P>
-          Do them and the day is done — that's it, nothing piles up. Want more? Open a course: its
-          lessons are listed by what matters most. Done days build your streak; every seven days in
-          a row earns a streak freeze that covers a missed day by itself. XP is only paid for real
-          work: harder exercises pay more, wrong answers and cards you only read pay nothing.
+          Do them — pass or not, each one you do counts — and the day is done. That's it, nothing piles up. Today's
+          lessons are a way in, not the whole day: browse your courses and take what you find interesting — each lists
+          its lessons by what matters most. Done days build your streak; every seven days in a row earns a streak freeze
+          that covers a missed day by itself. XP is only paid for real work: harder exercises pay more, wrong answers
+          and cards you only read pay nothing.
         </P>
       </Part>
 
       <Part title="Courses and lessons">
         <P>
-          A <strong>course</strong> is a theme, and lists its lessons in order. A{" "}
-          <strong>lesson</strong> is one thing to do, of one of the types below: a <em>drill</em> you
-          tap through, or a <em>conversation</em> with the examiner (or, for writing, a partner).
+          A <strong>course</strong> is a theme, and lists its lessons in order. A <strong>lesson</strong> is one thing
+          to do, of one of the types below: a <em>drill</em> you tap through, or a <em>conversation</em> with the
+          examiner (or, for writing, a partner).
         </P>
         <P>
-          Every lesson comes back now and then, so you meet it again before you forget it: that
-          return is its <strong>check-in</strong>. Its page shows when the next one is, and how often.
+          Every lesson comes back now and then, so you meet it again before you forget it: that return is its{" "}
+          <strong>check-in</strong>. Its page shows when the next one is, and how often.
         </P>
         <P>Each lesson is marked quick, medium or deep, by how long it takes and how deep it goes.</P>
       </Part>
@@ -101,47 +102,50 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
         </List>
       </Section>
 
-      <Part title="Completing and mastering">
+      <Part title="Finishing a course">
         <P>
-          A course is <strong>completed</strong> when you have passed each of its lessons once. It is{" "}
-          <strong>mastered</strong> when every lesson has full mastery points — challenges too, and
-          writing done once without help.
+          A course is <strong>completed</strong> when you have passed each of its core lessons once, and{" "}
+          <strong>mastered</strong> when every lesson has full mastery points — challenges too (a challenge is a lesson
+          a level up; once the rest is passed, today's lessons offer them), and writing passed once without help.
         </P>
         <P>
-          Every pass earns mastery points; a fail costs some. You never have to wait: practise a
-          lesson as often as you like, today. Passes spread out over days are better evidence, so
-          they earn more — letting your check-ins bring lessons back gets there in fewer passes.
+          Every pass earns mastery points; a fail costs some, until the lesson is mastered. You never have to wait:
+          practise a lesson as often as you like, today, and you get there. Passes spread out over days are better
+          evidence, so they earn more — letting check-ins bring lessons back gets there in fewer passes.
         </P>
         <P>
-          A mastered lesson never comes back. When every lesson of a course is mastered, the course
-          moves to <strong>Mastered</strong> — your trophies. To go back to a theme, ask the tutor
-          for a new course on it, a level up.
+          <strong>Mastery is for good.</strong> A mastered lesson never comes back and never loses it. When every lesson
+          of a course is mastered, the course is <strong>ready to close</strong>: tap <em>Close as mastered</em> for
+          your celebration, and it moves to <strong>Mastered</strong> — your trophies. Closing is final.
+        </P>
+        <P>
+          Want to come back to a theme? Ask the tutor for a new course on it, a level up — it builds on what the old one
+          taught.
         </P>
       </Part>
 
       <Part title="The tutor">
         <P>
-          The <strong>Tutor</strong> tab is where the app grows. Ask in your own words: “a course for
-          ordering in restaurants”, “explain when to use this”, “a drill on the numbers”, “a song
-          about my morning”, “what's going on in Poland?”.
+          The <strong>Tutor</strong> tab is where the app grows. Ask in your own words: “a course for ordering in
+          restaurants”, “explain when to use this”, “a drill on the numbers”, “a song about my morning”, “what's going
+          on in Poland?”.
         </P>
         <P>
-          It knows your progress, and remembers what you tell it — goals, what you like, what you
-          find hard — under Settings → Memories, where you can read and change it. On any line or
-          word, <em>Talk about it</em> opens a short chat about just that.
+          It knows your progress, and remembers what you tell it — goals, what you like, what you find hard — under
+          Settings → Memories, where you can read and change it. On any line or word, <em>Talk about it</em> opens a
+          short chat about just that.
         </P>
       </Part>
 
       <Part title="Music">
         <P>
-          <strong>Songs</strong> plant a sentence in your head; <strong>podcasts</strong> tell you
-          about a subject in short {LANGUAGE} sentences — from Wikipedia, today's news, or a
-          made-up story. Make them yourself on the Music tab, or ask the tutor, who can shape them
-          to fit a course.
+          <strong>Songs</strong> plant a sentence in your head; <strong>podcasts</strong> tell you about a subject in
+          short {LANGUAGE} sentences — from Wikipedia, today's news, or a made-up story. Make them yourself on the Music
+          tab, or ask the tutor, who can shape them to fit a course.
         </P>
         <P>
-          Nothing needs approving: keep what you like and delete the rest. A listening lesson
-          turns any of them into practice.
+          Nothing needs approving: keep what you like and delete the rest. A listening lesson turns any of them into
+          practice.
         </P>
       </Part>
 
@@ -149,12 +153,12 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
         <P>The speaker plays a line; the turtle plays it slowly.</P>
         <P>{TYPING}</P>
         <P>
-          In a conversation, <em>Show translations</em> reveals the English, and the play button
-          reads the whole conversation aloud.
+          In a conversation, <em>Show translations</em> reveals the English, and the play button reads the whole
+          conversation aloud.
         </P>
         <P>
-          The AI features need an OpenRouter key, and songs a kie.ai key, both in Settings. The
-          demo course and everything already downloaded work without them, offline.
+          The AI features need an OpenRouter key, and songs a kie.ai key, both in Settings. The demo course and
+          everything already downloaded work without them, offline.
         </P>
       </Part>
     </Screen>

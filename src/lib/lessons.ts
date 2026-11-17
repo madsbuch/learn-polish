@@ -1,9 +1,15 @@
 import { lessonType } from "./lessonTypes";
 import type { Lesson, Complexity } from "./types";
 
-/** How long a lesson takes, by complexity. */
-export function minutes(complexity: Complexity): string {
-  return complexity === "low" ? "1–2 min" : complexity === "medium" ? "5–10 min" : "20+ min";
+/** About how many minutes a lesson takes: its type's, by complexity (lesson_types::minutes). */
+export function lessonMinutes(lesson: Pick<Lesson, "type" | "engine" | "complexity">): number {
+  const index = lesson.complexity === "low" ? 0 : lesson.complexity === "medium" ? 1 : 2;
+  return lessonType(lesson).minutes[index];
+}
+
+/** How long a lesson takes, for a badge. */
+export function minutes(lesson: Pick<Lesson, "type" | "engine" | "complexity">): string {
+  return `~${lessonMinutes(lesson)} min`;
 }
 
 export function complexityName(complexity: Complexity): string {

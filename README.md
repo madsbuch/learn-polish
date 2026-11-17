@@ -1,7 +1,7 @@
 # Polski
 
 A Polish learning app for English speakers. Everything is a small lesson —
-a quick drill, or a short text to study with a check-in — filed in courses: the
+a quick drill, or a conversation with an examiner — filed in courses: the
 small First steps demo, and courses on any theme you like, built for you by
 the tutor.
 
@@ -42,7 +42,7 @@ it — how it is practised, what its page shows, what mastering it takes (see
   and pick the picture), *memory* cards, *typing*, *sentences* (build them,
   then fill gaps), *gaps*, or a *dialogue* (read it, then fill its lines).
 - **Study lessons** are short texts — a conjugation, a grammar point, a bit of
-  culture — with objectives. Their check-in is an interview: an **examiner**
+  culture — with objectives. Each is a conversation: an **examiner**
   agent asks one question at a time (more, and harder ones, the more complex the
   lesson), gives a line of feedback after each answer, and ends with a verdict:
   pass, partial or fail, plus what to review (`src-tauri/src/examiner.rs`).
@@ -51,7 +51,7 @@ it — how it is practised, what its page shows, what mastering it takes (see
   hidden unless asked for), then the examiner asks about what you heard —
   what the chorus means, the missing word in a line, a line to translate, and
   for deeper lessons the grammar of what is sung. The song can be replayed
-  during the check-in. Every song the tutor makes gets one; any song's page
+  during the conversation. Every song the tutor makes gets one; any song's page
   has *Listen and answer questions*.
 
 - **Writing lessons** are a situation played out in writing — tell a new
@@ -62,12 +62,19 @@ it — how it is practised, what its page shows, what mastering it takes (see
   its own model (Settings → Writing partner), so a small, fast one can be used.
   Writing lessons without a course go in *Other lessons*.
 
-Every lesson has a **complexity** — low (1–2 min), medium (5–10 min) or deep
-(20+ min) — set by how hard its subject is, not by how much is in it. And every
-lesson has its own **check-in period**: the first pass brings it back after the
-period, each further pass doubles the gap (up to four months), a partial pass
-repeats the period, and a fail brings it back tomorrow. The period can be
-changed on the lesson's page.
+Drills are tapped through; study, listening and writing lessons are
+**conversations**. A **check-in** is a lesson of either kind coming back on
+its schedule.
+
+Every lesson has a **complexity** — quick, medium or deep: how long it takes
+and how deep it goes, not its level. Its minutes come from one table per type
+(`lesson_types::minutes`: drills about 2/4/8, conversations about 5/10/20),
+used by the badges, the summaries and the daily budget alike. And every
+lesson has its own **check-in period**: the first pass brings it back after
+the period; each further pass multiplies the time since the last one by the
+lesson's ease (about 2.5, more after an ace, less after a struggle; up to
+four months); a partial pass repeats the period, and a fail brings it back
+tomorrow. The period can be changed on the lesson's page.
 
 Three levels:
 
@@ -102,9 +109,16 @@ Doing them is the day **done**, with a celebration and nothing more: what is
 due never piles up on the home screen. For more, a course's page lists its
 lessons in the same order of importance.
 
-A **mastered** lesson never comes back, and a course whose lessons are all
-mastered moves to **Mastered** by itself. To revisit a theme, the tutor makes
-a new course on it, a level up.
+A course is **completed** when its core lessons are passed once, and
+**mastered** when every lesson — challenges too — has full mastery points
+(writing: passed once without help). Mastery is earned by passing, never by
+waiting: spaced passes earn more, but a lesson can be mastered in one sitting.
+Mastery is for good — a mastered lesson never comes back and never loses it.
+A mastered course is **ready to close**: *Close as mastered* is the learner's
+own celebration, and final — the course becomes a trophy in **Mastered**. To
+revisit a theme, the tutor makes a new course on it, a level up
+([PRINCIPLES.md](PRINCIPLES.md)). The daily list offers a course's challenges
+once its other lessons are passed.
 
 ### Scheduling
 
@@ -138,16 +152,18 @@ It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
 
 - **XP** per answer — harder exercise types pay more, wrong answers nothing,
   and cards that are only read (a new word, a dialogue) nothing either.
-  Check-ins pay by effort: 30/80/160 for low/medium/high (half for partial),
-  plus 10 per goal in a writing lesson.
-- **Extra practice**: a lesson that is not due can always be done again, at
-  half XP, without moving its schedule.
+  Conversations pay by effort: 30/80/160 for low/medium/high (half for
+  partial), plus 10 per goal in a writing lesson.
+- **Extra practice**: a lesson already passed today can always be done again,
+  at half XP, without moving its schedule; it still earns mastery points. A
+  lesson done before it is due is an early check-in: full XP, and it moves.
 - **The day** is done when today's lessons are. The **streak** counts done
   days and survives until the end of the next one. Every seven-day run earns
   a **streak freeze** (two at most), spent automatically on a missed day.
 - **Reminders** come once a day for the week ahead; today's is skipped once
   the day is done, and says what is due.
-- **Mastered** means a word's review interval has reached three weeks.
+- A word **sticks** when its review interval has reached three weeks
+  ("Words that stick"); *mastered* is kept for lessons and courses.
 - **Achievements** for showing up, words that stick, and the deeper work:
   check-ins, writing lessons, listening, songs, a finished course.
 
@@ -215,7 +231,7 @@ The tutor and the examiner share a long-term memory (`memories` table): short
 facts about the learner, each a goal, preference, context, strength or
 struggle. Both agents see every memory in their system prompt and have
 `remember`, `update_memory` and `forget_memory` tools, so what the examiner
-notices in a check-in reaches the tutor and the other way round. They are told
+notices in a conversation reaches the tutor and the other way round. They are told
 to keep memories true — update a struggle once it is overcome rather than add
 a contradicting one — and to save lasting patterns, not scores the app already
 records. Whatever an agent saves shows up in the chat as a "Remembered: …"
@@ -447,7 +463,7 @@ src-tauri/src/
   schema.rs      every table and view as Rust types (Diesel): queries are checked against it
   db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), one-time demo setup
   courses.rs     courses: the folders lessons are listed in; cutting items into drills; moving lessons
-  lessons.rs     lessons: what they own, their check-in schedule, the home screen's lists
+  lessons.rs     lessons: what they own, their check-in schedule, mastery
   lesson_types/  every lesson type, one module each, and their registry
   session.rs     the building blocks of a drill's exercises
   practice.rs    doing a lesson: checking answers, finishing a drill, the results
@@ -456,7 +472,7 @@ src-tauri/src/
   agent.rs       the one AI loop: streaming, tool rounds, memory tools, costs
   ai.rs          OpenRouter transport: chat (streamed, with tool calls) and speech
   tutor.rs       the tutor's prompt and tools (each declared with its status line)
-  examiner.rs    the check-in interviewer and its verdict
+  examiner.rs    the conversation examiner (and writing partner) and its verdict
   memories.rs    long-term memory shared by the agents
   costs.rs       the cost center
   speech.rs      Polish read aloud, the voices, the audio cache

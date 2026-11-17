@@ -28,6 +28,7 @@ export function lessonType(lesson: Pick<Lesson, "type" | "engine">): LessonTypeI
       sections: [],
       startLabel: "Start",
       againLabel: "Again",
+      minutes: lesson.engine === "conversation" ? [5, 10, 20] : [2, 4, 8],
     }
   );
 }

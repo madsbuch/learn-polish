@@ -261,6 +261,8 @@ export interface LessonTypeInfo {
   /** Its page's button, the first time and after. */
   startLabel: string;
   againLabel: string;
+  /** Minutes it takes, by complexity [low, medium, high] (lesson_types::minutes). */
+  minutes: [number, number, number];
 }
 
 /** A lesson's word, with its picture if it has one. */

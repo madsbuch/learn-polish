@@ -67,8 +67,7 @@ export function CourseClosedCelebration({ closed, onDone }: { closed: CourseClos
           ))}
         </div>
         <Text variant="small" tone="dim" align="center" as="p">
-          It's in Mastered now, for good. To come back to this theme, ask the tutor for a new course — a
-          level up.
+          It's in Mastered now, for good. To come back to this theme, ask the tutor for a new course — a level up.
         </Text>
         <Button variant="primary" wide onClick={onDone}>
           Done

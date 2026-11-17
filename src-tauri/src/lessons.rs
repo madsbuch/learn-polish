@@ -2,12 +2,12 @@
 //!
 //! A lesson is small and has one job, and its **type** says which (see
 //! lesson_types): a drill of exercises on a handful of words or sentences
-//! (words, pictures, typing, memory cards, sentences, gaps, a conversation),
-//! or a check-in with the examiner — a study text, a song to listen to, or a
+//! (words, pictures, typing, memory cards, sentences, gaps, a dialogue), or a
+//! conversation with the examiner — a study text, a song to listen to, or a
 //! situation played out in writing with a partner.
 //!
-//! Every lesson has a **complexity** (low ≈ 1–2 minutes, medium ≈ 5–10, high
-//! ≈ 20+), set by how hard its subject is, and its own **check-in period**.
+//! Every lesson has a **complexity** (low, medium, high: how long and how
+//! deep; minutes in `lesson_types::minutes`), and its own **check-in period**.
 //! Passing a check-in pushes the next one further out; struggling brings it
 //! back sooner.
 

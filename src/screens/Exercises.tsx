@@ -18,7 +18,7 @@ import {
   Stack,
   Text,
 } from "../design";
-import { minutes } from "../lib/lessons";
+import { lessonMinutes, minutes } from "../lib/lessons";
 import type { Lesson, LessonOverview, Stats, CourseProgress } from "../lib/types";
 
 function greeting(): string {
@@ -30,7 +30,7 @@ function greeting(): string {
 
 /** Rough minutes for a list of lessons, for the summary line. */
 function estimate(lessons: Lesson[]): number {
-  return lessons.reduce((sum, b) => sum + (b.complexity === "low" ? 2 : b.complexity === "medium" ? 7 : 20), 0);
+  return lessons.reduce((sum, lesson) => sum + lessonMinutes(lesson), 0);
 }
 
 /**
@@ -46,7 +46,13 @@ function masteredLine(stats: Stats): string {
 
 /** A celebration for a finished day, varied by the day. */
 function celebration(day: number): string {
-  const lines = ["Today's lessons are done! 🎉", "Brilliant — all done! 🎉", "That's the day done! 🌟", "Well done! 🎉", "All done for today! 🙌"];
+  const lines = [
+    "Today's lessons are done! 🎉",
+    "Brilliant — all done! 🎉",
+    "That's the day done! 🌟",
+    "Well done! 🎉",
+    "All done for today! 🙌",
+  ];
   return lines[((day % lines.length) + lines.length) % lines.length];
 }
 
@@ -108,120 +114,130 @@ export function Exercises({
       }
     >
       <div className="practice-layout">
-        {courses.length > 0 || stats.totalXp > 0 ? <div className="practice-today">
-          {courses.length > 0 ? <Hero>
-            <Stack gap={4}>
-              <Inline gap={4}>
-                <div
-                  className="goal-ring"
-                  style={{ "--value": goalPct } as CSSProperties}
-                  role="img"
-                  aria-label={`${doneCount} of ${total} of today's lessons done`}
-                >
-                  <div>
-                    <Text variant="title" weight="bold">
-                      {finished ? "🎉" : doneCount}
-                    </Text>
-                    {finished ? null : (
-                      <Text variant="caption" tone="dim">
-                        / {total}
+        {courses.length > 0 || stats.totalXp > 0 ? (
+          <div className="practice-today">
+            {courses.length > 0 ? (
+              <Hero>
+                <Stack gap={4}>
+                  <Inline gap={4}>
+                    <div
+                      className="goal-ring"
+                      style={{ "--value": goalPct } as CSSProperties}
+                      role="img"
+                      aria-label={`${doneCount} of ${total} of today's lessons done`}
+                    >
+                      <div>
+                        <Text variant="title" weight="bold">
+                          {finished ? "🎉" : doneCount}
+                        </Text>
+                        {finished ? null : (
+                          <Text variant="caption" tone="dim">
+                            / {total}
+                          </Text>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grow">
+                      <Inline gap={2} wrap>
+                        <Text variant="eyebrow">{finished ? "Today is done ✓" : "Today"}</Text>
+                        {stats.currentStreak > 0 ? <Badge>🔥 {stats.currentStreak}</Badge> : null}
+                        {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
+                      </Inline>
+                      <Text variant="title" as="h2">
+                        {finished
+                          ? `${celebration(overview.today)}`
+                          : total > 0
+                            ? `${overview.due.length} lesson${overview.due.length === 1 ? "" : "s"} to go today`
+                            : "Nothing for today"}
                       </Text>
-                    )}
-                  </div>
-                </div>
-                <div className="grow">
-                  <Inline gap={2} wrap>
-                    <Text variant="eyebrow">{finished ? "Today is done ✓" : "Today"}</Text>
-                    {stats.currentStreak > 0 ? <Badge>🔥 {stats.currentStreak}</Badge> : null}
-                    {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
+                      <Text variant="small" tone="dim" as="div">
+                        {finished
+                          ? `All ${total} of today's lessons done. See you tomorrow.`
+                          : total > 0
+                            ? `About ${estimate(overview.due)} min${doneCount > 0 ? ` · ${doneCount} of ${total} done` : ""}`
+                            : "Every lesson is mastered or waiting — ask the tutor for a new course."}
+                      </Text>
+                    </div>
                   </Inline>
-                  <Text variant="title" as="h2">
-                    {finished
-                      ? `${celebration(overview.today)}`
-                      : total > 0
-                        ? `${overview.due.length} lesson${overview.due.length === 1 ? "" : "s"} to go today`
-                        : "Nothing for today"}
-                  </Text>
-                  <Text variant="small" tone="dim" as="div">
-                    {finished
-                      ? `All ${total} of today's lessons done. See you tomorrow.`
-                      : total > 0
-                        ? `About ${estimate(overview.due)} min${doneCount > 0 ? ` · ${doneCount} of ${total} done` : ""}`
-                        : "Every lesson is mastered or waiting — ask the tutor for a new course."}
-                  </Text>
-                </div>
-              </Inline>
-              {upNext ? (
-                <Stack gap={2}>
-                  <Button variant="inverse" size="lg" wide onClick={() => onOpenLesson(upNext)}>
-                    {doneCount > 0 ? "Next lesson" : "Start today's lessons"}
-                  </Button>
-                  <Text variant="caption" tone="dim" align="center" as="div">
-                    {upNext.title}
-                    {upNext.courseTitle ? ` · ${upNext.courseTitle}` : ""} · {minutes(upNext.complexity)}
-                  </Text>
+                  {upNext ? (
+                    <Stack gap={2}>
+                      <Button variant="inverse" size="lg" wide onClick={() => onOpenLesson(upNext)}>
+                        {doneCount > 0 ? "Next lesson" : "Start today's lessons"}
+                      </Button>
+                      <Text variant="caption" tone="dim" align="center" as="div">
+                        {upNext.title}
+                        {upNext.courseTitle ? ` · ${upNext.courseTitle}` : ""} · {minutes(upNext)}
+                      </Text>
+                    </Stack>
+                  ) : null}
                 </Stack>
-              ) : null}
-            </Stack>
-          </Hero> : null}
+              </Hero>
+            ) : null}
 
-          {overview.due.length > 0 ? (
-            <Section
-              title="Today's lessons"
-              info={
-                <>
-                  <p>
-                    The most important lessons for today: one that slipped last time comes first, then the
-                    ones whose time has come, then — while there is room — up to two new ones. Do these and
-                    the day is done.
-                  </p>
-                  <p>
-                    Want more? Open a course: its lessons are listed by what matters most. A mastered lesson
-                    never comes back, and a mastered course moves to Mastered.
-                  </p>
-                </>
-              }
-            >
+            {overview.due.length > 0 ? (
+              <Section
+                title="Today's lessons"
+                info={
+                  <>
+                    <p>
+                      The most important lessons for today: one that slipped last time comes first, then the ones whose
+                      time has come, then — while there is room — up to two new ones. Do these and the day is done.
+                    </p>
+                    <p>
+                      Want more? Open a course: its lessons are listed by what matters most. A mastered lesson never
+                      comes back, and a mastered course moves to Mastered.
+                    </p>
+                  </>
+                }
+              >
+                <List>
+                  {overview.due.map((lesson) => (
+                    <LessonRow
+                      key={lesson.id}
+                      lesson={lesson}
+                      today={overview.today}
+                      showCourse
+                      onOpen={onOpenLesson}
+                    />
+                  ))}
+                </List>
+              </Section>
+            ) : null}
+
+            {courses.length > 0 || stats.totalXp > 0 ? (
               <List>
-                {overview.due.map((lesson) => (
-                  <LessonRow key={lesson.id} lesson={lesson} today={overview.today} showCourse onOpen={onOpenLesson} />
-                ))}
+                <ListItem
+                  leading={<Avatar>📈</Avatar>}
+                  title="Your progress"
+                  subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
+                  trailing={
+                    <Inline gap={1}>
+                      <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
+                    </Inline>
+                  }
+                  chevron
+                  onClick={onOpenProgress}
+                />
+                <ListItem
+                  leading={<Avatar>⭐</Avatar>}
+                  title={`${stats.dayXp} XP today`}
+                  subtitle="See exactly what earned it"
+                  chevron
+                  onClick={() => onOpenXpDay(overview.today)}
+                />
               </List>
-            </Section>
-          ) : null}
-
-          {courses.length > 0 || stats.totalXp > 0 ? <List>
-            <ListItem
-              leading={<Avatar>📈</Avatar>}
-              title="Your progress"
-              subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
-              trailing={
-                <Inline gap={1}>
-                  <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
-                </Inline>
-              }
-              chevron
-              onClick={onOpenProgress}
-            />
-            <ListItem
-              leading={<Avatar>⭐</Avatar>}
-              title={`${stats.dayXp} XP today`}
-              subtitle="See exactly what earned it"
-              chevron
-              onClick={() => onOpenXpDay(overview.today)}
-            />
-          </List> : null}
-
-        </div> : null}
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="practice-courses">
           <Section
             title="Courses"
             info={
               <p>
-                A course is a folder of lessons on one theme: drills on its words, sentences and
-                dialogue, and conversations with the examiner. Ask the tutor for a new course on anything, or to
-                add lessons and drills to one you have.
+                A course is a folder of lessons on one theme: drills on its words, sentences and dialogue, and
+                conversations with the examiner. Ask the tutor for a new course on anything, or to add lessons and
+                drills to one you have.
               </p>
             }
           >
@@ -259,9 +275,8 @@ export function Exercises({
               title="Mastered"
               info={
                 <p>
-                  Courses you mastered and closed: kept here as trophies, readable any time. Their
-                  lessons no longer come back in your check-ins. To revisit a theme, ask the tutor for a
-                  new course.
+                  Courses you mastered and closed: kept here as trophies, readable any time. Their lessons no longer
+                  come back in your check-ins. To revisit a theme, ask the tutor for a new course.
                 </p>
               }
             >

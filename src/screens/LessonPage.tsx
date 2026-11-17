@@ -289,7 +289,7 @@ export function LessonPage({
             </Inline>
           </Badge>
           <Badge tone={complexityTone(lesson.complexity)}>
-            {complexityName(lesson.complexity)} · {minutes(lesson.complexity)}
+            {complexityName(lesson.complexity)} · {minutes(lesson)}
           </Badge>
           {lesson.mastered ? (
             <Badge tone="gold">🏆 Mastered</Badge>
@@ -339,17 +339,17 @@ export function LessonPage({
               lesson.mastered
                 ? "Mastered — it no longer comes back"
                 : !started
-                ? "Starts the first time you do it"
-                : lesson.dueDay! <= today
-                  ? "Due now"
-                  : `Next check-in ${dayToDate(lesson.dueDay!)}`
+                  ? "Starts the first time you do it"
+                  : lesson.dueDay! <= today
+                    ? "Due now"
+                    : `Next check-in ${dayToDate(lesson.dueDay!)}`
             }
             description={
               lesson.mastered
                 ? "Mastery is for good. Practise it whenever you like; it won't be scheduled again."
                 : started
-                ? "Each pass pushes the next one further out; struggling brings it back sooner."
-                : `Then it comes back about every ${lesson.periodDays} days, further apart as you pass.`
+                  ? "Each pass pushes the next one further out; struggling brings it back sooner."
+                  : `Then it comes back about every ${lesson.periodDays} days, further apart as you pass.`
             }
           />
           <SettingRow
