@@ -109,6 +109,11 @@ export const PlayerIcon = {
       <rect x="13.8" y="5" width="4.2" height="14" rx="1.2" />
     </Solid>
   ),
+  stop: ({ size }: { size?: number }) => (
+    <Solid size={size}>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </Solid>
+  ),
   next: () => (
     <Solid>
       <path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75L15 13v4.5a1 1 0 0 0 2 0v-11a1 1 0 0 0-2 0V11L6.4 5.45A.9.9 0 0 0 5 6.2z" />

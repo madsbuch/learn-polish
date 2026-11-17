@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, Stack, Text } from "../design";
+import { fileUrl } from "../lib/files";
 import type { Exercise } from "../lib/types";
 import { playMatch, playWrong } from "../lib/sounds";
 
@@ -103,6 +104,8 @@ interface Card {
   pair: number;
   text: string;
   lang: "pl" | "en";
+  /** Picture lessons: shown instead of the text. */
+  image: number | null;
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -130,8 +133,9 @@ export function Memory({
     () =>
       shuffle(
         exercise.pairs.flatMap((pair, i) => [
-          { id: i * 2, pair: i, text: pair.pl, lang: "pl" as const },
-          { id: i * 2 + 1, pair: i, text: pair.en, lang: "en" as const },
+          { id: i * 2, pair: i, text: pair.pl, lang: "pl" as const, image: null },
+          // In a picture lesson the second card is the picture.
+          { id: i * 2 + 1, pair: i, text: pair.en, lang: "en" as const, image: pair.image ?? null },
         ]),
       ),
     [exercise.key],
@@ -192,9 +196,9 @@ export function Memory({
               data-state={state}
               data-lang={card.lang}
               onClick={() => flip(index)}
-              aria-label={state === "down" ? "Hidden card" : card.text}
+              aria-label={state === "down" ? "Hidden card" : card.image !== null ? "A picture" : card.text}
             >
-              {state === "down" ? "?" : card.text}
+              {state === "down" ? "?" : card.image !== null ? <img className="memory-picture" src={fileUrl(card.image)} alt="" /> : card.text}
             </button>
           );
         })}

@@ -74,7 +74,15 @@ export type ExerciseKind =
   | "wordOrder"
   | "dialogueGap"
   | "gapFill"
-  | "memory";
+  | "memory"
+  // Picture lessons: meet it (picture, sound, word); hear it and pick its
+  // picture; read it and pick its picture; see the picture and pick the
+  // word; type the word from the picture.
+  | "pictureIntro"
+  | "hearPick"
+  | "wordPick"
+  | "picturePick"
+  | "pictureType";
 
 export interface Exercise {
   key: string;
@@ -93,6 +101,10 @@ export interface Exercise {
   gaps: Gap[];
   /** Memory cards: the Polish/English pairs to find. */
   pairs: Pair[];
+  /** The item's picture (a file id), when it has one. */
+  image: number | null;
+  /** Picture lessons: each option's picture, in the order of `options`. */
+  optionImages: (number | null)[];
 }
 
 export interface Gap {
@@ -105,6 +117,8 @@ export interface Gap {
 export interface Pair {
   pl: string;
   en: string;
+  /** Picture lessons: the card shows this picture instead of the English. */
+  image: number | null;
 }
 
 export interface SessionPlan {
@@ -178,6 +192,18 @@ export interface LessonDetail extends Lesson {
   factNote: string | null;
   /** When the lesson was last checked against its sources (seconds). */
   factCheckedAt: number | null;
+  /** Its words with their ids and pictures. */
+  wordPictures: WordPicture[];
+}
+
+/** A lesson's word, with its picture if it has one. */
+export interface WordPicture {
+  wordId: number;
+  word: string;
+  meaning: string;
+  image: number | null;
+  /** A noun: worth a picture in a word drill. */
+  picturable: boolean;
 }
 
 export interface LessonOverview {

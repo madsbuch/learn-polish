@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS words (
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
     pos      TEXT    NOT NULL,
+    -- A picture of it (picture lessons, or added to a word drill).
+    image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
     UNIQUE (lesson_id, pl)
 );
 CREATE INDEX IF NOT EXISTS words_lesson ON words(lesson_id, ord);
@@ -614,6 +616,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
                  ELSE 0 END",
         )?;
     }
+    add_column(conn, "words", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
     add_column(conn, "day_log", "minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "ai_costs", "tokens_in", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "ai_costs", "tokens_cached", "INTEGER NOT NULL DEFAULT 0")?;

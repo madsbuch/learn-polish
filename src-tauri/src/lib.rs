@@ -84,6 +84,8 @@ pub fn run() {
             let _ = tutor::recover_interrupted(&mut connection);
             app.state::<Db>().fill(connection);
             songs::resume_pending(app.handle());
+            // Picture lessons whose drawing an earlier run did not finish.
+            pictures::draw_missing_in_background(app.handle());
             files::sync_to_disk(app.handle());
             // Lessons built on Wikipedia, checked against it every three months.
             wiki::check_due_in_background(app.handle());
@@ -134,6 +136,9 @@ pub fn run() {
             wiki::source_remove,
             wiki::fact_check_lesson,
             pictures::course_picture_delete,
+            pictures::lesson_add_pictures,
+            pictures::word_picture_draw,
+            pictures::word_picture_delete,
             tutor::app_visibility,
             tutor::tutor_conversations,
             tutor::tutor_history,
@@ -1388,6 +1393,81 @@ mod integration {
     }
 
     #[test]
+    fn picture_lessons_teach_by_picture_sound_and_word() {
+        let mut conn = scratch_db("pictures");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into() };
+        let items = courses::Items {
+            words: vec![word("stół", "table"), word("krzesło", "chair"), word("kubek", "mug"), word("talerz", "plate"), word("widelec", "fork")],
+            sentences: vec![],
+            dialogue: vec![],
+        };
+        let (lesson, _) = lessons::create_drill(&mut conn, course, "In the kitchen", "", "pictures", "low", &items, None, "tutor").unwrap();
+        assert_eq!(pictures::missing(&mut conn, lesson.id).unwrap().len(), 5, "a picture lesson draws every word");
+
+        // Four of the five have their pictures; the fifth is not drawn yet.
+        let ids: Vec<i64> = t::words::table.filter(t::words::lesson_id.eq(lesson.id)).order(t::words::ord).select(t::words::id).load(&mut conn).unwrap();
+        for (n, id) in ids.iter().take(4).enumerate() {
+            let file = files::store(&mut conn, files::WORD_IMAGE, &format!("w{n}.jpg"), "image/jpeg", &[n as u8]).unwrap();
+            diesel::update(t::words::table.find(id)).set(t::words::image_file_id.eq(file)).execute(&mut conn).unwrap();
+        }
+        assert_eq!(pictures::missing(&mut conn, lesson.id).unwrap(), [ids[4]]);
+        assert!(files::referenced(&mut conn).unwrap().len() >= 4, "word pictures are kept, not swept as orphans");
+
+        let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
+        let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(kinds.iter().filter(|k| **k == "pictureIntro").count(), 4, "{kinds:?}");
+        assert_eq!(kinds.iter().filter(|k| **k == "intro").count(), 1, "the undrawn word is met as in a words drill: {kinds:?}");
+        let hear = plan.exercises.iter().find(|e| e.kind == "hearPick").expect("hear it, pick the picture");
+        assert_eq!(hear.options.len(), 4);
+        assert_eq!(hear.option_images.iter().flatten().count(), 4, "every option is a picture");
+        assert!(hear.options.contains(&hear.answer));
+        let intro = plan.exercises.iter().find(|e| e.kind == "pictureIntro").unwrap();
+        assert!(intro.image.is_some() && !intro.meaning.is_empty(), "English is there, behind a tap");
+        let memory = plan.exercises.iter().find(|e| e.kind == "memory").expect("a memory round of pictures");
+        assert!(memory.pairs.iter().all(|p| p.image.is_some()));
+
+        // Meeting a picture is reading, not answering.
+        let met = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "pictureIntro".into(),
+            item_kind: "word".into(),
+            item_id: ids[0],
+            is_new: true,
+            expected: "stół".into(),
+            given: "stół".into(),
+            ..Default::default()
+        }).unwrap();
+        assert_eq!(met.xp_gained, 0);
+
+        // A word drill given pictures draws only its nouns, and works as before.
+        let drill_items = courses::Items {
+            words: vec![word("chleb", "bread"), courses::NewWord { pl: "jeść".into(), en: "to eat".into(), pos: "v".into() }],
+            sentences: vec![],
+            dialogue: vec![],
+        };
+        let (drill, _) = lessons::create_drill(&mut conn, course, "Food", "", "words", "low", &drill_items, None, "tutor").unwrap();
+        assert_eq!(pictures::missing(&mut conn, drill.id).unwrap().len(), 1, "nouns only");
+        let plain = session::build_lesson(&mut conn, drill.id).unwrap();
+        assert!(plain.exercises.iter().all(|e| !e.kind.starts_with("picture") && e.kind != "hearPick" && e.kind != "wordPick"));
+    }
+
+    #[test]
+    fn word_pictures_are_shrunk_to_a_small_jpeg() {
+        let mut big = image::RgbaImage::new(1024, 768);
+        for pixel in big.pixels_mut() {
+            *pixel = image::Rgba([200, 30, 30, 128]);
+        }
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgba8(big).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        let small = pictures::shrink(&png).unwrap();
+        let back = image::load_from_memory(&small).unwrap();
+        assert_eq!((back.width(), back.height()), (512, 384), "fits 512, keeps its shape");
+        assert_eq!(image::guess_format(&small).unwrap(), image::ImageFormat::Jpeg);
+        assert!(pictures::word_prompt("krzesło", "chair").contains("No text"));
+        assert!(pictures::picturable("n-f") && !pictures::picturable("v") && !pictures::picturable("num"));
+    }
+
+    #[test]
     fn drafts_stay_out_of_the_library_and_a_made_song_is_never_changed() {
         let mut conn = scratch_db("song-drafts");
         let draft = songs::normalize_draft(songs::SongDraft {
@@ -2178,3 +2258,4 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
     }
 
 }
+

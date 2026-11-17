@@ -39,8 +39,10 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
         return 0;
     }
     let base = match kind {
-        "intro" | "sentenceIntro" => 2,
-        "recognise" => 6,
+        "intro" | "sentenceIntro" | "pictureIntro" => 2,
+        "recognise" | "wordPick" => 6,
+        "hearPick" | "picturePick" => 8,
+        "pictureType" => 14,
         "produce" => 8,
         "dialogueGap" => 10,
         "wordOrder" => 12,

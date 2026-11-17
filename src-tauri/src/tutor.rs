@@ -93,6 +93,8 @@ The app:
   wiki_read — and attach the article to the lesson with attach_source (existing lessons too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
   language hook (the city in \"w Krakowie\", \"z Krakowa\").
+- For everyday objects, a picture lesson (create_picture_lesson) teaches by picture, sound and \
+  word together. Use it only for concrete things that are unmistakable in a picture.
 - Polish must be correct, with diacritics. Words in dictionary form, lowercase, with a short \
   gloss; sentences short and natural.
 - Songs cost the learner credits: one per request. File a new song under the course it fits; \
@@ -541,6 +543,26 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "course_id": { "type": "integer" }
                 },
                 "required": ["title", "format", "complexity"]
+            }),
+        ),
+        tool(
+            "create_picture_lesson",
+            "Making the picture lesson…",
+            "Make a picture lesson: 4–10 everyday objects, each drawn as a picture, learnt by \
+             picture, sound and word together — English only behind a tap. Only concrete things you \
+             can point at (food, furniture, clothes, tools, animals), each unmistakable on its own: \
+             no actions, qualities, places or ideas. Pictures are drawn in the background (about \
+             4 cents each). To add pictures to an existing word drill, the learner taps Add \
+             pictures on its page.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "words": word_schema(),
+                    "course_id": { "type": "integer", "description": "The course to add it to (a new one named after the lesson if none is given)" }
+                },
+                "required": ["title", "words"]
             }),
         ),
         tool(
@@ -1256,6 +1278,16 @@ struct DrillArgs {
 }
 
 #[derive(Deserialize)]
+struct PictureLessonArgs {
+    title: String,
+    #[serde(default)]
+    summary: String,
+    words: Vec<NewWord>,
+    #[serde(default, alias = "topic_id")]
+    course_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
 struct ListLessonsArgs {
     which: String,
     #[serde(default, rename = "course_id", alias = "topic_id")]
@@ -1668,6 +1700,38 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 json!({ "created": lesson_json(&lesson), "course_id": course_id, "skipped_duplicates": skipped }),
                 "lessonCreated",
                 format!("Made “{}” — {} drill, {} items", lesson.title, complexity_label(&lesson.complexity), lesson.items),
+                lesson.id,
+            ))
+        }
+        "create_picture_lesson" => {
+            let args: PictureLessonArgs = parse(arguments)?;
+            if args.words.len() < 4 {
+                return Err(Error::msg("A picture lesson needs at least four objects, to choose between."));
+            }
+            let course_id = match args.course_id {
+                Some(id) => id,
+                None => courses::create_empty(conn, &args.title, &args.summary)?,
+            };
+            let (lesson, skipped) = lessons::create_drill(
+                conn,
+                course_id,
+                &args.title,
+                &args.summary,
+                "pictures",
+                "low",
+                &courses::Items { words: args.words, sentences: vec![], dialogue: vec![] },
+                None,
+                "tutor",
+            )?;
+            Ok(Outcome::lesson(
+                json!({
+                    "created": lesson_json(&lesson),
+                    "course_id": course_id,
+                    "skipped_duplicates": skipped,
+                    "pictures": "being drawn in the background; the lesson can be started now",
+                }),
+                "lessonCreated",
+                format!("Made “{}” — a picture lesson, {} objects", lesson.title, lesson.items),
                 lesson.id,
             ))
         }
@@ -2952,6 +3016,11 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                     let done = execute(conn, &name, &arguments);
                     for course_id in course_ids(conn).difference(&before) {
                         crate::pictures::draw_in_background(app, *course_id);
+                    }
+                    if name == "create_picture_lesson" {
+                        drop(guard);
+                        crate::pictures::draw_missing_in_background(app);
+                        return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
                     }
                     done
                 };

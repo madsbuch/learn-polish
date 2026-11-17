@@ -6,6 +6,7 @@ import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
 import { ArticleReader, Sources } from "../components/Sources";
 import { SongToListen } from "../components/SongToListen";
+import { WordPictures } from "../components/WordPictures";
 import { SlowButton, SpeakButton } from "../components/ui";
 import {
   Badge,
@@ -267,7 +268,8 @@ export function LessonPage({
         </Section>
       ) : null}
 
-      {!study && lesson.words.length > 0 ? (
+      {!study && lesson.wordPictures.length > 0 ? <WordPictures lesson={lesson} onChanged={reload} /> : null}
+      {!study && lesson.words.length > 0 && lesson.format !== "pictures" ? (
         <Section title={`${lesson.words.length} words`}>
           <List>
             {lesson.words.map(([pl, en]) => (

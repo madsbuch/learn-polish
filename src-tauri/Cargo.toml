@@ -57,6 +57,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # net/io-util/fs serve songs to Sonos speakers on the local network.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
+# Shrinking word pictures to a small JPEG (pictures.rs).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 # Scanning another device's API-key QR code. The plugin only exists on phones.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]

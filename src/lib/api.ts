@@ -158,6 +158,10 @@ export const api = {
   factCheckLesson: (lessonId: number) => invoke<FactCheck>("fact_check_lesson", { lessonId }),
   /** Draws a new picture for a course; returns its file id. */
   coursePicture: (courseId: number) => invoke<number>("course_picture", { courseId }),
+  /** Draws the pictures a lesson lacks, in the background; resolves to how many. */
+  lessonAddPictures: (lessonId: number) => invoke<number>("lesson_add_pictures", { lessonId }),
+  wordPictureDraw: (wordId: number) => invoke<number>("word_picture_draw", { wordId }),
+  wordPictureDelete: (wordId: number) => invoke<void>("word_picture_delete", { wordId }),
   coursePictureDelete: (courseId: number) => invoke<void>("course_picture_delete", { courseId }),
   tutorConversations: () => invoke<Conversation[]>("tutor_conversations"),
   tutorHistory: (conversationId: number) =>

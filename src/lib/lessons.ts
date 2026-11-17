@@ -22,6 +22,7 @@ const FORMAT_NAMES: Record<string, string> = {
   dialogue: "Conversation",
   song: "Listening",
   writing: "Writing",
+  pictures: "Pictures",
 };
 
 /** "Study" or the drill's format, e.g. "Memory cards". */

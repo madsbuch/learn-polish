@@ -26,6 +26,8 @@ struct WordRow {
     meaning: String,
     pos: String,
     reps: i64,
+    /// Its picture, when it has one.
+    image: Option<i64>,
 }
 
 struct SentenceRow {
@@ -94,6 +96,9 @@ fn word_intro(w: &WordRow) -> Exercise {
         tokens: vec![],
         gaps: vec![],
         pairs: vec![],
+        // A word that has a picture shows it as it is introduced.
+        image: w.image,
+        option_images: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -113,6 +118,8 @@ fn typing(w: &WordRow) -> Exercise {
         tokens: vec![],
         gaps: vec![],
         pairs: vec![],
+        image: None,
+        option_images: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -132,6 +139,8 @@ fn sentence_intro(s: &SentenceRow) -> Exercise {
         tokens: vec![],
         gaps: vec![],
         pairs: vec![],
+        image: None,
+        option_images: vec![],
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
     }
@@ -150,17 +159,17 @@ fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> E
 }
 
 fn lesson_words(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(WordRow, bool)>> {
-    let rows: Vec<(i64, String, String, String)> = words::table
+    let rows: Vec<(i64, String, String, String, Option<i64>)> = words::table
         .filter(words::lesson_id.eq(lesson_id))
         .order((words::ord, words::id))
-        .select((words::id, words::pl, words::en, words::pos))
+        .select((words::id, words::pl, words::en, words::pos, words::image_file_id))
         .load(conn)?;
     let reps = met(conn, "word", &rows.iter().map(|r| r.0).collect::<Vec<_>>())?;
     Ok(rows
         .into_iter()
-        .map(|(id, pl, meaning, pos)| {
+        .map(|(id, pl, meaning, pos, image)| {
             let seen = reps.get(&id).copied();
-            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0) }, seen.is_none())
+            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image }, seen.is_none())
         })
         .collect())
 }
@@ -221,6 +230,31 @@ pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
                 exercises.extend(memory_game(&all, format!("b{lesson_id}-memory"), lesson_id, rng));
             }
         }
+        "pictures" => {
+            // Picture, sound and word together, English behind a tap. A word
+            // whose picture is not drawn yet is practised as in a words drill.
+            let images = picture_pool(conn, lesson_id)?;
+            let mut known = Vec::new();
+            for (w, is_new) in &words {
+                if w.image.is_none() {
+                    if *is_new {
+                        exercises.push(word_intro(w));
+                        exercises.push(recognise(w, &pool, rng));
+                    } else {
+                        known.push(practise_word(w, &pool, rng));
+                    }
+                } else if *is_new {
+                    exercises.push(picture_intro(w));
+                    exercises.push(practise_picture(w, &pool, &images, rng));
+                } else {
+                    known.push(practise_picture(w, &pool, &images, rng));
+                }
+            }
+            known.shuffle(rng);
+            exercises.extend(known);
+            let pictured: Vec<&WordRow> = words.iter().map(|(w, _)| w).filter(|w| w.image.is_some()).collect();
+            exercises.extend(picture_memory(&pictured, format!("b{lesson_id}-pictures"), lesson_id, rng));
+        }
         "memory" => {
             let all: Vec<&WordRow> = words.iter().map(|(w, _)| w).collect();
             for (n, chunk) in all.chunks(MEMORY_PAIRS).enumerate() {
@@ -257,6 +291,8 @@ pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
                     tokens: vec![],
                     gaps: vec![],
                     pairs: vec![],
+                    image: None,
+                    option_images: vec![],
                     pl: course.title_pl.clone(),
                     meaning: course.summary.clone(),
                 });
@@ -280,6 +316,120 @@ pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
         already_completed: false,
         lesson_id,
         extra: crate::lessons::is_extra_practice(&lesson, today),
+    })
+}
+
+/// Picture lessons: a new word, seen, heard and read at once. Its English is
+/// there behind a tap.
+fn picture_intro(w: &WordRow) -> Exercise {
+    Exercise { key: format!("w{}-picture-intro", w.id), kind: "pictureIntro".into(), ..word_intro(w) }
+}
+
+/// The practice step for a pictured word, harder the better it is known:
+/// hear it and pick its picture, read it and pick its picture, see the
+/// picture and pick the word, then type it from the picture (or, now and
+/// then, hear it again). Falls back when there are too few pictures to
+/// choose from.
+fn practise_picture(w: &WordRow, pool: &Distractors, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Exercise {
+    let kind = match w.reps {
+        0 => "hearPick",
+        1 => "wordPick",
+        2 => "picturePick",
+        _ if rng.random_bool(0.5) => "hearPick",
+        _ => "pictureType",
+    };
+    let base = Exercise {
+        key: format!("w{}-{kind}", w.id),
+        kind: kind.into(),
+        image: w.image,
+        answer: w.pl.clone(),
+        prompt: w.pl.clone(),
+        ..word_intro(w)
+    };
+    let base = Exercise { is_new: false, ..base };
+    match kind {
+        "hearPick" | "wordPick" => match picture_options(w, images, rng) {
+            Some((options, option_images)) => Exercise { options, option_images, ..base },
+            None => Exercise { kind: "picturePick".into(), options: options(&w.pl, &pool.polish, rng), ..base },
+        },
+        "picturePick" => Exercise { options: options(&w.pl, &pool.polish, rng), ..base },
+        _ => base,
+    }
+}
+
+/// Four pictures to choose from: the word's and three others', each of a
+/// different word. None with fewer than four.
+fn picture_options(w: &WordRow, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Option<(Vec<String>, Vec<Option<i64>>)> {
+    let mut decoys: Vec<&(String, i64)> =
+        images.iter().filter(|(pl, image)| pl != &w.pl && Some(*image) != w.image).collect();
+    decoys.shuffle(rng);
+    let mut chosen: Vec<(String, i64)> = Vec::new();
+    for (pl, image) in decoys {
+        if chosen.iter().all(|(p, i)| p != pl && i != image) {
+            chosen.push((pl.clone(), *image));
+        }
+        if chosen.len() == 3 {
+            break;
+        }
+    }
+    if chosen.len() < 3 {
+        return None;
+    }
+    chosen.push((w.pl.clone(), w.image?));
+    chosen.shuffle(rng);
+    Some((chosen.iter().map(|(pl, _)| pl.clone()).collect(), chosen.iter().map(|(_, i)| Some(*i)).collect()))
+}
+
+/// The pictured words of every course the lesson is in: decoys for the
+/// picture choices.
+fn picture_pool(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(String, i64)>> {
+    let courses = courses_of(conn, lesson_id)?;
+    let ids: Vec<i64> = course_words::table
+        .filter(course_words::course_id.eq_any(courses))
+        .select(course_words::id)
+        .load(conn)?;
+    let rows: Vec<(String, Option<i64>)> = words::table
+        .filter(words::id.eq_any(ids).or(words::lesson_id.eq(lesson_id)))
+        .filter(words::image_file_id.is_not_null())
+        .select((words::pl, words::image_file_id))
+        .load(conn)?;
+    Ok(rows.into_iter().filter_map(|(pl, image)| image.map(|i| (pl, i))).collect())
+}
+
+/// The memory round of a picture lesson: pictures to match with their words.
+fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+    let mut pool: Vec<&&WordRow> = words.iter().collect();
+    pool.shuffle(rng);
+    let mut pairs: Vec<Pair> = Vec::new();
+    for w in pool {
+        if pairs.iter().any(|p| p.pl == w.pl || p.image == w.image) {
+            continue;
+        }
+        pairs.push(Pair { pl: w.pl.clone(), en: short_gloss(&w.meaning), image: w.image });
+        if pairs.len() == MEMORY_PAIRS {
+            break;
+        }
+    }
+    if pairs.len() < 4 {
+        return None;
+    }
+    Some(Exercise {
+        key,
+        kind: "memory".into(),
+        item_kind: "set".into(),
+        item_id,
+        is_new: false,
+        prompt: String::new(),
+        hint: String::new(),
+        answer: String::new(),
+        options: vec![],
+        tokens: vec![],
+        pl: String::new(),
+        meaning: String::new(),
+        gaps: vec![],
+        pairs,
+        image: None,
+        option_images: vec![],
     })
 }
 
@@ -332,6 +482,8 @@ fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exerc
         tokens: vec![],
         gaps: vec![],
         pairs: vec![],
+        image: None,
+        option_images: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -351,6 +503,8 @@ fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercis
         tokens: vec![],
         gaps: vec![],
         pairs: vec![],
+        image: None,
+        option_images: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -374,6 +528,8 @@ fn word_order(s: &SentenceRow) -> Exercise {
         meaning: s.meaning.clone(),
         gaps: vec![],
         pairs: vec![],
+        image: None,
+        option_images: vec![],
     }
 }
 
@@ -411,6 +567,8 @@ fn dialogue_gaps(
                 tokens: vec![],
                 gaps: vec![],
                 pairs: vec![],
+                image: None,
+                option_images: vec![],
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
@@ -434,7 +592,7 @@ fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl ran
         if en.is_empty() || pairs.iter().any(|p| p.en.eq_ignore_ascii_case(&en) || p.pl == w.pl) {
             continue;
         }
-        pairs.push(Pair { pl: w.pl.clone(), en });
+        pairs.push(Pair { pl: w.pl.clone(), en, image: None });
         if pairs.len() == MEMORY_PAIRS {
             break;
         }
@@ -457,6 +615,8 @@ fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl ran
         meaning: String::new(),
         gaps: vec![],
         pairs,
+        image: None,
+        option_images: vec![],
     })
 }
 
@@ -581,6 +741,8 @@ fn gap_fill(
         meaning: String::new(),
         gaps,
         pairs: vec![],
+        image: None,
+        option_images: vec![],
     }))
 }
 

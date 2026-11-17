@@ -100,6 +100,10 @@ pub struct Exercise {
     pub gaps: Vec<Gap>,
     /// Memory cards: the Polish/English pairs to find.
     pub pairs: Vec<Pair>,
+    /// The item's picture (a file id), when it has one.
+    pub image: Option<i64>,
+    /// Picture lessons: each option's picture, in the order of `options`.
+    pub option_images: Vec<Option<i64>>,
 }
 
 /// One sentence with a word taken out of it.
@@ -118,6 +122,8 @@ pub struct Gap {
 pub struct Pair {
     pub pl: String,
     pub en: String,
+    /// Picture lessons: the card shows this picture instead of the English.
+    pub image: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

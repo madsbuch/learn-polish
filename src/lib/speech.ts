@@ -274,6 +274,14 @@ export async function speakSequence(lines: ConversationLine[], gapMs = 350): Pro
   return playConversation(lines, 0, gapMs);
 }
 
+/**
+ * Resolves when the clip playing now stops — it ends, is stopped, or another
+ * one takes its place — whichever engine plays it.
+ */
+export function playbackFinished(): Promise<void> {
+  return finished();
+}
+
 /** Resolves when the current clip stops, whichever engine is playing it. */
 function finished(): Promise<void> {
   if (aiVoiceReady() && player) {

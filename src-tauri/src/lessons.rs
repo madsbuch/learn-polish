@@ -33,7 +33,7 @@ pub const SENTENCES_PER_LESSON: usize = 5;
 /// Longest gap between check-ins, however often a lesson was passed.
 const MAX_INTERVAL: i64 = 120;
 
-pub const FORMATS: &[&str] = &["words", "memory", "typing", "sentences", "gaps", "dialogue"];
+pub const FORMATS: &[&str] = &["words", "memory", "typing", "sentences", "gaps", "dialogue", "pictures"];
 
 /// What a listening lesson checks, by complexity: understanding first, then
 /// picking out words, then the grammar of what was sung.
@@ -112,6 +112,18 @@ pub struct Lesson {
     pub song_id: Option<i64>,
 }
 
+/// A word of a lesson, with its picture if it has one.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WordPicture {
+    pub word_id: i64,
+    pub word: String,
+    pub meaning: String,
+    pub image: Option<i64>,
+    /// A noun: worth a picture in a word drill.
+    pub picturable: bool,
+}
+
 /// A lesson with everything its page shows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,6 +135,9 @@ pub struct LessonDetail {
     pub objectives: Vec<String>,
     /// Drills: what is practised, Polish and English.
     pub words: Vec<(String, String)>,
+    /// The same words with their ids and pictures (picture lessons, and
+    /// word drills that were given pictures).
+    pub word_pictures: Vec<WordPicture>,
     pub sentences: Vec<(String, String)>,
     /// The last check-in's feedback, if any.
     pub last_feedback: Option<String>,
@@ -311,7 +326,22 @@ pub fn detail(conn: &mut Conn, id: i64) -> Result<LessonDetail> {
         .first::<Option<String>>(conn)
         .optional()?
         .flatten();
+    let word_pictures = words::table
+        .filter(words::lesson_id.eq(id))
+        .order((words::ord, words::id))
+        .select((words::id, words::pl, words::en, words::pos, words::image_file_id))
+        .load::<(i64, String, String, String, Option<i64>)>(conn)?
+        .into_iter()
+        .map(|(word_id, word, meaning, pos, image)| WordPicture {
+            word_id,
+            word,
+            meaning,
+            image,
+            picturable: crate::pictures::picturable(&pos),
+        })
+        .collect();
     Ok(LessonDetail {
+        word_pictures,
         words,
         sentences,
         lines: crate::session::lesson_lines(conn, id)?,

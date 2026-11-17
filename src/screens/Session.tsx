@@ -19,6 +19,7 @@ import {
   Text,
   Inline,
 } from "../design";
+import { fileUrl } from "../lib/files";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
@@ -26,7 +27,10 @@ import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib
 import { playCorrect, playWrong } from "../lib/sounds";
 
 /** Cards that only show something; they are not scored. */
-const READING_KINDS = new Set(["dialogueRead", "intro", "sentenceIntro"]);
+const READING_KINDS = new Set(["dialogueRead", "intro", "sentenceIntro", "pictureIntro"]);
+/** Typed answers: the keyboard opens for these. */
+const TYPED_KINDS = new Set(["type", "pictureType"]);
+
 
 type Phase = "answering" | "checked";
 
@@ -58,6 +62,8 @@ export function Session({
 
   // The chat about the current word, when open.
   const [talking, setTalking] = useState(false);
+  // Picture lessons: the English, shown only when asked for.
+  const [showMeaning, setShowMeaning] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,9 +81,10 @@ export function Session({
     setGapsFilled([]);
     setMemoryTurns(null);
     setTalking(false);
+    setShowMeaning(false);
     setError(null);
     bodyRef.current?.scrollTo({ top: 0 });
-    if (exercise?.kind === "type") {
+    if (exercise && TYPED_KINDS.has(exercise.kind)) {
       // A short delay lets the card render before the keyboard opens.
       const timer = setTimeout(() => inputRef.current?.focus(), 120);
       return () => clearTimeout(timer);
@@ -88,7 +95,13 @@ export function Session({
   // Pronounce new material as it appears — hearing it first anchors the
   // spelling. Failures stay silent here; the 🔊 button is where they surface.
   useEffect(() => {
-    if (exercise && (exercise.kind === "intro" || exercise.kind === "sentenceIntro")) {
+    if (
+      exercise &&
+      (exercise.kind === "intro" ||
+        exercise.kind === "sentenceIntro" ||
+        exercise.kind === "pictureIntro" ||
+        exercise.kind === "hearPick")
+    ) {
       speakQuietly(exercise.pl);
     }
   }, [exercise]);
@@ -97,12 +110,16 @@ export function Session({
     if (!exercise) return "";
     switch (exercise.kind) {
       case "type":
+      case "pictureType":
         return typed;
       case "wordOrder":
         return built.map((i) => exercise.tokens[i]).join(" ");
       case "recognise":
       case "produce":
       case "dialogueGap":
+      case "hearPick":
+      case "wordPick":
+      case "picturePick":
         return picked ?? "";
       case "gapFill":
         return exercise.gaps
@@ -119,6 +136,7 @@ export function Session({
     ? exercise.kind === "gapFill"
       ? exercise.gaps.every((_, i) => gapsFilled[i] != null)
       : exercise.kind === "intro" ||
+        exercise.kind === "pictureIntro" ||
         exercise.kind === "sentenceIntro" ||
         exercise.kind === "dialogueRead" ||
         given.trim().length > 0
@@ -208,6 +226,39 @@ export function Session({
     return "idle";
   };
 
+  // Picture lessons: four pictures to choose from.
+  const pictureOptions = (
+    <div className="picture-options">
+      {exercise.options.map((option, i) => {
+        const image = exercise.optionImages[i];
+        return (
+          <button
+            key={option}
+            className="picture-option"
+            data-state={optionState(option)}
+            disabled={isChecked}
+            aria-label={isChecked ? option : `Picture ${i + 1}`}
+            onClick={() => setPicked(option)}
+          >
+            {image != null ? <img src={fileUrl(image)} alt="" /> : null}
+            {isChecked ? <span className="picture-option-word">{option}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // The English of a picture card, behind a tap.
+  const meaningOnTap = showMeaning ? (
+    <Text variant="lead" tone="dim" weight="medium">
+      {exercise.meaning}
+    </Text>
+  ) : (
+    <Button size="sm" onClick={() => setShowMeaning(true)}>
+      Show English
+    </Button>
+  );
+
   const options = (
     <div className="options">
       {exercise.options.map((option) => (
@@ -257,10 +308,96 @@ export function Session({
           </>
         ) : null}
 
+        {exercise.kind === "pictureIntro" ? (
+          <>
+            <Text variant="eyebrow">New word</Text>
+            <div className="prompt-card">
+              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
+              <Text variant="display" selectable>
+                {exercise.pl}
+              </Text>
+              <Inline gap={2} justify="center">
+                <SpeakButton text={exercise.pl} variant="tinted" />
+                <SlowButton text={exercise.pl} variant="tinted" />
+              </Inline>
+              <Text variant="caption" tone="faint">
+                {exercise.hint}
+              </Text>
+              {meaningOnTap}
+            </div>
+          </>
+        ) : null}
+
+        {exercise.kind === "hearPick" ? (
+          <>
+            <Text variant="eyebrow">Which one do you hear?</Text>
+            <Inline gap={2} justify="center">
+              <SpeakButton text={exercise.pl} variant="tinted" />
+              <SlowButton text={exercise.pl} variant="tinted" />
+            </Inline>
+            {pictureOptions}
+          </>
+        ) : null}
+
+        {exercise.kind === "wordPick" ? (
+          <>
+            <Text variant="eyebrow">Which picture is it?</Text>
+            <div className="prompt-card">
+              <Text variant="display" selectable>
+                {exercise.prompt}
+              </Text>
+              <SpeakButton text={exercise.prompt} variant="tinted" />
+            </div>
+            {pictureOptions}
+          </>
+        ) : null}
+
+        {exercise.kind === "picturePick" ? (
+          <>
+            <Text variant="eyebrow">What is this?</Text>
+            <div className="prompt-card">
+              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
+            </div>
+            {options}
+          </>
+        ) : null}
+
+        {exercise.kind === "pictureType" ? (
+          <>
+            <Text variant="eyebrow">Write it in Polish</Text>
+            <div className="prompt-card">
+              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
+              <Text variant="caption" tone="faint">
+                {exercise.hint}
+              </Text>
+            </div>
+            <Field label="Your answer" hint={'Polish letters are optional — "czesc" counts as "cześć".'}>
+              <input
+                ref={inputRef}
+                value={typed}
+                placeholder="Type here"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={isChecked}
+                onChange={(event) => setTyped(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    if (isChecked) void advance();
+                    else if (canSubmit) void check();
+                  }
+                }}
+              />
+            </Field>
+          </>
+        ) : null}
+
         {exercise.kind === "intro" ? (
           <>
             <Text variant="eyebrow">New word</Text>
             <div className="prompt-card">
+              {exercise.image != null ? <img className="picture-card" src={fileUrl(exercise.image)} alt="" /> : null}
               <Text variant="display" selectable>
                 {exercise.pl}
               </Text>
