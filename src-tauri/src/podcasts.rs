@@ -264,7 +264,7 @@ fn format_rules(format: &str) -> &'static str {
              - Let the context carry the meaning: say things in an order that makes them easy to \
              guess, and come back to the key words often, in slightly different sentences.\n\
              - Tell it as a story or a calm walk through the subject, concrete and visual.\n\
-             - Each line still has \"en\" (its exact meaning, for reading) and \"da\"."
+             - Each line still has \"en\" (its exact meaning, for reading) and \"pl\"."
         }
         _ => {
             "Format: sentence pairs, like the verses of a learning song.\n\
@@ -1361,8 +1361,8 @@ mod tests {
             voice: String::new(),
         };
         let mut cast = vec![
-            member("Mette", "f", "curious"),
-            member("Jonas", "m", "gravelly"),
+            member("Kasia", "f", "curious"),
+            member("Marek", "m", "gravelly"),
             member("Sofie", "f", "warm"),
             member("Lars", "m", "upbeat"),
         ];
@@ -1389,26 +1389,26 @@ mod tests {
     #[test]
     fn scripts_with_a_cast_keep_who_says_what_and_how() {
         let reply = r#"{"title": "The bridge", "titlePl": "Kopalnia", "about": "A mine.",
-            "cast": [{"name": "Mette", "gender": "female", "character": "Curious"}, {"name": "Mette", "gender": "f"}],
+            "cast": [{"name": "Kasia", "gender": "female", "character": "Curious"}, {"name": "Kasia", "gender": "f"}],
             "parts": [{"lines": [
                 {"speaker": "Narrator", "en": "A mine.", "pl": "Kopalnia."},
-                {"speaker": "Mette", "how": "surprised", "en": "So deep!", "pl": "Tak głęboko!"},
-                {"speaker": "Jonas", "en": "Yes.", "pl": "Tak."}
+                {"speaker": "Kasia", "how": "surprised", "en": "So deep!", "pl": "Tak głęboko!"},
+                {"speaker": "Marek", "en": "Yes.", "pl": "Tak."}
             ]}]}"#;
         let draft = normalize_episode(script_to_draft(parse_script(reply).unwrap(), "pairs", "f")).unwrap();
         let lines = &draft.sections[0].lines;
         assert_eq!(lines[0].speaker, "", "the narrator is no one in particular");
-        assert_eq!((lines[1].speaker.as_str(), lines[1].how.as_str()), ("Mette", "surprised"));
+        assert_eq!((lines[1].speaker.as_str(), lines[1].how.as_str()), ("Kasia", "surprised"));
         let cast = draft.podcast.unwrap().cast;
         let names: Vec<(&str, &str, &str)> =
             cast.iter().map(|m| (m.name.as_str(), m.gender.as_str(), m.character.as_str())).collect();
-        assert_eq!(names, [("Mette", "f", "curious"), ("Jonas", "f", "")], "no one twice; unlisted speakers join");
+        assert_eq!(names, [("Kasia", "f", "curious"), ("Marek", "f", "")], "no one twice; unlisted speakers join");
 
         // The lyrics say who speaks.
         let clips: Vec<Vec<u8>> = (0..6).map(|_| clip(100)).collect();
         let episode = assemble(&draft.sections, &clips, &PodcastAudio::for_format("pairs")).unwrap();
         let speakers: Vec<Option<&str>> = episode.lines.iter().map(|l| l.speaker.as_deref()).collect();
-        assert_eq!(speakers, [None, None, None, Some("Mette"), None, Some("Jonas")]);
+        assert_eq!(speakers, [None, None, None, Some("Kasia"), None, Some("Marek")]);
     }
 
     #[test]

@@ -54,7 +54,7 @@ pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(Str
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .json(&serde_json::json!({
             "model": model,
@@ -448,7 +448,7 @@ async fn request(
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
         // OpenRouter uses these for attribution on its dashboard.
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .json(&ChatRequest {
             model,
@@ -709,7 +709,7 @@ where
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .header("Accept", "text/event-stream")
         .json(&ChatRequest {
@@ -934,7 +934,7 @@ async fn speech_request(key: &str, model: &str, voice: &str, prompt: &str, forma
     let response = crate::http::api()
         .post(format!("{BASE_URL}/audio/speech"))
         .bearer_auth(key)
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .json(&SpeechRequest {
             model,

@@ -90,8 +90,8 @@ export function Exercises({
         <header className="screen-header">
           <Logo size={40} />
           <div className="screen-header__titles">
-            <Text variant="eyebrow">{greeting()}</Text>
-            <h1>Exercises</h1>
+            <Text variant="eyebrow">{greeting()} · a little every day</Text>
+            <h1>Polski</h1>
           </div>
           <IconButton icon={<SearchIcon />} label="Search words and sentences" onClick={onOpenSearch} />
         </header>
