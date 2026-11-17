@@ -58,6 +58,7 @@ fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    diagnostics::started();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
@@ -89,15 +90,23 @@ pub fn run() {
             // to Mastered now.
             let _ = courses::milestones(&mut connection);
             app.state::<Db>().fill(connection);
-            songs::resume_pending(app.handle());
-            // Picture lessons whose drawing an earlier run did not finish.
-            pictures::draw_missing_in_background(app.handle());
-            // Courses not levelled yet (from before levels, or made while
-            // offline) are checked, one at a time.
-            levels::check_unchecked_in_background(app.handle());
-            files::sync_to_disk(app.handle());
-            // Lessons built on Wikipedia, checked against it every three months.
-            wiki::check_due_in_background(app.handle());
+            // Work for the background starts a moment after the first screen
+            // has its data: it all takes the same database, and the first
+            // screen should not wait behind it.
+            let later = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let app = &later;
+                songs::resume_pending(app);
+                // Picture lessons whose drawing an earlier run did not finish.
+                pictures::draw_missing_in_background(app);
+                // Courses not levelled yet (from before levels, or made while
+                // offline) are checked, one at a time.
+                levels::check_unchecked_in_background(app);
+                files::sync_to_disk(app);
+                // Lessons built on Wikipedia, checked against it every three months.
+                wiki::check_due_in_background(app);
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2484,4 +2493,5 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
     }
 
 }
+
 

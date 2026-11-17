@@ -293,8 +293,12 @@ pub fn sync_to_disk(app: &AppHandle) {
             if let Ok(data) = app.path().app_data_dir() {
                 let _ = std::fs::remove_dir_all(data.join("pictures"));
             }
-            diesel::update(files::table.filter(files::kind.ne_all([SONG_AUDIO, SONG_IMAGE])))
-                .set(files::path.eq(None::<String>))
+            // Only rows that still have a path: rewriting a row rewrites its
+            // bytes too, and doing that to every clip at every start was slow.
+            diesel::update(
+                files::table.filter(files::kind.ne_all([SONG_AUDIO, SONG_IMAGE])).filter(files::path.is_not_null()),
+            )
+            .set(files::path.eq(None::<String>))
                 .execute(&mut *db.lock())?;
             let ids: Vec<i64> = files::table
                 .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))

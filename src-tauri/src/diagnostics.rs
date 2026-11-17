@@ -34,6 +34,19 @@ pub struct Entry {
     pub message: String,
 }
 
+/// When the app started, for the startup timing note.
+static STARTED: OnceLock<std::time::Instant> = OnceLock::new();
+
+/// Marks the app's start (the first thing it does).
+pub fn started() {
+    let _ = STARTED.set(std::time::Instant::now());
+}
+
+/// Milliseconds since the app started.
+pub fn since_start() -> u128 {
+    STARTED.get().map_or(0, |t| t.elapsed().as_millis())
+}
+
 /// Where the log lives; called once at startup.
 pub fn init(dir: PathBuf) {
     let _ = std::fs::create_dir_all(&dir);

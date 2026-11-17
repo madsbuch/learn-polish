@@ -69,9 +69,21 @@ fn read_settings(conn: &mut Conn) -> Result<Settings> {
 pub async fn init_app(db: State<'_, Db>, tz_offset_minutes: i64) -> Result<Settings> {
     // The webview can start before the database has opened (Android); wait
     // for it here, the first command, so later ones find it open.
+    let asked = std::time::Instant::now();
     db.opened(std::time::Duration::from_secs(20)).await?;
+    let opened = asked.elapsed();
     let mut guard = db.lock();
     let conn = &mut *guard;
+    // Settings → Diagnostics: if starting is slow, where the time went.
+    crate::diagnostics::note(
+        "timing",
+        format!(
+            "Starting up: ready {} ms after launch (the first screen waited {} ms for the database to open, then {} ms for it to be free)",
+            crate::diagnostics::since_start(),
+            opened.as_millis(),
+            (asked.elapsed() - opened).as_millis()
+        ),
+    );
     db::set_setting(conn, "tz_offset_minutes", &tz_offset_minutes.to_string())?;
     if db::get_setting(conn, "first_launch_day")?.is_none() {
         let today = db::today(conn);

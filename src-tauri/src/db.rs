@@ -97,28 +97,52 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // How long each step takes, for Settings → Diagnostics: a slow start
+    // says where it was slow.
+    let mut steps: Vec<(&str, std::time::Duration)> = Vec::new();
+    let mut clock = std::time::Instant::now();
+    let mut lap = |name: &'static str, steps: &mut Vec<(&str, std::time::Duration)>| {
+        steps.push((name, clock.elapsed()));
+        clock = std::time::Instant::now();
+    };
     let mut conn = SqliteConnection::establish(&path.to_string_lossy())?;
     conn.batch_execute(
         "PRAGMA journal_mode = WAL;
          PRAGMA foreign_keys = ON;
          PRAGMA synchronous = NORMAL;
-         PRAGMA busy_timeout = 5000;",
+         PRAGMA busy_timeout = 5000;
+         PRAGMA journal_size_limit = 67108864;",
     )?;
+    lap("open", &mut steps);
     migrate(&mut conn)?;
+    lap("upgrade", &mut steps);
     initialize_courses(&mut conn)?;
+    lap("courses", &mut steps);
     // Files whose owner is gone (a crash between deleting a row and its
     // file, say) are not kept.
     crate::files::collect_orphans(&mut conn)?;
+    lap("orphan files", &mut steps);
     // History left behind by items deleted before the triggers existed.
     conn.batch_execute(
         "DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words);
          DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences);",
     )?;
+    lap("old history", &mut steps);
     match foreign_key_violations(&mut conn) {
         Ok(0) => {}
         Ok(n) => crate::diagnostics::note("database", format!("{n} rows point at rows that do not exist")),
         Err(error) => crate::diagnostics::note("database", format!("The integrity check failed: {error}")),
     }
+    lap("integrity check", &mut steps);
+    let total: std::time::Duration = steps.iter().map(|(_, d)| *d).sum();
+    crate::diagnostics::note(
+        "timing",
+        format!(
+            "Opening the database: {} ms ({})",
+            total.as_millis(),
+            steps.iter().map(|(name, d)| format!("{name} {} ms", d.as_millis())).collect::<Vec<_>>().join(", ")
+        ),
+    );
     Ok(conn)
 }
 
