@@ -77,6 +77,8 @@ export const api = {
   }) => invoke<AnswerResult>("submit_answer", { answer }),
   lessonsOverview: () => invoke<LessonOverview>("lessons_overview"),
   lessonsForCourse: (courseId: number) => invoke<Lesson[]>("lessons_for_course", { courseId }),
+  /** A course's lessons, most important first, the mastered ones last. */
+  lessonsByImportance: (courseId: number) => invoke<Lesson[]>("lessons_by_importance", { courseId }),
   lessonDetail: (lessonId: number) => invoke<LessonDetail>("lesson_detail", { lessonId }),
   lessonTypes: () => invoke<LessonTypeInfo[]>("lesson_types"),
   diagnostics: () => invoke<DiagnosticEntry[]>("diagnostics_list"),

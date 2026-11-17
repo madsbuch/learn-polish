@@ -44,6 +44,12 @@ function masteredLine(stats: Stats): string {
   return `${n(courses, "course", "courses")} mastered · ${n(lessons, "lesson", "lessons")} · ${n(words, "word", "words")} for good`;
 }
 
+/** A celebration for a finished day, varied by the day. */
+function celebration(day: number): string {
+  const lines = ["Today's lessons are done! 🎉", "Brilliant — all done! 🎉", "That's the day done! 🌟", "Well done! 🎉", "All done for today! 🙌"];
+  return lines[((day % lines.length) + lines.length) % lines.length];
+}
+
 export function Exercises({
   overview,
   stats,
@@ -63,25 +69,19 @@ export function Exercises({
   onOpenProgress: () => void;
   onOpenSearch: () => void;
 }) {
-  // A done day (the goal reached, or everything due cleared) fills the ring.
-  const goalPct = stats.completedToday
-    ? 100
-    : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
+  // Today's lessons fill the ring as they are done.
+  const total = overview.planTotal;
+  const doneCount = overview.planDone;
+  const finished = total > 0 && overview.due.length === 0;
+  const goalPct = finished || stats.completedToday ? 100 : Math.round((doneCount / Math.max(1, total)) * 100);
   // Courses closed as mastered leave the list for their own shelf; the rest
   // stay, completed and mastered ones after those still being worked on.
   const open = courses.filter((t) => t.closedAt === null);
   const active = [...open.filter((t) => t.status === "active"), ...open.filter((t) => t.status !== "active")];
   const mastered = courses.filter((t) => t.closedAt !== null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0));
   const [showMastered, setShowMastered] = useState(false);
-  // Today's list first; once it's done, more for a big day; else something new.
-  const keepGoing = overview.due.length === 0 && overview.more.length > 0;
-  const upNext = overview.due[0] ?? overview.more[0] ?? overview.next[0] ?? null;
-  const balance =
-    overview.behindMinutes > 0
-      ? `About ${overview.behindMinutes} min more is due — it waits for another day, or keep going`
-      : overview.aheadMinutes > 0
-        ? `${overview.aheadMinutes} min ahead this week`
-        : null;
+  // The next of today's lessons; when they are done, nothing more.
+  const upNext = overview.due[0] ?? null;
 
   return (
     <Screen
@@ -106,58 +106,45 @@ export function Exercises({
                   className="goal-ring"
                   style={{ "--value": goalPct } as CSSProperties}
                   role="img"
-                  aria-label={`${stats.dayXp} of ${stats.dailyGoal} XP today`}
+                  aria-label={`${doneCount} of ${total} of today's lessons done`}
                 >
                   <div>
                     <Text variant="title" weight="bold">
-                      {stats.dayXp}
+                      {finished ? "🎉" : doneCount}
                     </Text>
-                    <Text variant="caption" tone="dim">
-                      / {stats.dailyGoal} XP
-                    </Text>
+                    {finished ? null : (
+                      <Text variant="caption" tone="dim">
+                        / {total}
+                      </Text>
+                    )}
                   </div>
                 </div>
                 <div className="grow">
                   <Inline gap={2} wrap>
-                    <Text variant="eyebrow">{stats.completedToday ? "Today is done ✓" : "Today"}</Text>
+                    <Text variant="eyebrow">{finished ? "Today is done ✓" : "Today"}</Text>
                     {stats.currentStreak > 0 ? <Badge>🔥 {stats.currentStreak}</Badge> : null}
-                    {stats.streakFreezes > 0 ? (
-                      <Badge>
-                        🧊 {stats.streakFreezes}
-                      </Badge>
-                    ) : null}
+                    {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
                   </Inline>
                   <Text variant="title" as="h2">
-                    {overview.due.length > 0
-                      ? `${overview.due.length} check-in${overview.due.length === 1 ? "" : "s"} today`
-                      : overview.planTotal > 0
-                        ? "Today's list is done"
-                        : "All caught up"}
+                    {finished
+                      ? `${celebration(overview.today)}`
+                      : total > 0
+                        ? `${overview.due.length} lesson${overview.due.length === 1 ? "" : "s"} to go today`
+                        : "Nothing for today"}
                   </Text>
                   <Text variant="small" tone="dim" as="div">
-                    {overview.due.length > 0
-                      ? `About ${estimate(overview.due)} min${
-                          overview.planDone > 0 ? ` · ${overview.planDone} of ${overview.planTotal} done` : ""
-                        }`
-                      : overview.doneToday > 0
-                        ? `${overview.doneToday} lesson${overview.doneToday === 1 ? "" : "s"} done today`
-                        : "Start something new below"}
+                    {finished
+                      ? `All ${total} of today's lessons done. See you tomorrow.`
+                      : total > 0
+                        ? `About ${estimate(overview.due)} min${doneCount > 0 ? ` · ${doneCount} of ${total} done` : ""}`
+                        : "Every lesson is mastered or waiting — ask the tutor for a new course."}
                   </Text>
-                  {balance ? (
-                    <Text variant="caption" tone="dim" as="div">
-                      {balance}
-                    </Text>
-                  ) : null}
                 </div>
               </Inline>
               {upNext ? (
                 <Stack gap={2}>
                   <Button variant="inverse" size="lg" wide onClick={() => onOpenLesson(upNext)}>
-                    {overview.due.length > 0
-                      ? "Start the first check-in"
-                      : keepGoing
-                        ? "Keep going"
-                        : "Start something new"}
+                    {doneCount > 0 ? "Next lesson" : "Start today's lessons"}
                   </Button>
                   <Text variant="caption" tone="dim" align="center" as="div">
                     {upNext.title}
@@ -170,42 +157,23 @@ export function Exercises({
 
           {overview.due.length > 0 ? (
             <Section
-              title="Today's check-ins"
+              title="Today's lessons"
               info={
                 <>
                   <p>
-                    The lessons most at risk of being forgotten, as many as fit today. Clear these and
-                    the day counts for your streak.
+                    The most important lessons for today: one that slipped last time comes first, then the
+                    ones whose time has come, then — while there is room — up to two new ones. Do these and
+                    the day is done.
                   </p>
                   <p>
-                    How much goes on the list follows what you usually do, never less than the quiet-day
-                    minimum in Settings. Anything else that is due waits for another day without counting
-                    as missed.
+                    Want more? Open a course: its lessons are listed by what matters most. A mastered lesson
+                    never comes back, and a mastered course moves to Mastered.
                   </p>
                 </>
               }
             >
               <List>
                 {overview.due.map((lesson) => (
-                  <LessonRow key={lesson.id} lesson={lesson} today={overview.today} showCourse onOpen={onOpenLesson} />
-                ))}
-              </List>
-            </Section>
-          ) : null}
-
-          {keepGoing ? (
-            <Section
-              title="Keep going"
-              info={
-                <p>
-                  Today's list is done. These are next: the rest of what is due, then what comes due
-                  soonest. Doing one early is a real check-in — it moves out from the time that has
-                  passed, and comes off the day it was due.
-                </p>
-              }
-            >
-              <List>
-                {overview.more.map((lesson) => (
                   <LessonRow key={lesson.id} lesson={lesson} today={overview.today} showCourse onOpen={onOpenLesson} />
                 ))}
               </List>

@@ -11,7 +11,6 @@ use crate::models::{Achievement, DayStat, Stats, CourseProgress};
 use crate::session;
 
 /// About ten minutes: a drill and a check-in.
-pub const DEFAULT_DAILY_GOAL: i64 = 150;
 /// Streak freezes kept at most; one is earned with every seven-day run.
 pub const MAX_FREEZES: i64 = 2;
 /// A word is mastered once its review interval has reached three weeks:
@@ -103,17 +102,12 @@ pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Resul
     Ok(())
 }
 
-/// Whether a day is done: the daily goal reached, or — having practised —
-/// nothing left due. One definition for the goal ring, the streak and the
-/// reminder.
+/// Whether a day is done: today's lessons all done (see plan.rs) — or, on a
+/// day with none to give, having practised at all. One definition for the
+/// ring, the streak and the reminder.
 pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
-    let xp: i64 = day_log::table.find(day).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
-    if xp >= db::get_setting_i64(conn, "daily_goal", DEFAULT_DAILY_GOAL) {
-        return Ok(true);
-    }
-    // Clearing today's list, not everything due: with many lessons, that is
-    // what a day can hold (see plan.rs).
-    Ok(xp > 0 && crate::plan::remaining(conn, day)? == 0)
+    let practised: i64 = day_log::table.find(day).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+    Ok(practised > 0 && crate::plan::remaining(conn, day)? == 0)
 }
 
 /// After a lesson: marks today done if it now is. Returns true the moment the
@@ -315,7 +309,7 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
         day: today,
         total_xp: total,
         day_xp,
-        daily_goal: db::get_setting_i64(conn, "daily_goal", DEFAULT_DAILY_GOAL),
+        daily_lessons: crate::plan::daily_count(conn),
         level,
         xp_into_level: total - xp_for_level(level),
         xp_for_next_level: xp_for_level(level + 1) - xp_for_level(level),

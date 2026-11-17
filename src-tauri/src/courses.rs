@@ -918,6 +918,17 @@ pub struct Milestone {
 /// Courses that have reached completed or mastered since last asked: each
 /// is noted, so it is celebrated once.
 pub fn milestones(conn: &mut Conn) -> Result<Vec<Milestone>> {
+    // Courses mastered before mastering closed them: they move now.
+    let waiting: Vec<i64> = courses::table
+        .filter(courses::mastered_at.is_not_null())
+        .filter(courses::closed_at.is_null())
+        .select(courses::id)
+        .load(conn)?;
+    for id in waiting {
+        if status(conn, id)?.status == "mastered" {
+            diesel::update(courses::table.find(id)).set(courses::closed_at.eq(db::now_secs())).execute(conn)?;
+        }
+    }
     let open: Vec<(i64, String, Option<i64>, Option<i64>)> = courses::table
         .filter(courses::completed_at.is_null().or(courses::mastered_at.is_null()))
         .select((courses::id, courses::title_en, courses::completed_at, courses::mastered_at))
@@ -927,8 +938,15 @@ pub fn milestones(conn: &mut Conn) -> Result<Vec<Milestone>> {
         let status = status(conn, id)?.status;
         let now = db::now_secs();
         if status == "mastered" && mastered_at.is_none() {
+            // Mastered is done: the course moves to Mastered by itself, and
+            // its lessons never come back (to revisit the theme, the tutor
+            // makes a new course on it).
             diesel::update(courses::table.find(id))
-                .set((courses::mastered_at.eq(now), courses::completed_at.eq(completed_at.unwrap_or(now))))
+                .set((
+                    courses::mastered_at.eq(now),
+                    courses::completed_at.eq(completed_at.unwrap_or(now)),
+                    courses::closed_at.eq(now),
+                ))
                 .execute(conn)?;
             reached.push(Milestone { course_id: id, title, mastered: true });
         } else if status != "active" && completed_at.is_none() {

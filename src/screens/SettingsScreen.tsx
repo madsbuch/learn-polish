@@ -143,36 +143,19 @@ export function SettingsScreen({
       <Section title="Practice">
         <List>
           <SettingRow
-            label="Daily goal"
-            description="Reach it — or clear today's check-ins — and the day counts for your streak"
-            value={`${settings.dailyGoal} XP`}
+            label="Lessons a day"
+            description="The most important ones are chosen each morning. Do them and the day is done — for more, open a course"
+            value={`${settings.dailyLessons}`}
             stacked
             control={
               <input
                 type="range"
-                min={50}
-                max={500}
-                step={10}
-                value={settings.dailyGoal}
-                aria-label="Daily goal"
-                onChange={(event) => patch({ dailyGoal: Number(event.target.value) }, "goal")}
-              />
-            }
-          />
-          <SettingRow
-            label="Check-ins on a quiet day"
-            description="Today's list follows what you usually do, but is never shorter than this. Keep going for more"
-            value={`${settings.reviewFloorMinutes ?? 10} min`}
-            stacked
-            control={
-              <input
-                type="range"
-                min={5}
-                max={60}
-                step={5}
-                value={settings.reviewFloorMinutes ?? 10}
-                aria-label="Check-ins on a quiet day, in minutes"
-                onChange={(event) => patch({ reviewFloorMinutes: Number(event.target.value) }, "floor")}
+                min={1}
+                max={10}
+                step={1}
+                value={settings.dailyLessons}
+                aria-label="Lessons a day"
+                onChange={(event) => patch({ dailyLessons: Number(event.target.value) }, "lessons")}
               />
             }
           />

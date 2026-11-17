@@ -58,15 +58,15 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
 
       <Part title="Your day">
         <P>
-          Open <strong>Exercises</strong>. At the top is the next thing to do: a lesson that is due,
-          or else the next one you have not started. <strong>Due now</strong> lists every lesson
-          whose check-in has come.
+          Open <strong>Exercises</strong>: <strong>today's lessons</strong> are there — the five
+          that matter most (you can change how many in Settings). A lesson that slipped last time
+          comes first, then the ones whose time has come, then up to two new ones.
         </P>
         <P>
-          The day is done when you reach your daily XP goal, or when nothing is left due. Done
-          days build your streak; every seven days in a row earns a streak freeze that covers a
-          missed day by itself. XP is only paid for real work: harder exercises pay more, wrong
-          answers and cards you only read pay nothing.
+          Do them and the day is done — that's it, nothing piles up. Want more? Open a course: its
+          lessons are listed by what matters most. Done days build your streak; every seven days in
+          a row earns a streak freeze that covers a missed day by itself. XP is only paid for real
+          work: harder exercises pay more, wrong answers and cards you only read pay nothing.
         </P>
       </Part>
 
@@ -109,8 +109,9 @@ export function HowToUse({ onBack }: { onBack: () => void }) {
           they earn more — letting your check-ins bring lessons back gets there in fewer passes.
         </P>
         <P>
-          A mastered course can be closed: it becomes a trophy, and its lessons leave your
-          check-ins.
+          A mastered lesson never comes back. When every lesson of a course is mastered, the course
+          moves to <strong>Mastered</strong> — your trophies. To go back to a theme, ask the tutor
+          for a new course on it, a level up.
         </P>
       </Part>
 

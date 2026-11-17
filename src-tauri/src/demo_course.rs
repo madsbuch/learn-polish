@@ -84,7 +84,7 @@ mod tests {
         assert_eq!(conversation_lines::table.count().get_result::<i64>(&mut conn).unwrap(), 6);
         assert_eq!(lessons::table.count().get_result::<i64>(&mut conn).unwrap(), 4);
         assert_eq!(lessons::table.filter(lessons::lesson_type.eq_any(["study", "writing", "listening"])).count().get_result::<i64>(&mut conn).unwrap(), 0);
-        assert!(!crate::lessons::overview(&mut conn).unwrap().next.is_empty());
+        assert!(!crate::lessons::overview(&mut conn).unwrap().due.is_empty(), "today offers the demo's first lessons");
         crate::stats::collect(&mut conn).unwrap();
         // Reopening neither duplicates the demo nor overwrites a learner's rename.
         diesel::update(courses_table::table.find(id)).set(courses_table::title_en.eq("My first Polish")).execute(&mut conn).unwrap();

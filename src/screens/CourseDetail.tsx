@@ -110,7 +110,7 @@ export function CourseDetail({
 
   useEffect(() => {
     setError(null);
-    Promise.all([api.lessonsForCourse(courseId), api.browseWords(courseId, "", 500), api.browseSentences(courseId)])
+    Promise.all([api.lessonsByImportance(courseId), api.browseWords(courseId, "", 500), api.browseSentences(courseId)])
       .then(([lessonList, wordList, sentenceList]) => {
         setLessons(lessonList);
         setWords(wordList);
@@ -424,8 +424,10 @@ function CourseStanding({
 }
 
 /**
- * A course's lessons by what is left: to pass (what completing needs), being
- * mastered, mastered — then the challenges.
+ * A course's lessons, most important first — the order today's lessons are
+ * chosen in (plan.rs): what slipped and is due, what is due, the next new
+ * ones, then the rest. Mastered lessons never come back, so they wait folded
+ * away at the bottom.
  */
 function CourseLessons({
   lessons,
@@ -433,17 +435,16 @@ function CourseLessons({
   closed,
   onOpen,
 }: {
+  /** Already in order of importance (lessons_by_importance). */
   lessons: Lesson[];
   today: number;
   /** Closed as mastered: its lessons no longer come back, so no dates. */
   closed: boolean;
   onOpen: (lessonId: number) => void;
 }) {
-  const core = lessons.filter((lesson) => !lesson.challenge);
-  const challenges = lessons.filter((lesson) => lesson.challenge);
-  const toPass = core.filter((lesson) => standing(lesson) === "toPass");
-  const learning = core.filter((lesson) => standing(lesson) === "learning");
-  const masteredNow = core.filter((lesson) => standing(lesson) === "mastered");
+  const [showMastered, setShowMastered] = useState(false);
+  const open = lessons.filter((lesson) => standing(lesson) !== "mastered");
+  const masteredNow = lessons.filter((lesson) => standing(lesson) === "mastered");
   const row = (lesson: Lesson) => {
     const where = standing(lesson);
     return (
@@ -451,7 +452,13 @@ function CourseLessons({
         key={lesson.id}
         lesson={lesson}
         today={today}
-        status={closed ? (lesson.passed ? "Mastered" : "Not passed") : standingText(lesson, today)}
+        status={
+          closed
+            ? lesson.passed
+              ? "Mastered"
+              : "Not passed"
+            : `${lesson.challenge ? "Challenge · " : ""}${standingText(lesson, today)}`
+        }
         trailing={
           where === "mastered" ? (
             <Badge tone="gold">✓ Mastered</Badge>
@@ -465,42 +472,32 @@ function CourseLessons({
   };
   return (
     <Stack gap={4}>
-      {toPass.length > 0 ? (
-        <Section id="to-pass" title={`To pass · ${toPass.length}`}>
-          <List>{toPass.map(row)}</List>
-        </Section>
-      ) : null}
-      {learning.length > 0 ? (
+      {open.length > 0 ? (
         <Section
-          title={`Passed — mastering · ${learning.length}`}
+          id="to-pass"
+          title={`Lessons · ${open.length}`}
           info={
             <p>
-              Every pass adds mastery points, up to 100. The first pass gives 30; another the same day
-              10; one a day or more later 15 to 35, the longer the gap the more. A fail takes 20 away.
-              So you can master a lesson today by practising it, or in fewer passes by letting your
-              check-ins space it out. Writing also needs doing once without help.
+              Most important first: a lesson that slipped last time and is due again, then the ones
+              whose time has come, then the next new ones, then the rest. Every pass adds mastery
+              points, up to 100; a mastered lesson never comes back. Challenges are beyond the course's
+              level: not needed to complete it, but needed to master it.
             </p>
           }
         >
-          <List>{learning.map(row)}</List>
+          <List>{open.map(row)}</List>
         </Section>
       ) : null}
       {masteredNow.length > 0 ? (
-        <Section title={`Mastered · ${masteredNow.length}`}>
-          <List>{masteredNow.map(row)}</List>
-        </Section>
-      ) : null}
-      {challenges.length > 0 ? (
         <Section
-          title={`Challenges · ${challenges.length}`}
-          info={
-            <p>
-              Beyond this course's level: not needed to complete it, but needed to master it. Come
-              back when the rest feels easy.
-            </p>
+          title={`Mastered · ${masteredNow.length}`}
+          action={
+            <Button size="sm" onClick={() => setShowMastered((shown) => !shown)}>
+              {showMastered ? "Hide" : "Show"}
+            </Button>
           }
         >
-          <List>{challenges.map(row)}</List>
+          {showMastered ? <List>{masteredNow.map(row)}</List> : null}
         </Section>
       ) : null}
     </Stack>

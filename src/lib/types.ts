@@ -230,19 +230,12 @@ export interface WordPicture {
 
 export interface LessonOverview {
   today: number;
-  /** Today's list, still to do: the most at risk first. */
+  /** Today's lessons still to do, most important first. */
   due: Lesson[];
-  next: Lesson[];
   doneToday: number;
-  /** For a big day: the rest of what is due, then what is due soonest. */
-  more: Lesson[];
+  /** Today's lessons: how many, and how many done. */
   planTotal: number;
   planDone: number;
-  budgetMinutes: number;
-  /** Due but not on today's list, in minutes. */
-  behindMinutes: number;
-  /** Done before their day this past week, in minutes. */
-  aheadMinutes: number;
 }
 
 export interface Assessment {
@@ -342,7 +335,8 @@ export interface Stats {
   day: number;
   totalXp: number;
   dayXp: number;
-  dailyGoal: number;
+  /** Lessons a day: how many today's list holds. */
+  dailyLessons: number;
   level: number;
   xpIntoLevel: number;
   xpForNextLevel: number;
@@ -365,7 +359,8 @@ export interface Stats {
 }
 
 export interface Settings {
-  dailyGoal: number;
+  /** Lessons a day: how many today's list holds. */
+  dailyLessons: number;
   reminderHour: number;
   reminderMinute: number;
   remindersEnabled: boolean;
@@ -385,8 +380,6 @@ export interface Settings {
   wordChatModel: string;
   /** Models starred in the model picker, shown first. */
   favoriteModels: string[];
-  /** The shortest a day's list of check-ins gets, in minutes. */
-  reviewFloorMinutes: number;
   /** Draws course pictures; empty means the default image model. */
   imageModel: string;
   hasKieKey: boolean;
@@ -400,7 +393,7 @@ export interface Settings {
 }
 
 export interface SettingsPatch {
-  dailyGoal?: number;
+  dailyLessons?: number;
   reminderHour?: number;
   reminderMinute?: number;
   remindersEnabled?: boolean;
@@ -413,7 +406,6 @@ export interface SettingsPatch {
   partnerModel?: string;
   wordChatModel?: string;
   favoriteModels?: string[];
-  reviewFloorMinutes?: number;
   imageModel?: string;
   sunoModel?: string;
   songLength?: SongLength;

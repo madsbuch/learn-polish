@@ -83,6 +83,9 @@ pub fn run() {
             let mut connection = db::open(&path).map_err(|e| e.to_string())?;
             // Replies that were being written when the app last closed.
             let _ = tutor::recover_interrupted(&mut connection);
+            // Courses mastered under the old rules (closing was by hand) move
+            // to Mastered now.
+            let _ = courses::milestones(&mut connection);
             app.state::<Db>().fill(connection);
             songs::resume_pending(app.handle());
             // Picture lessons whose drawing an earlier run did not finish.
@@ -99,6 +102,7 @@ pub fn run() {
             practice::submit_answer,
             lessons::commands::lessons_overview,
             lessons::commands::lessons_for_course,
+            lessons::commands::lessons_by_importance,
             lessons::commands::lesson_detail,
             practice::lesson_session,
             practice::lesson_finish,
@@ -325,8 +329,8 @@ mod integration {
         assert!(lessons.len() >= 7);
         assert!(lessons.iter().all(|b| b.lesson_type == "study" && b.origin == "starter"));
         let overview = lessons::overview(&mut conn).unwrap();
-        assert!(overview.due.is_empty(), "nothing is due on a fresh install");
-        assert_eq!(overview.next[0].course_id, Some(basics), "the course starts at the beginning");
+        assert!(overview.due.iter().all(|l| l.due_day.is_none()), "nothing is due on a fresh install: only new lessons");
+        assert_eq!(overview.due[0].course_id, Some(basics), "today starts the course at its beginning");
     }
 
     #[test]
@@ -479,7 +483,11 @@ mod integration {
 
         let done = lessons::record(&mut conn, words.id, lessons::result_from_score(9, 10)).unwrap();
         assert_eq!(done.due_day, Some(today + words.period_days), "first pass: back after its period");
-        assert!(stats::mark_practised(&mut conn, today).unwrap(), "first lesson today");
+        // The day is done once the rest of today's lessons are.
+        for id in plan::plan(&mut conn, today).unwrap().left {
+            lessons::record(&mut conn, id, "pass").unwrap();
+        }
+        assert!(stats::mark_practised(&mut conn, today).unwrap(), "today's lessons done");
         assert!(!stats::mark_practised(&mut conn, today).unwrap(), "not counted twice");
 
         let summary = stats::collect(&mut conn).unwrap();
@@ -489,8 +497,8 @@ mod integration {
 
         // The next lesson to start is a new one, not the one just done.
         let overview = lessons::overview(&mut conn).unwrap();
-        assert!(overview.next.iter().all(|b| b.id != words.id));
-        assert_eq!(overview.done_today, 1);
+        assert!(overview.due.iter().all(|b| b.id != words.id));
+        assert!(overview.done_today >= 1);
 
         // Failing brings it back tomorrow; passing again spreads it out.
         let failed = lessons::record(&mut conn, words.id, "fail").unwrap();
@@ -503,6 +511,10 @@ mod integration {
     fn the_examiner_s_verdict_schedules_the_study_lesson() {
         let mut conn = scratch_db("examiner");
         let starter = starter_lesson(&mut conn);
+        // Today asks for this lesson alone: its check-in finishes the day.
+        let today = db::today(&mut conn);
+        db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
+        db::set_setting(&mut conn, "daily_ids", &format!("[{}]", starter.id)).unwrap();
         let checkin: i64 = diesel::insert_into(t::checkins::table)
             .values((t::checkins::lesson_id.eq(starter.id), t::checkins::started_at.eq(0)))
             .returning(t::checkins::id)
@@ -797,19 +809,22 @@ mod integration {
     }
 
     #[test]
-    fn a_day_is_done_by_the_goal_or_by_clearing_what_is_due() {
+    fn a_day_is_done_when_todays_lessons_are() {
         let mut conn = scratch_db("day-done");
         let today = db::today(&mut conn);
-        db::set_setting(&mut conn, "daily_goal", "100").unwrap();
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let lesson = lessons::for_course(&mut conn, basics).unwrap()[0].clone();
         lessons::due_now(&mut conn, lesson.id).unwrap();
+        db::delete_setting(&mut conn, "daily_day").unwrap();
 
-        stats::add_xp(&mut conn, today, 40).unwrap();
-        assert!(!stats::day_is_done(&mut conn, today).unwrap(), "a lesson is still due and the goal is not met");
+        // XP alone does not finish the day: there is no goal to reach.
+        stats::add_xp(&mut conn, today, 1000).unwrap();
+        assert!(!stats::day_is_done(&mut conn, today).unwrap(), "today's lessons are still to do");
         assert!(!stats::mark_practised(&mut conn, today).unwrap());
-        stats::add_xp(&mut conn, today, 60).unwrap();
-        assert!(stats::mark_practised(&mut conn, today).unwrap(), "the goal is met");
+        for id in plan::plan(&mut conn, today).unwrap().left {
+            lessons::record(&mut conn, id, "pass").unwrap();
+        }
+        assert!(stats::mark_practised(&mut conn, today).unwrap(), "every one of today's lessons done");
         assert!(stats::collect(&mut conn).unwrap().completed_today);
 
         // Effort pays: a check-in like several drills; writing goals add.
@@ -820,32 +835,39 @@ mod integration {
     }
 
     #[test]
-    fn todays_list_fits_the_budget_and_keep_going_pulls_forward() {
+    fn today_is_the_five_most_important_lessons() {
         use diesel::prelude::*;
         let mut conn = scratch_db("plan");
         let today = db::today(&mut conn);
-        db::set_setting(&mut conn, "review_floor_minutes", "6").unwrap();
-        db::set_setting(&mut conn, "daily_goal", "100000").unwrap();
         // Every lesson has been done before and is due today.
         let all: Vec<i64> = schema::lessons::table.select(schema::lessons::id).load(&mut conn).unwrap();
-        assert!(all.len() > 5);
+        assert!(all.len() > 6);
         diesel::update(schema::lessons::table)
             .set((
                 schema::lessons::due_day.eq(today),
                 schema::lessons::last_day.eq(today - 4),
                 schema::lessons::interval_days.eq(4),
                 schema::lessons::reps.eq(1),
+                schema::lessons::last_result.eq("pass"),
+                schema::lessons::passed.eq(1),
             ))
+            .execute(&mut conn)
+            .unwrap();
+        // One slipped last time; one is mastered, so it never comes back.
+        let (slipping, mastered) = (all[all.len() - 1], all[0]);
+        diesel::update(schema::lessons::table.find(slipping)).set(schema::lessons::last_result.eq("partial")).execute(&mut conn).unwrap();
+        diesel::update(schema::lessons::table.find(mastered))
+            .set((schema::lessons::mastery.eq(100), schema::lessons::support_level.eq(2)))
             .execute(&mut conn)
             .unwrap();
 
         let first = plan::plan(&mut conn, today).unwrap();
-        assert!(!first.left.is_empty() && first.left.len() < all.len(), "the list is a few, not all");
-        assert!(first.behind_minutes > 0, "the rest waits");
-        assert_eq!(first.budget_minutes, 6);
+        assert_eq!(first.left.len(), plan::DEFAULT_DAILY as usize, "five, not everything due");
+        assert_eq!(first.left[0], slipping, "what slipped comes first");
+        assert!(!first.left.contains(&mastered), "a mastered lesson is out of play");
         assert_eq!(plan::plan(&mut conn, today).unwrap().left, first.left, "kept for the day");
 
-        // Clearing the list clears the day.
+        // Clearing the list clears the day — and nothing more is offered.
         stats::add_xp(&mut conn, today, 10).unwrap();
         assert!(!stats::day_is_done(&mut conn, today).unwrap());
         for id in &first.left {
@@ -854,8 +876,15 @@ mod integration {
         let after = plan::plan(&mut conn, today).unwrap();
         assert!(after.left.is_empty());
         assert_eq!(after.done, first.total);
-        assert!(stats::day_is_done(&mut conn, today).unwrap(), "today's list is done");
-        assert!(!after.more.is_empty(), "keep going offers more");
+        assert!(stats::day_is_done(&mut conn, today).unwrap(), "today's lessons are done");
+
+        // A course's page lists what matters most first, mastered last.
+        let course = lessons::load(&mut conn, slipping).unwrap().course_id.unwrap();
+        let listed = lessons::for_course(&mut conn, course).unwrap();
+        let ordered = plan::order_for_course(&mut conn, listed).unwrap();
+        if ordered.iter().any(|l| l.id == mastered) {
+            assert_eq!(ordered.last().unwrap().id, mastered);
+        }
 
         // An aced lesson went well out; doing it again today is extra practice.
         let aced = lessons::load(&mut conn, first.left[0]).unwrap();
@@ -889,7 +918,6 @@ mod integration {
             .unwrap();
         let moved = lessons::record_graded(&mut conn, later, "pass", false).unwrap();
         assert!(moved.due_day.unwrap() > today + 2, "an early pass still moves it out");
-        assert!(plan::plan(&mut conn, today).unwrap().ahead_minutes > 0);
 
         // A new check-in lands on the lightest nearby day.
         let crowded = today + 20;
@@ -900,6 +928,22 @@ mod integration {
         let day = plan::spread(&mut conn, today, 20, later).unwrap();
         assert_ne!(day, crowded);
         assert!((day - crowded).abs() <= 2);
+    }
+
+    #[test]
+    fn new_lessons_take_at_most_two_places_a_day() {
+        let mut conn = scratch_db("plan-new");
+        let today = db::today(&mut conn);
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        // Nothing has been started: only new lessons, and at most two.
+        let list = plan::plan(&mut conn, today).unwrap();
+        assert_eq!(list.left.len(), plan::MAX_NEW, "{list:?}");
+        let first = lessons::load(&mut conn, list.left[0]).unwrap();
+        assert!(first.due_day.is_none(), "new");
+        // A smaller day setting is honoured.
+        db::set_setting(&mut conn, "daily_lessons", "1").unwrap();
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        assert_eq!(plan::plan(&mut conn, today).unwrap().left.len(), 1);
     }
 
     #[test]
@@ -948,6 +992,7 @@ mod integration {
         set(&mut conn, *challenge, 1, 100);
         assert_eq!(courses::status(&mut conn, course).unwrap().status, "mastered");
         assert!(courses::milestones(&mut conn).unwrap().iter().any(|m| m.course_id == course && m.mastered));
+        assert!(courses::status(&mut conn, course).unwrap().closed_at.is_some(), "mastered: it moves to Mastered by itself");
 
         // Passing a lesson marks it passed.
         diesel::update(t::lessons::table.find(core[0])).set(t::lessons::passed.eq(0)).execute(&mut conn).unwrap();
@@ -1011,12 +1056,13 @@ mod integration {
         for id in &ids {
             hold(&mut conn, *id, 40);
         }
-        // One lesson is shared with an open course: it stays in the check-ins.
+        // Mastered lessons are out of play at once — before the course is
+        // closed, and when another course lists them too.
         let shared = ids[0];
         courses::add_lesson(&mut conn, other, shared).unwrap();
-        db::delete_setting(&mut conn, "plan_day").unwrap();
-        let due_before = plan::remaining(&mut conn, today + 1).unwrap();
-        assert!(due_before >= ids.len() as i64, "all due before closing");
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        assert_eq!(plan::remaining(&mut conn, today + 1).unwrap(), 0, "mastered lessons never come back");
+        assert!(plan::out_of_play(&mut conn).unwrap().contains(&shared));
 
         courses::close(&mut conn, course).unwrap();
         let status = courses::status(&mut conn, course).unwrap();
@@ -1025,8 +1071,7 @@ mod integration {
         assert!(!retired.contains(&shared), "an open course lists it too");
         assert!(ids[1..].iter().all(|id| retired.contains(id)));
         let after = plan::plan(&mut conn, today).unwrap();
-        assert_eq!(plan::remaining(&mut conn, today + 1).unwrap(), due_before - (ids.len() as i64 - 1));
-        assert!(ids[1..].iter().all(|id| !after.left.contains(id) && !after.more.contains(id)), "retired lessons are not asked for");
+        assert!(ids.iter().all(|id| !after.left.contains(id)), "none of them is asked for");
 
         // Finished: nothing is added to it; its lessons still open.
         let err = courses::add_lesson(&mut conn, course, ids[1]).unwrap_err().to_string();
@@ -1080,7 +1125,9 @@ mod integration {
     fn streak_freezes_are_earned_by_a_week_and_bridge_a_missed_day() {
         let mut conn = scratch_db("freezes");
         let today = db::today(&mut conn);
-        db::set_setting(&mut conn, "daily_goal", "10").unwrap();
+        // Nothing to do today: practising at all finishes the day.
+        db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
+        db::set_setting(&mut conn, "daily_ids", "[]").unwrap();
         let done = |conn: &mut db::Conn, day: i64| {
             diesel::insert_into(t::day_log::table)
                 .values((t::day_log::day.eq(day), t::day_log::xp.eq(50), t::day_log::completed.eq(1)))
@@ -1695,7 +1742,8 @@ mod integration {
         let list = lessons::for_course(&mut conn, course_id).unwrap();
         let formats: Vec<&str> = list.iter().map(|b| b.lesson_type.as_str()).collect();
         assert_eq!(formats, vec!["dialogue", "words", "sentences"]);
-        assert_eq!(lessons::overview(&mut conn).unwrap().next[0].course_id, Some(course_id));
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        assert!(lessons::overview(&mut conn).unwrap().due.iter().any(|l| l.course_id == Some(course_id)));
         let plan = session::build_lesson(&mut conn, list[1].id).unwrap();
         assert_eq!(plan.course.kind, "course");
         assert_eq!(plan.new_words, 4);

@@ -28,7 +28,7 @@ use crate::stats;
 
 fn read_settings(conn: &mut Conn) -> Result<Settings> {
     Ok(Settings {
-        daily_goal: db::get_setting_i64(conn, "daily_goal", stats::DEFAULT_DAILY_GOAL),
+        daily_lessons: crate::plan::daily_count(conn),
         reminder_hour: db::get_setting_i64(conn, "reminder_hour", 19),
         reminder_minute: db::get_setting_i64(conn, "reminder_minute", 0),
         reminders_enabled: db::get_setting_i64(conn, "reminders_enabled", 1) == 1,
@@ -45,7 +45,6 @@ fn read_settings(conn: &mut Conn) -> Result<Settings> {
         songwriter_model: ai::stored_model(conn, "songwriter_model"),
         partner_model: ai::stored_model(conn, "partner_model"),
         word_chat_model: ai::stored_model(conn, "word_chat_model"),
-        review_floor_minutes: crate::plan::floor(conn),
         favorite_models: db::get_setting(conn, "favorite_models")?
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default(),
@@ -91,7 +90,7 @@ pub async fn get_settings(db: State<'_, Db>) -> Result<Settings> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
-    pub daily_goal: Option<i64>,
+    pub daily_lessons: Option<i64>,
     pub reminder_hour: Option<i64>,
     pub reminder_minute: Option<i64>,
     pub reminders_enabled: Option<bool>,
@@ -104,7 +103,6 @@ pub struct SettingsPatch {
     pub partner_model: Option<String>,
     pub word_chat_model: Option<String>,
     pub favorite_models: Option<Vec<String>>,
-    pub review_floor_minutes: Option<i64>,
     pub image_model: Option<String>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
@@ -128,8 +126,10 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
         }
         db::set_setting(conn, "player_repeat", &repeat)?;
     }
-    if let Some(goal) = patch.daily_goal {
-        db::set_setting(conn, "daily_goal", &goal.clamp(10, 1000).to_string())?;
+    if let Some(count) = patch.daily_lessons {
+        db::set_setting(conn, "daily_lessons", &count.clamp(1, 20).to_string())?;
+        // Today's list is chosen again, with the new size.
+        db::delete_setting(conn, "daily_day")?;
     }
     if let Some(hour) = patch.reminder_hour {
         db::set_setting(conn, "reminder_hour", &hour.clamp(0, 23).to_string())?;
@@ -163,9 +163,6 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.word_chat_model {
         db::set_setting(conn, "word_chat_model", model.trim())?;
-    }
-    if let Some(minutes) = patch.review_floor_minutes {
-        db::set_setting(conn, "review_floor_minutes", &minutes.clamp(1, 240).to_string())?;
     }
     if let Some(favorites) = patch.favorite_models {
         db::set_setting(conn, "favorite_models", &serde_json::to_string(&favorites)?)?;

@@ -1,21 +1,19 @@
-//! The daily plan: which check-ins today asks for, out of everything due.
+//! The day's lessons: a handful of the most important ones — by default
+//! five — chosen once a day and kept. Finishing them is the day done, with
+//! a celebration and nothing more: there is no pile of everything due. More
+//! can always be done from a course's page, where its lessons are listed in
+//! the same order of importance (see [`order_for_course`]).
 //!
-//! With hundreds of lessons, "everything due" can be far more than a day can
-//! hold — and some days hold a lot more than others. So today gets a list:
-//! the due lessons most at risk of being forgotten, until a **budget** of
-//! minutes is filled. The budget follows what the learner actually does (the
-//! average of recent days they studied), never less than a floor they set,
-//! so a quiet spell shrinks the list instead of piling up a wall.
+//! What matters most: a lesson **slipping** (failed or partly there last
+//! time) that is due again, then the other lessons **due**, most overdue
+//! first — then, while there is room, at most [`MAX_NEW`] **new** lessons, the
+//! next of the newest courses. A **mastered** lesson never comes back, nor
+//! does one only a closed course lists: they are out of play.
 //!
-//! The list is made once a day and kept, so finishing it means something:
-//! clearing it counts as clearing the day for the streak. What is due but
-//! not on it waits, ranked again tomorrow, without counting as missed. On a
-//! big day, **keep going** offers more — the rest of what is due, then what
-//! comes due soonest; doing one early is a real check-in (see
-//! [`crate::lessons::next_gap`]) and takes it off the day it was due.
-//!
-//! New check-ins are also **spread**: a lesson lands on the lightest day near
-//! its target, so they don't bunch up.
+//! New check-ins are **spread**: a lesson lands on the lightest day near its
+//! target, so they don't bunch up.
+
+use std::collections::HashSet;
 
 use diesel::prelude::*;
 use diesel::upsert::excluded;
@@ -24,16 +22,17 @@ use serde::Serialize;
 use crate::lesson_types::minutes as minutes_for;
 use crate::db::{self, Conn};
 use crate::error::Result;
-use crate::schema::{lessons, day_log};
+use crate::schema::{course_lessons, courses, lessons, day_log};
 
-/// The smallest daily list, in minutes, unless the learner sets another.
-pub const DEFAULT_FLOOR: i64 = 10;
-/// How many recent days the budget learns from.
-const BUDGET_DAYS: i64 = 14;
-/// How far ahead "keep going" looks for check-ins to pull forward.
-const AHEAD_DAYS: i64 = 7;
-/// How many extra check-ins "keep going" offers at a time.
-const MORE: usize = 12;
+/// Lessons a day, unless the learner sets another number (Settings).
+pub const DEFAULT_DAILY: i64 = 5;
+/// At most this many new lessons a day: what is due comes first.
+pub const MAX_NEW: usize = 2;
+
+/// How many lessons a day asks for (Settings).
+pub fn daily_count(conn: &mut Conn) -> i64 {
+    db::get_setting_i64(conn, "daily_lessons", DEFAULT_DAILY).clamp(1, 20)
+}
 
 /// The lightest day near `today + gap` for a lesson's next check-in:
 /// within a tenth of the gap either side (short gaps stay exact).
@@ -71,97 +70,138 @@ pub fn log_minutes(conn: &mut Conn, day: i64, minutes: i64, early: bool) -> Resu
     Ok(())
 }
 
-/// The quietest a day's list gets, in minutes (Settings).
-pub fn floor(conn: &mut Conn) -> i64 {
-    db::get_setting_i64(conn, "review_floor_minutes", DEFAULT_FLOOR).clamp(1, 240)
-}
-
-/// Today's budget: what the learner usually does on a day they study, never
-/// less than the floor.
-pub fn budget(conn: &mut Conn, today: i64) -> Result<i64> {
-    let recent: Vec<i64> = day_log::table
-        .filter(day_log::day.between(today - BUDGET_DAYS, today - 1))
-        .filter(day_log::minutes.gt(0))
-        .select(day_log::minutes)
-        .load(conn)?;
-    let usual = if recent.is_empty() { 0 } else { recent.iter().sum::<i64>() / recent.len() as i64 };
-    Ok(usual.max(floor(conn)))
-}
-
 #[derive(Queryable)]
 struct Scheduled {
     id: i64,
     lesson_type: String,
-    complexity: String,
     due_day: Option<i64>,
     last_day: Option<i64>,
     interval_days: i64,
     ease: f64,
     last_result: Option<String>,
+    passed: i64,
+    mastery: i64,
+    support_level: i64,
+    challenge: i64,
 }
 
-/// Lessons with a check-in due by `until` — not the retired ones, which
-/// only closed courses list.
-fn scheduled(conn: &mut Conn, until: i64) -> Result<Vec<Scheduled>> {
-    let retired = crate::courses::retired_lessons(conn)?;
+impl Scheduled {
+    fn mastered(&self) -> bool {
+        crate::lessons::is_mastered(self.passed == 1, self.mastery, &self.lesson_type, self.support_level)
+    }
+}
+
+/// Lessons out of play: mastered ones, and ones only closed courses list.
+pub fn out_of_play(conn: &mut Conn) -> Result<HashSet<i64>> {
+    let mut out = crate::courses::retired_lessons(conn)?;
+    out.extend(in_play_or_not(conn)?.into_iter().filter(|l| l.mastered()).map(|l| l.id));
+    Ok(out)
+}
+
+fn in_play_or_not(conn: &mut Conn) -> Result<Vec<Scheduled>> {
     Ok(lessons::table
-        .filter(lessons::due_day.le(until))
         .select((
             lessons::id,
             lessons::lesson_type,
-            lessons::complexity,
             lessons::due_day,
             lessons::last_day,
             lessons::interval_days,
             lessons::ease,
             lessons::last_result,
+            lessons::passed,
+            lessons::mastery,
+            lessons::support_level,
+            lessons::challenge,
         ))
-        .load::<Scheduled>(conn)?
-        .into_iter()
-        .filter(|lesson| !retired.contains(&lesson.id))
-        .collect())
+        .load::<Scheduled>(conn)?)
+}
+
+/// Every lesson still in play.
+fn in_play(conn: &mut Conn) -> Result<Vec<Scheduled>> {
+    let retired = crate::courses::retired_lessons(conn)?;
+    Ok(in_play_or_not(conn)?.into_iter().filter(|l| !l.mastered() && !retired.contains(&l.id)).collect())
 }
 
 /// How much a due lesson is at risk of being forgotten: how far past its gap
-/// it is, more for a hard lesson (low ease) or one that went badly last time.
+/// it is, more for a hard lesson (low ease).
 fn risk(lesson: &Scheduled, today: i64) -> f64 {
     let elapsed = lesson.last_day.map_or(0, |last| today - last) as f64;
     let overdue = elapsed / lesson.interval_days.max(1) as f64;
     let hard = (2.5 - lesson.ease).max(0.0) * 0.5;
-    let last = match lesson.last_result.as_deref() {
-        Some("fail") => 1.0,
-        Some("partial") => 0.3,
-        _ => 0.0,
-    };
-    overdue + hard + last
+    overdue + hard
 }
 
-fn by_risk(mut list: Vec<Scheduled>, today: i64) -> Vec<Scheduled> {
-    list.sort_by(|a, b| risk(b, today).total_cmp(&risk(a, today)).then(a.id.cmp(&b.id)));
-    list
+/// Where a lesson stands in importance, most important first: 0 slipping
+/// and due, 1 due, 2 new, 3 started but not due yet, 4 an unstarted
+/// challenge. Within a group, the riskier (or sooner due) first.
+fn importance(lesson: &Scheduled, today: i64) -> (u8, f64) {
+    let due = lesson.due_day.is_some_and(|d| d <= today);
+    let slipping = matches!(lesson.last_result.as_deref(), Some("fail") | Some("partial"));
+    match (lesson.due_day, due) {
+        (Some(_), true) if slipping => (0, -risk(lesson, today)),
+        (Some(_), true) => (1, -risk(lesson, today)),
+        (None, _) if lesson.challenge == 0 => (2, 0.0),
+        (Some(day), false) => (3, day as f64),
+        (None, _) => (4, 0.0),
+    }
 }
 
-/// Today's list, made the first time it is asked for each day and kept.
+/// The next new lessons: from the newest courses first, each in its own
+/// order — what the tutor just made is what the learner asked for.
+fn new_lessons(conn: &mut Conn, playing: &HashSet<i64>, limit: usize) -> Result<Vec<i64>> {
+    let mut found = Vec::new();
+    for course in courses::table
+        .filter(courses::closed_at.is_null())
+        .order(crate::lessons::course_order())
+        .select(courses::id)
+        .load::<i64>(conn)?
+    {
+        let ids: Vec<i64> = course_lessons::table
+            .inner_join(lessons::table)
+            .filter(course_lessons::course_id.eq(course))
+            .filter(lessons::due_day.is_null())
+            .filter(lessons::challenge.eq(0))
+            .order((course_lessons::ord, lessons::id))
+            .select(lessons::id)
+            .load(conn)?;
+        for id in ids {
+            if found.len() == limit {
+                return Ok(found);
+            }
+            if playing.contains(&id) && !found.contains(&id) {
+                found.push(id);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Today's lessons, chosen the first time they are asked for each day and
+/// kept: what is due, most important first, then new ones while there is
+/// room (at most [`MAX_NEW`]).
 fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
-    if db::get_setting_i64(conn, "plan_day", -1) == today {
-        if let Some(ids) = db::get_setting(conn, "plan_ids")?.and_then(|json| serde_json::from_str(&json).ok()) {
+    if db::get_setting_i64(conn, "daily_day", -1) == today {
+        if let Some(ids) = db::get_setting(conn, "daily_ids")?.and_then(|json| serde_json::from_str(&json).ok()) {
             return Ok(ids);
         }
     }
-    let budget = budget(conn, today)?;
-    let due: Vec<Scheduled> =
-        scheduled(conn, today)?.into_iter().filter(|b| b.last_day != Some(today)).collect();
-    let mut ids = Vec::new();
-    let mut minutes = 0;
-    for lesson in by_risk(due, today) {
-        if minutes >= budget {
-            break;
-        }
-        minutes += minutes_for(&lesson.lesson_type, &lesson.complexity);
-        ids.push(lesson.id);
+    let size = daily_count(conn) as usize;
+    let mut due: Vec<Scheduled> = in_play(conn)?
+        .into_iter()
+        .filter(|l| l.last_day != Some(today) && l.due_day.is_some_and(|d| d <= today))
+        .collect();
+    due.sort_by(|a, b| {
+        let (ga, ka) = importance(a, today);
+        let (gb, kb) = importance(b, today);
+        ga.cmp(&gb).then(ka.total_cmp(&kb)).then(a.id.cmp(&b.id))
+    });
+    let mut ids: Vec<i64> = due.iter().take(size).map(|l| l.id).collect();
+    if ids.len() < size {
+        let playing: HashSet<i64> = in_play(conn)?.into_iter().map(|l| l.id).collect();
+        ids.extend(new_lessons(conn, &playing, (size - ids.len()).min(MAX_NEW))?);
     }
-    db::set_setting(conn, "plan_ids", &serde_json::to_string(&ids)?)?;
-    db::set_setting(conn, "plan_day", &today.to_string())?;
+    db::set_setting(conn, "daily_ids", &serde_json::to_string(&ids)?)?;
+    db::set_setting(conn, "daily_day", &today.to_string())?;
     Ok(ids)
 }
 
@@ -169,74 +209,60 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
-    /// Today's list, still to do, most at risk first.
+    /// Today's lessons still to do, most important first.
     pub left: Vec<i64>,
-    /// How many were on today's list, and how many of those are done.
+    /// How many today asked for, and how many of those are done.
     pub total: usize,
     pub done: usize,
-    /// Today's budget, in minutes.
-    pub budget_minutes: i64,
-    /// What "keep going" offers: the rest of what is due (most at risk
-    /// first), then what comes due soonest.
-    pub more: Vec<i64>,
-    /// Minutes due but not on today's list: waiting for another day.
-    pub behind_minutes: i64,
-    /// Minutes of check-ins done before their day, this past week.
-    pub ahead_minutes: i64,
 }
 
 pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
     let list = todays_list(conn, today)?;
-    let retired = crate::courses::retired_lessons(conn)?;
-    let state: Vec<(i64, Option<i64>, Option<i64>)> = lessons::table
+    let out = out_of_play(conn)?;
+    let state: Vec<(i64, Option<i64>)> = lessons::table
         .filter(lessons::id.eq_any(&list))
-        .select((lessons::id, lessons::due_day, lessons::last_day))
+        .select((lessons::id, lessons::last_day))
         .load(conn)?;
     let (mut left, mut done) = (Vec::new(), 0usize);
     for id in &list {
-        // A lesson deleted since, moved off today, or retired with its
-        // course, just drops out.
-        match state.iter().find(|s| s.0 == *id).filter(|s| !retired.contains(&s.0)) {
-            Some((_, _, last)) if *last == Some(today) => done += 1,
-            Some((_, Some(due), _)) if *due <= today => left.push(*id),
-            _ => {}
+        // A lesson deleted since just drops out; one mastered or retired
+        // since counts as done.
+        match state.iter().find(|s| s.0 == *id) {
+            Some((_, last)) if *last == Some(today) => done += 1,
+            Some(_) if out.contains(id) => done += 1,
+            Some(_) => left.push(*id),
+            None => {}
         }
     }
-
-    let soon = scheduled(conn, today + AHEAD_DAYS)?;
-    let (due, upcoming): (Vec<Scheduled>, Vec<Scheduled>) = soon
-        .into_iter()
-        .filter(|b| b.last_day != Some(today) && !list.contains(&b.id))
-        .partition(|b| b.due_day.is_some_and(|d| d <= today));
-    let behind_minutes = due.iter().map(|b| minutes_for(&b.lesson_type, &b.complexity)).sum();
-    let mut upcoming = upcoming;
-    upcoming.sort_by(|a, b| a.due_day.cmp(&b.due_day).then(risk(b, today).total_cmp(&risk(a, today))));
-    let more = by_risk(due, today).into_iter().chain(upcoming).take(MORE).map(|b| b.id).collect();
-
-    let ahead_minutes = day_log::table
-        .filter(day_log::day.between(today - 6, today))
-        .select(day_log::early_minutes)
-        .load::<i64>(conn)?
-        .into_iter()
-        .sum();
-    Ok(Plan {
-        total: done + left.len(),
-        left,
-        done,
-        budget_minutes: budget(conn, today)?,
-        more,
-        behind_minutes,
-        ahead_minutes,
-    })
+    Ok(Plan { total: done + left.len(), left, done })
 }
 
-/// How many of a day's check-ins are still to do: today's list, or — for a
-/// day that has no list kept — everything due by then.
+/// How many of a day's lessons are still to do: today's list, or — for a
+/// day that has no list kept — what is due by then and still in play.
 pub fn remaining(conn: &mut Conn, day: i64) -> Result<i64> {
     if day == db::today(conn) {
         return Ok(plan(conn, day)?.left.len() as i64);
     }
-    let retired = crate::courses::retired_lessons(conn)?;
-    let due: Vec<i64> = lessons::table.filter(lessons::due_day.le(day)).select(lessons::id).load(conn)?;
-    Ok(due.into_iter().filter(|id| !retired.contains(id)).count() as i64)
+    Ok(in_play(conn)?.into_iter().filter(|l| l.due_day.is_some_and(|d| d <= day)).count() as i64)
+}
+
+/// A course's lessons, most important first (the order today's lessons are
+/// chosen in), then the mastered ones. Ties keep the course's own order.
+pub fn order_for_course(conn: &mut Conn, lessons: Vec<crate::lessons::Lesson>) -> Result<Vec<crate::lessons::Lesson>> {
+    let today = db::today(conn);
+    let facts: std::collections::HashMap<i64, Scheduled> = in_play_or_not(conn)?.into_iter().map(|l| (l.id, l)).collect();
+    let mut ranked: Vec<(usize, (u8, f64), crate::lessons::Lesson)> = lessons
+        .into_iter()
+        .enumerate()
+        .map(|(n, lesson)| {
+            let key = match facts.get(&lesson.id) {
+                Some(f) if f.mastered() => (9, 0.0),
+                Some(f) => importance(f, today),
+                None => (8, 0.0),
+            };
+            (n, key, lesson)
+        })
+        .collect();
+    ranked.sort_by(|a, b| a.1 .0.cmp(&b.1 .0).then(a.1 .1.total_cmp(&b.1 .1)).then(a.0.cmp(&b.0)));
+    Ok(ranked.into_iter().map(|(_, _, lesson)| lesson).collect())
 }

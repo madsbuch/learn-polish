@@ -102,11 +102,11 @@ export function SessionSummary({
             {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
             <Badge>Level {stats.level}</Badge>
           </Inline>
-          {goalMet ? null : (
-            <Text variant="small" tone="dim" align="center">
-              {Math.max(0, stats.dailyGoal - stats.dayXp)} XP to today's goal — or clear what is due.
-            </Text>
-          )}
+          <Text variant="small" tone="dim" align="center">
+            {goalMet
+              ? "🎉 Today's lessons are done — see you tomorrow."
+              : `${stats.dueToday} of today's lesson${stats.dueToday === 1 ? "" : "s"} to go.`}
+          </Text>
         </Stack>
       </Hero>
 

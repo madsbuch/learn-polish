@@ -13,7 +13,7 @@ function Heatmap({ stats }: { stats: Stats }) {
       ? 3
       : !entry || entry.xp === 0
         ? 0
-        : entry.xp >= stats.dailyGoal / 2
+        : entry.xp >= 75
           ? 2
           : 1;
     cells.push(<i key={day} data-level={level} data-frozen={entry?.frozen || undefined} />);

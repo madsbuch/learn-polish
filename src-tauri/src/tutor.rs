@@ -85,8 +85,8 @@ The app:
   the learner's level; a lesson clearly beyond it (a free conversation in a beginner course, a \
   deep lesson) is a challenge — set challenge with update_lesson. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
-- A mastered course can be closed by the learner: it becomes a trophy and its lessons leave the \
-  check-ins. Closed courses are finished — never add to or change them. To revisit a closed \
+- A mastered course moves to Mastered by itself: it becomes a trophy and its lessons never \
+  come back. Closed courses are finished — never add to or change them. To revisit a closed \
   course's theme, make a new course a level up: build on what it taught (get_course shows it), \
   don't repeat its words and lessons. Grammar & culture, Listening and Writing never end.
 - Culture and facts (cities, history, customs): write the study lesson from Wikipedia — wiki_search, \
@@ -714,13 +714,13 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "update_practice_settings",
             "Updating your settings…",
-            "Change the daily XP goal (10–1000).",
+            "Change how many lessons a day asks for (1–20; 5 by default). The most important ones are chosen each day; the day is done when they are.",
             json!({
                 "type": "object",
                 "properties": {
-                    "daily_goal": { "type": "integer" }
+                    "lessons_per_day": { "type": "integer" }
                 },
-                "required": ["daily_goal"]
+                "required": ["lessons_per_day"]
             }),
         ),
         tool(
@@ -1106,8 +1106,8 @@ struct EditArgs {
 
 #[derive(Deserialize)]
 struct SettingsArgs {
-    #[serde(default)]
-    daily_goal: Option<i64>,
+    #[serde(default, alias = "daily_lessons")]
+    lessons_per_day: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -1892,10 +1892,11 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
         "update_practice_settings" => {
             let args: SettingsArgs = parse(arguments)?;
             let mut changed = Vec::new();
-            if let Some(goal) = args.daily_goal {
-                let goal = goal.clamp(10, 1000);
-                db::set_setting(conn, "daily_goal", &goal.to_string())?;
-                changed.push(format!("daily goal {goal} XP"));
+            if let Some(count) = args.lessons_per_day {
+                let count = count.clamp(1, 20);
+                db::set_setting(conn, "daily_lessons", &count.to_string())?;
+                db::delete_setting(conn, "daily_day")?;
+                changed.push(format!("{count} lessons a day"));
             }
             if changed.is_empty() {
                 return Err(Error::msg("Nothing to change."));
@@ -2238,7 +2239,7 @@ fn progress(conn: &mut Conn) -> Result<Value> {
         "level": s.level,
         "total_xp": s.total_xp,
         "xp_today": s.day_xp,
-        "daily_goal": s.daily_goal,
+        "lessons_per_day": s.daily_lessons,
         "current_streak": s.current_streak,
         "longest_streak": s.longest_streak,
         "accuracy": (s.accuracy * 100.0).round(),

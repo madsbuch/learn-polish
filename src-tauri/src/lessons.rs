@@ -140,22 +140,13 @@ pub struct LessonDetail {
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
     pub today: i64,
-    /// Today's list, still to do (see plan.rs).
+    /// Today's lessons still to do, most important first (see plan.rs).
     pub due: Vec<Lesson>,
-    pub next: Vec<Lesson>,
     /// Lessons done today.
     pub done_today: i64,
-    /// More check-ins for a big day: the rest of what is due, then what is
-    /// due soonest.
-    pub more: Vec<Lesson>,
-    /// Today's list: how many, and how many done.
+    /// Today's lessons: how many, and how many done.
     pub plan_total: usize,
     pub plan_done: usize,
-    pub budget_minutes: i64,
-    /// Due but not on today's list, in minutes.
-    pub behind_minutes: i64,
-    /// Done before their day this past week, in minutes.
-    pub ahead_minutes: i64,
 }
 
 /// What a `lessons` row stores about a lesson itself.
@@ -353,56 +344,8 @@ pub fn overview(conn: &mut Conn) -> Result<Overview> {
     let today = db::today(conn);
     let plan = crate::plan::plan(conn, today)?;
     let due = load_in_order(conn, &plan.left)?;
-    let more = load_in_order(conn, &plan.more)?;
-
-    // The next couple of lessons from each of the first few courses with
-    // something left to start, in the order the course list shows them: the
-    // newest courses first (the tutor just made them for a reason).
-    let mut next: Vec<Lesson> = Vec::new();
-    let mut courses_used = 0;
-    for course in courses::table
-        .filter(courses::closed_at.is_null())
-        .order(course_order())
-        .select(courses::id)
-        .load::<i64>(conn)?
-    {
-        if courses_used == 3 {
-            break;
-        }
-        let rows = course_lessons::table
-            .inner_join(lessons::table)
-            .filter(course_lessons::course_id.eq(course))
-            .filter(lessons::due_day.is_null())
-            .filter(lessons::challenge.eq(0))
-            .order((course_lessons::ord, lessons::id))
-            .limit(2)
-            .select(LessonRow::as_select())
-            .load(conn)?;
-        if rows.is_empty() {
-            continue;
-        }
-        courses_used += 1;
-        for lesson in assemble(conn, rows)? {
-            // A lesson in two courses is offered once.
-            if !next.iter().any(|b| b.id == lesson.id) {
-                next.push(lesson);
-            }
-        }
-    }
-
     let done_today = lessons::table.filter(lessons::last_day.eq(today)).count().get_result(conn)?;
-    Ok(Overview {
-        today,
-        due,
-        next,
-        done_today,
-        more,
-        plan_total: plan.total,
-        plan_done: plan.done,
-        budget_minutes: plan.budget_minutes,
-        behind_minutes: plan.behind_minutes,
-        ahead_minutes: plan.ahead_minutes,
-    })
+    Ok(Overview { today, due, done_today, plan_total: plan.total, plan_done: plan.done })
 }
 
 /// Lessons by id, in the order given.
@@ -1012,6 +955,15 @@ pub mod commands {
     #[tauri::command]
     pub async fn lessons_for_course(db: State<'_, Db>, course_id: i64) -> Result<Vec<super::Lesson>> {
         super::for_course(&mut db.lock(), course_id)
+    }
+
+    /// A course's lessons, most important first, the mastered ones last —
+    /// its page's list (see plan::order_for_course).
+    #[tauri::command]
+    pub async fn lessons_by_importance(db: State<'_, Db>, course_id: i64) -> Result<Vec<super::Lesson>> {
+        let mut guard = db.lock();
+        let lessons = super::for_course(&mut guard, course_id)?;
+        crate::plan::order_for_course(&mut guard, lessons)
     }
 
     #[tauri::command]

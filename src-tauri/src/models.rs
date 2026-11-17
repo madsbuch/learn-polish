@@ -194,7 +194,8 @@ pub struct Stats {
     pub day: i64,
     pub total_xp: i64,
     pub day_xp: i64,
-    pub daily_goal: i64,
+    /// Lessons a day (see plan.rs).
+    pub daily_lessons: i64,
     pub level: i64,
     pub xp_into_level: i64,
     pub xp_for_next_level: i64,
@@ -231,7 +232,8 @@ pub struct MasteredSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
-    pub daily_goal: i64,
+    /// Lessons a day: how many today's list holds (see plan.rs).
+    pub daily_lessons: i64,
     pub reminder_hour: i64,
     pub reminder_minute: i64,
     pub reminders_enabled: bool,
@@ -252,8 +254,6 @@ pub struct Settings {
     pub word_chat_model: String,
     /// Models starred in the model picker, shown first.
     pub favorite_models: Vec<String>,
-    /// The shortest a day's list of check-ins gets, in minutes.
-    pub review_floor_minutes: i64,
     /// Draws course pictures; empty means the default image model.
     pub image_model: String,
     pub has_kie_key: bool,

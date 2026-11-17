@@ -90,12 +90,18 @@ belong. The
 **tutor** builds more: courses on any theme, single drills in a chosen format,
 and study lessons with their own text and objectives.
 
-The **Exercises** tab reads top to bottom: **today** (the XP ring and the next
-thing to do — a due lesson, or else the next unstarted one), **Due now** (lessons
-whose check-in has come), and **Courses**.
+The **Exercises** tab reads top to bottom: **today's lessons** and **Courses**.
+Each day the app picks the five most important lessons (the number is a
+setting) and keeps them for the day: a lesson that slipped last time and is
+due again, then the other due ones, most overdue first, then — while there
+is room — at most two new ones, from the newest courses (`src-tauri/src/plan.rs`).
+Doing them is the day **done**, with a celebration and nothing more: what is
+due never piles up on the home screen. For more, a course's page lists its
+lessons in the same order of importance.
 
-A day is **done** — for the goal ring and the streak alike — when the daily
-XP goal is reached, or when, having practised, nothing is left due.
+A **mastered** lesson never comes back, and a course whose lessons are all
+mastered moves to **Mastered** by itself. To revisit a theme, the tutor makes
+a new course on it, a level up.
 
 ### Scheduling
 
@@ -133,8 +139,7 @@ It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
   plus 10 per goal in a writing lesson.
 - **Extra practice**: a lesson that is not due can always be done again, at
   half XP, without moving its schedule.
-- **The day** is done when the goal is reached (150 XP by default, about a
-  drill and a check-in) or nothing is left due. The **streak** counts done
+- **The day** is done when today's lessons are. The **streak** counts done
   days and survives until the end of the next one. Every seven-day run earns
   a **streak freeze** (two at most), spent automatically on a missed day.
 - **Reminders** come once a day for the week ahead; today's is skipped once
@@ -164,7 +169,7 @@ button to ask again.
 | `list_lessons`, `get_lesson`, `update_lesson`, `delete_lesson`, `schedule_lesson`, `suggest_lesson` | Sees and manages lessons, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, the demo included |
 | `move_lesson`, `add_lesson_to_course`, `remove_lesson_from_course`, `order_course_lessons` | Rearranges lessons between and within courses |
-| `update_practice_settings` | Daily XP goal |
+| `update_practice_settings` | Lessons a day |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `get_song`, `delete_songs` | Has a song written and sung (filed in the course it fits); reads a song's lyrics to file it; tidies up songs |
 | `list_playlists`, `create_playlist`, `add_to_playlist`, `remove_from_playlist`, `rename_playlist`, `delete_playlist` | Manages playlists by song (a song's most-played take goes in) |
