@@ -4,7 +4,7 @@ import { fileUrl } from "../lib/files";
 
 /** A take's cover art (a file id), or a note when Suno sent none. */
 export function Cover({ fileId, size }: { fileId: number | null; size: number }) {
-  const style = { "--cover-size": `${size}px` } as CSSProperties;
+  const style: CSSProperties = { "--cover-size": `${size}px` };
   return fileId !== null ? (
     <img className="cover" src={fileUrl(fileId)} alt="" style={style} />
   ) : (

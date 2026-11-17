@@ -338,11 +338,11 @@ export function LessonPage({
             label={
               lesson.mastered
                 ? "Mastered — it no longer comes back"
-                : !started
+                : lesson.dueDay === null
                   ? "Starts the first time you do it"
-                  : lesson.dueDay! <= today
+                  : lesson.dueDay <= today
                     ? "Due now"
-                    : `Next check-in ${dayToDate(lesson.dueDay!)}`
+                    : `Next check-in ${dayToDate(lesson.dueDay)}`
             }
             description={
               lesson.mastered

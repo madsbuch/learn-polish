@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 
 import { LessonRow } from "../components/LessonRow";
 import { Logo, SearchIcon } from "../components/icons";
@@ -122,7 +122,7 @@ export function Exercises({
                   <Inline gap={4}>
                     <div
                       className="goal-ring"
-                      style={{ "--value": goalPct } as CSSProperties}
+                      style={{ "--value": goalPct }}
                       role="img"
                       aria-label={`${doneCount} of ${total} of today's lessons done`}
                     >

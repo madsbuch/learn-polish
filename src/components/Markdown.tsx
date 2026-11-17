@@ -43,7 +43,8 @@ function renderBlocks(source: string): ReactNode[] {
       case "heading": {
         // Markdown h1/h2 inside a card should not dwarf the screen's own
         // heading, so everything shifts down a couple of levels visually.
-        const Tag = (`h${Math.min(6, block.level + 2)}`) as "h3";
+        const shifted = block.level + 2;
+        const Tag = shifted <= 3 ? "h3" : shifted === 4 ? "h4" : shifted === 5 ? "h5" : "h6";
         return (
           <Tag key={index} className={`md-h md-h${block.level}`}>
             {renderInline(block.text)}
@@ -194,7 +195,11 @@ function parseBlocks(source: string): Block[] {
       continue;
     }
 
-    if (TABLE_ROW.test(line.trim()) && i + 1 < lines.length && TABLE_RULE.test(lines[i + 1].trim().replace(/\s/g, ""))) {
+    if (
+      TABLE_ROW.test(line.trim()) &&
+      i + 1 < lines.length &&
+      TABLE_RULE.test(lines[i + 1].trim().replace(/\s/g, ""))
+    ) {
       flush();
       const head = cells(line);
       const rows: string[][] = [];
@@ -220,7 +225,7 @@ function parseBlocks(source: string): Block[] {
       flush();
       const body = [quote[1]];
       while (i + 1 < lines.length && QUOTE.test(lines[i + 1])) {
-        body.push(QUOTE.exec(lines[++i])![1]);
+        body.push(QUOTE.exec(lines[++i])?.[1] ?? "");
       }
       blocks.push({ kind: "quote", text: body.join(" ") });
       continue;
@@ -259,12 +264,22 @@ const INLINE = [
   // [[say:m: Dzień dobry]] for a man's voice. First, so nothing inside it
   // is taken for emphasis.
   { pattern: /\[\[say:\s*([^\]\n]+?)\s*\]\]/, render: (body: string, key: number) => <Say key={key} body={body} /> },
-  { pattern: /`([^`]+)`/, render: (body: string, key: number) => <code key={key} className="md-code">{body}</code> },
+  {
+    pattern: /`([^`]+)`/,
+    render: (body: string, key: number) => (
+      <code key={key} className="md-code">
+        {body}
+      </code>
+    ),
+  },
   // Inline math. `$` must hug its content ("$3 + 5$"), so prices like "$5 or
   // $6" stay text.
   { pattern: /\$(?!\s)([^$\n]+?)(?<!\s)\$/, render: (body: string, key: number) => <MathTex key={key} tex={body} /> },
   { pattern: /\\\((.+?)\\\)/, render: (body: string, key: number) => <MathTex key={key} tex={body} /> },
-  { pattern: /\*\*([^*]+)\*\*/, render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong> },
+  {
+    pattern: /\*\*([^*]+)\*\*/,
+    render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong>,
+  },
   { pattern: /__([^_]+)__/, render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong> },
   { pattern: /\*([^*\n]+)\*/, render: (body: string, key: number) => <em key={key}>{renderInline(body)}</em> },
   { pattern: /_([^_\n]+)_/, render: (body: string, key: number) => <em key={key}>{renderInline(body)}</em> },
@@ -319,7 +334,9 @@ function MathTex({ tex, display = false }: { tex: string; display?: boolean }) {
   }, [tex, display]);
   if (mathml === null) return <code className="md-code">{tex}</code>;
   const Tag = display ? "div" : "span";
-  return <Tag className={display ? "md-math md-math-display" : "md-math"} dangerouslySetInnerHTML={{ __html: mathml }} />;
+  return (
+    <Tag className={display ? "md-math md-math-display" : "md-math"} dangerouslySetInnerHTML={{ __html: mathml }} />
+  );
 }
 
 /** `[[say: …]]`: the Polish, with buttons to hear it normally and slowly. */

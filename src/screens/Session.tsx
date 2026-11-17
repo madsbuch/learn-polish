@@ -9,7 +9,7 @@ import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
 import { playCorrect, playWrong } from "../lib/sounds";
-import { EXERCISES, type AnswerState, type ExerciseProps } from "../exercises";
+import { exerciseModule, type AnswerState, type ExerciseProps } from "../exercises";
 
 /*
  * The practice session: a shell that steps through the plan's exercises. Each
@@ -58,7 +58,7 @@ export function Session({
   const exercise: Exercise | undefined = plan.exercises[index];
   const total = plan.exercises.length;
   // The module that draws and scores this kind of exercise.
-  const module = exercise ? EXERCISES[exercise.kind] : undefined;
+  const module = exercise ? exerciseModule(exercise.kind) : undefined;
 
   // Reset every per-card piece of state when we move on.
   useEffect(() => {
@@ -83,7 +83,7 @@ export function Session({
   // Pronounce new material as it appears — hearing it first anchors the
   // spelling. Failures stay silent here; the 🔊 button is where they surface.
   useEffect(() => {
-    if (exercise && EXERCISES[exercise.kind].speakOnShow) {
+    if (exercise && exerciseModule(exercise.kind).speakOnShow) {
       speakQuietly(exercise.pl);
     }
   }, [exercise]);
@@ -117,7 +117,7 @@ export function Session({
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);
-      const reading = EXERCISES[exercise.kind].reading;
+      const reading = exerciseModule(exercise.kind).reading;
       if (answer.correct && !reading) setCorrectCount((n) => n + 1);
       setPhase("checked");
       if (!reading) {
@@ -146,14 +146,13 @@ export function Session({
     }
     setBusy(true);
     try {
-      const scored = plan.exercises.filter((e) => !EXERCISES[e.kind].reading).length;
+      const scored = plan.exercises.filter((e) => !exerciseModule(e.kind).reading).length;
       onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
     }
   }
-
 
   if (!exercise || !module) {
     return (

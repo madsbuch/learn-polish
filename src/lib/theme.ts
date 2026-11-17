@@ -35,7 +35,13 @@ function resolve(preference: ThemePreference): Theme {
  * show this colour behind them; elsewhere the bridge is not there.
  */
 type SystemBars = { setColor: (color: string, dark: boolean) => void };
-const systemBars = () => (window as unknown as { AndroidSystemBars?: SystemBars }).AndroidSystemBars;
+declare global {
+  interface Window {
+    /** The Android bridge (MainActivity.kt); absent elsewhere. */
+    AndroidSystemBars?: SystemBars;
+  }
+}
+const systemBars = () => window.AndroidSystemBars;
 
 function paintSystemBars(theme: Theme) {
   const bars = systemBars();

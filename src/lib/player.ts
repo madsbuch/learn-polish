@@ -159,25 +159,26 @@ let audio: HTMLAudioElement | null = null;
 
 function element(): HTMLAudioElement {
   if (audio) return audio;
-  audio = new Audio();
-  audio.preload = "auto";
+  const el = new Audio();
+  audio = el;
+  el.preload = "auto";
   // While a speaker plays, the local element's late events must not
   // overwrite the speaker's state (pausing it fires "pause" afterwards).
-  audio.addEventListener("play", () => !state.cast && set({ playing: true }));
-  audio.addEventListener("pause", () => !state.cast && set({ playing: false }));
-  audio.addEventListener("loadedmetadata", () => {
-    if (!state.cast) set({ duration: Number.isFinite(audio!.duration) ? audio!.duration : 0 });
+  el.addEventListener("play", () => !state.cast && set({ playing: true }));
+  el.addEventListener("pause", () => !state.cast && set({ playing: false }));
+  el.addEventListener("loadedmetadata", () => {
+    if (!state.cast) set({ duration: Number.isFinite(el.duration) ? el.duration : 0 });
   });
-  audio.addEventListener("timeupdate", () => {
+  el.addEventListener("timeupdate", () => {
     if (state.cast) return;
-    set({ position: audio!.currentTime });
-    maybeCount(state.queue[state.index]?.track.id, audio!.currentTime, audio!.duration);
+    set({ position: el.currentTime });
+    maybeCount(state.queue[state.index]?.track.id, el.currentTime, el.duration);
   });
-  audio.addEventListener("ended", () => {
+  el.addEventListener("ended", () => {
     if (state.cast) return;
     if (state.repeat === "one") {
-      audio!.currentTime = 0;
-      void audio!.play();
+      el.currentTime = 0;
+      void el.play();
       return;
     }
     const last = state.index >= state.queue.length - 1;
@@ -331,12 +332,9 @@ let wantAwake = false;
 let wakeLock: { release: () => Promise<void> } | null = null;
 
 async function requestWebWakeLock() {
-  const nav = navigator as Navigator & {
-    wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
-  };
-  if (!nav.wakeLock || wakeLock) return;
+  if (!("wakeLock" in navigator) || wakeLock) return;
   try {
-    wakeLock = await nav.wakeLock.request("screen");
+    wakeLock = await navigator.wakeLock.request("screen");
   } catch {
     /* not allowed right now (e.g. the page is hidden); retried on return */
   }

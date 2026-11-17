@@ -33,14 +33,12 @@ export function CourseClosedCelebration({ closed, onDone }: { closed: CourseClos
         {pieces.map((piece, i) => (
           <i
             key={i}
-            style={
-              {
-                "--x": piece.x,
-                "--delay": piece.delay,
-                "--spin": piece.spin,
-                "--colour": piece.colour,
-              } as React.CSSProperties
-            }
+            style={{
+              "--x": piece.x,
+              "--delay": piece.delay,
+              "--spin": piece.spin,
+              "--colour": piece.colour,
+            }}
           />
         ))}
       </div>

@@ -56,7 +56,10 @@ export function Memories({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.memoriesOverview().then(setOverview).catch((cause) => setError(errorMessage(cause)));
+    api
+      .memoriesOverview()
+      .then(setOverview)
+      .catch((cause) => setError(errorMessage(cause)));
   }, []);
 
   async function run(action: () => Promise<MemoryOverview>) {
@@ -82,8 +85,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
     if (ok) setEditing(null);
   }
 
-  const open = (memory: Memory) =>
-    setEditing({ id: memory.id, content: memory.content, category: memory.category });
+  const open = (memory: Memory) => setEditing({ id: memory.id, content: memory.content, category: memory.category });
 
   return (
     <Screen
@@ -94,15 +96,13 @@ export function Memories({ onBack }: { onBack: () => void }) {
       info={
         <>
           <p>
-            The tutor and the examiner keep short notes about you — your goals, what you like,
-            what you find hard and what you have mastered — and both read all of them before they
-            answer. What the examiner notices in a conversation reaches the tutor, and the other way
-            round.
+            The tutor and the examiner keep short notes about you — your goals, what you like, what you find hard and
+            what you have mastered — and both read all of them before they answer. What the examiner notices in a
+            conversation reaches the tutor, and the other way round.
           </p>
           <p>
-            Add anything you want them to know, and fix or delete anything that is wrong. Memories
-            stay on this device, in the app's database, and are sent to the AI model with each
-            request while memory is on.
+            Add anything you want them to know, and fix or delete anything that is wrong. Memories stay on this device,
+            in the app's database, and are sent to the AI model with each request while memory is on.
           </p>
         </>
       }
@@ -148,8 +148,8 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 </Button>
               }
             >
-              As you talk to the tutor and do conversation lessons, they note what matters — or add something
-              yourself, like why you are learning Polish.
+              As you talk to the tutor and do conversation lessons, they note what matters — or add something yourself,
+              like why you are learning Polish.
             </EmptyState>
           ) : (
             CATEGORIES.map((category) => {
@@ -215,14 +215,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 ))}
               </Inline>
             </Stack>
-            <Button
-              variant="primary"
-              size="lg"
-              wide
-              loading={busy}
-              disabled={!editing.content.trim()}
-              onClick={save}
-            >
+            <Button variant="primary" size="lg" wide loading={busy} disabled={!editing.content.trim()} onClick={save}>
               {editing.id === null ? "Remember this" : "Save"}
             </Button>
             {editing.id !== null ? (
@@ -231,7 +224,8 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 confirmLabel="Forget"
                 wide
                 onConfirm={async () => {
-                  if (await run(() => api.memoryDelete(editing.id!))) setEditing(null);
+                  const id = editing.id;
+                  if (id !== null && (await run(() => api.memoryDelete(id)))) setEditing(null);
                 }}
               />
             ) : null}

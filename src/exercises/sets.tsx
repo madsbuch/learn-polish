@@ -7,7 +7,12 @@ export const gapFill = defineExercise({
   kinds: ["gapFill"],
   // The backend marks each gap; the answers travel as one "a | b | c" string.
   given: (exercise, { gapsFilled }) =>
-    exercise.gaps.map((_, i) => (gapsFilled[i] == null ? "" : exercise.options[gapsFilled[i]!])).join(" | "),
+    exercise.gaps
+      .map((_, i) => {
+        const filled = gapsFilled[i];
+        return filled == null ? "" : exercise.options[filled];
+      })
+      .join(" | "),
   // Every gap needs a word before the set can be checked.
   canSubmit: (exercise, { gapsFilled }) => exercise.gaps.every((_, i) => gapsFilled[i] != null),
   render: ({ exercise, gapsFilled, setGapsFilled, isChecked }) => (

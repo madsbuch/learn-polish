@@ -165,7 +165,7 @@ async function speakLine(text: string, gender = "", rate = 0.85, slow = false): 
       // backend's message, which names the model or key that failed.
       if (speakNatively(line, rate)) return;
       throw new SpeechError(
-        typeof cause === "string" ? cause : (cause as Error)?.message ?? "Could not play audio.",
+        typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "Could not play audio.",
       );
     }
   }

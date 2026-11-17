@@ -32,7 +32,14 @@ export function GapFill({
     next[target] = bankIndex;
     onChange(next);
     const following = next.findIndex((slot, i) => i > target && slot === null);
-    setActive(following >= 0 ? following : Math.max(0, next.findIndex((slot) => slot === null)));
+    setActive(
+      following >= 0
+        ? following
+        : Math.max(
+            0,
+            next.findIndex((slot) => slot === null),
+          ),
+    );
   }
 
   function clear(gapIndex: number) {
@@ -51,7 +58,8 @@ export function GapFill({
     <>
       <Stack gap={2}>
         {exercise.gaps.map((gap, i) => {
-          const word = slots[i] === null ? null : exercise.options[slots[i]!];
+          const slot = slots[i];
+          const word = slot === null || slot === undefined ? null : exercise.options[slot];
           const state = !checked
             ? i === active && word === null
               ? "active"
@@ -198,7 +206,13 @@ export function Memory({
               onClick={() => flip(index)}
               aria-label={state === "down" ? "Hidden card" : card.image !== null ? "A picture" : card.text}
             >
-              {state === "down" ? "?" : card.image !== null ? <img className="memory-picture" src={fileUrl(card.image)} alt="" /> : card.text}
+              {state === "down" ? (
+                "?"
+              ) : card.image !== null ? (
+                <img className="memory-picture" src={fileUrl(card.image)} alt="" />
+              ) : (
+                card.text
+              )}
             </button>
           );
         })}

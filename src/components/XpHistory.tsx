@@ -61,15 +61,12 @@ export function XpHistory({ today, onOpenDay }: { today: number; onOpenDay: (day
   const max = Math.max(1, ...bars.map((b) => b.xp));
 
   return (
-    <Section
-      title="XP"
-      info={<p>XP earned each day (or week). Tap a day to see exactly what earned it.</p>}
-    >
+    <Section title="XP" info={<p>XP earned each day (or week). Tap a day to see exactly what earned it.</p>}>
       <Card>
         <Stack gap={3}>
           <Segmented
             value={range}
-            onChange={(value) => setRange(value as Range)}
+            onChange={(value) => (value === "days" || value === "weeks") && setRange(value)}
             options={[
               { value: "days", label: "30 days" },
               { value: "weeks", label: "6 months, by week" },

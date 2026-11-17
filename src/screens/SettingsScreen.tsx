@@ -26,20 +26,14 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
-import { useThemePreference, type ThemePreference } from "../lib/theme";
+import { useThemePreference } from "../lib/theme";
 import { sendTestNotification, syncReminder } from "../lib/notifications";
 import { playClip } from "../lib/speech";
 import { playCorrect, setSoundsEnabled, soundsEnabled } from "../lib/sounds";
-import type {
-  AudioCacheStats,
-  Settings,
-  SettingsPatch,
-  Voice,
-} from "../lib/types";
+import type { AudioCacheStats, Settings, SettingsPatch, Voice } from "../lib/types";
 
 /** Spoken when testing a voice, so you can hear whether it handles Polish. */
 const VOICE_TEST_LINE = "Dzień dobry! Uczę się języka polskiego.";
-
 
 export function SettingsScreen({
   settings,
@@ -68,14 +62,20 @@ export function SettingsScreen({
   const [theme, setTheme] = useThemePreference();
 
   const refreshCache = useCallback(() => {
-    api.audioCacheStats().then(setCache).catch(() => setCache(null));
+    api
+      .audioCacheStats()
+      .then(setCache)
+      .catch(() => setCache(null));
   }, []);
 
   useEffect(refreshCache, [refreshCache, settings.ttsVoiceFemale, settings.ttsVoiceMale]);
 
   // The voice list ships with the app, so this never blocks on the network.
   useEffect(() => {
-    api.listVoices().then(setVoices).catch(() => setVoices(null));
+    api
+      .listVoices()
+      .then(setVoices)
+      .catch(() => setVoices(null));
   }, []);
 
   const [benchmark, setBenchmark] = useState(false);
@@ -122,10 +122,8 @@ export function SettingsScreen({
     }
   }
 
-  const voiceName = (gender: "f" | "m") =>
-    gender === "f" ? settings.ttsVoiceFemale : settings.ttsVoiceMale;
-  const sunoLabel = (model: string) =>
-    model === "V6_MINI" ? "V6 Mini" : model === "V6_WILD" ? "V6 Wild" : model;
+  const voiceName = (gender: "f" | "m") => (gender === "f" ? settings.ttsVoiceFemale : settings.ttsVoiceMale);
+  const sunoLabel = (model: string) => (model === "V6_MINI" ? "V6 Mini" : model === "V6_WILD" ? "V6 Wild" : model);
 
   return (
     <Screen title="Settings">
@@ -211,7 +209,7 @@ export function SettingsScreen({
       <Section title="Appearance">
         <Segmented
           value={theme}
-          onChange={(value) => setTheme(value as ThemePreference)}
+          onChange={(value) => (value === "system" || value === "light" || value === "dark") && setTheme(value)}
           options={[
             { value: "system", label: "System" },
             { value: "light", label: "Light" },
@@ -226,9 +224,8 @@ export function SettingsScreen({
           <>
             <p>Powers the tutor, the songwriter and the Polish voice.</p>
             <p>
-              Get a key at openrouter.ai/keys. It is stored in the app's private database on this
-              device, and requests are made from the app's core — the key never reaches the web
-              layer.
+              Get a key at openrouter.ai/keys. It is stored in the app's private database on this device, and requests
+              are made from the app's core — the key never reaches the web layer.
             </p>
           </>
         }
@@ -302,16 +299,16 @@ export function SettingsScreen({
         info={
           <>
             <p>
-              <b>Tutor</b> answers in the Tutor tab. To build
-              courses, lessons and songs it needs a model that can use tools — those are marked 🛠.
+              <b>Tutor</b> answers in the Tutor tab. To build courses, lessons and songs it needs a model that can use
+              tools — those are marked 🛠.
             </p>
             <p>
               <b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.
             </p>
             <p>
-              <b>Writing partner</b> plays the other person in writing lessons. <b>Talk about it</b>{" "}
-              chats with you about a word or sentence. Both are short replies, so a small, fast
-              model is enough; pick one marked 🛠 so it can still make a drill when you ask.
+              <b>Writing partner</b> plays the other person in writing lessons. <b>Talk about it</b> chats with you
+              about a word or sentence. Both are short replies, so a small, fast model is enough; pick one marked 🛠 so
+              it can still make a drill when you ask.
             </p>
           </>
         }
@@ -475,9 +472,8 @@ export function SettingsScreen({
         title="Polish voices"
         info={
           <p>
-            Android has no built-in Polish speech, so the speaker buttons use Gemini on
-            OpenRouter. Dialogue lines use the voice matching the speaker. Each line is made once,
-            then kept on the device.
+            Android has no built-in Polish speech, so the speaker buttons use Gemini on OpenRouter. Dialogue lines use
+            the voice matching the speaker. Each line is made once, then kept on the device.
           </p>
         }
       >
@@ -498,7 +494,9 @@ export function SettingsScreen({
                       disabled={options.length === 0}
                       onChange={(event) =>
                         patch(
-                          gender === "f" ? { ttsVoiceFemale: event.target.value } : { ttsVoiceMale: event.target.value },
+                          gender === "f"
+                            ? { ttsVoiceFemale: event.target.value }
+                            : { ttsVoiceMale: event.target.value },
                           `voice-${gender}`,
                         )
                       }
@@ -606,9 +604,9 @@ export function SettingsScreen({
         title="Your data"
         info={
           <p>
-            Everything the app keeps — progress, courses, the tutor conversations, settings,
-            downloaded audio and your songs — lives in one SQLite database on this device. Export
-            saves a copy wherever you choose; it opens in any SQLite tool.
+            Everything the app keeps — progress, courses, the tutor conversations, settings, downloaded audio and your
+            songs — lives in one SQLite database on this device. Export saves a copy wherever you choose; it opens in
+            any SQLite tool.
           </p>
         }
       >

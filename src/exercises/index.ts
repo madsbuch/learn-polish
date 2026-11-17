@@ -35,12 +35,18 @@ type Unclaimed = Exclude<ExerciseKind, (typeof MODULES)[number]["kinds"][number]
  * error here that names it.
  */
 function byKind(modules: typeof MODULES & ([Unclaimed] extends [never] ? unknown : { unclaimed: Unclaimed })) {
-  const registry: Partial<Record<ExerciseKind, ExerciseModule>> = {};
+  const registry = new Map<ExerciseKind, ExerciseModule>();
   for (const module of modules) {
-    for (const kind of module.kinds) registry[kind] = module;
+    for (const kind of module.kinds) registry.set(kind, module);
   }
-  return registry as Record<ExerciseKind, ExerciseModule>;
+  return registry;
 }
 
-/** The module that draws and scores each exercise kind. */
-export const EXERCISES: Record<ExerciseKind, ExerciseModule> = byKind(MODULES);
+const REGISTRY = byKind(MODULES);
+
+/** The module that draws and scores an exercise kind (every kind has one: see `byKind`). */
+export function exerciseModule(kind: ExerciseKind): ExerciseModule {
+  const found = REGISTRY.get(kind);
+  if (!found) throw new Error(`No exercise module for "${kind}".`);
+  return found;
+}
