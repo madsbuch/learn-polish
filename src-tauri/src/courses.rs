@@ -849,6 +849,9 @@ pub struct CourseStatus {
     /// moves with every pass, so the way to mastering it shows.
     pub mastery_points: i64,
     pub mastery_max: i64,
+    /// About how many minutes of practice are left to master it: each lesson's
+    /// minutes, times the passes it still needs when spaced out.
+    pub minutes_to_master: i64,
     /// The first core lesson, in the course's order, not passed yet.
     pub next_lesson: Option<String>,
     /// A built-in course that never ends (see [`OPEN_ENDED`]): always active.
@@ -858,7 +861,7 @@ pub struct CourseStatus {
 }
 
 pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
-    let list: Vec<(i64, i64, i64, String, i64, String)> = course_lessons::table
+    let list: Vec<(i64, i64, i64, String, i64, String, String)> = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
         .order((course_lessons::ord, lessons::id))
@@ -869,14 +872,31 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
             lessons::lesson_type,
             lessons::support_level,
             lessons::title,
+            lessons::complexity,
         ))
         .load(conn)?;
+    // Passes left at the spaced pace: the first gives 30 points, later ones
+    // about 35 (lessons::mastery_gain).
+    let minutes_to_master = list
+        .iter()
+        .filter(|(_, passed, mastery, lesson_type, support, ..)| !crate::lessons::is_mastered(*passed == 1, *mastery, lesson_type, *support))
+        .map(|(_, passed, mastery, lesson_type, _, _, complexity)| {
+            let left = crate::lessons::MASTERY_FULL - (*mastery).clamp(0, crate::lessons::MASTERY_FULL);
+            let passes = if *passed == 1 {
+                (left + 34) / 35
+            } else {
+                // The first pass, then the rest at 35 a pass.
+                1 + ((left - 30).max(0) + 34) / 35
+            };
+            passes.max(1) * crate::lesson_types::minutes(lesson_type, complexity)
+        })
+        .sum();
     let core: Vec<_> = list.iter().filter(|l| l.0 == 0).collect();
     let passed_core = core.iter().filter(|l| l.1 == 1).count() as i64;
     let completed = !core.is_empty() && passed_core == core.len() as i64;
     let mastered_lessons = list
         .iter()
-        .filter(|(_, passed, mastery, lesson_type, support, _)| crate::lessons::is_mastered(*passed == 1, *mastery, lesson_type, *support))
+        .filter(|(_, passed, mastery, lesson_type, support, ..)| crate::lessons::is_mastered(*passed == 1, *mastery, lesson_type, *support))
         .count();
     let mastered = completed && mastered_lessons == list.len();
     let mastery_points = list.iter().map(|l| l.2.clamp(0, crate::lessons::MASTERY_FULL)).sum();
@@ -902,6 +922,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
         mastered_lessons: mastered_lessons as i64,
         mastery_points,
         mastery_max: list.len() as i64 * crate::lessons::MASTERY_FULL,
+        minutes_to_master,
         next_lesson: core.iter().find(|l| l.1 == 0).map(|l| l.5.clone()),
     })
 }

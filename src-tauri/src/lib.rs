@@ -2,6 +2,7 @@ mod agent;
 mod ai;
 mod bench;
 mod lessons;
+mod levels;
 mod lesson_types;
 mod cast;
 mod commands;
@@ -90,6 +91,9 @@ pub fn run() {
             songs::resume_pending(app.handle());
             // Picture lessons whose drawing an earlier run did not finish.
             pictures::draw_missing_in_background(app.handle());
+            // Courses not levelled yet (from before levels, or made while
+            // offline) are checked, one at a time.
+            levels::check_unchecked_in_background(app.handle());
             files::sync_to_disk(app.handle());
             // Lessons built on Wikipedia, checked against it every three months.
             wiki::check_due_in_background(app.handle());
@@ -1244,7 +1248,7 @@ mod integration {
             &mut conn,
             "create_course",
             serde_json::json!({
-                "title": "At the market", "title_pl": "Na targu", "summary": "Buying food.",
+                "title": "At the market", "title_pl": "Na targu", "summary": "Buying food.", "level": "a1",
                 "words": words, "sentences": sentences,
                 "dialogue": [
                     { "speaker": "Ola", "gender": "f", "pl": "Dzień dobry!", "en": "Good morning!" },
@@ -1259,6 +1263,7 @@ mod integration {
         );
         assert_eq!((made["lessons"].as_i64(), made["writing"].as_bool()), (Some(2), Some(true)), "{made}");
         let course = made["created"]["course_id"].as_i64().unwrap();
+        assert_eq!(session::load_course(&mut conn, course).unwrap().level.as_deref(), Some("A1"), "made at its level");
         let path: Vec<(String, String)> =
             lessons::for_course(&mut conn, course).unwrap().into_iter().map(|b| (b.lesson_type, b.title)).collect();
         let formats: Vec<&str> = path.iter().map(|(f, _)| f.as_str()).collect();
@@ -1447,6 +1452,32 @@ mod integration {
     /// exercise a drill can produce is one the screens know how to show
     /// (src/lib/types.ts lists them; src/exercises/ must draw each, or the
     /// frontend build fails). A new type without a sample here fails too.
+    #[test]
+    fn courses_and_lessons_carry_a_cefr_level_that_never_limits() {
+        let mut conn = scratch_db("levels");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        assert_eq!(session::load_course(&mut conn, course).unwrap().level, None, "not levelled yet");
+
+        // The tutor sets a course's level; a loosely written one is read.
+        let edited = tutor::run_tool_for_test(&mut conn, "edit_course", serde_json::json!({ "course_id": course, "level": "b1" }));
+        assert!(edited.get("error").is_none(), "{edited}");
+        assert_eq!(session::load_course(&mut conn, course).unwrap().level.as_deref(), Some("B1"));
+        let wrong = tutor::run_tool_for_test(&mut conn, "edit_course", serde_json::json!({ "course_id": course, "level": "expert" }));
+        assert!(wrong.to_string().contains("not a level"), "{wrong}");
+
+        // A lesson can have its own level, and follow its course again.
+        let lesson = lessons::for_course(&mut conn, course).unwrap()[0].id;
+        tutor::run_tool_for_test(&mut conn, "update_lesson", serde_json::json!({ "lesson_id": lesson, "level": "B2" }));
+        assert_eq!(lessons::load(&mut conn, lesson).unwrap().level.as_deref(), Some("B2"));
+        tutor::run_tool_for_test(&mut conn, "update_lesson", serde_json::json!({ "lesson_id": lesson, "level": "" }));
+        assert_eq!(lessons::load(&mut conn, lesson).unwrap().level, None);
+
+        // The tutor is told levels never limit, and sees each course's.
+        let rules = tutor::rules();
+        assert!(rules.contains("never limit") && rules.contains("never refuse"));
+        assert!(tutor::learner_state(&mut conn).unwrap().contains(", B1, "));
+    }
+
     #[test]
     fn every_lesson_type_can_be_made_and_practised() {
         let mut conn = scratch_db("lesson-types");

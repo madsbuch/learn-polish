@@ -23,6 +23,8 @@ pub struct Course {
     pub title: String,
     #[diesel(column_name = summary_en)]
     pub summary: String,
+    /// How advanced it is: A1–C2 (levels.rs). None until it is levelled.
+    pub level: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -631,6 +631,11 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "tutor_conversations", "about", "TEXT")?;
     add_column(conn, "courses", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
     add_column(conn, "courses", "closed_at", "INTEGER")?;
+    // CEFR levels (levels.rs): a course's, when it was checked, and a
+    // lesson's own when it differs from its course's.
+    add_column(conn, "courses", "level", "TEXT")?;
+    add_column(conn, "courses", "level_checked_at", "INTEGER")?;
+    add_column(conn, "lessons", "level", "TEXT")?;
     add_column(conn, "songs", "kind", "TEXT NOT NULL DEFAULT 'song'")?;
     add_column(conn, "songs", "podcast", "TEXT NOT NULL DEFAULT '{}'")?;
     add_column(conn, "song_tracks", "timed_lines", "TEXT")?;

@@ -93,6 +93,8 @@ pub struct Lesson {
     pub passed: bool,
     /// Mastery points, 0 to [`MASTERY_FULL`] (see [`mastery_gain`]).
     pub mastery: i64,
+    /// Its own CEFR level, when it differs from its course's (levels.rs).
+    pub level: Option<String>,
     pub items: i64,
     /// A listening lesson's song.
     pub song_id: Option<i64>,
@@ -170,6 +172,7 @@ struct LessonRow {
     challenge: i64,
     passed: i64,
     mastery: i64,
+    level: Option<String>,
     song_id: Option<i64>,
 }
 
@@ -253,6 +256,7 @@ fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
                 challenge: row.challenge == 1,
                 passed: row.passed == 1,
                 mastery: row.mastery,
+                level: row.level,
                 song_id: row.song_id,
             }
         })

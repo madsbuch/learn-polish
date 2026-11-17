@@ -20,6 +20,8 @@ diesel::table! {
         completed_at -> Nullable<BigInt>,
         mastered_at -> Nullable<BigInt>,
         closed_at -> Nullable<BigInt>,
+        level -> Nullable<Text>,
+        level_checked_at -> Nullable<BigInt>,
     }
 }
 
@@ -178,6 +180,7 @@ diesel::table! {
         challenge -> BigInt,
         passed -> BigInt,
         mastery -> BigInt,
+        level -> Nullable<Text>,
     }
 }
 

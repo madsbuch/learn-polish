@@ -25,7 +25,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
-import { dayToDate, mastered, MASTERY_FULL, standing, standingText } from "../lib/lessons";
+import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
 import { toast } from "../lib/toast";
 import type { Lesson, Sentence, CourseProgress, Word } from "../lib/types";
 
@@ -152,6 +152,12 @@ export function CourseDetail({
           {drawing ? "Drawing a picture…" : "Make a picture for this course"}
         </Button>
       )}
+      <Inline gap={2} wrap>
+        {progress.course.level ? <Badge tone="brand">{progress.course.level}</Badge> : null}
+        {closedAt === null && progress.minutesToMaster > 0 ? (
+          <Badge>{`${roughDuration(progress.minutesToMaster)} to master`}</Badge>
+        ) : null}
+      </Inline>
       {names.summary ? (
         <Text variant="small" tone="dim" as="p">
           {names.summary}

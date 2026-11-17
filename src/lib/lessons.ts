@@ -100,3 +100,10 @@ export const PERIOD_CHOICES: { value: string; label: string }[] = [
   { value: "14", label: "2 weeks" },
   { value: "30", label: "Monthly" },
 ];
+
+/** Minutes as a rough duration: "about 40 min", "about 2 h". */
+export function roughDuration(minutes: number): string {
+  if (minutes < 60) return `about ${Math.max(5, Math.round(minutes / 5) * 5)} min`;
+  const hours = minutes / 60;
+  return `about ${hours < 3 ? Math.round(hours * 2) / 2 : Math.round(hours)} h`;
+}

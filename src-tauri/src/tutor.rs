@@ -85,6 +85,12 @@ The app:
   the learner's level; a lesson clearly beyond it (a free conversation in a beginner course, a \
   deep lesson) is a challenge — set challenge with update_lesson. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
+- Every course has a CEFR level (A1–C2): give one when you make a course — what its words, \
+  grammar and tasks demand — and give a lesson its own (update_lesson) only when it differs, \
+  like a challenge a level up. A small model checks each new course's level afterwards.
+- Levels describe material; they never limit it. Make exactly what the learner asks for, at \
+  whatever level they ask — never refuse, water down or second-guess a harder request. When no \
+  level is asked for, fit what they have been doing; \"harder\" means a level up.
 - A mastered course moves to Mastered by itself: it becomes a trophy and its lessons never \
   come back. Closed courses are finished — never add to or change them. To revisit a closed \
   course's theme, make a new course a level up: build on what it taught (get_course shows it), \
@@ -151,26 +157,34 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let due: Vec<String> = overview.due.iter().take(15).map(line).collect();
 
     let listed: Vec<i64> = course_lessons::table.select(course_lessons::course_id).load(conn)?;
-    let all: Vec<(i64, String, String, Option<i64>)> = courses_table::table
+    let all: Vec<(i64, String, String, Option<i64>, Option<String>)> = courses_table::table
         .order(crate::lessons::course_order())
         .limit(80)
-        .select((courses_table::id, courses_table::title_en, courses_table::title_pl, courses_table::closed_at))
+        .select((
+            courses_table::id,
+            courses_table::title_en,
+            courses_table::title_pl,
+            courses_table::closed_at,
+            courses_table::level,
+        ))
         .load(conn)?;
     let courses: Vec<String> = all
         .iter()
         .filter(|c| c.3.is_none())
-        .map(|(id, title, title_pl, _)| {
+        .map(|(id, title, title_pl, _, level)| {
             let lessons = listed.iter().filter(|&&c| c == *id).count();
-            format!("  - id {id}: {title} ({title_pl}), {lessons} lessons")
+            let level = level.as_deref().unwrap_or("level not set");
+            format!("  - id {id}: {title} ({title_pl}), {level}, {lessons} lessons")
         })
         .collect();
     // Closed as mastered: finished for good, kept as trophies.
     let mastered: Vec<String> = all
         .iter()
-        .filter_map(|(id, title, title_pl, closed)| {
+        .filter_map(|(id, title, title_pl, closed, level)| {
             closed.map(|at| {
                 let (y, m, d) = crate::commands::civil_date(at.div_euclid(86_400));
-                format!("  - id {id}: {title} ({title_pl}), closed {y}-{m:02}-{d:02}")
+                let level = level.as_deref().unwrap_or("level not set");
+                format!("  - id {id}: {title} ({title_pl}), {level}, mastered {y}-{m:02}-{d:02}")
             })
         })
         .collect();
@@ -334,6 +348,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "properties": {
                     "title": { "type": "string", "description": "Short English title, e.g. \"Colours\"" },
                     "title_pl": { "type": "string", "description": "The title in Polish, e.g. \"Kolory\"" },
+                    "level": { "type": "string", "enum": crate::levels::LEVELS, "description": "How advanced the material is, on the CEFR scale" },
                     "summary": { "type": "string", "description": "One English sentence on what the course covers" },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
@@ -366,7 +381,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                         "required": ["title", "summary", "complexity", "scenario", "goals"]
                     }
                 },
-                "required": ["title", "title_pl", "summary", "words", "sentences"]
+                "required": ["title", "title_pl", "summary", "level", "words", "sentences"]
             }),
         ),
         tool(
@@ -387,11 +402,12 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "edit_course",
             "Updating the course…",
-            "Rename a course, change its summary, or remove words/sentences from it (by their exact Polish text).",
+            "Rename a course, change its summary or level, or remove words/sentences from it (by their exact Polish text).",
             json!({
                 "type": "object",
                 "properties": {
                     "course_id": { "type": "integer" },
+                    "level": { "type": "string", "enum": crate::levels::LEVELS },
                     "title": { "type": "string" },
                     "title_pl": { "type": "string" },
                     "summary": { "type": "string" },
@@ -616,9 +632,10 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "update_lesson",
             "Updating the lesson…",
-            "Change a lesson: title, summary, complexity, content, objectives, check-in period, or \
+            "Change a lesson: title, summary, complexity, content, objectives, check-in period, \
              whether it is a challenge (beyond the course's level: needed to master the course, \
-             not to complete it).",
+             not to complete it), or its own level (only when it differs from its course's; \
+             empty to follow the course again).",
             json!({
                 "type": "object",
                 "properties": {
@@ -629,7 +646,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "content": { "type": "string" },
                     "objectives": { "type": "array", "items": { "type": "string" } },
                     "period_days": { "type": "integer" },
-                    "challenge": { "type": "boolean" }
+                    "challenge": { "type": "boolean" },
+                    "level": { "type": "string", "description": "A1–C2, or empty to follow the course" }
                 },
                 "required": ["lesson_id"]
             }),
@@ -1068,6 +1086,8 @@ struct CourseArg {
 struct CreateArgs {
     #[serde(flatten)]
     course: NewCourse,
+    #[serde(default)]
+    level: Option<String>,
     /// Short study lessons on the grammar the course uses.
     #[serde(default, alias = "lessons")]
     study_lessons: Vec<lessons::NewStudy>,
@@ -1102,6 +1122,8 @@ struct EditArgs {
     remove_words: Vec<String>,
     #[serde(default)]
     remove_sentences: Vec<String>,
+    #[serde(default)]
+    level: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1307,6 +1329,8 @@ struct ListLessonsArgs {
 #[derive(Deserialize)]
 struct UpdateLessonArgs {
     lesson_id: i64,
+    #[serde(default)]
+    level: Option<String>,
     #[serde(flatten)]
     changes: lessons::LessonChanges,
 }
@@ -1569,6 +1593,9 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             let args: CreateArgs = parse(arguments)?;
             let created = courses::create(conn, args.course, "tutor")?;
             let course_id = created.course_id;
+            if let Some(level) = &args.level {
+                crate::levels::set_course_level(conn, course_id, level)?;
+            }
             // The lessons and the writing lesson join the course; one that
             // cannot be made is reported, not a reason to lose the course.
             let mut problems = Vec::new();
@@ -1630,6 +1657,9 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
         }
         "edit_course" => {
             let args: EditArgs = parse(arguments)?;
+            if let Some(level) = &args.level {
+                crate::levels::set_course_level(conn, args.course_id, level)?;
+            }
             courses::rename(
                 conn,
                 args.course_id,
@@ -1805,6 +1835,9 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
         }
         "update_lesson" => {
             let args: UpdateLessonArgs = parse(arguments)?;
+            if let Some(level) = &args.level {
+                crate::levels::set_lesson_level(conn, args.lesson_id, Some(level))?;
+            }
             let lesson = lessons::update(conn, args.lesson_id, args.changes)?;
             Ok(Outcome::lesson(
                 json!({ "updated": lesson_json(&lesson) }),
@@ -3028,6 +3061,10 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                     let done = execute(conn, &name, &arguments);
                     for course_id in course_ids(conn).difference(&before) {
                         crate::pictures::draw_in_background(app, *course_id);
+                    }
+                    if course_ids(conn).len() > before.len() {
+                        // Every new course's level is checked (levels.rs).
+                        crate::levels::check_unchecked_in_background(app);
                     }
                     if name == "create_picture_lesson" {
                         drop(guard);

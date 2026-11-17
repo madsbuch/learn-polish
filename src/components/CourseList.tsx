@@ -5,8 +5,15 @@ import type { CourseProgress } from "../lib/types";
 
 /** Where a course stands, in a line: what is left, and what comes next. */
 function courseLine(entry: CourseProgress): string {
+  const line = statusLine(entry);
+  return entry.course.level && entry.closedAt === null ? `${entry.course.level} · ${line}` : line;
+}
+
+/** Where a course stands, without its level. */
+function statusLine(entry: CourseProgress): string {
   if (entry.closedAt !== null) {
-    return `🏆 ${entry.course.titlePl} · closed ${dayToDate(Math.floor(entry.closedAt / 86_400))}`;
+    const level = entry.course.level ? ` · ${entry.course.level}` : "";
+    return `🏆 ${entry.course.titlePl}${level} · mastered ${dayToDate(Math.floor(entry.closedAt / 86_400))}`;
   }
   if (entry.status === "mastered") return "🏆 Mastered · ready to close";
   if (entry.status === "completed") {

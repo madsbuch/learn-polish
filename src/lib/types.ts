@@ -9,6 +9,8 @@ export interface Course {
   titlePl: string;
   title: string;
   summary: string;
+  /** How advanced it is, A1–C2; null until it is levelled. */
+  level: string | null;
 }
 
 export interface Word {
@@ -171,6 +173,8 @@ export interface Lesson {
   passed: boolean;
   /** Mastery points, 0–100: every pass earns some, spaced passes more. */
   mastery: number;
+  /** Its own CEFR level, when it differs from its course's. */
+  level: string | null;
   items: number;
   /** A listening lesson's song. */
   songId: number | null;
@@ -307,6 +311,8 @@ export interface CourseProgress {
   /** Mastery points earned across its lessons, out of masteryMax (100 a lesson). */
   masteryPoints: number;
   masteryMax: number;
+  /** About how many minutes of practice are left to master it. */
+  minutesToMaster: number;
   /** The first core lesson, in the course's order, not passed yet. */
   nextLesson: string | null;
   /** A built-in course that never ends (Grammar & culture, Listening, Writing): always active. */

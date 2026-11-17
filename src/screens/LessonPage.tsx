@@ -290,6 +290,7 @@ export function LessonPage({
           </Badge>
           {started ? <Badge>{dueLabel(lesson, today)}</Badge> : null}
           {lesson.challenge ? <Badge tone="gold">Challenge</Badge> : null}
+          {lesson.level ? <Badge tone="brand">{lesson.level}</Badge> : null}
         </Inline>
         {lesson.summary ? (
           <Text tone="dim" as="p">
