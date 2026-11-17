@@ -107,6 +107,9 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
           </div>
         );
       })}
+      {/* While it is read out, the floating control covers the foot of the
+          screen: room below the last line, so it can scroll clear of it. */}
+      {conversation ? <div className="dialogue-clearance" aria-hidden="true" /> : null}
       {talking ? (
         <WordChat
           itemKind="line"

@@ -31,6 +31,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
+import { HowToUse } from "./screens/HowToUse";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music } from "./screens/Music";
 import { Player } from "./screens/Player";
@@ -78,6 +79,7 @@ type Overlay =
   | { kind: "progress" }
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
+  | { kind: "howTo" }
   | { kind: "search" }
   | { kind: "player"; back?: Overlay }
   | {
@@ -512,6 +514,14 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "howTo") {
+    return (
+      <div className="app">
+        <HowToUse onBack={() => setOverlay({ kind: "none" })} />
+      </div>
+    );
+  }
+
   if (overlay.kind === "audio") {
     return (
       <div className="app">
@@ -615,6 +625,7 @@ export default function App() {
           onReset={() => void refresh()}
           onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
           onOpenAudio={() => setOverlay({ kind: "audio" })}
+          onOpenHowTo={() => setOverlay({ kind: "howTo" })}
         />
       ) : null}
 

@@ -248,6 +248,16 @@
   gap: var(--space-2);
   align-items: flex-start;
 }
+/* The conversation control floats over the foot of the screen while it
+   plays: the line followed stops above it, and the last line can scroll
+   clear of it. */
+body:has(.conversation-control) .line {
+  scroll-margin-bottom: 104px;
+}
+.dialogue-clearance {
+  height: 88px;
+  flex: none;
+}
 .line[data-side="right"] {
   flex-direction: row-reverse;
 }

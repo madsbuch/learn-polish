@@ -25,7 +25,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
-import { dayToDate, mastered, MASTERY_FULL, passesLeft, standing, standingText, writingStep } from "../lib/lessons";
+import { dayToDate, mastered, MASTERY_FULL, standing, standingText } from "../lib/lessons";
 import { toast } from "../lib/toast";
 import type { Lesson, Sentence, CourseProgress, Word } from "../lib/types";
 
@@ -161,7 +161,6 @@ export function CourseDetail({
       {lessons && lessons.length > 0 ? (
         <CourseStanding
           lessons={lessons}
-          onOpenLesson={onOpenLesson}
           openEnded={progress.openEnded}
           closedAt={closedAt}
           onClose={() =>
@@ -325,10 +324,8 @@ export function CourseDetail({
 }
 
 /**
- * How far the course is, as a path: ① learn it (pass each core lesson once:
- * completed), ② master it (mastery points from passing — practising now
- * gets there, spaced check-ins in fewer passes), ③ the steps that are not
- * just more passes: writing without help, the challenges.
+ * How far the course is: passing each core lesson once completes it; after
+ * that, a bar of the mastery points earned (see lessons.rs).
  */
 function CourseStanding({
   lessons,
@@ -337,7 +334,6 @@ function CourseStanding({
   onShowLeft,
   onClose,
   onUndo,
-  onOpenLesson,
 }: {
   lessons: Lesson[];
   openEnded: boolean;
@@ -345,7 +341,6 @@ function CourseStanding({
   onShowLeft: () => void;
   onClose: () => void;
   onUndo: () => void;
-  onOpenLesson: (lessonId: number) => void;
 }) {
   const core = lessons.filter((lesson) => !lesson.challenge);
   const passed = core.filter((lesson) => lesson.passed).length;
@@ -387,7 +382,7 @@ function CourseStanding({
       <Stack gap={2}>
         <Inline justify="between" gap={2}>
           <Text variant="small" tone="dim">
-            {`① Learn it: ${passed} of ${core.length} passed · ${left} to go`}
+            {`${passed} of ${core.length} passed · ${left} to go`}
           </Text>
           {left > 0 ? (
             <Button size="sm" onClick={onShowLeft}>
@@ -396,9 +391,6 @@ function CourseStanding({
           ) : null}
         </Inline>
         <Progress value={passed} max={Math.max(1, core.length)} size="sm" />
-        <Text variant="small" tone="dim" as="div">
-          Then master it: every pass adds mastery, until each lesson is mastered.
-        </Text>
       </Stack>
     );
   }
@@ -421,58 +413,12 @@ function CourseStanding({
   const points = lessons.reduce((sum, lesson) => sum + Math.min(Math.max(lesson.mastery, 0), MASTERY_FULL), 0);
   const max = lessons.length * MASTERY_FULL;
   const pct = Math.floor((points / Math.max(1, max)) * 100);
-  const needPoints = lessons.filter((lesson) => lesson.mastery < MASTERY_FULL || !lesson.passed);
-  const now = needPoints.reduce((sum, lesson) => sum + passesLeft(lesson).now, 0);
-  const spaced = needPoints.reduce((sum, lesson) => sum + passesLeft(lesson).spaced, 0);
-  // The steps that more passes alone do not take: writing without help, and
-  // the challenges, each a lesson to open.
-  const steps = [
-    ...lessons
-      .filter((lesson) => lesson.passed && writingStep(lesson))
-      .map((lesson) => ({ lesson, text: `“${lesson.title}”: ${writingStep(lesson)}` })),
-    ...lessons
-      .filter((lesson) => lesson.challenge && !lesson.passed)
-      .map((lesson) => ({ lesson, text: `Challenge “${lesson.title}”: pass it` })),
-  ];
   return (
-    <Stack gap={3}>
+    <Stack gap={2}>
       <Text variant="small" tone="dim" as="div">
-        {`① Learn it ✓ all ${core.length} passed`}
+        {`✓ Completed · ${pct}% mastered`}
       </Text>
-      <Stack gap={2}>
-        <Inline justify="between" gap={2}>
-          <Text variant="small" weight="bold">
-            ② Master it
-          </Text>
-          <Text variant="small" tone="dim">
-            {`${pct}% · ${masteredCount} of ${lessons.length} lessons mastered`}
-          </Text>
-        </Inline>
-        <Progress value={points} max={Math.max(1, max)} size="sm" tone="gold" />
-        {needPoints.length > 0 ? (
-          <Text variant="small" tone="dim" as="div">
-            {spaced === now
-              ? `Every pass adds mastery: about ${now} more ${now === 1 ? "pass" : "passes"} in all.`
-              : `Every pass adds mastery. Fastest: practise its lessons now, about ${now} more passes in all. ` +
-                `Fewest: let your check-ins space them out, about ${spaced}.`}
-          </Text>
-        ) : null}
-      </Stack>
-      {steps.length > 0 ? (
-        <Stack gap={2}>
-          <Text variant="small" weight="bold" as="div">
-            ③ Use it freely
-          </Text>
-          {steps.map(({ lesson, text }) => (
-            <Inline key={lesson.id} justify="between" gap={2}>
-              <Text variant="small">{text}</Text>
-              <Button size="sm" onClick={() => onOpenLesson(lesson.id)}>
-                Practise
-              </Button>
-            </Inline>
-          ))}
-        </Stack>
-      ) : null}
+      <Progress value={points} max={Math.max(1, max)} size="sm" tone="gold" />
     </Stack>
   );
 }

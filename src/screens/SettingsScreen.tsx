@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CostCenter } from "../components/CostCenter";
 import { KeyShare } from "../components/KeyShare";
 import { megabytes } from "./AudioScreen";
-import { MemoryIcon, PlayerIcon } from "../components/icons";
+import { MemoryIcon, PlayerIcon, StudyIcon } from "../components/icons";
 import {
   Button,
   Card,
@@ -46,6 +46,7 @@ export function SettingsScreen({
   onReset,
   onOpenMemories,
   onOpenAudio,
+  onOpenHowTo,
 }: {
   settings: Settings;
   onSettings: (settings: Settings) => void;
@@ -53,6 +54,8 @@ export function SettingsScreen({
   onOpenMemories: () => void;
   /** The downloaded-audio page. */
   onOpenAudio: () => void;
+  /** The guide: how to use the app, and why. */
+  onOpenHowTo: () => void;
 }) {
   const [keyDraft, setKeyDraft] = useState("");
   const [sounds, setSounds] = useState(soundsEnabled);
@@ -125,6 +128,16 @@ export function SettingsScreen({
 
   return (
     <Screen title="Settings">
+      <Section>
+        <List>
+          <ListItem
+            leading={<StudyIcon />}
+            title="How to use"
+            subtitle="The idea behind the app, and how to get the most from it"
+            onClick={onOpenHowTo}
+          />
+        </List>
+      </Section>
 
       <Section title="Practice">
         <List>

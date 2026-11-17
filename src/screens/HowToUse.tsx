@@ -1,0 +1,144 @@
+import type { ReactNode } from "react";
+
+import { Card, Screen, Section, Stack, Text } from "../design";
+
+/** The language taught, and the app's name, as the guide says them. */
+const LANGUAGE = "Polish";
+const APP = "Polski";
+/** How typing is forgiving, in this language. */
+const TYPING = "Polish letters are optional when you type: “czesc” counts as “cześć”.";
+
+/** One part of the guide: a heading and a few short paragraphs. */
+function Part({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Section title={title}>
+      <Card>
+        <Stack gap={3}>{children}</Stack>
+      </Card>
+    </Section>
+  );
+}
+
+function P({ children }: { children: ReactNode }) {
+  return (
+    <Text as="p" variant="body">
+      {children}
+    </Text>
+  );
+}
+
+/**
+ * How to use the app, and why it works the way it does: a page under
+ * Settings to read once, and come back to.
+ */
+export function HowToUse({ onBack }: { onBack: () => void }) {
+  return (
+    <Screen title="How to use" subtitle={`${APP}, and the idea behind it`} onBack={onBack} nav={false}>
+      <Part title="The idea">
+        <P>
+          {`You learn ${LANGUAGE} a little every day, from things you care about. ${APP} is built on
+          three beliefs:`}
+        </P>
+        <P>
+          <strong>Small and often beats long and rare.</strong> Every lesson does one job and takes
+          minutes. Ten minutes a day, kept up, is worth more than an hour on Sunday.
+        </P>
+        <P>
+          <strong>Coming back is how things stick.</strong> A lesson you pass returns later, further
+          apart each time it goes well, so you meet it again just before you would forget it.
+        </P>
+        <P>
+          <strong>Your interests are the curriculum.</strong> The tutor builds courses on whatever
+          you want to talk about — your work, a trip, football, cooking — and songs and podcasts
+          on the same. Everything can be changed or deleted: it is your app.
+        </P>
+      </Part>
+
+      <Part title="Your day">
+        <P>
+          Open <strong>Exercises</strong>. At the top is the next thing to do: a lesson that is due,
+          or else the next one you have not started. <strong>Due now</strong> lists every lesson
+          whose check-in has come.
+        </P>
+        <P>
+          The day is done when you reach your daily XP goal, or when nothing is left due. Done
+          days build your streak; every seven days in a row earns a streak freeze that covers a
+          missed day by itself. XP is only paid for real work: harder exercises pay more, wrong
+          answers and cards you only read pay nothing.
+        </P>
+      </Part>
+
+      <Part title="Courses and lessons">
+        <P>
+          A <strong>course</strong> is a theme, and lists its lessons in order. A{" "}
+          <strong>lesson</strong> is one thing to do:
+        </P>
+        <P>
+          <strong>Drills</strong> practise a handful of words, sentences or a dialogue — cards,
+          multiple choice, typing, building sentences, filling gaps. <strong>Study</strong> lessons
+          are a short text, followed by a few questions from the examiner.{" "}
+          <strong>Listening</strong> lessons play a song or podcast and ask what you heard.{" "}
+          <strong>Writing</strong> lessons are a situation played out in writing, with a partner who
+          understands only {LANGUAGE}.
+        </P>
+        <P>Each lesson is marked quick, medium or deep, by how much thought it takes.</P>
+      </Part>
+
+      <Part title="Completing and mastering">
+        <P>
+          A course is <strong>completed</strong> when you have passed each of its lessons once. It is{" "}
+          <strong>mastered</strong> when every lesson has full mastery points — challenges too, and
+          writing done once without help.
+        </P>
+        <P>
+          Every pass earns mastery points; a fail costs some. You never have to wait: practise a
+          lesson as often as you like, today. Passes spread out over days are better evidence, so
+          they earn more — letting your check-ins bring lessons back gets there in fewer passes.
+        </P>
+        <P>
+          A mastered course can be closed: it becomes a trophy, and its lessons leave your
+          check-ins.
+        </P>
+      </Part>
+
+      <Part title="The tutor">
+        <P>
+          The <strong>Tutor</strong> tab is where the app grows. Ask in your own words: “a course for
+          ordering in restaurants”, “explain when to use this”, “a drill on the numbers”, “a song
+          about my morning”, “what's going on in Poland?”.
+        </P>
+        <P>
+          It knows your progress, and remembers what you tell it — goals, what you like, what you
+          find hard — under Settings → Memories, where you can read and change it. On any line or
+          word, <em>Talk about it</em> opens a short chat about just that.
+        </P>
+      </Part>
+
+      <Part title="Music">
+        <P>
+          <strong>Songs</strong> plant a sentence in your head; <strong>podcasts</strong> tell you
+          about a subject in short {LANGUAGE} sentences — from Wikipedia, today's news, or a
+          made-up story. Make them yourself on the Music tab, or ask the tutor, who can shape them
+          to fit a course.
+        </P>
+        <P>
+          Nothing needs approving: keep what you like and delete the rest. A listening lesson
+          turns any of them into practice.
+        </P>
+      </Part>
+
+      <Part title="Small things that help">
+        <P>The speaker plays a line; the turtle plays it slowly.</P>
+        <P>{TYPING}</P>
+        <P>
+          In a conversation, <em>Show translations</em> reveals the English, and the play button
+          reads the whole conversation aloud.
+        </P>
+        <P>
+          The AI features need an OpenRouter key, and songs a kie.ai key, both in Settings. The
+          demo course and everything already downloaded work without them, offline.
+        </P>
+      </Part>
+    </Screen>
+  );
+}
