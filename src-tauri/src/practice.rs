@@ -84,6 +84,11 @@ pub struct SubmitAnswer {
     /// Extra practice on a lesson that is not due: half XP.
     #[serde(default)]
     pub extra: bool,
+    /// The lesson, and this go at it (the session's key): for the XP log.
+    #[serde(default)]
+    pub lesson_id: Option<i64>,
+    #[serde(default)]
+    pub run: String,
 }
 
 /// Cards that are only read (a new word, a new sentence, a dialogue to read
@@ -112,7 +117,9 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
 
     // Reading a card is not answering it: no XP, no review, not counted in
     // accuracy. (Seeing a new word must not move it toward "mastered".)
+    let label = crate::xplog::answer_label(&answer.kind, &answer.expected);
     if READING_KINDS.contains(&answer.kind.as_str()) {
+        crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, 0, "read: no XP")?;
         let total_xp = stats::total_xp(conn)?;
         let day_xp = day_log::table.find(today).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
         return Ok(AnswerResult {
@@ -145,6 +152,13 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
         xp = (xp + 1) / 2;
     }
     stats::record_answer(conn, today, xp, correct)?;
+    let note = match (correct, answer.extra, answer.is_new) {
+        (false, _, _) => "a mistake: no XP",
+        (true, true, _) => "extra practice: half XP",
+        (true, false, true) => "new: +2",
+        _ => "",
+    };
+    crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, xp, note)?;
 
     let total_xp = stats::total_xp(conn)?;
     let day_xp = day_log::table.find(today).select(day_log::xp).first(conn).optional()?.unwrap_or(0);

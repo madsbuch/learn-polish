@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   DiagnosticEntry,
+  XpDay,
+  XpHistoryDay,
   LessonTypeInfo,
   WordExample,
   MemoryCategory,
@@ -74,7 +76,12 @@ export const api = {
     given: string;
     /** Extra practice (the lesson is not due): half XP. */
     extra?: boolean;
+    /** The lesson, and this go at it: for the XP log. */
+    lessonId?: number;
+    run?: string;
   }) => invoke<AnswerResult>("submit_answer", { answer }),
+  xpDay: (day: number) => invoke<XpDay>("xp_day", { day }),
+  xpHistory: (days: number) => invoke<XpHistoryDay[]>("xp_history", { days }),
   lessonsOverview: () => invoke<LessonOverview>("lessons_overview"),
   lessonsForCourse: (courseId: number) => invoke<Lesson[]>("lessons_for_course", { courseId }),
   /** A course's lessons, most important first, the mastered ones last. */

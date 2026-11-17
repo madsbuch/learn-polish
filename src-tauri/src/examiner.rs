@@ -343,6 +343,27 @@ pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> R
     assessment.next_due_day = lesson.due_day.unwrap_or(today);
     // A verdict is not an answer: it counts toward the day, not accuracy.
     stats::add_xp(conn, today, assessment.xp)?;
+    let verdict = match assessment.result.as_str() {
+        "pass" => "passed",
+        "partial" => "partly there",
+        _ => "not yet",
+    };
+    let mut note = Vec::new();
+    if writing_goals > 0 && assessment.result != "fail" {
+        note.push(format!("{writing_goals} goal{} counted", if writing_goals == 1 { "" } else { "s" }));
+    }
+    if extra {
+        note.push("extra practice: half XP".to_string());
+    }
+    crate::xplog::write(
+        conn,
+        today,
+        &format!("checkin-{checkin_id}"),
+        Some(lesson_id),
+        &format!("Check-in: {verdict}"),
+        assessment.xp,
+        &note.join(", "),
+    )?;
     let first = stats::mark_practised(conn, today)?;
     let mut feedback = assessment.summary.clone();
     if !assessment.to_review.is_empty() {

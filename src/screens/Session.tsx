@@ -51,6 +51,8 @@ export function Session({
   const [talking, setTalking] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
+  // This go at the lesson, so the XP log keeps its answers together.
+  const runKey = useRef(`${plan.lessonId}-${Date.now()}`);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const exercise: Exercise | undefined = plan.exercises[index];
@@ -110,6 +112,8 @@ export function Session({
         expected: exercise.answer,
         given,
         extra: plan.extra,
+        lessonId: plan.lessonId,
+        run: runKey.current,
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);

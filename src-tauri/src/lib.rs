@@ -38,6 +38,7 @@ mod text;
 mod tutor;
 mod wiki;
 mod work;
+mod xplog;
 
 
 use tauri::Manager;
@@ -148,6 +149,8 @@ pub fn run() {
             pictures::lesson_add_pictures,
             lesson_types::lesson_types,
             diagnostics::diagnostics_list,
+            xplog::xp_day,
+            xplog::xp_history,
             diagnostics::diagnostics_clear,
             pictures::word_picture_draw,
             pictures::word_picture_delete,
@@ -512,6 +515,70 @@ mod integration {
     }
 
     #[test]
+    fn the_xp_log_says_what_earned_every_point() {
+        let mut conn = scratch_db("xp-log");
+        let today = db::today(&mut conn);
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|l| l.lesson_type == "words").unwrap();
+        let word: i64 = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
+        let answer = |kind: &str, given: &str| practice::SubmitAnswer {
+            kind: kind.into(),
+            item_kind: "word".into(),
+            item_id: word,
+            expected: "cześć".into(),
+            given: given.into(),
+            lesson_id: Some(drill.id),
+            run: "run-1".into(),
+            ..Default::default()
+        };
+        practice::submit_answer_in(&mut conn, answer("intro", "cześć")).unwrap();
+        practice::submit_answer_in(&mut conn, answer("type", "czesc")).unwrap();
+        practice::submit_answer_in(&mut conn, answer("recognise", "nie")).unwrap();
+
+        // A check-in is its own run.
+        let starter = starter_lesson(&mut conn);
+        let checkin: i64 = diesel::insert_into(t::checkins::table)
+            .values((t::checkins::lesson_id.eq(starter.id), t::checkins::started_at.eq(0)))
+            .returning(t::checkins::id)
+            .get_result(&mut conn)
+            .unwrap();
+        examiner::record(&mut conn, checkin, serde_json::from_str(r#"{"result":"pass","summary":"Good.","to_review":[]}"#).unwrap()).unwrap();
+
+        let day = xplog::day(&mut conn, today).unwrap();
+        assert!(day.detailed);
+        assert_eq!(day.runs.len(), 2, "the drill and the check-in");
+        assert_eq!(day.runs.iter().map(|r| r.xp).sum::<i64>(), day.total, "the log adds up to the day's total");
+        let run = &day.runs[0];
+        assert_eq!((run.lesson_id, run.lesson_title.as_str()), (Some(drill.id), drill.title.as_str()));
+        let labels: Vec<(&str, i64, &str)> = run.entries.iter().map(|e| (e.label.as_str(), e.xp, e.note.as_str())).collect();
+        assert_eq!(labels[0], ("Met “cześć”", 0, "read: no XP"));
+        assert!(labels[1].0 == "Typed “cześć”" && labels[1].1 > 0);
+        assert_eq!((labels[2].1, labels[2].2), (0, "a mistake: no XP"));
+        assert!(day.runs[1].entries[0].label.starts_with("Check-in: passed"));
+
+        // A day from before the log has its total only.
+        stats::add_xp(&mut conn, today - 3, 40).unwrap();
+        let old = xplog::day(&mut conn, today - 3).unwrap();
+        assert_eq!((old.total, old.detailed), (40, false));
+        let history = xplog::history(&mut conn, 30).unwrap();
+        assert!(history.iter().any(|d| d.day == today - 3 && d.xp == 40));
+        assert!(history.iter().any(|d| d.day == today && d.xp == day.total));
+    }
+
+    #[test]
+    fn lessons_done_before_the_list_is_chosen_count_toward_it() {
+        let mut conn = scratch_db("plan-done-first");
+        let today = db::today(&mut conn);
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let first = lessons::for_course(&mut conn, basics).unwrap()[0].id;
+        lessons::record(&mut conn, first, "pass").unwrap();
+        db::delete_setting(&mut conn, "daily_day").unwrap();
+        let plan = plan::plan(&mut conn, today).unwrap();
+        assert_eq!(plan.done, 1, "the lesson already done counts");
+        assert!(!plan.left.contains(&first));
+    }
+
+    #[test]
     fn the_examiner_s_verdict_schedules_the_study_lesson() {
         let mut conn = scratch_db("examiner");
         let starter = starter_lesson(&mut conn);
@@ -753,6 +820,7 @@ mod integration {
             given: "kot".into(),
             grade: None,
             extra,
+            ..Default::default()
         };
         let reviews_of_word = |conn: &mut db::Conn| -> i64 {
             t::reviews::table.filter(t::reviews::kind.eq("word")).filter(t::reviews::item_id.eq(word)).count().get_result(conn).unwrap()

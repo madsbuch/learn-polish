@@ -157,6 +157,52 @@
   font-weight: var(--weight-bold);
   text-align: center;
 }
+/* Progress → XP: one bar per day (or week); thin, rounded at the top,
+   anchored to the baseline, a small gap between them. */
+.xp-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.xp-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 140px;
+  border-bottom: 1px solid var(--line);
+}
+.xp-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.xp-bar:disabled {
+  cursor: default;
+}
+.xp-bar i {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--brand);
+}
+.xp-bar i[data-empty] {
+  background: var(--line-soft);
+}
+.xp-bar:hover:not(:disabled) i,
+.xp-bar:focus-visible i {
+  opacity: 0.8;
+}
+.xp-chart-ends {
+  display: flex;
+  justify-content: space-between;
+}
+
 /* Settings → Diagnostics: raw log lines, wrapped to fit a phone. */
 .diagnostics-log {
   margin: 0;

@@ -7,6 +7,19 @@
 //! them.
 
 diesel::table! {
+    xp_log (id) {
+        id -> BigInt,
+        day -> BigInt,
+        at -> BigInt,
+        run -> Text,
+        lesson_id -> Nullable<BigInt>,
+        label -> Text,
+        xp -> BigInt,
+        note -> Text,
+    }
+}
+
+diesel::table! {
     courses (id) {
         id -> BigInt,
         slug -> Text,
@@ -414,6 +427,7 @@ diesel::joinable!(playlist_tracks -> song_tracks (track_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     bench_runs,
+    xp_log,
     courses,
     words,
     sentences,

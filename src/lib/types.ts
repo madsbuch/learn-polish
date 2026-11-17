@@ -198,6 +198,43 @@ export interface LessonDetail extends Lesson {
   wordPictures: WordPicture[];
 }
 
+/** What earned a day's XP (xplog.rs). */
+export interface XpDay {
+  day: number;
+  /** The day's total: kept for every day. */
+  total: number;
+  /** Whether the day has its details (days from before the log do not). */
+  detailed: boolean;
+  runs: XpRun[];
+}
+
+/** One go at a lesson, or one check-in. */
+export interface XpRun {
+  lessonId: number | null;
+  lessonTitle: string;
+  courseTitle: string | null;
+  /** Unix seconds. */
+  startedAt: number;
+  xp: number;
+  entries: XpEntry[];
+}
+
+export interface XpEntry {
+  at: number;
+  label: string;
+  xp: number;
+  /** Why it earned what it did, when that needs saying. */
+  note: string;
+}
+
+/** A day's total, for the history chart. */
+export interface XpHistoryDay {
+  day: number;
+  xp: number;
+  completed: boolean;
+  frozen: boolean;
+}
+
 /** A note in Settings → Diagnostics. */
 export interface DiagnosticEntry {
   /** Unix seconds. */

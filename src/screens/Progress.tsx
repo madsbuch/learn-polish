@@ -1,3 +1,4 @@
+import { XpHistory } from "../components/XpHistory";
 import { CourseList } from "../components/CourseList";
 import { Card, Inline, Progress as Meter, Screen, Section, Stack, Stat, StatGrid, Text } from "../design";
 import type { Stats, CourseProgress } from "../lib/types";
@@ -50,11 +51,14 @@ export function Progress({
   stats,
   courses,
   onOpenCourse,
+  onOpenDay,
   onBack,
 }: {
   stats: Stats;
   courses: CourseProgress[];
   onOpenCourse: (progress: CourseProgress) => void;
+  /** What earned a day's XP. */
+  onOpenDay: (day: number) => void;
   onBack: () => void;
 }) {
   return (
@@ -65,6 +69,8 @@ export function Progress({
         <Stat value={stats.streakFreezes} label="streak freezes" />
         <Stat value={stats.level} label={`level · ${stats.totalXp} XP`} />
       </StatGrid>
+
+      <XpHistory today={stats.day} onOpenDay={onOpenDay} />
 
       <Section title="Last 18 weeks">
         <Card>

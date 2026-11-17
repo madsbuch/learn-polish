@@ -58,6 +58,7 @@ export function Exercises({
   onOpenCourse,
   onOpenTutor,
   onOpenProgress,
+  onOpenXpDay,
   onOpenSearch,
 }: {
   overview: LessonOverview;
@@ -67,6 +68,8 @@ export function Exercises({
   onOpenCourse: (progress: CourseProgress) => void;
   onOpenTutor: () => void;
   onOpenProgress: () => void;
+  /** What earned a day's XP. */
+  onOpenXpDay: (day: number) => void;
   onOpenSearch: () => void;
 }) {
   // Today's lessons fill the ring as they are done.
@@ -192,6 +195,13 @@ export function Exercises({
               }
               chevron
               onClick={onOpenProgress}
+            />
+            <ListItem
+              leading={<Avatar>⭐</Avatar>}
+              title={`${stats.dayXp} XP today`}
+              subtitle="See exactly what earned it"
+              chevron
+              onClick={() => onOpenXpDay(overview.today)}
             />
           </List> : null}
 

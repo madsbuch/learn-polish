@@ -244,6 +244,20 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 CREATE INDEX IF NOT EXISTS reviews_due ON reviews(kind, due_day);
 
+-- What earned each day's XP (xplog.rs): every answer and check-in, grouped
+-- by run (one go at a lesson). Days before it have their total only.
+CREATE TABLE IF NOT EXISTS xp_log (
+    id        INTEGER PRIMARY KEY,
+    day       INTEGER NOT NULL,
+    at        INTEGER NOT NULL,
+    run       TEXT    NOT NULL DEFAULT '',
+    lesson_id INTEGER,
+    label     TEXT    NOT NULL,
+    xp        INTEGER NOT NULL,
+    note      TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS xp_log_day ON xp_log(day);
+
 CREATE TABLE IF NOT EXISTS day_log (
     day       INTEGER PRIMARY KEY,
     xp        INTEGER NOT NULL DEFAULT 0,
@@ -1497,7 +1511,7 @@ mod tests {
             courses, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
             files, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
-            playlist_tracks, ai_costs, memories, word_examples,
+            playlist_tracks, ai_costs, memories, word_examples, xp_log,
         );
     }
 }

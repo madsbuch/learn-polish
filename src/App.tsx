@@ -31,6 +31,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
+import { XpDayScreen } from "./screens/XpDayScreen";
 import { HowToUse } from "./screens/HowToUse";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary } from "./screens/Music";
@@ -78,6 +79,7 @@ type Overlay =
       back: Overlay;
     }
   | { kind: "progress" }
+  | { kind: "xpDay"; day: number; back: Overlay }
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
   | { kind: "howTo" }
@@ -550,6 +552,14 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "xpDay") {
+    return (
+      <div className="app">
+        <XpDayScreen day={overlay.day} onBack={() => setOverlay(overlay.back)} />
+      </div>
+    );
+  }
+
   if (overlay.kind === "progress") {
     return (
       <div className="app">
@@ -560,6 +570,7 @@ export default function App() {
           onOpenCourse={(progress) =>
             setOverlay({ kind: "course", progress, back: { kind: "progress" } })
           }
+          onOpenDay={(day) => setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })}
         />
       </div>
     );
@@ -599,6 +610,7 @@ export default function App() {
           onOpenCourse={(progress) => setOverlay({ kind: "course", progress, back: { kind: "none" } })}
           onOpenTutor={() => setTab("tutor")}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
+          onOpenXpDay={(day) => setOverlay({ kind: "xpDay", day, back: { kind: "none" } })}
           onOpenSearch={() => setOverlay({ kind: "search" })}
         />
       ) : null}

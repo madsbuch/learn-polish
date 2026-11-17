@@ -177,8 +177,8 @@ fn new_lessons(conn: &mut Conn, playing: &HashSet<i64>, limit: usize) -> Result<
 }
 
 /// Today's lessons, chosen the first time they are asked for each day and
-/// kept: what is due, most important first, then new ones while there is
-/// room (at most [`MAX_NEW`]).
+/// kept: any already done today, then what is due, most important first,
+/// then new ones while there is room (at most [`MAX_NEW`]).
 fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
     if db::get_setting_i64(conn, "daily_day", -1) == today {
         if let Some(ids) = db::get_setting(conn, "daily_ids")?.and_then(|json| serde_json::from_str(&json).ok()) {
@@ -186,6 +186,15 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
         }
     }
     let size = daily_count(conn) as usize;
+    // Lessons already done today count toward the day: chosen after work
+    // has been done (the first day after an update, or a new size set
+    // mid-day), the list starts with that work, not from nothing.
+    let mut done_today: Vec<i64> = lessons::table
+        .filter(lessons::last_day.eq(today))
+        .order(lessons::id)
+        .select(lessons::id)
+        .load(conn)?;
+    done_today.truncate(size);
     let mut due: Vec<Scheduled> = in_play(conn)?
         .into_iter()
         .filter(|l| l.last_day != Some(today) && l.due_day.is_some_and(|d| d <= today))
@@ -195,9 +204,11 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
         let (gb, kb) = importance(b, today);
         ga.cmp(&gb).then(ka.total_cmp(&kb)).then(a.id.cmp(&b.id))
     });
-    let mut ids: Vec<i64> = due.iter().take(size).map(|l| l.id).collect();
+    let mut ids = done_today;
+    ids.extend(due.iter().take(size - ids.len()).map(|l| l.id));
     if ids.len() < size {
-        let playing: HashSet<i64> = in_play(conn)?.into_iter().map(|l| l.id).collect();
+        let playing: HashSet<i64> =
+            in_play(conn)?.into_iter().map(|l| l.id).filter(|id| !ids.contains(id)).collect();
         ids.extend(new_lessons(conn, &playing, (size - ids.len()).min(MAX_NEW))?);
     }
     db::set_setting(conn, "daily_ids", &serde_json::to_string(&ids)?)?;
