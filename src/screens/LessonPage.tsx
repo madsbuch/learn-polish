@@ -7,6 +7,7 @@ import { Markdown } from "../components/Markdown";
 import { ArticleReader, Sources } from "../components/Sources";
 import { SongToListen } from "../components/SongToListen";
 import { WordPictures } from "../components/WordPictures";
+import { LevelInfo } from "../components/LevelInfo";
 import { SlowButton, SpeakButton } from "../components/ui";
 import {
   Badge,
@@ -62,6 +63,8 @@ export function LessonPage({
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revealAll, setRevealAll] = useState(false);
+  /** The level's explanation, open. */
+  const [levelInfo, setLevelInfo] = useState(false);
   /** The course picker: add the lesson to one, or move it there. */
   const [picking, setPicking] = useState<{
     mode: "add" | "move";
@@ -290,7 +293,14 @@ export function LessonPage({
           </Badge>
           {started ? <Badge>{dueLabel(lesson, today)}</Badge> : null}
           {lesson.challenge ? <Badge tone="gold">Challenge</Badge> : null}
-          {lesson.level ? <Badge tone="brand">{lesson.level}</Badge> : null}
+          {lesson.level ? (
+            <Badge tone="brand" label={`${lesson.level}: what it means`} onClick={() => setLevelInfo(true)}>
+              {`${lesson.level} ⓘ`}
+            </Badge>
+          ) : null}
+          {levelInfo && lesson.level ? (
+            <LevelInfo level={lesson.level} what="lesson" onClose={() => setLevelInfo(false)} />
+          ) : null}
         </Inline>
         {lesson.summary ? (
           <Text tone="dim" as="p">

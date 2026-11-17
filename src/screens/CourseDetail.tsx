@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { LessonRow } from "../components/LessonRow";
+import { LevelInfo } from "../components/LevelInfo";
 import { SparkIcon } from "../components/icons";
 import { SlowButton, SpeakButton } from "../components/ui";
 import {
@@ -88,6 +89,8 @@ export function CourseDetail({
 
   const courseId = progress.course.id;
   const [closedAt, setClosedAt] = useState<number | null>(progress.closedAt);
+  /** The level's explanation, open. */
+  const [levelInfo, setLevelInfo] = useState(false);
 
   // Drawn in the background for a new course: show it as soon as it is in.
   useEffect(() => {
@@ -153,7 +156,11 @@ export function CourseDetail({
         </Button>
       )}
       <Inline gap={2} wrap>
-        {progress.course.level ? <Badge tone="brand">{progress.course.level}</Badge> : null}
+        {progress.course.level ? (
+          <Badge tone="brand" label={`${progress.course.level}: what it means`} onClick={() => setLevelInfo(true)}>
+            {`${progress.course.level} ⓘ`}
+          </Badge>
+        ) : null}
         {closedAt === null && progress.minutesToMaster > 0 ? (
           <Badge>{`${roughDuration(progress.minutesToMaster)} to master`}</Badge>
         ) : null}
@@ -162,6 +169,9 @@ export function CourseDetail({
         <Text variant="small" tone="dim" as="p">
           {names.summary}
         </Text>
+      ) : null}
+      {levelInfo && progress.course.level ? (
+        <LevelInfo level={progress.course.level} what="course" onClose={() => setLevelInfo(false)} />
       ) : null}
 
       {lessons && lessons.length > 0 ? (
