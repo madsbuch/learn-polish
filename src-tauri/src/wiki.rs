@@ -531,7 +531,7 @@ pub fn check_due_in_background(app: &tauri::AppHandle) {
                     let _ = app.emit("facts://updated", check);
                 }
                 Ok(_) => {}
-                Err(error) => eprintln!("fact check of lesson {lesson_id}: {error}"),
+                Err(error) => crate::diagnostics::note("background", format!("Checking lesson {lesson_id} against Wikipedia failed: {error}")),
             }
         }
     });
@@ -621,7 +621,9 @@ async fn correct_lesson(db: &Db, lesson_id: i64) -> Result<Option<String>> {
     let mut guard = db.lock();
     let conn = &mut *guard;
     let _ = crate::costs::record_tokens(conn, crate::costs::FACT_CHECK, &model, reply.cost, "", reply.tokens);
-    let verdict = parse_verdict(&reply.text)?;
+    let verdict = parse_verdict(&reply.text).inspect_err(|_| {
+        crate::diagnostics::unreadable_reply("A Wikipedia fact check", &reply.text);
+    })?;
     let Some((changes, corrected)) = verdict else { return Ok(None) };
     let today = crate::commands::civil_date(db::today(conn));
     let note = format!("{}-{:02}-{:02}: {changes}", today.0, today.1, today.2);

@@ -3,6 +3,7 @@ import { Benchmark } from "../components/Benchmark";
 import { useCallback, useEffect, useState } from "react";
 
 import { CostCenter } from "../components/CostCenter";
+import { Diagnostics } from "../components/Diagnostics";
 import { KeyShare } from "../components/KeyShare";
 import { megabytes } from "./AudioScreen";
 import { MemoryIcon, PlayerIcon, StudyIcon } from "../components/icons";
@@ -615,6 +616,8 @@ export function SettingsScreen({
       </Section>
 
       <CostCenter />
+
+      <Diagnostics />
 
       <Section
         title="Your data"

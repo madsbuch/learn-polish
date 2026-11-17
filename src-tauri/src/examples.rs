@@ -53,6 +53,9 @@ pub async fn word_examples(db: State<'_, Db>, word_id: i64) -> Result<Vec<Exampl
                 examples: Vec<Example>,
             }
             let parsed = crate::ai::json_value(&reply.text).and_then(|json| serde_json::from_value::<Reply>(json).ok());
+            if parsed.is_none() {
+                crate::diagnostics::unreadable_reply(&format!("Example sentences (from {model})"), &reply.text);
+            }
             let mut guard = db.lock();
             let conn = &mut *guard;
             let _ = crate::costs::record_tokens(conn, crate::costs::WORD_CHAT, &model, reply.cost, "examples", reply.tokens);

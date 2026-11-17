@@ -306,7 +306,7 @@ pub fn sync_to_disk(app: &AppHandle) {
             Ok(())
         })();
         if let Err(error) = result {
-            eprintln!("writing song files to disk failed: {error}");
+            crate::diagnostics::note("background", format!("Writing song files to disk failed: {error}"));
         }
     });
 }

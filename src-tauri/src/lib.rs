@@ -11,6 +11,7 @@ mod costs;
 mod courses;
 mod db;
 mod demo_course;
+mod diagnostics;
 mod error;
 mod examples;
 mod files;
@@ -74,11 +75,10 @@ pub fn run() {
         .manage(Db::default())
         .manage(cast::CastSessions::default())
         .setup(|app| {
-            let path = app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("no writable app data directory: {e}"))?
-                .join("learn-polish.db");
+            let data = app.path().app_data_dir().map_err(|e| format!("no writable app data directory: {e}"))?;
+            // First, so even opening the database can note what it finds.
+            diagnostics::init(data.clone());
+            let path = data.join("learn-polish.db");
 
             let mut connection = db::open(&path).map_err(|e| e.to_string())?;
             // Replies that were being written when the app last closed.
@@ -139,6 +139,8 @@ pub fn run() {
             pictures::course_picture_delete,
             pictures::lesson_add_pictures,
             lesson_types::lesson_types,
+            diagnostics::diagnostics_list,
+            diagnostics::diagnostics_clear,
             pictures::word_picture_draw,
             pictures::word_picture_delete,
             tutor::app_visibility,

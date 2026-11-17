@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  DiagnosticEntry,
   LessonTypeInfo,
   WordExample,
   MemoryCategory,
@@ -78,6 +79,8 @@ export const api = {
   lessonsForCourse: (courseId: number) => invoke<Lesson[]>("lessons_for_course", { courseId }),
   lessonDetail: (lessonId: number) => invoke<LessonDetail>("lesson_detail", { lessonId }),
   lessonTypes: () => invoke<LessonTypeInfo[]>("lesson_types"),
+  diagnostics: () => invoke<DiagnosticEntry[]>("diagnostics_list"),
+  diagnosticsClear: () => invoke<void>("diagnostics_clear"),
   lessonSession: (lessonId: number) => invoke<SessionPlan>("lesson_session", { lessonId }),
   /** A drill is done: its score schedules the next check-in. */
   lessonFinish: (lessonId: number, correct: number, total: number) =>

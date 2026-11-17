@@ -1548,8 +1548,10 @@ struct SearchArgs {
 }
 
 fn parse<T: serde::de::DeserializeOwned>(arguments: &str) -> Result<T> {
-    serde_json::from_str(arguments)
-        .map_err(|e| Error::msg(format!("The tool arguments were not valid: {e}")))
+    serde_json::from_str(arguments).map_err(|e| {
+        crate::diagnostics::unreadable_reply(&format!("A tool call's arguments ({e})"), arguments);
+        Error::msg(format!("The tool arguments were not valid: {e}"))
+    })
 }
 
 /// Runs one tool call. Errors are returned to the model as text rather than

@@ -444,6 +444,14 @@ pub fn normalize_draft(mut draft: SongDraft) -> Result<SongDraft> {
 /// Pulls the JSON object out of a model reply that may wrap it in prose or
 /// a code fence.
 pub fn parse_draft(reply: &str) -> Result<SongDraft> {
+    let draft = read_draft(reply);
+    if draft.is_err() {
+        crate::diagnostics::unreadable_reply("A song draft", reply);
+    }
+    draft
+}
+
+fn read_draft(reply: &str) -> Result<SongDraft> {
     let start = reply.find('{');
     let end = reply.rfind('}');
     let (Some(start), Some(end)) = (start, end) else {
@@ -1535,13 +1543,16 @@ pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
         song.origin.given = WriterInput::default();
         song.origin.steps.clear();
     }
-    // Shows in the device log (logcat), to tell waiting on the database
-    // from the work itself if the library is slow to open.
-    eprintln!(
-        "songs_list: {} items, waited {:?} for the database, {:?} in all",
-        list.len(),
-        waited,
-        asked.elapsed()
+    // Settings → Diagnostics: tells waiting on the database from the work
+    // itself, if the library is slow to open.
+    crate::diagnostics::note(
+        "timing",
+        format!(
+            "Music library: {} items in {} ms ({} ms waiting for the database)",
+            list.len(),
+            asked.elapsed().as_millis(),
+            waited.as_millis()
+        ),
     );
     Ok(list)
 }

@@ -72,7 +72,7 @@ pub fn draw_in_background(app: &tauri::AppHandle, course_id: i64) {
             Ok(file_id) => {
                 let _ = app.emit("pictures://changed", PictureChanged { course_id, file_id });
             }
-            Err(error) => eprintln!("course picture for {course_id}: {error}"),
+            Err(error) => crate::diagnostics::note("background", format!("Drawing course {course_id}'s picture failed: {error}")),
         }
     });
 }
@@ -240,7 +240,7 @@ pub fn draw_words_in_background(app: &tauri::AppHandle, lesson_id: i64, word_ids
                         Ok(file_id) => {
                             let _ = app.emit("pictures://word", WordPictureChanged { lesson_id, word_id, file_id: Some(file_id) });
                         }
-                        Err(error) => eprintln!("picture for word {word_id}: {error}"),
+                        Err(error) => crate::diagnostics::note("background", format!("Drawing word {word_id}'s picture failed: {error}")),
                     }
                     DRAWING.lock().unwrap_or_else(|e| e.into_inner()).retain(|id| *id != word_id);
                 }

@@ -194,6 +194,15 @@ export interface LessonDetail extends Lesson {
   wordPictures: WordPicture[];
 }
 
+/** A note in Settings → Diagnostics. */
+export interface DiagnosticEntry {
+  /** Unix seconds. */
+  at: number;
+  /** "timing" | "model reply" | "background" | "database" */
+  kind: string;
+  message: string;
+}
+
 /** A lesson type, as the core registers it. */
 export interface LessonTypeInfo {
   id: string;

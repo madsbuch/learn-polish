@@ -658,7 +658,7 @@ pub async fn writing_scaffold(db: State<'_, Db>, lesson_id: i64) -> Result<Vec<G
     let conn = &mut *guard;
     let _ = crate::costs::record_tokens(conn, crate::costs::PARTNER, &model, reply.cost, "word bank", reply.tokens);
     let Some(goals) = parse_bank(&reply.text) else {
-        eprintln!("unreadable word bank from {model}: {}", reply.text.chars().take(500).collect::<String>());
+        crate::diagnostics::unreadable_reply(&format!("A word bank (from {model})"), &reply.text);
         return Err(Error::msg(if reply.truncated {
             "The word bank was cut off before it was finished. Try again, or pick another Writing partner model in Settings."
         } else {

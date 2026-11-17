@@ -116,8 +116,8 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
     )?;
     match foreign_key_violations(&mut conn) {
         Ok(0) => {}
-        Ok(n) => eprintln!("database integrity: {n} rows point at rows that do not exist"),
-        Err(error) => eprintln!("database integrity check failed: {error}"),
+        Ok(n) => crate::diagnostics::note("database", format!("{n} rows point at rows that do not exist")),
+        Err(error) => crate::diagnostics::note("database", format!("The integrity check failed: {error}")),
     }
     Ok(conn)
 }
