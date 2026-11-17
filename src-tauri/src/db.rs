@@ -1283,6 +1283,8 @@ fn initialize_courses(conn: &mut Conn) -> Result<()> {
     crate::starter_retirement::run(conn)?;
     // One folder for lessons with no course, instead of three.
     crate::courses::merge_old_folders(conn)?;
+    // A level belongs in the badge, not the title.
+    crate::levels::move_levels_out_of_titles(conn)?;
     crate::demo_course::seed_once(conn)
 }
 

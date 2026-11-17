@@ -1057,6 +1057,24 @@ mod integration {
     }
 
     #[test]
+    fn a_level_written_into_a_title_moves_to_the_badge() {
+        let mut conn = scratch_db("title-levels");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        diesel::update(t::courses::table.find(course))
+            .set((t::courses::title_en.eq("First steps (A2)"), t::courses::title_pl.eq("Pierwsze kroki – A2"), t::courses::level.eq(None::<String>)))
+            .execute(&mut conn)
+            .unwrap();
+        assert_eq!(levels::move_levels_out_of_titles(&mut conn).unwrap(), 1);
+        let (en, native, level): (String, String, Option<String>) = t::courses::table
+            .find(course)
+            .select((t::courses::title_en, t::courses::title_pl, t::courses::level))
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!((en.as_str(), native.as_str(), level.as_deref()), ("First steps", "Pierwsze kroki", Some("A2")));
+        assert_eq!(levels::move_levels_out_of_titles(&mut conn).unwrap(), 0, "nothing left to move");
+    }
+
+    #[test]
     fn challenges_come_once_the_rest_is_passed_and_closed_courses_stay_put() {
         let mut conn = scratch_db("challenges");
         let today = db::today(&mut conn);

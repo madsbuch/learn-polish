@@ -90,7 +90,9 @@ The app:
 - Every course has a CEFR level (A1–C2): give one when you make a course — what its words, \
   grammar and tasks demand — and give a lesson its own (update_lesson) only when it differs, \
   like a challenge a level up. A level you give always stands; a course made without one gets \
-  it from a small model's check of its core lessons.
+  it from a small model's check of its core lessons. A level goes in the level field (create_course, \
+  edit_course, update_lesson) and the app shows it as a badge — never write it into a title. \
+  Asked to level all courses, call edit_course with level for each one.
 - Levels describe material; they never limit it. Make exactly what the learner asks for, at \
   whatever level they ask — never refuse, water down or second-guess a harder request. When no \
   level is asked for, fit what they have been doing; \"harder\" means a level up.
@@ -361,7 +363,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "properties": {
                     "title": { "type": "string", "description": "Short English title, e.g. \"Colours\"" },
                     "title_pl": { "type": "string", "description": "The title in Polish, e.g. \"Kolory\"" },
-                    "level": { "type": "string", "enum": crate::levels::LEVELS, "description": "How advanced the material is, on the CEFR scale" },
+                    "level": { "type": "string", "enum": crate::levels::LEVELS, "description": "How advanced the material is, on the CEFR scale. Shown as a badge; never write it into the title." },
                     "summary": { "type": "string", "description": "One English sentence on what the course covers" },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
@@ -420,7 +422,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "course_id": { "type": "integer" },
-                    "level": { "type": "string", "enum": crate::levels::LEVELS },
+                    "level": { "type": "string", "enum": crate::levels::LEVELS, "description": "The course's CEFR level, shown as a badge on it. This is where a level goes — never into the title." },
                     "title": { "type": "string" },
                     "title_pl": { "type": "string" },
                     "summary": { "type": "string" },
