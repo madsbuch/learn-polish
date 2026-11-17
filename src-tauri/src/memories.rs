@@ -153,7 +153,7 @@ pub fn prompt_section(conn: &mut Conn) -> Result<String> {
         return Ok(String::new());
     }
     let memories = list(conn)?;
-    let total = memories.len() as i64;
+    let total = crate::convert::count(memories.len());
     let mut out = String::from(
         "\n\nWhat you remember about the learner (long-term memory, shared with the app's other \
          agents; ids in brackets):\n",

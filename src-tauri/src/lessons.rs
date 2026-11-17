@@ -373,7 +373,7 @@ pub fn result_from_score(correct: i64, total: i64) -> &'static str {
     if total <= 0 {
         return "pass";
     }
-    let share = correct as f64 / total as f64;
+    let share = crate::convert::real(correct) / crate::convert::real(total);
     if share >= 0.85 {
         "pass"
     } else if share >= 0.6 {
@@ -429,13 +429,13 @@ pub fn next_gap(grade: Grade, reps_before: i64, interval: i64, period: i64, ease
     } else {
         // Late counts, but at most twice the gap: a lesson left for a year
         // and still known is not proof of a decade.
-        let base = elapsed.clamp(1, (interval * 2).max(1)) as f64;
+        let base = crate::convert::real(elapsed.clamp(1, (interval * 2).max(1)));
         match grade {
             Grade::Ace => {
                 let ease = ease + 0.15;
-                (ease, ((base * ease * 1.3).round() as i64).max(period).max(elapsed + 1))
+                (ease, crate::convert::round(base * ease * 1.3).max(period).max(elapsed + 1))
             }
-            Grade::Pass => (ease, ((base * ease).round() as i64).max(period).max(elapsed + 1)),
+            Grade::Pass => (ease, crate::convert::round(base * ease).max(period).max(elapsed + 1)),
             Grade::Partial => (ease - 0.15, period),
             Grade::Fail => (ease - 0.2, 1),
         }
@@ -943,7 +943,7 @@ pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
             .values(NewLesson {
                 slug: Some(&slug),
                 lesson_type: "study",
-                ord: ord as i64,
+                ord: crate::convert::count(ord),
                 title: &file.title,
                 summary: &file.summary,
                 complexity: &file.complexity,

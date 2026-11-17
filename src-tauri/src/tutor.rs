@@ -1377,7 +1377,7 @@ fn lesson_json(lesson: &lessons::Lesson) -> Value {
         "made_by": lesson.origin,
         "challenge": lesson.challenge,
         "passed": lesson.passed,
-        "writing_support": (lesson.lesson_type == "writing").then(|| ["guided", "supported", "free"][lesson.support_level.clamp(0, 2) as usize]),
+        "writing_support": (lesson.lesson_type == "writing").then(|| ["guided", "supported", "free"][crate::convert::index(lesson.support_level.clamp(0, 2))]),
     })
 }
 

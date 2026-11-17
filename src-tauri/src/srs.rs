@@ -82,7 +82,7 @@ pub fn grade(state: ReviewState, grade: i64, today: i64) -> ReviewState {
                 EASY => next.ease * 1.3,
                 _ => next.ease,
             };
-            ((next.interval.max(1) as f64) * factor).round() as i64
+            crate::convert::round(crate::convert::real(next.interval.max(1)) * factor)
         }
     }
     .clamp(1, MAX_INTERVAL);

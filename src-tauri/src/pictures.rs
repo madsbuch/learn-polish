@@ -151,7 +151,7 @@ pub fn shrink(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut flat = image::RgbImage::new(picture.width(), picture.height());
     for (x, y, pixel) in picture.enumerate_pixels() {
         let [r, g, b, a] = pixel.0;
-        let over = |c: u8| ((c as u32 * a as u32 + 255 * (255 - a as u32)) / 255) as u8;
+        let over = |c: u8| u8::try_from((u32::from(c) * u32::from(a) + 255 * (255 - u32::from(a))) / 255).unwrap_or(u8::MAX);
         flat.put_pixel(x, y, image::Rgb([over(r), over(g), over(b)]));
     }
     let mut out = Vec::new();

@@ -1216,7 +1216,7 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
                 .get_result::<legacy::Count>(tx)?
                 .n;
                 for (n, chunk) in loose.chunks(size).enumerate() {
-                    let lesson = new_lesson(tx, course.id, &format!("{title} {}", taken + n as i64 + 1), format, complexity)?;
+                    let lesson = new_lesson(tx, course.id, &format!("{title} {}", taken + crate::convert::count(n) + 1), format, complexity)?;
                     for (ord, id) in chunk.iter().enumerate() {
                         diesel::sql_query(format!(
                             "INSERT OR IGNORE INTO {table}_v4 (id, block_id, ord, {columns})
@@ -1224,7 +1224,7 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
                         ))
                         .bind::<BigInt, _>(id)
                         .bind::<BigInt, _>(lesson)
-                        .bind::<BigInt, _>(ord as i64)
+                        .bind::<BigInt, _>(crate::convert::count(ord))
                         .execute(tx)?;
                     }
                 }
@@ -1306,7 +1306,7 @@ pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
         }
         let course_id = crate::courses::ensure(conn, course.slug, &convo.title_en, &convo.title_pl, &convo.summary_en)?;
         diesel::update(courses::table.find(course_id))
-            .set((courses::ord.eq(index as i64 + 1), courses::created_at.eq(0)))
+            .set((courses::ord.eq(crate::convert::count(index) + 1), courses::created_at.eq(0)))
             .execute(conn)?;
         let words: Vec<crate::courses::NewWord> = content::parse_words(course.words)
             .into_iter()
@@ -1367,7 +1367,7 @@ pub fn unify_courses(conn: &mut Conn) -> Result<()> {
         all.sort_by_key(|(id, kind, ord, created)| (kind == "programme", *ord, *created, *id));
         for (i, (id, ..)) in all.iter().enumerate() {
             diesel::update(courses::table.find(id))
-                .set((courses::ord.eq(i as i64 + 1), courses::kind.eq("course")))
+                .set((courses::ord.eq(crate::convert::count(i) + 1), courses::kind.eq("course")))
                 .execute(conn)?;
         }
 
@@ -1446,7 +1446,7 @@ pub fn get_setting_i64(conn: &mut Conn, key: &str, fallback: i64) -> i64 {
 pub fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| crate::convert::signed(d.as_secs()))
         .unwrap_or(0)
 }
 

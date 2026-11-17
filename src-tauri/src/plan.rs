@@ -41,7 +41,7 @@ pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: i64) -> Result<i
     if gap < 4 {
         return Ok(target);
     }
-    let fuzz = ((gap as f64) * 0.1).round().clamp(1.0, 7.0) as i64;
+    let fuzz = crate::convert::round(crate::convert::real(gap) * 0.1).clamp(1, 7);
     let (from, to) = ((target - fuzz).max(today + 1), target + fuzz);
     let booked: Vec<(i64, String, String)> = lessons::table
         .filter(lessons::due_day.between(from, to))
@@ -119,8 +119,8 @@ fn in_play(conn: &mut Conn) -> Result<Vec<Scheduled>> {
 /// How much a due lesson is at risk of being forgotten: how far past its gap
 /// it is, more for a hard lesson (low ease).
 fn risk(lesson: &Scheduled, today: i64) -> f64 {
-    let elapsed = lesson.last_day.map_or(0, |last| today - last) as f64;
-    let overdue = elapsed / lesson.interval_days.max(1) as f64;
+    let elapsed = crate::convert::real(lesson.last_day.map_or(0, |last| today - last));
+    let overdue = elapsed / crate::convert::real(lesson.interval_days.max(1));
     let hard = (2.5 - lesson.ease).max(0.0) * 0.5;
     overdue + hard
 }
@@ -135,7 +135,7 @@ fn importance(lesson: &Scheduled, today: i64) -> (u8, f64) {
         (Some(_), true) if slipping => (0, -risk(lesson, today)),
         (Some(_), true) => (1, -risk(lesson, today)),
         (None, _) if lesson.challenge == 0 => (2, 0.0),
-        (Some(day), false) => (3, day as f64),
+        (Some(day), false) => (3, crate::convert::real(day)),
         (None, _) => (4, 0.0),
     }
 }
@@ -181,7 +181,7 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
             return Ok(ids);
         }
     }
-    let size = daily_count(conn) as usize;
+    let size = crate::convert::index(daily_count(conn));
     // Lessons already done today count toward the day: chosen after work
     // has been done (the first day after an update, or a new size set
     // mid-day), the list starts with that work, not from nothing.
@@ -248,9 +248,9 @@ pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
 /// day that has no list kept — what is due by then and still in play.
 pub fn remaining(conn: &mut Conn, day: i64) -> Result<i64> {
     if day == db::today(conn) {
-        return Ok(plan(conn, day)?.left.len() as i64);
+        return Ok(crate::convert::count(plan(conn, day)?.left.len()));
     }
-    Ok(in_play(conn)?.into_iter().filter(|l| l.due_day.is_some_and(|d| d <= day)).count() as i64)
+    Ok(crate::convert::count(in_play(conn)?.into_iter().filter(|l| l.due_day.is_some_and(|d| d <= day)).count()))
 }
 
 /// A course's lessons, most important first (the order today's lessons are

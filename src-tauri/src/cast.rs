@@ -189,7 +189,7 @@ pub fn parse_hms(text: &str) -> f64 {
 }
 
 pub fn format_hms(seconds: f64) -> String {
-    let total = seconds.max(0.0).round() as u64;
+    let total = crate::convert::unsigned(crate::convert::round(seconds.max(0.0)));
     format!("{}:{:02}:{:02}", total / 3600, (total / 60) % 60, total % 60)
 }
 
@@ -529,7 +529,7 @@ async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, f
         let mut guard = db.lock();
         crate::files::read_range(&mut guard, file_id, at, length)
     };
-    send_bytes(stream, request, &file.mime, file.size as u64, read).await
+    send_bytes(stream, request, &file.mime, crate::convert::unsigned(file.size), read).await
 }
 
 /// Answers a request for `size` bytes of type `mime`, whole or by range,
@@ -570,7 +570,7 @@ where
             break;
         }
         stream.write_all(&chunk).await?;
-        at += chunk.len() as u64;
+        at += crate::convert::bytes(chunk.len());
     }
     Ok(())
 }
@@ -775,7 +775,7 @@ async fn poll_once(app: &AppHandle) -> Result<CastState> {
         .flatten();
     let index = track_id
         .and_then(|id| items.iter().position(|item| item.track_id == id))
-        .map(|i| i as i64)
+        .map(crate::convert::count)
         .unwrap_or(-1);
 
     Ok(CastState {
@@ -899,7 +899,7 @@ async fn run_command(app: &AppHandle, action: &str, value: Option<f64>) -> Resul
         }
         "track" => {
             // `value` is a 0-based index into the queue.
-            let number = (value.unwrap_or(0.0).max(0.0) as i64 + 1).to_string();
+            let number = (crate::convert::round(value.unwrap_or(0.0).max(0.0).trunc()) + 1).to_string();
             soap(base, AV_TRANSPORT, "Seek", &[("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", &number)]).await?;
             soap(base, AV_TRANSPORT, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
         }
@@ -1018,7 +1018,7 @@ pub async fn cast_start(
         &[("InstanceID", "0"), ("NewPlayMode", play_mode(&repeat))],
     )
     .await;
-    let number = (index.clamp(0, items.len() as i64 - 1) + 1).to_string();
+    let number = (index.clamp(0, crate::convert::count(items.len()) - 1) + 1).to_string();
     soap(base, AV_TRANSPORT, "Seek", &[("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", &number)]).await?;
     soap(base, AV_TRANSPORT, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
 
@@ -1242,7 +1242,7 @@ mod tests {
                 let mut buffer = [0u8; 2048];
                 let n = stream.read(&mut buffer).await.unwrap();
                 let request = parse_request(&String::from_utf8_lossy(&buffer[..n])).unwrap();
-                let read = |at: u64, length: u64| Ok(song[at as usize..(at + length) as usize].to_vec());
+                let read = |at: u64, length: u64| Ok(song[crate::convert::offset(at)..crate::convert::offset(at + length)].to_vec());
                 send_bytes(&mut stream, &request, "audio/mpeg", 200, read).await.unwrap();
             }
         });

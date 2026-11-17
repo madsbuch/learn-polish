@@ -185,7 +185,8 @@ fn published(text: &str) -> Option<(String, i64)> {
     let day: i64 = parts.first()?.parse().ok()?;
     let month = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
         .iter()
-        .position(|m| parts.get(1).is_some_and(|p| p.to_ascii_lowercase().starts_with(m)))? as i64
+        .position(|m| parts.get(1).is_some_and(|p| p.to_ascii_lowercase().starts_with(m)))
+        .map(crate::convert::count)?
         + 1;
     let year: i64 = parts.get(2)?.parse().ok()?;
     let mut clock = parts.get(3).unwrap_or(&"0:0:0").split(':').map(|n| n.parse::<i64>().unwrap_or(0));

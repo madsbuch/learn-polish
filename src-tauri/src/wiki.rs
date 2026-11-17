@@ -352,7 +352,7 @@ pub fn store_for(
     };
     let now = db::now_secs();
     let siblings = owned_by(conn, owner)?;
-    let ord = siblings.len() as i64;
+    let ord = crate::convert::count(siblings.len());
     let existing: Option<(i64, Option<i64>)> = wiki_sources::table
         .filter(wiki_sources::lesson_id.is(lesson_id))
         .filter(wiki_sources::song_id.is(song_id))

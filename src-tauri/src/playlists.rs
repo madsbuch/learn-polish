@@ -101,13 +101,13 @@ pub fn move_entry(conn: &mut Conn, playlist_id: i64, entry_id: i64, delta: i64) 
     let Some(from) = list.iter().position(|e| e.id == entry_id) else {
         return load(conn, playlist_id);
     };
-    let to = (from as i64 + delta).clamp(0, list.len() as i64 - 1) as usize;
+    let to = crate::convert::index((crate::convert::count(from) + delta).clamp(0, crate::convert::count(list.len()) - 1));
     let entry = list.remove(from);
     list.insert(to, entry);
     conn.transaction::<_, Error, _>(|conn| {
         for (ord, entry) in list.iter().enumerate() {
             diesel::update(playlist_tracks::table.find(entry.id))
-                .set(playlist_tracks::ord.eq(ord as i64))
+                .set(playlist_tracks::ord.eq(crate::convert::count(ord)))
                 .execute(conn)?;
         }
         Ok(())

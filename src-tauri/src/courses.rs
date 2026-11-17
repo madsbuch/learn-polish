@@ -186,7 +186,7 @@ pub fn close(conn: &mut Conn, course_id: i64) -> Result<CourseClosed> {
     let today = db::today(conn);
     let made: i64 = courses::table.find(course_id).select(courses::created_at).first(conn)?;
     let first = earned.iter().map(|e| e.0).min().unwrap_or(if made > 0 { made.div_euclid(86_400) } else { today });
-    Ok(CourseClosed { title, lessons: ids.len() as i64, words, days: (today - first + 1).max(1), xp })
+    Ok(CourseClosed { title, lessons: crate::convert::count(ids.len()), words, days: (today - first + 1).max(1), xp })
 }
 
 /// The position after the last course.
@@ -416,7 +416,7 @@ pub fn order_lessons(conn: &mut Conn, course_id: i64, lesson_ids: &[i64]) -> Res
     }
     for (ord, id) in order.iter().enumerate() {
         diesel::update(course_lessons::table.find((course_id, id)))
-            .set(course_lessons::ord.eq(ord as i64 + 1))
+            .set(course_lessons::ord.eq(crate::convert::count(ord) + 1))
             .execute(conn)?;
     }
     Ok(())
@@ -510,12 +510,12 @@ pub fn cut_into_drills(
         })
         .cloned()
         .collect();
-    let first = (drills_of(conn, "words")?.len() + drills_of(conn, "typing")?.len()) as i64;
+    let first = crate::convert::count(drills_of(conn, "words")?.len() + drills_of(conn, "typing")?.len());
     for (n, chunk) in fresh.chunks(crate::lessons::WORDS_PER_LESSON).enumerate() {
         let preview: Vec<String> = chunk.iter().take(3).map(|w| clean(&w.pl)).collect();
         // For variety, every third batch is typed from memory instead of
         // recognised (both introduce their new words first).
-        let number = first + n as i64 + 1;
+        let number = first + crate::convert::count(n) + 1;
         let (title, format) = if number % 3 == 0 {
             (format!("Words {number} · typing"), "typing")
         } else {
@@ -545,12 +545,12 @@ pub fn cut_into_drills(
         })
         .cloned()
         .collect();
-    let first = drills_of(conn, "sentences")?.len() as i64;
+    let first = crate::convert::count(drills_of(conn, "sentences")?.len());
     for (n, chunk) in fresh.chunks(crate::lessons::SENTENCES_PER_LESSON).enumerate() {
         crate::lessons::create_drill(
             conn,
             course_id,
-            &format!("Sentences {}", first + n as i64 + 1),
+            &format!("Sentences {}", first + crate::convert::count(n) + 1),
             &clean(&chunk[0].pl),
             "sentences",
             "medium",
@@ -940,8 +940,8 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
     if core.is_empty() {
         core = list.iter().collect();
     }
-    let passed_core = core.iter().filter(|l| l.1 == 1).count() as i64;
-    let completed = !core.is_empty() && passed_core == core.len() as i64;
+    let passed_core = crate::convert::count(core.iter().filter(|l| l.1 == 1).count());
+    let completed = !core.is_empty() && passed_core == crate::convert::count(core.len());
     let mastered_lessons = list
         .iter()
         .filter(|l| l.4.is_some())
@@ -964,12 +964,12 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
         .into(),
         open_ended,
         closed_at,
-        core_lessons: core.len() as i64,
+        core_lessons: crate::convert::count(core.len()),
         passed_core,
-        challenges: (list.len() - core.len()) as i64,
-        mastered_lessons: mastered_lessons as i64,
+        challenges: crate::convert::count(list.len() - core.len()),
+        mastered_lessons: crate::convert::count(mastered_lessons),
         mastery_points,
-        mastery_max: list.len() as i64 * crate::lessons::MASTERY_FULL,
+        mastery_max: crate::convert::count(list.len()) * crate::lessons::MASTERY_FULL,
         minutes_to_master,
         next_lesson: core.iter().find(|l| l.1 == 0).map(|l| l.5.clone()),
     })

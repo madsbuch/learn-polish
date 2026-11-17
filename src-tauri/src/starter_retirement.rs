@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn released_defaults_are_retired_once_without_resetting_the_learner() {
         let mut conn = legacy("released");
-        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), LEGACY_COURSES.len() as i64);
+        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), crate::convert::count(LEGACY_COURSES.len()));
         for (slug, expected) in LEGACY_COURSES {
             let id = course(&mut conn, slug);
             assert_eq!(fingerprint(&mut conn, id).unwrap().as_deref(), Some(*expected), "{slug}");

@@ -1464,7 +1464,7 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
         diesel::insert_into(song_tracks::table)
             .values((
                 song_tracks::song_id.eq(song_id),
-                song_tracks::ord.eq(ord as i64),
+                song_tracks::ord.eq(crate::convert::count(ord)),
                 song_tracks::remote_id.eq(&track.id),
                 song_tracks::duration.eq(track.duration),
                 song_tracks::audio_file_id.eq(audio_id),

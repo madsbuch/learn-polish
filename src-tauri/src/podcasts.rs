@@ -428,7 +428,7 @@ fn parse_picks(reply: &str, count: usize) -> (Vec<Vec<usize>>, Vec<String>) {
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|n| n.as_u64().map(|n| n as usize))
+            .filter_map(|n| n.as_u64().map(crate::convert::offset))
             .filter(|&n| n < count)
             .collect();
         let mut fresh = Vec::new();
@@ -1193,7 +1193,7 @@ fn pcm_of(wav: &[u8]) -> Result<(u32, u16, &[u8])> {
     let mut format: Option<(u32, u16)> = None;
     while at + 8 <= wav.len() {
         let id = &wav[at..at + 4];
-        let size = u32::from_le_bytes([wav[at + 4], wav[at + 5], wav[at + 6], wav[at + 7]]) as usize;
+        let size = usize::try_from(u32::from_le_bytes([wav[at + 4], wav[at + 5], wav[at + 6], wav[at + 7]])).unwrap_or(usize::MAX);
         let body = at + 8;
         let end = (body + size).min(wav.len());
         match id {
@@ -1209,7 +1209,7 @@ fn pcm_of(wav: &[u8]) -> Result<(u32, u16, &[u8])> {
             }
             b"data" => {
                 let (rate, channels) = format.ok_or_else(bad)?;
-                let frame = 2 * channels as usize;
+                let frame = 2 * usize::from(channels);
                 let data = &wav[body..end];
                 return Ok((rate, channels, &data[..data.len() - data.len() % frame]));
             }
@@ -1231,15 +1231,15 @@ impl Tape {
     /// Where the tape is, in seconds.
     fn now(&self) -> f64 {
         match self.format {
-            Some((rate, channels)) => self.pcm.len() as f64 / (2.0 * channels as f64) / rate as f64,
+            Some((rate, channels)) => crate::convert::real_len(self.pcm.len()) / (2.0 * f64::from(channels)) / f64::from(rate),
             None => 0.0,
         }
     }
 
     fn silence(&mut self, seconds: f64) {
         if let Some((rate, channels)) = self.format {
-            let frames = (seconds.max(0.0) * rate as f64).round() as usize;
-            self.pcm.resize(self.pcm.len() + frames * channels as usize * 2, 0);
+            let frames = crate::convert::round_len(seconds.max(0.0) * f64::from(rate));
+            self.pcm.resize(self.pcm.len() + frames * usize::from(channels) * 2, 0);
         }
     }
 

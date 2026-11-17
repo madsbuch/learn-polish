@@ -278,7 +278,7 @@ fn matching_sentences(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> 
 /// The query behind [`browse_words`], callable without Tauri (tests).
 pub fn browse_words_in(conn: &mut Conn, course_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
     let mut words = matching_words(conn, course_id, query.trim())?;
-    words.truncate(limit.clamp(1, 500) as usize);
+    words.truncate(crate::convert::index(limit.clamp(1, 500)));
     Ok(words)
 }
 
@@ -290,10 +290,10 @@ pub async fn browse_words(db: State<'_, Db>, course_id: Option<i64>, query: Stri
 /// One catalogue page: words and sentences matching a search, plus how many
 /// matched in total so the UI can say what it is not showing.
 pub fn browse_catalogue_in(conn: &mut Conn, course_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
-    let limit = limit.clamp(1, 1000) as usize;
+    let limit = crate::convert::index(limit.clamp(1, 1000));
     let mut words = matching_words(conn, course_id, query.trim())?;
     let mut sentences = matching_sentences(conn, course_id, query.trim())?;
-    let (total_words, total_sentences) = (words.len() as i64, sentences.len() as i64);
+    let (total_words, total_sentences) = (crate::convert::count(words.len()), crate::convert::count(sentences.len()));
     words.truncate(limit);
     sentences.truncate(limit);
     Ok(CataloguePage { words, sentences, total_words, total_sentences })

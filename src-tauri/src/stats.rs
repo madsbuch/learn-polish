@@ -59,7 +59,7 @@ pub fn xp_for_checkin(complexity: &str, result: &str, writing_goals: usize) -> i
         "low" => 30,
         "medium" => 80,
         _ => 160,
-    } + 10 * writing_goals as i64;
+    } + 10 * crate::convert::count(writing_goals);
     match result {
         "pass" => base,
         "partial" => base / 2,
@@ -322,7 +322,7 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
         dialogues_total: c.dialogues_total,
         due_today: c.due_today,
         accuracy: if answered > 0 {
-            correct as f64 / answered as f64
+            crate::convert::real(correct) / crate::convert::real(answered)
         } else {
             0.0
         },
@@ -347,7 +347,7 @@ pub fn mastered_summary(conn: &mut Conn) -> Result<crate::models::MasteredSummar
     let ids: Vec<i64> = lesson_ids.iter().copied().collect();
     Ok(crate::models::MasteredSummary {
         courses: closed.count().get_result(conn)?,
-        lessons: ids.len() as i64,
+        lessons: crate::convert::count(ids.len()),
         words: words::table.filter(words::lesson_id.eq_any(&ids)).count().get_result(conn)?,
     })
 }
@@ -478,7 +478,7 @@ fn evaluate_achievements(
             description: def.description.to_string(),
             icon: def.icon.to_string(),
             unlocked: earned || unlocked.contains(def.code),
-            progress: (value as f64 / target as f64).clamp(0.0, 1.0),
+            progress: (crate::convert::real(value) / crate::convert::real(target)).clamp(0.0, 1.0),
         });
     }
     Ok(result)

@@ -57,7 +57,7 @@ pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) 
             files::kind.eq(kind),
             files::name.eq(name),
             files::mime.eq(mime),
-            files::size.eq(bytes.len() as i64),
+            files::size.eq(crate::convert::count(bytes.len())),
             files::sha256.eq(sha256_hex(bytes)),
             files::bytes.eq(bytes),
             files::created_at.eq(db::now_secs()),
@@ -183,7 +183,7 @@ extern "SQL" {
 pub fn read_range(conn: &mut Conn, id: i64, start: u64, length: u64) -> Result<Vec<u8>> {
     Ok(files::table
         .find(id)
-        .select(substr(files::bytes, start as i64 + 1, length as i64))
+        .select(substr(files::bytes, crate::convert::signed(start) + 1, crate::convert::signed(length)))
         .first(conn)?)
 }
 
@@ -192,7 +192,7 @@ fn read_file_range(path: &str, start: u64, length: u64) -> std::io::Result<Vec<u
     use std::io::{Read, Seek, SeekFrom};
     let mut file = std::fs::File::open(path)?;
     file.seek(SeekFrom::Start(start))?;
-    let mut bytes = Vec::with_capacity(length as usize);
+    let mut bytes = Vec::with_capacity(crate::convert::offset(length));
     file.take(length).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
@@ -232,7 +232,7 @@ pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri:
     };
     let db = app.state::<Db>();
     let Ok(file) = info(&mut db.lock(), id) else { return not_found() };
-    let size = file.size as u64;
+    let size = crate::convert::unsigned(file.size);
     let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).and_then(parse_range);
     // Song audio and cover art have a copy on disk: read it from there, not
     // from the database, so a big file never holds every other screen up.

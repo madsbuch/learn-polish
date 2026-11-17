@@ -976,7 +976,7 @@ async fn speech_request(key: &str, model: &str, voice: &str, prompt: &str, forma
     // `audio/pcm;rate=24000;channels=1`.
     if content_type.starts_with("audio/pcm") || content_type.starts_with("audio/l16") {
         let rate = content_type_param(&content_type, "rate").unwrap_or(24_000);
-        let channels = content_type_param(&content_type, "channels").unwrap_or(1) as u16;
+        let channels = content_type_param(&content_type, "channels").and_then(|c| u16::try_from(c).ok()).unwrap_or(1);
         return Ok(("audio/wav".to_string(), wav_from_pcm(&bytes, rate, channels)));
     }
 
@@ -1011,7 +1011,7 @@ pub(crate) fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u
 
     let mut out = Vec::with_capacity(44 + pcm.len());
     out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+    out.extend_from_slice(&36u32.saturating_add(u32::try_from(pcm.len()).unwrap_or(u32::MAX)).to_le_bytes());
     out.extend_from_slice(b"WAVEfmt ");
     out.extend_from_slice(&16u32.to_le_bytes()); // PCM header size
     out.extend_from_slice(&1u16.to_le_bytes()); // format: PCM
@@ -1021,7 +1021,7 @@ pub(crate) fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u
     out.extend_from_slice(&lesson_align.to_le_bytes());
     out.extend_from_slice(&BITS.to_le_bytes());
     out.extend_from_slice(b"data");
-    out.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+    out.extend_from_slice(&u32::try_from(pcm.len()).unwrap_or(u32::MAX).to_le_bytes());
     out.extend_from_slice(pcm);
     out
 }

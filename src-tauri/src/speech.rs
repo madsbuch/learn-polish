@@ -333,7 +333,7 @@ async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>, force: bo
             })
             .collect()
     };
-    let total = pending.len() as i64;
+    let total = crate::convert::count(pending.len());
     let (mut done, mut failed, mut first_error) = (0, 0, None::<String>);
     // Three at a time: much faster than one by one, gentle on the API.
     let mut results = futures_util::stream::iter(pending)
@@ -492,14 +492,14 @@ pub fn audio_overview_in(conn: &mut Conn) -> Result<AudioOverview> {
             used.insert(key);
             used.insert(voices.slow_key(text, gender));
         }
-        courses.push(CourseAudio { course_id, title, title_pl, total: items.len() as i64, stored: count, bytes });
+        courses.push(CourseAudio { course_id, title, title_pl, total: crate::convert::count(items.len()), stored: count, bytes });
     }
     let unused: Vec<i64> = stored.iter().filter(|(key, _)| !used.contains(*key)).map(|(_, size)| *size).collect();
     Ok(AudioOverview {
-        clips: stored.len() as i64,
+        clips: crate::convert::count(stored.len()),
         bytes: stored.values().sum(),
         courses,
-        unused_clips: unused.len() as i64,
+        unused_clips: crate::convert::count(unused.len()),
         unused_bytes: unused.iter().sum(),
     })
 }
@@ -539,7 +539,7 @@ pub fn delete_unused_audio_in(conn: &mut Conn) -> Result<i64> {
     if deleted > 0 {
         conn.batch_execute("VACUUM")?;
     }
-    Ok(deleted as i64)
+    Ok(crate::convert::count(deleted))
 }
 
 #[tauri::command]
