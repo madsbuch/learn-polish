@@ -597,7 +597,7 @@ pub struct NewStudy {
     pub objectives: Vec<String>,
     #[serde(default)]
     pub period_days: Option<i64>,
-    /// The course to file it under; None files it in "Grammar & culture".
+    /// The course to file it under; None files it in "Other lessons".
     #[serde(default, alias = "course_id")]
     pub course_id: Option<i64>,
 }
@@ -660,7 +660,7 @@ pub struct NewWriting {
     pub objectives: Vec<String>,
     #[serde(default)]
     pub period_days: Option<i64>,
-    /// The course to file it under; None files it in "Writing".
+    /// The course to file it under; None files it in "Other lessons".
     #[serde(default, alias = "course_id")]
     pub course_id: Option<i64>,
 }
@@ -704,7 +704,7 @@ pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Resul
 /// A listening lesson: listen to a song, then the examiner asks about it.
 /// One per song — asking again returns the existing lesson.
 /// It is filed in `course` if given, else in the course the song was written
-/// from, else in "Listening". Like any lesson, it can be moved or shared later.
+/// for, else in "Other lessons". Like any lesson, it can be moved or shared later.
 pub fn create_listening(
     conn: &mut Conn,
     song_id: i64,

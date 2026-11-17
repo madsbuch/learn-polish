@@ -854,8 +854,8 @@ function SongPage({
             confirmLabel="Delete"
             question={
               podcast
-                ? "Delete the episode and its audio? It also leaves your playlists."
-                : "Delete the song and all its takes? It also leaves your playlists."
+                ? "Delete the episode and its audio? It also leaves your playlists, and its listening lesson goes too."
+                : "Delete the song and all its takes? It also leaves your playlists, and its listening lesson goes too."
             }
             wide
             onConfirm={() => act(() => api.songDelete(song.id), onDeleted)}

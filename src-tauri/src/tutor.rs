@@ -395,7 +395,7 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "add_to_course",
             "Updating the course…",
-            "Add words, sentences or dialogue lines to a course; its drills are cut again to include them.",
+            "Grow a course's own material: add words, sentences or dialogue lines to it; its drills are cut again to include them. (For a separate drill in a chosen format, use create_drill_lesson.)",
             json!({
                 "type": "object",
                 "properties": {
@@ -481,7 +481,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "scenario": { "type": "string", "description": "The situation in English, to the learner: where they are and who they are writing with, e.g. \"You've just moved in. Your new neighbour Pani Ewa stops you on the stairs.\"" },
                     "goals": { "type": "array", "items": { "type": "string" }, "description": "1–4 things the learner has to get across, e.g. \"Say which city you live in\", \"Say who you live with\"" },
                     "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
-                    "course_id": { "type": "integer", "description": "The course to file it under; leave out to file it in \"Writing\"" }
+                    "course_id": { "type": "integer", "description": "The course to file it in; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "summary", "complexity", "scenario", "goals"]
             }),
@@ -560,7 +560,9 @@ pub fn tool_definitions() -> Vec<Tool> {
             "create_drill_lesson",
             "Making the drill…",
             "Make one drill lesson in a chosen format over words and/or sentences you give. \
-             The items are added to a course (a new one named after the lesson if none is given).",
+             It is listed in a course as a lesson of its own, not cut into the course's drills (to \
+             grow a course's own words and sentences, use add_to_course). Without a course it \
+             goes in \"Other lessons\".",
             json!({
                 "type": "object",
                 "properties": {
@@ -574,8 +576,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
-                    "period_days": { "type": "integer" },
-                    "course_id": { "type": "integer" }
+                    "period_days": { "type": "integer", "description": "Days until it first comes back (its check-in period); leave out for the default" },
+                    "course_id": { "type": "integer", "description": "The course to list it in; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "format", "complexity"]
             }),
@@ -594,7 +596,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "title": { "type": "string" },
                     "summary": { "type": "string" },
                     "words": word_schema(),
-                    "course_id": { "type": "integer", "description": "The course to add it to (a new one named after the lesson if none is given)" }
+                    "course_id": { "type": "integer", "description": "The course to add it to; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "words"]
             }),
@@ -609,7 +611,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "song_id": { "type": "integer" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "low: the gist and the chorus; medium: lines and missing words; high: also the grammar of what is sung" },
                     "focus": { "type": "string", "description": "Optional: what to listen out for, e.g. \"the verbs in the first verse\"" },
-                    "course_id": { "type": "integer", "description": "The course to file it in; leave out for the course the song was written from" }
+                    "course_id": { "type": "integer", "description": "The course to file it in; leave out for the song's own course (or, if it has none, \"Other lessons\")" }
                 },
                 "required": ["song_id"]
             }),
@@ -760,7 +762,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "about": { "type": "string", "description": "What the song is about, in English" },
                     "requirements": { "type": "string", "description": "What the lyrics must meet, every point: words to use (e.g. a course's, from get_course), grammar, line length, structure. Kept with the song." },
                     "based_on": { "type": "integer", "description": "The song this one varies (e.g. \"the same style as …\"): reuse its style and singer from get_song" },
-                    "course_id": { "type": "integer", "description": "The course to file its listening lesson in" },
+                    "course_id": { "type": "integer", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
                     "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
                     "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
@@ -811,9 +813,9 @@ pub fn tool_definitions() -> Vec<Tool> {
                     },
                     "requirements": { "type": "string", "description": "What the script must meet, every point: words to use, grammar, sentence length. Kept with it." },
                     "based_on": { "type": "integer", "description": "The episode or song this one varies" },
-                    "course_id": { "type": "integer", "description": "The course to file its listening lesson in" },
+                    "course_id": { "type": "integer", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" },
                     "voice": { "type": "string", "enum": ["f", "m"], "description": "The Polish voice; the English uses the other" },
-                    "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default false)" }
+                    "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default true)" }
                 },
                 "required": []
             }),
@@ -947,8 +949,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "song_id": { "type": "integer" },
-                    "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it" },
-                    "course_id": { "type": "integer", "description": "The course to file that lesson in" }
+                    "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default true)" },
+                    "course_id": { "type": "integer", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" }
                 },
                 "required": ["song_id"]
             }),
@@ -1422,7 +1424,7 @@ struct PodcastArgs {
     course_id: Option<i64>,
     #[serde(default)]
     voice: String,
-    #[serde(default)]
+    #[serde(default = "yes")]
     listening_lesson: bool,
     #[serde(default)]
     requirements: String,
@@ -1472,7 +1474,7 @@ struct EditSongArgs {
 #[derive(Deserialize)]
 struct SingSongArgs {
     song_id: i64,
-    #[serde(default)]
+    #[serde(default = "yes")]
     listening_lesson: bool,
     #[serde(default, alias = "topic_id")]
     course_id: Option<i64>,
@@ -1735,7 +1737,7 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             // The lesson owns its words; it is not cut into the course's own drills.
             let course_id = match args.course_id {
                 Some(id) => id,
-                None => courses::create_empty(conn, &args.title, &args.summary)?,
+                None => courses::other_course(conn)?,
             };
             let (lesson, skipped) = lessons::create_drill(
                 conn,
@@ -1762,7 +1764,7 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
             }
             let course_id = match args.course_id {
                 Some(id) => id,
-                None => courses::create_empty(conn, &args.title, &args.summary)?,
+                None => courses::other_course(conn)?,
             };
             let (lesson, skipped) = lessons::create_drill(
                 conn,
@@ -2485,11 +2487,24 @@ fn edit_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
     result.unwrap_or_else(|error| Outcome::data(json!({ "error": error.to_string() })))
 }
 
+/// Files a song (or podcast) under the course it was made for, when one is
+/// given: its listening lesson then goes there too, now or later.
+fn file_song(conn: &mut db::Conn, song_id: i64, course_id: Option<i64>) -> Result<()> {
+    if let Some(course_id) = course_id {
+        courses::require_open_course(conn, course_id)?;
+        diesel::update(crate::schema::songs::table.find(song_id))
+            .set(crate::schema::songs::course_id.eq(course_id))
+            .execute(conn)?;
+    }
+    Ok(())
+}
+
 fn sing_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
     let result: Result<Outcome> = (|| {
         let args: SingSongArgs = parse(arguments)?;
         songs::sing(app, db, args.song_id)?;
         let song = songs::load_song(&mut db.lock(), args.song_id)?;
+        file_song(&mut db.lock(), song.id, args.course_id)?;
         let lesson = if args.listening_lesson {
             Some(lessons::create_listening(&mut db.lock(), song.id, None, None, args.course_id, "tutor")?)
         } else {
@@ -2536,6 +2551,7 @@ async fn make_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome 
         let chorus = format!("{} — {}", draft.chorus_pl, draft.chorus_en);
         let listen = args.listening_lesson;
         let song_id = songs::start_song(app, db, draft)?;
+        file_song(&mut db.lock(), song_id, args.course_id)?;
         let lesson = if listen {
             Some(lessons::create_listening(&mut db.lock(), song_id, None, None, args.course_id, "tutor")?)
         } else {
@@ -2587,6 +2603,7 @@ fn make_podcast(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
         // Written and recorded in the background; the episode is in the
         // library already, as "being made".
         let song_id = crate::podcasts::start_from_request(app, db, request)?;
+        file_song(&mut db.lock(), song_id, args.course_id)?;
         let lesson = if args.listening_lesson {
             Some(lessons::create_listening(&mut db.lock(), song_id, None, None, args.course_id, "tutor")?)
         } else {

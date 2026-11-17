@@ -329,7 +329,8 @@ pub fn grammar_course(conn: &mut Conn) -> Result<i64> {
     Ok(id)
 }
 
-/// A course with nothing in it yet, for a drill the tutor fills itself.
+/// A course with nothing in it yet (tests).
+#[cfg(test)]
 pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<i64> {
     let title = clean(title);
     if title.is_empty() {
@@ -360,9 +361,9 @@ pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()>
         .execute(conn)?;
     // A listening lesson filed in a real course gives a song without one its
     // course, so the song is known to belong there from now on.
-    let is_listening = OPEN_ENDED.contains(&courses::table.find(course_id).select(courses::slug).first::<String>(conn)?.as_str());
+    let open_ended = OPEN_ENDED.contains(&courses::table.find(course_id).select(courses::slug).first::<String>(conn)?.as_str());
     let song: Option<i64> = lessons::table.find(lesson_id).select(lessons::song_id).first(conn).optional()?.flatten();
-    if let (Some(song), false) = (song, is_listening) {
+    if let (Some(song), false) = (song, open_ended) {
         diesel::update(songs::table.find(song).filter(songs::course_id.is_null()))
             .set(songs::course_id.eq(course_id))
             .execute(conn)?;

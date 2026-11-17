@@ -2037,7 +2037,8 @@ mod integration {
         let drill_id = drill["_action"]["lessonId"].as_i64().unwrap();
         let lesson = lessons::load(&mut conn, drill_id).unwrap();
         assert_eq!((lesson.lesson_type.as_str(), lesson.items), ("memory", 4));
-        assert_eq!(lessons::for_course(&mut conn, lesson.course_id.unwrap()).unwrap().len(), 1);
+        // Without a course, a one-off goes in Other lessons — no new course.
+        assert_eq!(lesson.course_title.as_deref(), Some("Other lessons"));
         let plan = session::build_lesson(&mut conn, drill_id).unwrap();
         assert!(plan.exercises.iter().all(|e| e.kind == "memory"));
 
