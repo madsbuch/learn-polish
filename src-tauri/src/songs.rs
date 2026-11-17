@@ -1524,7 +1524,26 @@ pub fn resume_pending(app: &AppHandle) {
 
 #[tauri::command]
 pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
-    list_songs(&mut db.lock(), false)
+    let asked = std::time::Instant::now();
+    let mut guard = db.lock();
+    let waited = asked.elapsed();
+    let mut list = list_songs(&mut guard, false)?;
+    drop(guard);
+    // What the writer was given and each revision's draft are for the tutor
+    // (get_song), not for the screens: they stay out of the list.
+    for song in &mut list {
+        song.origin.given = WriterInput::default();
+        song.origin.steps.clear();
+    }
+    // Shows in the device log (logcat), to tell waiting on the database
+    // from the work itself if the library is slow to open.
+    eprintln!(
+        "songs_list: {} items, waited {:?} for the database, {:?} in all",
+        list.len(),
+        waited,
+        asked.elapsed()
+    );
+    Ok(list)
 }
 
 /// Asks the songwriter for a draft, or a revision of one.

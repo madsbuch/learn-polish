@@ -33,7 +33,7 @@ import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
 import { HowToUse } from "./screens/HowToUse";
 import { CheckIn, type Writing } from "./screens/CheckIn";
-import { Music } from "./screens/Music";
+import { Music, preloadLibrary } from "./screens/Music";
 import { Player } from "./screens/Player";
 import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
@@ -312,6 +312,14 @@ export default function App() {
       streak,
     });
   }, [remindersOn, reminderHour, reminderMinute, doneToday, dueCount, streak]);
+
+  // The music library, loaded once the app is up, so Music opens at once.
+  const ready = settings !== null;
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(preloadLibrary, 1500);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
 
   // The tutor answers in the background. Off screen, a finished reply is
   // announced with a notification, so the backend needs to know.

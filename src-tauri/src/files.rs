@@ -187,6 +187,16 @@ pub fn read_range(conn: &mut Conn, id: i64, start: u64, length: u64) -> Result<V
         .first(conn)?)
 }
 
+/// Part of a file on disk.
+fn read_file_range(path: &str, start: u64, length: u64) -> std::io::Result<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::with_capacity(length as usize);
+    file.take(length).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 /// What part of a file a request asks for.
 #[derive(Debug, PartialEq)]
 pub enum Slice {
@@ -221,17 +231,38 @@ pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri:
         return not_found();
     };
     let db = app.state::<Db>();
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    let Ok(file) = info(conn, id) else { return not_found() };
+    let Ok(file) = info(&mut db.lock(), id) else { return not_found() };
     let size = file.size as u64;
     let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).and_then(parse_range);
+    // Song audio and cover art have a copy on disk: read it from there, not
+    // from the database, so a big file never holds every other screen up.
+    let on_disk = file.path.clone().filter(|path| Path::new(path).exists());
     let response = Response::builder()
         .header(header::CONTENT_TYPE, &file.mime)
         .header(header::ACCEPT_RANGES, "bytes")
         // A file's bytes never change: a new picture or clip is a new id.
         .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    if let Some(path) = on_disk {
+        let result = match slice(size, range) {
+            Slice::Whole => std::fs::read(&path).ok().map(|bytes| response.status(StatusCode::OK).body(bytes)),
+            Slice::Part(start, end) => read_file_range(&path, start, end - start + 1).ok().map(|bytes| {
+                response
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
+                    .body(bytes)
+            }),
+            Slice::Unsatisfiable => Some(
+                response
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{size}"))
+                    .body(Vec::new()),
+            ),
+        };
+        return result.and_then(|r| r.ok()).unwrap_or_else(not_found);
+    }
+    let mut guard = db.lock();
+    let conn = &mut *guard;
     let result = match slice(size, range) {
         Slice::Whole => read(conn, id).map(|(_, bytes)| response.status(StatusCode::OK).body(bytes)),
         Slice::Part(start, end) => read_range(conn, id, start, end - start + 1).map(|bytes| {

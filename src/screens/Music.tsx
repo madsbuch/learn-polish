@@ -115,6 +115,30 @@ function NowPlaying({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+/** The library as last loaded, kept while the app runs (see Music). */
+let cachedSongs: Song[] | null = null;
+let cachedPlaylists: Playlist[] | null = null;
+
+/**
+ * Loads the library in the background, a moment after the app starts, so
+ * even the first visit to Music finds it ready.
+ */
+export function preloadLibrary(): void {
+  if (cachedSongs !== null) return;
+  void api
+    .songsList()
+    .then((list) => {
+      if (cachedSongs === null) cachedSongs = list;
+    })
+    .catch(() => {});
+  void api
+    .playlistsList()
+    .then((list) => {
+      if (cachedPlaylists === null) cachedPlaylists = list;
+    })
+    .catch(() => {});
+}
+
 export function Music({
   settings,
   openSongId,
@@ -133,8 +157,10 @@ export function Music({
   /** Opens the full player (lyrics that follow the music). */
   onOpenPlayer: () => void;
 }) {
-  const [songs, setSongs] = useState<Song[] | null>(null);
-  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  // The last library seen shows at once; a fresh one replaces it when it
+  // arrives, so opening the tab never waits.
+  const [songs, setSongs] = useState<Song[] | null>(cachedSongs);
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(cachedPlaylists);
   const [tab, setTab] = useState<"songs" | "playlists">("songs");
   const [view, setView] = useState<View>({ kind: "library" });
   const [selecting, setSelecting] = useState(false);
@@ -144,11 +170,18 @@ export function Music({
     api
       .songsList()
       .then((list) => {
+        cachedSongs = list;
         setSongs(list);
         syncLibrary(list);
       })
       .catch((cause) => setError(errorMessage(cause)));
-    api.playlistsList().then(setPlaylists).catch((cause) => setError(errorMessage(cause)));
+    api
+      .playlistsList()
+      .then((list) => {
+        cachedPlaylists = list;
+        setPlaylists(list);
+      })
+      .catch((cause) => setError(errorMessage(cause)));
   }, []);
 
   useEffect(refresh, [refresh]);
