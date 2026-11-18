@@ -9,7 +9,7 @@ Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
 **Android** and **macOS** app.
 
 The rules that settle design questions are in
-[PRINCIPLES.md](PRINCIPLES.md).
+[PRINCIPLES.md](PRINCIPLES.md); how data is kept, in [DATA.md](DATA.md).
 
 ---
 

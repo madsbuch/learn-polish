@@ -70,3 +70,9 @@ app's owner; change them only on their word.
 
 13. **Polski and Dansk are separate codebases.** They share features, not
     code, and may diverge.
+
+14. **Ids are tagged, and shown as titles.** Every row has a TypeID that says
+    what it is (`ls_…` a lesson), made on the device that wrote it, so the
+    database can sync and an agent's wrong or made-up id fails instead of
+    touching the wrong thing. People never read or type them: screens show the
+    title instead. See `DATA.md`.
