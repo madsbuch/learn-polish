@@ -1598,8 +1598,10 @@ fn parse<T: serde::de::DeserializeOwned>(arguments: &str) -> Result<T> {
 
 /// Runs one tool call. Errors are returned to the model as text rather than
 /// failing the turn, so it can correct itself or explain.
+/// Runs one tool call as one transaction: a call that fails changes nothing
+/// (a course is never left half made).
 fn execute(conn: &mut Conn, name: &str, arguments: &str) -> Outcome {
-    match run_tool(conn, name, arguments) {
+    match conn.transaction(|tx| run_tool(tx, name, arguments)) {
         Ok(outcome) => outcome,
         Err(error) => Outcome::data(json!({ "error": error.to_string() })),
     }

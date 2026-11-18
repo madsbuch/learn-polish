@@ -114,6 +114,8 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
          PRAGMA journal_size_limit = 67108864;",
     )?;
     lap("open", &mut steps);
+    back_up_before_upgrade(&mut conn, path)?;
+    lap("backup", &mut steps);
     migrate(&mut conn)?;
     lap("upgrade", &mut steps);
     initialize_courses(&mut conn)?;
@@ -606,6 +608,41 @@ CREATE TABLE IF NOT EXISTS word_examples (
     created_at INTEGER NOT NULL
 );
 "#;
+
+/// Backups kept before upgrades: the newest ones.
+const BACKUPS_KEPT: usize = 2;
+
+/// Before an upgrade changes the database (its `user_version` is behind
+/// [`SCHEMA_VERSION`]), a full copy goes to `backups/` beside it, so a bad
+/// upgrade loses nothing. The newest [`BACKUPS_KEPT`] are kept. A new
+/// database, or one already current, is not copied. Every change to the
+/// schema bumps `SCHEMA_VERSION`, so every upgrade is backed up.
+fn back_up_before_upgrade(conn: &mut Conn, path: &std::path::Path) -> Result<()> {
+    let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;
+    if version == 0 || version >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    let Some(dir) = path.parent().map(|p| p.join("backups")) else { return Ok(()) };
+    std::fs::create_dir_all(&dir)?;
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("db");
+    let target = dir.join(format!("before-v{SCHEMA_VERSION}-{stem}-{}.sqlite", now_secs()));
+    // The same upgrade tried twice in one second (a failed start, retried).
+    let _ = std::fs::remove_file(&target);
+    diesel::sql_query("VACUUM INTO ?")
+        .bind::<diesel::sql_types::Text, _>(target.to_string_lossy().to_string())
+        .execute(conn)?;
+    crate::diagnostics::note("database", format!("Backed up before upgrading from version {version}: {}", target.display()));
+    let mut kept: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("before-v") && n.ends_with(".sqlite")))
+        .collect();
+    kept.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    let excess = kept.len().saturating_sub(BACKUPS_KEPT);
+    for old in kept.into_iter().take(excess) {
+        let _ = std::fs::remove_file(old);
+    }
+    Ok(())
+}
 
 fn migrate(conn: &mut Conn) -> Result<()> {
     let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;

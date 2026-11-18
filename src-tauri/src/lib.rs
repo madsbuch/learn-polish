@@ -2503,6 +2503,14 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         }
 
         let mut conn = db::open(&path).expect("upgrade");
+        // The database as it was is kept, in case the upgrade went wrong.
+        let stem = path.file_stem().unwrap().to_str().unwrap().to_string();
+        let backups: Vec<_> = std::fs::read_dir(path.parent().unwrap().join("backups"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(&stem))
+            .collect();
+        assert!(!backups.is_empty(), "backed up before the upgrade");
         let study = lessons::detail(&mut conn, 10).unwrap();
         assert_eq!(study.content, "**Mam** — I have", "a study lesson keeps its text");
         assert!(study.lesson.passed);

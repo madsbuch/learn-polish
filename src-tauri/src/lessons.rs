@@ -532,7 +532,13 @@ pub fn record(conn: &mut Conn, lesson_id: i64, result: &str) -> Result<Lesson> {
     record_graded(conn, lesson_id, result, false)
 }
 
+/// Records a go at a lesson — mastery, schedule, passed, minutes — all or
+/// nothing (one transaction; inside another, a savepoint).
 pub fn record_graded(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -> Result<Lesson> {
+    conn.transaction(|tx| record_graded_steps(tx, lesson_id, result, ace))
+}
+
+fn record_graded_steps(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -> Result<Lesson> {
     if !["pass", "partial", "fail"].contains(&result) {
         return Err(Error::msg(format!("Unknown result '{result}'.")));
     }

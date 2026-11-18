@@ -230,7 +230,13 @@ pub async fn lesson_finish(db: State<'_, Db>, lesson_id: i64, correct: i64, tota
 }
 
 /// The work behind [`lesson_finish`], callable without Tauri (tests).
+/// Finishes a drill: its grade, schedule, mastery, XP and the day, all or
+/// nothing (one transaction).
 pub fn lesson_finish_in(conn: &mut Conn, lesson_id: i64, correct: i64, total: i64) -> Result<LessonFinished> {
+    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, correct, total))
+}
+
+fn lesson_finish_steps(conn: &mut Conn, lesson_id: i64, correct: i64, total: i64) -> Result<LessonFinished> {
     let before = unlocked_codes(conn)?;
     let result = lessons::result_from_score(correct, total);
     let today = db::today(conn);

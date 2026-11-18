@@ -335,7 +335,12 @@ fn append(conn: &mut Conn, checkin_id: i64, role: &str, content: &str) -> Result
 }
 
 /// Records the verdict: schedules the lesson, awards XP and counts the day.
-pub fn record(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> Result<(Assessment, bool)> {
+/// Records a verdict, all or nothing (one transaction).
+pub fn record(conn: &mut Conn, checkin_id: i64, assessment: Assessment) -> Result<(Assessment, bool)> {
+    conn.transaction(|tx| record_steps(tx, checkin_id, assessment))
+}
+
+fn record_steps(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> Result<(Assessment, bool)> {
     let lesson_id: i64 = checkins::table.find(checkin_id).select(checkins::lesson_id).first(conn)?;
     if !["pass", "partial", "fail"].contains(&assessment.result.as_str()) {
         assessment.result = "partial".into();
