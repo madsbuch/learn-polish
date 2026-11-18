@@ -1510,3 +1510,12 @@ button.id-chip {
   font-family: var(--font-mono);
   text-align: center;
 }
+
+/* The computer's camera while scanning a pairing code (WebcamScanner). */
+.webcam-scanner {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}

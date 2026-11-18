@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sync finds and talks to your other devices on the local network;
+	     without this macOS silently blocks it (Local Network privacy). -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Polski syncs your courses and progress with your other devices over your home network.</string>
+	<!-- Pairing: scanning the QR code another device shows. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Polski uses the camera to scan the pairing code shown by your other device.</string>
+</dict>
+</plist>

@@ -63,6 +63,27 @@ fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("barcode-scanner-none").build()
 }
 
+
+/// On a computer, the window opens the shape of the app — a tall column,
+/// like a phone — sized to the screen it is on: most of its height, about
+/// half as wide, centred. A fixed size can come out wrong on a small or a
+/// large screen. A wider window (the tablet layout, set in its config) is
+/// left as configured.
+#[cfg(desktop)]
+fn fit_window_to_screen(app: &tauri::App) {
+    let Some(window) = app.get_webview_window("main") else { return };
+    let configured = app.config().app.windows.first().map_or(0.0, |w| w.width);
+    if configured > 800.0 {
+        return;
+    }
+    let Ok(Some(monitor)) = window.current_monitor() else { return };
+    let screen = monitor.size().to_logical::<f64>(monitor.scale_factor());
+    let height = (screen.height * 0.85).clamp(560.0, 1000.0);
+    let width = (height * 0.52).clamp(380.0, 560.0).min(screen.width);
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    let _ = window.center();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     diagnostics::started();
@@ -89,6 +110,8 @@ pub fn run() {
         .manage(cast::CastSessions::default())
         .manage(std::sync::Arc::new(sync::service::SyncService::default()))
         .setup(|app| {
+            #[cfg(desktop)]
+            fit_window_to_screen(app);
             let data = app.path().app_data_dir().map_err(|e| format!("no writable app data directory: {e}"))?;
             // First, so even opening the database can note what it finds.
             diagnostics::init(data.clone());

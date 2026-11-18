@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { copyText } from "../components/Diagnostics";
 import { DevicesIcon, QrIcon, ScanIcon } from "../components/icons";
 import { ScanOverlay } from "../components/KeyShare";
+import { WebcamScanner } from "../components/WebcamScanner";
 import {
   Badge,
   Banner,
@@ -23,10 +24,20 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { onSyncStatus } from "../lib/events";
-import { cameraAllowed, canScan, openAppSettings, scanQr } from "../lib/keyshare";
+import {
+  cameraAllowed,
+  canScan,
+  openAppSettings,
+  scanQr,
+} from "../lib/keyshare";
 import { ago, describeHeld, syncErrorText, useSyncReload } from "../lib/sync";
 import { toast } from "../lib/toast";
-import type { JoinResult, SyncDevice, SyncOffer, SyncStatus } from "../lib/types";
+import type {
+  JoinResult,
+  SyncDevice,
+  SyncOffer,
+  SyncStatus,
+} from "../lib/types";
 
 const PLATFORMS: Record<string, string> = {
   android: "Android",
@@ -57,7 +68,9 @@ function lastSynced(status: SyncStatus): string | null {
   const times = status.devices
     .filter((device) => !device.isSelf && device.lastSyncAt)
     .map((device) => device.lastSyncAt ?? "");
-  return times.length > 0 ? times.reduce((a, b) => (Date.parse(a) > Date.parse(b) ? a : b)) : null;
+  return times.length > 0
+    ? times.reduce((a, b) => (Date.parse(a) > Date.parse(b) ? a : b))
+    : null;
 }
 
 /**
@@ -100,17 +113,20 @@ export function Devices({ onBack }: { onBack: () => void }) {
   const info = (
     <>
       <p>
-        Your devices sync straight with each other: no server, no account. Courses, words, progress, songs, the
-        tutor's conversations and your API keys all go over. The theme, reminders and playback stay as each device has
-        them.
+        Your devices sync straight with each other: no server, no account.
+        Courses, words, progress, songs, the tutor's conversations and your API
+        keys all go over. The theme, reminders and playback stay as each device
+        has them.
       </p>
       <p>
-        Both devices need to be on the same Wi-Fi with Polski open. Changes go over within seconds. The phone also syncs
-        in the background about every half hour when it is on Wi-Fi.
+        Both devices need to be on the same Wi-Fi with Polski open. Changes go
+        over within seconds. The phone also syncs in the background about every
+        half hour when it is on Wi-Fi.
       </p>
       <p>
-        A computer's firewall can stop the phone from reaching it. That's fine: the computer asks the phone every few
-        seconds while Polski is open on it.
+        A computer's firewall can stop the phone from reaching it. That's fine:
+        the computer asks the phone every few seconds while Polski is open on
+        it.
       </p>
     </>
   );
@@ -181,8 +197,9 @@ export function Devices({ onBack }: { onBack: () => void }) {
         </>
       ) : (
         <Text tone="dim" as="p">
-          Keep your phone and computer in step: the same courses, words and progress on both. Add your other device
-          here, or join it from here if it already has your data.
+          Keep your phone and computer in step: the same courses, words and
+          progress on both. Add your other device here, or join it from here if
+          it already has your data.
         </Text>
       )}
 
@@ -197,7 +214,7 @@ export function Devices({ onBack }: { onBack: () => void }) {
           <ListItem
             leading={<ScanIcon />}
             title="Join another device"
-            subtitle={canScan ? "Scan the code it shows, and take its data" : "Paste the code it shows, and take its data"}
+            subtitle="Scan the code it shows, and take its data"
             onClick={() => setSheet("join")}
           />
         </List>
@@ -246,7 +263,15 @@ export function Devices({ onBack }: { onBack: () => void }) {
 }
 
 /** Syncing, when it last did, or what went wrong, in plain words. */
-function SyncLine({ status, synced, now }: { status: SyncStatus; synced: string | null; now: number }) {
+function SyncLine({
+  status,
+  synced,
+  now,
+}: {
+  status: SyncStatus;
+  synced: string | null;
+  now: number;
+}) {
   if (status.syncing) {
     return (
       <Inline gap={2}>
@@ -257,13 +282,25 @@ function SyncLine({ status, synced, now }: { status: SyncStatus; synced: string 
   }
   return (
     <Stack gap={1}>
-      <Text tone="dim">{synced ? `Last synced ${ago(synced, now)}.` : "Not synced yet."}</Text>
-      {status.lastError ? <Text tone="bad">{syncErrorText(status.lastError)}</Text> : null}
+      <Text tone="dim">
+        {synced ? `Last synced ${ago(synced, now)}.` : "Not synced yet."}
+      </Text>
+      {status.lastError ? (
+        <Text tone="bad">{syncErrorText(status.lastError)}</Text>
+      ) : null}
     </Stack>
   );
 }
 
-function RenameSheet({ name, onClose, onSaved }: { name: string; onClose: () => void; onSaved: () => void }) {
+function RenameSheet({
+  name,
+  onClose,
+  onSaved,
+}: {
+  name: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [draft, setDraft] = useState(name);
   const [busy, setBusy] = useState(false);
   const trimmed = draft.trim();
@@ -292,7 +329,13 @@ function RenameSheet({ name, onClose, onSaved }: { name: string; onClose: () => 
             }}
           />
         </Field>
-        <Button variant="primary" wide loading={busy} disabled={trimmed.length === 0} onClick={() => void save()}>
+        <Button
+          variant="primary"
+          wide
+          loading={busy}
+          disabled={trimmed.length === 0}
+          onClick={() => void save()}
+        >
           Save
         </Button>
       </Stack>
@@ -310,7 +353,13 @@ function timeLeft(expiresAt: string, now: number): string {
  * "Add a device": a one-time code, as a QR code and as text, good for ten
  * minutes. Closes by itself once the other device has joined.
  */
-function OfferSheet({ status, onClose }: { status: SyncStatus; onClose: () => void }) {
+function OfferSheet({
+  status,
+  onClose,
+}: {
+  status: SyncStatus;
+  onClose: () => void;
+}) {
   const [offer, setOffer] = useState<SyncOffer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -321,7 +370,9 @@ function OfferSheet({ status, onClose }: { status: SyncStatus; onClose: () => vo
   const make = useCallback(() => {
     setError(null);
     setOffer(null);
-    api.syncOffer().then(setOffer, (cause) => setError(syncErrorText(errorMessage(cause))));
+    api
+      .syncOffer()
+      .then(setOffer, (cause) => setError(syncErrorText(errorMessage(cause))));
   }, []);
   useEffect(make, [make]);
 
@@ -334,7 +385,9 @@ function OfferSheet({ status, onClose }: { status: SyncStatus; onClose: () => vo
   const check = useCallback(() => {
     api.syncStatus().then(
       (next) => {
-        const added = next.devices.find((entry) => !entry.isSelf && !known.current.has(entry.id));
+        const added = next.devices.find(
+          (entry) => !entry.isSelf && !known.current.has(entry.id),
+        );
         if (added && !joined.current) {
           joined.current = true;
           toast(`${added.name} joined. They're in step now.`);
@@ -385,10 +438,16 @@ function OfferSheet({ status, onClose }: { status: SyncStatus; onClose: () => vo
               dangerouslySetInnerHTML={{ __html: offer.svg }}
             />
             <Text variant="small" tone="dim" align="center">
-              On your other device, open Settings → Devices → Join another device, and scan this. Works once, for{" "}
+              On your other device, open Settings → Devices → Join another
+              device, and scan this. Works once, for{" "}
               {timeLeft(offer.expiresAt, now)} more.
             </Text>
-            <Text variant="caption" tone="faint" selectable className="sync-code">
+            <Text
+              variant="caption"
+              tone="faint"
+              selectable
+              className="sync-code"
+            >
               {offer.code}
             </Text>
             <Button
@@ -430,6 +489,16 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<JoinStep>({ kind: "enter" });
   const [pasted, setPasted] = useState("");
   const [scanning, setScanning] = useState(false);
+  // A computer scans with its webcam, in the sheet itself.
+  const [webcam, setWebcam] = useState(false);
+  const webcamCode = useCallback((code: string) => {
+    setWebcam(false);
+    void beginRef.current(code);
+  }, []);
+  const webcamError = useCallback((message: string) => {
+    setWebcam(false);
+    toast(message, "error");
+  }, []);
 
   const join = async (code: string, replace: boolean) => {
     setStep({ kind: "joining" });
@@ -447,16 +516,22 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
     try {
       const held = await api.syncHeldData();
       if (held.length === 0) await join(trimmed, false);
-      else setStep({ kind: "confirm", code: trimmed, held: describeHeld(held) });
+      else
+        setStep({ kind: "confirm", code: trimmed, held: describeHeld(held) });
     } catch (cause) {
       setStep({ kind: "failed", message: errorMessage(cause) });
     }
   };
 
+  const beginRef = useRef(begin);
+  beginRef.current = begin;
+
   const scan = async () => {
     try {
       if (!(await cameraAllowed())) {
-        toast("Polski needs the camera to scan. Allow it in the app's settings.");
+        toast(
+          "Polski needs the camera to scan. Allow it in the app's settings.",
+        );
         await openAppSettings().catch(() => undefined);
         return;
       }
@@ -475,20 +550,39 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
 
   const busy = step.kind === "checking" || step.kind === "joining";
   return (
-    <Sheet title="Join another device" onClose={busy ? () => undefined : onClose}>
+    <Sheet
+      title="Join another device"
+      onClose={busy ? () => undefined : onClose}
+    >
       <Stack gap={3}>
         {step.kind === "enter" ? (
           <>
             <Text tone="dim">
               On the other device, open Settings → Devices → Add a device. Then{" "}
-              {canScan ? "scan the code it shows." : "copy its code and paste it here."}
+              scan the code it shows.
             </Text>
-            {canScan ? (
-              <Button variant="primary" wide icon={<ScanIcon />} onClick={() => void scan()}>
+            {webcam ? (
+              <>
+                <WebcamScanner
+                  prefix="polski-pair:"
+                  onCode={webcamCode}
+                  onError={webcamError}
+                />
+                <Button wide onClick={() => setWebcam(false)}>
+                  Stop the camera
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="primary"
+                wide
+                icon={<ScanIcon />}
+                onClick={() => (canScan ? void scan() : setWebcam(true))}
+              >
                 Scan the code
               </Button>
-            ) : null}
-            <Field label={canScan ? "Or paste the code" : "The code"}>
+            )}
+            <Field label="Or paste the code">
               <textarea
                 rows={3}
                 value={pasted}
@@ -500,7 +594,7 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
               />
             </Field>
             <Button
-              variant={canScan ? "secondary" : "primary"}
+              variant="secondary"
               wide
               disabled={pasted.trim().length === 0}
               onClick={() => void begin(pasted)}
@@ -510,20 +604,28 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
           </>
         ) : null}
 
-        {step.kind === "checking" ? <Loading label="Looking at what's on this device…" /> : null}
+        {step.kind === "checking" ? (
+          <Loading label="Looking at what's on this device…" />
+        ) : null}
 
         {step.kind === "confirm" ? (
           <>
             <Text>
-              This device has {step.held}. Joining replaces all of it with the other device's data.
+              This device has {step.held}. Joining replaces all of it with the
+              other device's data.
             </Text>
             <Text tone="dim" variant="small">
-              A backup copy of this device's data is kept first, in case you need it back.
+              A backup copy of this device's data is kept first, in case you
+              need it back.
             </Text>
             <Inline gap={2}>
               <Button onClick={onClose}>Cancel</Button>
               <div className="grow">
-                <Button variant="danger" wide onClick={() => void join(step.code, true)}>
+                <Button
+                  variant="danger"
+                  wide
+                  onClick={() => void join(step.code, true)}
+                >
                   Replace
                 </Button>
               </div>
@@ -537,7 +639,10 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
 
         {step.kind === "done" ? (
           <>
-            <Banner tone="ok">Joined {step.result.outcome.peerName}. This device now has the same data.</Banner>
+            <Banner tone="ok">
+              Joined {step.result.outcome.peerName}. This device now has the
+              same data.
+            </Banner>
             {step.result.outcome.complete ? null : (
               <Text tone="dim" variant="small">
                 A little is still to come; it follows on the next sync.
@@ -560,7 +665,11 @@ function JoinSheet({ onClose }: { onClose: () => void }) {
             <Inline gap={2}>
               <Button onClick={onClose}>Close</Button>
               <div className="grow">
-                <Button variant="primary" wide onClick={() => setStep({ kind: "enter" })}>
+                <Button
+                  variant="primary"
+                  wide
+                  onClick={() => setStep({ kind: "enter" })}
+                >
                   Try again
                 </Button>
               </div>
@@ -591,15 +700,20 @@ function DeviceSheet({
           <Inline gap={2} wrap>
             <Badge>{platformName(device.platform)}</Badge>
             {device.lastSyncAt ? (
-              <Badge tone={device.complete ? "mint" : "gold"}>{device.complete ? "Up to date" : "Catching up"}</Badge>
+              <Badge tone={device.complete ? "mint" : "gold"}>
+                {device.complete ? "Up to date" : "Catching up"}
+              </Badge>
             ) : null}
           </Inline>
           <Text tone="dim">
-            {device.lastSyncAt ? `Last synced ${ago(device.lastSyncAt, now)}.` : "Hasn't synced with this one yet."}
+            {device.lastSyncAt
+              ? `Last synced ${ago(device.lastSyncAt, now)}.`
+              : "Hasn't synced with this one yet."}
           </Text>
           {device.lastSyncAt && !device.complete ? (
             <Text tone="dim" variant="small">
-              The last sync didn't end with both holding the same data; the next one carries on.
+              The last sync didn't end with both holding the same data; the next
+              one carries on.
             </Text>
           ) : null}
         </Stack>
