@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "Polski",
-        "width": 460,
-        "height": 900,
+        "width": 1200,
+        "height": 860,
         "minWidth": 380,
-        "minHeight": 620,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false
       }
@@ -45,7 +45,8 @@
     "shortDescription": "Daily Polish practice",
     "longDescription": "Learn Polish from English with a daily gamified check-in: one conversation, its words, and its sentences.",
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "entitlements": "Entitlements.plist"
     },
     "android": {
       "minSdkVersion": 24

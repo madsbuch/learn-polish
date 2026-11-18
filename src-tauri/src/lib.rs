@@ -64,22 +64,18 @@ fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 }
 
 
-/// On a computer, the window opens the shape of the app — a tall column,
-/// like a phone — sized to the screen it is on: most of its height, about
-/// half as wide, centred. A fixed size can come out wrong on a small or a
-/// large screen. A wider window (the tablet layout, set in its config) is
-/// left as configured.
+/// On a computer, the window opens like a computer program's: landscape,
+/// 1200 × 860 (the size in tauri.conf.json, where the app's wide layouts —
+/// the dashboard home, dialogs for sheets — take over), shrunk to fit a
+/// smaller screen, and centred.
 #[cfg(desktop)]
 fn fit_window_to_screen(app: &tauri::App) {
     let Some(window) = app.get_webview_window("main") else { return };
-    let configured = app.config().app.windows.first().map_or(0.0, |w| w.width);
-    if configured > 800.0 {
-        return;
-    }
+    let Some(configured) = app.config().app.windows.first() else { return };
     let Ok(Some(monitor)) = window.current_monitor() else { return };
     let screen = monitor.size().to_logical::<f64>(monitor.scale_factor());
-    let height = (screen.height * 0.85).clamp(560.0, 1000.0);
-    let width = (height * 0.52).clamp(380.0, 560.0).min(screen.width);
+    let width = configured.width.min(screen.width * 0.92);
+    let height = configured.height.min(screen.height * 0.88);
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
     let _ = window.center();
 }

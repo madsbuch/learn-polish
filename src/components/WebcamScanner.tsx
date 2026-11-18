@@ -65,7 +65,7 @@ export function WebcamScanner({
       .catch((cause: unknown) => {
         const reason = cause instanceof Error ? cause.message : String(cause);
         onError(
-          `The camera isn't available (${reason}). Allow Polski to use it, or paste the code instead.`,
+          `The camera isn't available (${reason}). On a Mac, allow Polski under System Settings → Privacy & Security → Camera, then try again — or paste the code instead.`,
         );
       });
     return () => {
