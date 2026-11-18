@@ -183,10 +183,43 @@ fn new_lessons(conn: &mut Conn, playing: &HashSet<LessonId>, limit: usize) -> Re
 /// Today's lessons, chosen the first time they are asked for each day and
 /// kept: any already done today, then what is due, most important first,
 /// then new ones while there is room (at most [`MAX_NEW`]).
+/// Whether this device joined a vault and hasn't yet had a whole sync: its
+/// lessons are still arriving, so a list chosen now would be chosen from
+/// half the data — and, being a synced setting and the newest, would replace
+/// the other devices' list too.
+fn catching_up(conn: &mut Conn) -> Result<bool> {
+    #[derive(diesel::QueryableByName)]
+    struct Found {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        n: i64,
+    }
+    let found = diesel::sql_query(
+        "SELECT count(*) AS n FROM sync_state s
+         WHERE s.id = 1 AND s.vault_id IS NOT NULL
+           AND EXISTS (SELECT 1 FROM sync_peers)
+           AND NOT EXISTS (SELECT 1 FROM sync_peers WHERE last_complete_at IS NOT NULL)",
+    )
+    .get_result::<Found>(conn)?;
+    Ok(found.n > 0)
+}
+
 fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<LessonId>> {
     if db::get_setting_i64(conn, "daily_day", -1) == today {
-        if let Some(ids) = db::get_setting(conn, "daily_ids")?.and_then(|json| serde_json::from_str(&json).ok()) {
-            return Ok(ids);
+        if let Some(ids) =
+            db::get_setting(conn, "daily_ids")?.and_then(|json| serde_json::from_str::<Vec<LessonId>>(&json).ok())
+        {
+            // A kept list stands — unless it names nothing this device has:
+            // empty (chosen before there was anything to choose, e.g. while
+            // a joining device's data was still arriving), or only lessons
+            // that aren't here. Then it's chosen again.
+            let known: i64 = if ids.is_empty() {
+                0
+            } else {
+                lessons::table.filter(lessons::id.eq_any(&ids)).count().get_result(conn)?
+            };
+            if known > 0 {
+                return Ok(ids);
+            }
         }
     }
     let size = crate::convert::index(daily_count(conn));
@@ -215,8 +248,13 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<LessonId>> {
             in_play(conn)?.into_iter().map(|l| l.id).filter(|id| !ids.contains(id)).collect();
         ids.extend(new_lessons(conn, &playing, (size - ids.len()).min(MAX_NEW))?);
     }
-    db::set_setting(conn, "daily_ids", &serde_json::to_string(&ids)?)?;
-    db::set_setting(conn, "daily_day", &today.to_string())?;
+    // Kept for the day — but not an empty list (nothing to keep: it is
+    // chosen again next time), and not while this device is still catching
+    // up with its vault (see `catching_up`).
+    if !ids.is_empty() && !catching_up(conn)? {
+        db::set_setting(conn, "daily_ids", &serde_json::to_string(&ids)?)?;
+        db::set_setting(conn, "daily_day", &today.to_string())?;
+    }
     Ok(ids)
 }
 

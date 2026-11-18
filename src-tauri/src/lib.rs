@@ -1430,13 +1430,55 @@ mod integration {
         stats::course_progress(&mut conn).expect("courses");
     }
 
+    /// Today's list is kept for the day, but an empty one (chosen before
+    /// there was anything to choose) or one naming only lessons this device
+    /// doesn't have (from another device, mid-sync) is chosen again; and a
+    /// device still catching up after joining a vault doesn't keep one.
+    #[test]
+    fn todays_list_is_chosen_again_when_it_names_nothing_here() {
+        let mut conn = scratch_db("daily-rechosen");
+        let today = db::today(&mut conn);
+        let fresh = plan::plan(&mut conn, today).unwrap();
+        assert!(fresh.total > 0, "the demo course gives a list");
+
+        // Kept: an empty list from earlier today doesn't stick.
+        db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
+        db::set_setting(&mut conn, "daily_ids", "[]").unwrap();
+        assert_eq!(plan::plan(&mut conn, today).unwrap().total, fresh.total);
+        assert_ne!(db::get_setting(&mut conn, "daily_ids").unwrap().as_deref(), Some("[]"));
+
+        // Only lessons that aren't here: chosen again.
+        let elsewhere = serde_json::to_string(&[LessonId::new(), LessonId::new()]).unwrap();
+        db::set_setting(&mut conn, "daily_ids", &elsewhere).unwrap();
+        assert_eq!(plan::plan(&mut conn, today).unwrap().total, fresh.total);
+
+        // Some here, some still to arrive: kept as it is.
+        let kept = plan::plan(&mut conn, today).unwrap();
+        let mut mixed = kept.left.clone();
+        mixed.push(LessonId::new());
+        db::set_setting(&mut conn, "daily_ids", &serde_json::to_string(&mixed).unwrap()).unwrap();
+        assert_eq!(db::get_setting(&mut conn, "daily_ids").unwrap(), Some(serde_json::to_string(&mixed).unwrap()));
+        assert_eq!(plan::plan(&mut conn, today).unwrap().left, kept.left, "the missing one just drops out");
+
+        // Catching up after joining a vault: a list is shown, not kept.
+        diesel::sql_query("UPDATE sync_state SET vault_id = 'v' WHERE id = 1").execute(&mut conn).unwrap();
+        diesel::sql_query("INSERT INTO sync_peers (device_id, complete) VALUES ('dev_other', 0)").execute(&mut conn).unwrap();
+        db::set_setting(&mut conn, "daily_day", &(today - 1).to_string()).unwrap();
+        assert!(plan::plan(&mut conn, today).unwrap().total > 0);
+        assert_eq!(db::get_setting_i64(&mut conn, "daily_day", -1), today - 1, "not kept while catching up");
+        // Once a whole sync has happened, it is.
+        diesel::sql_query("UPDATE sync_peers SET complete = 1, last_complete_at = '2026-11-18T00:00:00Z'").execute(&mut conn).unwrap();
+        plan::plan(&mut conn, today).unwrap();
+        assert_eq!(db::get_setting_i64(&mut conn, "daily_day", -1), today);
+    }
+
     #[test]
     fn streak_freezes_are_earned_by_a_week_and_bridge_a_missed_day() {
         let mut conn = scratch_db("freezes");
         let today = db::today(&mut conn);
-        // Nothing to do today: practising at all finishes the day.
-        db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
-        db::set_setting(&mut conn, "daily_ids", "[]").unwrap();
+        // Nothing to do today (every lesson mastered, so today's list is
+        // empty): practising at all finishes the day.
+        diesel::update(t::lessons::table).set(t::lessons::mastered_at.eq(Some(0))).execute(&mut conn).unwrap();
         let done = |conn: &mut db::Conn, day: i64| {
             let device = crate::sync::device_id(conn).unwrap();
             diesel::insert_into(t::day_log::table)
