@@ -68,8 +68,8 @@ pub fn seed_once(conn: &mut Conn) -> Result<()> {
 pub fn rekey(conn: &mut Conn) -> Result<()> {
     use crate::ids::*;
     use crate::schema::{
-        checkins, conversation_lines, course_lessons, lessons, reviews, sentences, settings, wiki_sources, word_examples,
-        words, xp_log,
+        checkins, conversation_lines, course_lessons, lessons, reviews, sentences, settings, songs, tutor_messages, wiki_sources,
+        word_examples, words, xp_log,
     };
     use diesel::connection::SimpleConnection;
     conn.batch_execute("PRAGMA defer_foreign_keys = ON")?;
@@ -81,9 +81,15 @@ pub fn rekey(conn: &mut Conn) -> Result<()> {
     else {
         return Ok(());
     };
+    // Only the course's own built-in lessons: ones the learner or the tutor
+    // added to it are their own, with ids of their own. The order is fixed
+    // (place, then type and title for ties), so every device numbers them
+    // alike.
     let listed: Vec<LessonId> = course_lessons::table
+        .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course))
-        .order(course_lessons::ord)
+        .filter(lessons::origin.eq("starter"))
+        .order((course_lessons::ord, lessons::lesson_type, lessons::title))
         .select(course_lessons::lesson_id)
         .load(conn)?;
     for (place, old) in listed.into_iter().enumerate() {
@@ -100,8 +106,19 @@ pub fn rekey(conn: &mut Conn) -> Result<()> {
             diesel::update(checkins::table.filter(checkins::lesson_id.eq(old))).set(checkins::lesson_id.eq(new)).execute(conn)?;
             diesel::update(wiki_sources::table.filter(wiki_sources::lesson_id.eq(old))).set(wiki_sources::lesson_id.eq(new)).execute(conn)?;
             diesel::update(xp_log::table.filter(xp_log::lesson_id.eq(old))).set(xp_log::lesson_id.eq(new)).execute(conn)?;
+            // Ids inside stored JSON (the day's list, the tutor's buttons, a
+            // song's origin): each id is a unique string, so a plain text
+            // replace finds exactly its uses.
             diesel::update(settings::table.filter(settings::key.eq("daily_ids")))
                 .set(settings::value.eq(diesel::dsl::sql::<diesel::sql_types::Text>(&format!("replace(value, '{old}', '{new}')"))))
+                .execute(conn)?;
+            diesel::update(tutor_messages::table.filter(tutor_messages::actions.like(format!("%{old}%"))))
+                .set(tutor_messages::actions.eq(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(&format!(
+                    "replace(actions, '{old}', '{new}')"
+                ))))
+                .execute(conn)?;
+            diesel::update(songs::table.filter(songs::origin.like(format!("%{old}%"))))
+                .set(songs::origin.eq(diesel::dsl::sql::<diesel::sql_types::Text>(&format!("replace(origin, '{old}', '{new}')"))))
                 .execute(conn)?;
         }
         let owned: Vec<WordId> = words::table.filter(words::lesson_id.eq(new)).order((words::ord, words::id)).select(words::id).load(conn)?;

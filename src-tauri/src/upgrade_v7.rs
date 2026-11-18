@@ -144,11 +144,16 @@ pub fn needed(conn: &mut Conn) -> Result<bool> {
         #[diesel(column_name = "type")]
         kind: String,
     }
-    if !table_exists(conn, "courses")? {
-        return Ok(false);
+    // Any table that has always had an id tells: a very old database has
+    // topics and words but no courses yet.
+    for table in ["courses", "topics", "blocks", "words", "songs", "tutor_messages"] {
+        if !table_exists(conn, table)? {
+            continue;
+        }
+        let id = diesel::sql_query(format!("SELECT type FROM pragma_table_info('{table}') WHERE name = 'id'")).load::<Kind>(conn)?;
+        return Ok(id.first().is_some_and(|c| c.kind.eq_ignore_ascii_case("INTEGER")));
     }
-    let id = diesel::sql_query("SELECT type FROM pragma_table_info('courses') WHERE name = 'id'").load::<Kind>(conn)?;
-    Ok(id.first().is_some_and(|c| c.kind.eq_ignore_ascii_case("INTEGER")))
+    Ok(false)
 }
 
 /// Converts the database to TypeIDs. Foreign keys are off while tables are
@@ -276,6 +281,21 @@ fn convert(conn: &mut Conn, schema: &str) -> Result<()> {
     rewrite_json(conn, "songs", "origin", &maps)?;
     rewrite_json(conn, "settings", "value", &maps)?;
 
+    // Say what was left behind: rows that pointed at something long gone.
+    #[derive(QueryableByName)]
+    struct Left {
+        #[diesel(sql_type = BigInt)]
+        n: i64,
+    }
+    let mut left_behind = Vec::new();
+    for table in &present {
+        let n = diesel::sql_query(format!("SELECT (SELECT COUNT(*) FROM {table}__old) - (SELECT COUNT(*) FROM {table}) AS n"))
+            .get_result::<Left>(conn)?
+            .n;
+        if n > 0 {
+            left_behind.push(format!("{n} in {table}"));
+        }
+    }
     for table in &present {
         conn.batch_execute(&format!("DROP TABLE {table}__old;"))?;
     }
@@ -287,6 +307,15 @@ fn convert(conn: &mut Conn, schema: &str) -> Result<()> {
         return Err(Error::msg(format!("The id upgrade left {broken} broken references; nothing was changed.")));
     }
     crate::diagnostics::note("database", "Upgraded to tagged ids (schema version 7).");
+    if !left_behind.is_empty() {
+        crate::diagnostics::note(
+            "database",
+            format!(
+                "Left behind in the id upgrade, as they pointed at nothing (still in the backup): {}.",
+                left_behind.join(", ")
+            ),
+        );
+    }
     Ok(())
 }
 

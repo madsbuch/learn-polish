@@ -358,7 +358,7 @@ CREATE INDEX IF NOT EXISTS playlist_tracks_order ON playlist_tracks(playlist_id,
 
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
 
-CREATE UNIQUE INDEX ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
 
 CREATE VIEW IF NOT EXISTS course_words AS
     SELECT c.course_id, w.id, w.lesson_id, c.ord * 1000 + w.ord AS ord, w.pl, w.en, w.pos
