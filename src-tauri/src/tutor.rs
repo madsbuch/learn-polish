@@ -409,7 +409,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "course_id": { "type": "integer" },
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "words": word_schema(),
                     "sentences": sentence_schema(),
                     "dialogue": dialogue_schema()
@@ -424,7 +424,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "course_id": { "type": "integer" },
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "level": { "type": "string", "enum": crate::levels::LEVELS, "description": "The course's CEFR level, shown as a badge on it. This is where a level goes — never into the title." },
                     "title": { "type": "string" },
                     "title_pl": { "type": "string" },
@@ -441,7 +441,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Permanently delete a course with all its lessons and practice history. Only after the learner confirmed.",
             json!({
                 "type": "object",
-                "properties": { "course_id": { "type": "integer" } },
+                "properties": { "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["course_id"]
             }),
         ),
@@ -457,7 +457,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "The words, sentences and dialogue of one course, with the learner's progress on each word.",
             json!({
                 "type": "object",
-                "properties": { "course_id": { "type": "integer" } },
+                "properties": { "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["course_id"]
             }),
         ),
@@ -491,7 +491,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "scenario": { "type": "string", "description": "The situation in English, to the learner: where they are and who they are writing with, e.g. \"You've just moved in. Your new neighbour Pani Ewa stops you on the stairs.\"" },
                     "goals": { "type": "array", "items": { "type": "string" }, "description": "1–4 things the learner has to get across, e.g. \"Say which city you live in\", \"Say who you live with\"" },
                     "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
-                    "course_id": { "type": "integer", "description": "The course to file it in; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course to file it in; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "summary", "complexity", "scenario", "goals"]
             }),
@@ -530,7 +530,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "lesson_id": { "type": "integer" },
+                    "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "title": { "type": "string" },
                     "lang": { "type": "string", "description": "Default \"en\"" }
                 },
@@ -543,7 +543,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Take a Wikipedia source off a lesson (its id is in get_lesson).",
             json!({
                 "type": "object",
-                "properties": { "source_id": { "type": "integer" } },
+                "properties": { "source_id": { "type": "string", "pattern": "^src_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["source_id"]
             }),
         ),
@@ -561,7 +561,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "content": { "type": "string", "description": "The lesson in markdown: explanation, a table or examples with translations. Correct Polish only. Write every Polish example as [[say: …]] so it can be heard, its translation outside the tag." },
                     "objectives": { "type": "array", "items": { "type": "string" }, "description": "2–5 things the learner should be able to do afterwards" },
                     "period_days": { "type": "integer", "description": "Days between check-ins; leave out for the default" },
-                    "course_id": { "type": "integer", "description": "The course it explains: give it. Leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course it explains: give it. Leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "summary", "complexity", "content", "objectives"]
             }),
@@ -587,7 +587,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "words": word_schema(),
                     "sentences": sentence_schema(),
                     "period_days": { "type": "integer", "description": "Days until it first comes back (its check-in period); leave out for the default" },
-                    "course_id": { "type": "integer", "description": "The course to list it in; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course to list it in; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "format", "complexity"]
             }),
@@ -606,7 +606,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "title": { "type": "string" },
                     "summary": { "type": "string" },
                     "words": word_schema(),
-                    "course_id": { "type": "integer", "description": "The course to add it to; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course to add it to; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
                 },
                 "required": ["title", "words"]
             }),
@@ -618,10 +618,10 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "song_id": { "type": "integer" },
+                    "song_id": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "low: the gist and the chorus; medium: lines and missing words; high: also the grammar of what is sung" },
                     "focus": { "type": "string", "description": "Optional: what to listen out for, e.g. \"the verbs in the first verse\"" },
-                    "course_id": { "type": "integer", "description": "The course to file it in; leave out for the song's own course (or, if it has none, \"Other lessons\")" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course to file it in; leave out for the song's own course (or, if it has none, \"Other lessons\")" }
                 },
                 "required": ["song_id"]
             }),
@@ -634,7 +634,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "which": { "type": "string", "enum": ["due", "course", "study"] },
-                    "course_id": { "type": "integer", "description": "With which = course" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "With which = course" }
                 },
                 "required": ["which"]
             }),
@@ -645,7 +645,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "One lesson in full: lesson and objectives or its words and sentences, its schedule, and the last check-in's verdict.",
             json!({
                 "type": "object",
-                "properties": { "lesson_id": { "type": "integer" } },
+                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id"]
             }),
         ),
@@ -659,7 +659,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "lesson_id": { "type": "integer" },
+                    "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "title": { "type": "string" },
                     "summary": { "type": "string" },
                     "complexity": { "type": "string", "enum": ["low", "medium", "high"] },
@@ -678,7 +678,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Permanently delete a lesson and its check-in history. Only after the learner confirmed.",
             json!({
                 "type": "object",
-                "properties": { "lesson_id": { "type": "integer" } },
+                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id"]
             }),
         ),
@@ -688,7 +688,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "List a lesson in another course too. It stays one lesson — one schedule, one history — shown in each course.",
             json!({
                 "type": "object",
-                "properties": { "lesson_id": { "type": "integer" }, "course_id": { "type": "integer" } },
+                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" }, "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id", "course_id"]
             }),
         ),
@@ -698,7 +698,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Take a lesson out of a course. If no other course lists it, the lesson is deleted with its words, sentences and history — only after the learner confirmed that.",
             json!({
                 "type": "object",
-                "properties": { "lesson_id": { "type": "integer" }, "course_id": { "type": "integer" } },
+                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" }, "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id", "course_id"]
             }),
         ),
@@ -709,9 +709,9 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "lesson_id": { "type": "integer" },
-                    "from_course_id": { "type": "integer" },
-                    "to_course_id": { "type": "integer" }
+                    "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "from_course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "to_course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" }
                 },
                 "required": ["lesson_id", "from_course_id", "to_course_id"]
             }),
@@ -723,8 +723,8 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "course_id": { "type": "integer" },
-                    "lesson_ids": { "type": "array", "items": { "type": "integer" } }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "lesson_ids": { "type": "array", "items": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" } }
                 },
                 "required": ["course_id", "lesson_ids"]
             }),
@@ -735,7 +735,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Make a lesson due now, so it shows at the top of the learner's list.",
             json!({
                 "type": "object",
-                "properties": { "lesson_id": { "type": "integer" } },
+                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id"]
             }),
         ),
@@ -745,7 +745,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Show the learner a button that opens a lesson right now.",
             json!({
                 "type": "object",
-                "properties": { "lesson_id": { "type": "integer" } },
+                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id"]
             }),
         ),
@@ -771,8 +771,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "properties": {
                     "about": { "type": "string", "description": "What the song is about, in English" },
                     "requirements": { "type": "string", "description": "What the lyrics must meet, every point: words to use (e.g. a course's, from get_course), grammar, line length, structure. Kept with the song." },
-                    "based_on": { "type": "integer", "description": "The song this one varies (e.g. \"the same style as …\"): reuse its style and singer from get_song" },
-                    "course_id": { "type": "integer", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" },
+                    "based_on": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The song this one varies (e.g. \"the same style as …\"): reuse its style and singer from get_song" },
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence, if the learner wants one" },
                     "style": { "type": "string", "description": "Musical style, e.g. \"upbeat indie folk, male vocals\"" },
                     "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
@@ -822,8 +822,8 @@ pub fn tool_definitions() -> Vec<Tool> {
                         "description": "pairs: short ≈ 20 sentences, medium ≈ 35, long ≈ 55; immersion: 30, 50, 80. Default medium."
                     },
                     "requirements": { "type": "string", "description": "What the script must meet, every point: words to use, grammar, sentence length. Kept with it." },
-                    "based_on": { "type": "integer", "description": "The episode or song this one varies" },
-                    "course_id": { "type": "integer", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" },
+                    "based_on": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The episode or song this one varies" },
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" },
                     "voice": { "type": "string", "enum": ["f", "m"], "description": "The Polish voice; the English uses the other" },
                     "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default true)" }
                 },
@@ -838,7 +838,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "podcast_id": { "type": "integer" },
+                    "podcast_id": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "pause": { "type": "number", "description": "Seconds of silence after the English, before the Polish (0–6): time to say it yourself first" },
                     "repeats": { "type": "integer", "description": "How many times the Polish is said (1–3)" },
                     "slow": { "type": "boolean", "description": "Read the Polish slowly" },
@@ -859,7 +859,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "properties": {
                     "about": { "type": "string", "description": "What the song is about, in English" },
                     "requirements": { "type": "string", "description": "What the lyrics must meet, every point" },
-                    "based_on": { "type": "integer", "description": "The song this one varies" },
+                    "based_on": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The song this one varies" },
                     "chorus_pl": { "type": "string", "description": "An exact Polish chorus sentence" },
                     "style": { "type": "string", "description": "Musical style" },
                     "vocal_gender": { "type": "string", "enum": ["f", "m", ""] },
@@ -886,7 +886,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                     "length": { "type": "string", "enum": ["short", "medium", "long"] },
                     "voice": { "type": "string", "enum": ["f", "m"] },
                     "requirements": { "type": "string", "description": "What the script must meet, every point" },
-                    "based_on": { "type": "integer" }
+                    "based_on": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" }
                 },
                 "required": []
             }),
@@ -900,7 +900,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "song_id": { "type": "integer" },
+                    "song_id": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "feedback": { "type": "string", "description": "What to change" }
                 },
                 "required": ["song_id", "feedback"]
@@ -916,7 +916,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "song_id": { "type": "integer" },
+                    "song_id": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "title": { "type": "string" },
                     "chorus_pl": { "type": "string" },
                     "chorus_en": { "type": "string" },
@@ -958,9 +958,9 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "song_id": { "type": "integer" },
+                    "song_id": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "listening_lesson": { "type": "boolean", "description": "Also make a listening lesson for it (default true)" },
-                    "course_id": { "type": "integer", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" }
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course it belongs to: the song is filed under it, and so is its listening lesson" }
                 },
                 "required": ["song_id"]
             }),
@@ -977,7 +977,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "One song in full: its lyrics (Polish with English, by section), the course it was written from, where its listening lesson is filed, and everything it was made with — style, singer, Suno model, the brief, what was asked for, length, the songwriter model and any revisions. Use it to make a song that matches or varies another.",
             json!({
                 "type": "object",
-                "properties": { "song_id": { "type": "integer" } },
+                "properties": { "song_id": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["song_id"]
             }),
         ),
@@ -987,7 +987,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Permanently delete songs (all their takes). Only after the learner confirmed.",
             json!({
                 "type": "object",
-                "properties": { "song_ids": { "type": "array", "items": { "type": "integer" } } },
+                "properties": { "song_ids": { "type": "array", "items": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" } } },
                 "required": ["song_ids"]
             }),
         ),
@@ -1005,7 +1005,7 @@ pub fn tool_definitions() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "name": { "type": "string" },
-                    "song_ids": { "type": "array", "items": { "type": "integer" } }
+                    "song_ids": { "type": "array", "items": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" } }
                 },
                 "required": ["name"]
             }),
@@ -1017,8 +1017,8 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "playlist_id": { "type": "integer" },
-                    "song_ids": { "type": "array", "items": { "type": "integer" } }
+                    "playlist_id": { "type": "string", "pattern": "^pl_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "song_ids": { "type": "array", "items": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" } }
                 },
                 "required": ["playlist_id", "song_ids"]
             }),
@@ -1030,8 +1030,8 @@ pub fn tool_definitions() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "playlist_id": { "type": "integer" },
-                    "song_ids": { "type": "array", "items": { "type": "integer" } }
+                    "playlist_id": { "type": "string", "pattern": "^pl_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "song_ids": { "type": "array", "items": { "type": "string", "pattern": "^sg_[0-7][0-9a-hjkmnp-tv-z]{25}$" } }
                 },
                 "required": ["playlist_id", "song_ids"]
             }),
@@ -1042,7 +1042,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Rename a playlist.",
             json!({
                 "type": "object",
-                "properties": { "playlist_id": { "type": "integer" }, "name": { "type": "string" } },
+                "properties": { "playlist_id": { "type": "string", "pattern": "^pl_[0-7][0-9a-hjkmnp-tv-z]{25}$" }, "name": { "type": "string" } },
                 "required": ["playlist_id", "name"]
             }),
         ),
@@ -1052,7 +1052,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "Delete a playlist (its songs stay in the library). Only after the learner confirmed.",
             json!({
                 "type": "object",
-                "properties": { "playlist_id": { "type": "integer" } },
+                "properties": { "playlist_id": { "type": "string", "pattern": "^pl_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["playlist_id"]
             }),
         ),
@@ -1594,7 +1594,10 @@ struct SearchArgs {
 fn parse<T: serde::de::DeserializeOwned>(arguments: &str) -> Result<T> {
     serde_json::from_str(arguments).map_err(|e| {
         crate::diagnostics::unreadable_reply(&format!("A tool call's arguments ({e})"), arguments);
-        Error::msg(format!("The tool arguments were not valid: {e}"))
+        Error::msg(format!(
+            "The tool arguments were not valid: {e}. Ids are strings with their kind as a prefix \
+             (a lesson is ls_…, a course crs_…, a song sg_…), copied exactly from a tool's results."
+        ))
     })
 }
 

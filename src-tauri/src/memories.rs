@@ -236,7 +236,7 @@ pub fn tools() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": { "type": "string", "pattern": "^mem_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "content": { "type": "string" },
                     "category": { "type": "string", "enum": CATEGORIES }
                 },
@@ -249,7 +249,7 @@ pub fn tools() -> Vec<Tool> {
             "Delete a memory that is no longer true or that the learner wants forgotten.",
             json!({
                 "type": "object",
-                "properties": { "id": { "type": "integer" } },
+                "properties": { "id": { "type": "string", "pattern": "^mem_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["id"]
             }),
         ),
