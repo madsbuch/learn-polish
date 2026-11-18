@@ -11,6 +11,7 @@
 //! - [`session`]: one sync between two devices, pairing included.
 //! - [`instance`]: noticing a database restored from an older copy.
 //! - [`service`]: the app's side — the loop, the commands, the events.
+//! - [`background`]: one sync with the app closed (Android's background job).
 //! - [`app`]: the names and ports that make this app's sync its own.
 //!
 //! The tables that never sync are [`triggers::LOCAL_TABLES`]; everything else
@@ -24,6 +25,7 @@ use crate::ids::DeviceId;
 use crate::schema::{sync_rows, sync_state};
 
 pub mod app;
+pub mod background;
 pub mod discovery;
 // A few of its functions are only for the tests (pull_all, data_tables).
 #[allow(dead_code)]

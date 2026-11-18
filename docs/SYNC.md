@@ -104,7 +104,14 @@ this file says why.
   (trigger SQL generated from the schema at upgrade time: no separate
   script), `wire.rs`, `discovery.rs`, `session.rs`, `service.rs` (the loop and
   the commands), `background.rs` (Android), tests beside each.
-- `src-tauri/plugins/sync-background`: the WorkManager job (Kotlin → JNI).
-- `src/screens/Devices.tsx`, `src/lib/sync.ts`.
+- `src-tauri/plugins/sync-background`: the WorkManager job (Kotlin → JNI),
+  scheduled by `service.rs` at every start. The JNI entry point needs
+  `#[no_mangle]`, which the app crate's `unsafe_code = "forbid"` refuses, so
+  the plugin's `jni_entry!` macro writes it (as `tauri::mobile_entry_point`
+  writes the app's others) around the safe `background::run_blocking`. A run
+  skips a database the app hasn't upgraded yet (`db::is_current`).
+- `src/screens/Devices.tsx`, `src/lib/sync.ts` (`useSyncReload`: screens
+  showing data they loaded reload, debounced, when `sync-changed` arrives;
+  a drill or check-in in progress keeps its own data).
 - Every schema change from now on re-creates the triggers of the tables it
   touches; a test fails if a synced table's triggers don't list its columns.

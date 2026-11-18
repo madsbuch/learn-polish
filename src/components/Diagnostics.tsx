@@ -21,7 +21,7 @@ function asText(entries: DiagnosticEntry[]): string {
 }
 
 /** Copies text, with a fallback for webviews without the clipboard API. */
-async function copy(text: string): Promise<void> {
+export async function copyText(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
     return;
@@ -82,7 +82,7 @@ export function Diagnostics() {
             disabled={!entries?.length}
             onClick={async () => {
               try {
-                await copy(asText(entries ?? []));
+                await copyText(asText(entries ?? []));
                 toast("Copied — paste it into a message.");
               } catch (cause) {
                 toast(errorMessage(cause));

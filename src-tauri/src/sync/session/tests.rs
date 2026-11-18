@@ -241,6 +241,19 @@ async fn a_round_finds_the_peer_where_it_was_last_reached() {
     assert_eq!(count(&joiner.db, "SELECT count(*) AS n FROM memories WHERE content = 'found in a round'"), 1);
 }
 
+/// Android's background job: the phone's app is closed (its database opened
+/// afresh by the run), and the computer is found where it was last reached.
+#[tokio::test]
+async fn a_background_run_syncs_with_a_device_that_answers() {
+    let h = host().await;
+    let phone = device();
+    join(&phone.db, &offer_from(&h).await, false).await.unwrap();
+    memory(&phone.db, "written before the app closed");
+    let summary = crate::sync::background::run_once(&phone.path, Duration::from_secs(30)).await;
+    assert!(summary.starts_with("synced with"), "{summary}");
+    assert_eq!(count(&h.dev.db, "SELECT count(*) AS n FROM memories WHERE content = 'written before the app closed'"), 1);
+}
+
 #[tokio::test]
 async fn a_code_works_once() {
     let h = host().await;

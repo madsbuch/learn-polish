@@ -22,6 +22,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { useSyncReload } from "../lib/sync";
 import type { Memory, MemoryCategory, MemoryId, MemoryOverview } from "../lib/types";
 
 const CATEGORIES: { value: MemoryCategory; title: string; label: string }[] = [
@@ -55,12 +56,15 @@ export function Memories({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     api
       .memoriesOverview()
       .then(setOverview)
       .catch((cause) => setError(errorMessage(cause)));
-  }, []);
+  };
+  useEffect(load, []);
+  // Memories another device's tutor saved (sync). One being edited keeps its draft.
+  useSyncReload(load);
 
   async function run(action: () => Promise<MemoryOverview>) {
     setBusy(true);

@@ -1,0 +1,26 @@
+[package]
+name = "tauri-plugin-sync-background"
+version = "0.1.0"
+edition = "2021"
+description = "Polski's background sync on Android: a WorkManager job every half hour on Wi-Fi, calling back into the app's Rust sync."
+publish = false
+links = "tauri-plugin-sync-background"
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+
+# The worker enters the app's Rust code through JNI (src/lib.rs, `jni_entry!`).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+# No unsafe code here either: the JNI entry point needs `#[no_mangle]`, which
+# the lint counts as unsafe, so it is a macro the app expands (see lib.rs).
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+as_conversions = "deny"

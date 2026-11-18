@@ -1,0 +1,3 @@
+[default]
+description = "Scheduling the background sync. The app's Rust code calls it; the web view never needs to."
+permissions = ["allow-schedule", "allow-cancel"]

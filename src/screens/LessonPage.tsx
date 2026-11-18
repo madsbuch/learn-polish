@@ -32,6 +32,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { lessonType } from "../lib/lessonTypes";
+import { useSyncReload } from "../lib/sync";
 import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { CourseProgress, LessonDetail, LessonId, WikiSource } from "../lib/types";
 
@@ -86,6 +87,8 @@ export function LessonPage({
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
+  // The lesson as another device changed it (sync).
+  useSyncReload(() => void reload());
 
   // Opening a lesson downloads its audio at normal speed in the background
   // (conversation first, in each speaker's voice), so every 🔊 here plays at

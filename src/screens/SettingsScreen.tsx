@@ -6,7 +6,7 @@ import { CostCenter } from "../components/CostCenter";
 import { Diagnostics } from "../components/Diagnostics";
 import { KeyShare } from "../components/KeyShare";
 import { megabytes } from "./AudioScreen";
-import { MemoryIcon, PlayerIcon, StudyIcon } from "../components/icons";
+import { DevicesIcon, MemoryIcon, PlayerIcon, StudyIcon } from "../components/icons";
 import {
   Button,
   Card,
@@ -42,6 +42,7 @@ export function SettingsScreen({
   onOpenMemories,
   onOpenAudio,
   onOpenHowTo,
+  onOpenDevices,
 }: {
   settings: Settings;
   onSettings: (settings: Settings) => void;
@@ -51,6 +52,8 @@ export function SettingsScreen({
   onOpenAudio: () => void;
   /** The guide: how to use the app, and why. */
   onOpenHowTo: () => void;
+  /** Syncing with the learner's other devices. */
+  onOpenDevices: () => void;
 }) {
   const [keyDraft, setKeyDraft] = useState("");
   const [sounds, setSounds] = useState(soundsEnabled);
@@ -134,6 +137,12 @@ export function SettingsScreen({
             title="How to use"
             subtitle="The idea behind the app, and how to get the most from it"
             onClick={onOpenHowTo}
+          />
+          <ListItem
+            leading={<DevicesIcon />}
+            title="Devices"
+            subtitle="Keep your phone and computer in step"
+            onClick={onOpenDevices}
           />
         </List>
       </Section>

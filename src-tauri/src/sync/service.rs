@@ -30,10 +30,14 @@ use crate::error::{Error, Result};
 use crate::ids::DeviceId;
 
 /// Syncs at least this often while the app runs, changes or not. The
-/// computer asks often: the phone's own pushes may not reach it (a firewall
-/// may turn away incoming connections), so its asking is what brings the
-/// phone's changes over. Idle syncs are cheap (no full comparison when
-/// nothing moved). The phone asks less, for the battery.
+/// computer asks often: the phone's own pushes may not reach it (a desktop
+/// firewall — macOS's for an unsigned app, Windows' on a "public" network —
+/// turns away incoming connections, and the learner is never asked), so the
+/// computer's own asking is what brings the phone's changes over; a
+/// connection the computer makes is answered. The same goes for the phone's
+/// background runs (background.rs): one that can't reach the computer leaves
+/// its changes for the computer's next round. Idle syncs are cheap (no full
+/// comparison when nothing moved). The phone asks less, for the battery.
 const IDLE_ROUND: Duration = if cfg!(any(target_os = "android", target_os = "ios")) {
     Duration::from_secs(60)
 } else {
@@ -108,6 +112,12 @@ impl SyncService {
     pub async fn start(self: &Arc<Self>, app: AppHandle, db_path: PathBuf) -> Result<()> {
         if self.started.swap(true, Ordering::SeqCst) {
             return Ok(());
+        }
+        // Android also syncs with the app closed: every half hour, on
+        // unmetered Wi-Fi (the sync-background plugin, background.rs).
+        // Scheduled again at each start, which keeps its timing.
+        if let Err(e) = tauri_plugin_sync_background::schedule(&app, &db_path.to_string_lossy()) {
+            self.note(&format!("Could not schedule syncing in the background: {e}"));
         }
         let _ = self.db_path.set(db_path);
         // The key pair, made now rather than on the first sync.

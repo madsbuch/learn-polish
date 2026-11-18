@@ -2245,6 +2245,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-songplayer",
+ "tauri-plugin-sync-background",
  "thiserror 2.0.21",
  "tokio",
 ]
@@ -4407,6 +4408,16 @@ dependencies = [
 name = "tauri-plugin-songplayer"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+]
+
+[[package]]
+name = "tauri-plugin-sync-background"
+version = "0.1.0"
+dependencies = [
+ "jni",
  "serde",
  "tauri",
  "tauri-plugin",

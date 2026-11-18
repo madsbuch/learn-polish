@@ -407,3 +407,15 @@ export function ScanIcon() {
     </Glyph>
   );
 }
+
+/** A phone beside a laptop: the learner's devices, kept in step. */
+export function DevicesIcon() {
+  return (
+    <Glyph>
+      <rect x="3" y="5" width="13" height="9" rx="1.5" />
+      <path d="M1.5 17.5h11" />
+      <rect x="16" y="8" width="6" height="11" rx="1.5" />
+      <path d="M18.5 16.5h1" />
+    </Glyph>
+  );
+}

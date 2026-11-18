@@ -74,6 +74,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_songplayer::init())
+        // Android's background sync (sync/background.rs): scheduled by sync's start.
+        .plugin(tauri_plugin_sync_background::init())
         // Scanning another device's API keys off a QR code (phones only).
         .plugin(barcode_scanner())
         // Every file the webview shows or plays — pictures, covers, songs —

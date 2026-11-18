@@ -29,6 +29,7 @@ import { fileUrl } from "../lib/files";
 import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
 import type { CourseClosed, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/types";
 import { onEvent } from "../lib/events";
+import { useSyncReload } from "../lib/sync";
 import { z } from "zod";
 import { CourseIdSchema, FileIdSchema } from "../lib/types";
 
@@ -111,6 +112,10 @@ export function CourseDetail({
     }
   }
 
+  // Bumped when another device's data arrives (sync): the lists load again.
+  const [loads, setLoads] = useState(0);
+  useSyncReload(() => setLoads((n) => n + 1));
+
   useEffect(() => {
     setError(null);
     Promise.all([api.lessonsByImportance(courseId), api.browseWords(courseId, "", 500), api.browseSentences(courseId)])
@@ -120,7 +125,7 @@ export function CourseDetail({
         setSentences(sentenceList);
       })
       .catch((cause) => setError(errorMessage(cause)));
-  }, [courseId]);
+  }, [courseId, loads]);
 
   const filtered = useMemo(() => {
     if (!words) return [];

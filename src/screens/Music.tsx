@@ -50,6 +50,7 @@ import { EpisodeSources, PodcastSound } from "../components/Podcast";
 import { ArticleReader } from "../components/Sources";
 import { PodcastComposer } from "./PodcastComposer";
 import { SongComposer } from "./SongComposer";
+import { useSyncReload } from "../lib/sync";
 
 /**
  * The music library: songs and playlists. Playing happens in the player
@@ -185,6 +186,8 @@ export function Music({
   }, []);
 
   useEffect(refresh, [refresh]);
+  // Songs and playlists from another device (sync).
+  useSyncReload(refresh);
 
   // Songs finish in the background; the backend says when.
   useEffect(() => {

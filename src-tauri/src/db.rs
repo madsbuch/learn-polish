@@ -95,6 +95,18 @@ impl Db {
     }
 }
 
+/// Whether the database at `path` is already at this build's schema, read
+/// without changing anything (a missing file is not made). A background sync
+/// runs only then: upgrading is for the app to do, with the learner there.
+pub fn is_current(path: &std::path::Path) -> Result<bool> {
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let mut conn = SqliteConnection::establish(&path.to_string_lossy())?;
+    let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(&mut conn)?.user_version;
+    Ok(version == SCHEMA_VERSION)
+}
+
 pub fn open(path: &std::path::Path) -> Result<Conn> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

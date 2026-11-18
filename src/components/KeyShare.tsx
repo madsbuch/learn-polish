@@ -109,7 +109,7 @@ function ShowQr({ onClose }: { onClose: () => void }) {
 }
 
 /** Shown over the camera while it scans: a frame to aim with and a way out. */
-function ScanOverlay() {
+export function ScanOverlay() {
   useBackHandler(true, () => void cancelScan());
   return createPortal(
     <div className="scan-overlay">

@@ -37,6 +37,7 @@ import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
 import { XpDayScreen } from "./screens/XpDayScreen";
 import { HowToUse } from "./screens/HowToUse";
+import { Devices } from "./screens/Devices";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
@@ -46,6 +47,7 @@ import { Tutor } from "./screens/Tutor";
 import { onEvent, onSignal } from "./lib/events";
 import { FactCheckSchema, TutorDoneSchema } from "./lib/types";
 import { setIdOpeners } from "./lib/ids";
+import { useSyncReload } from "./lib/sync";
 
 type Tab = "exercises" | "tutor" | "music" | "settings";
 
@@ -90,6 +92,7 @@ type Overlay =
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
   | { kind: "howTo" }
+  | { kind: "devices" }
   | { kind: "search" }
   | { kind: "player"; back?: Overlay }
   | {
@@ -346,6 +349,24 @@ export default function App() {
       setError(errorMessage(cause));
     }
   }, [refresh]);
+
+  // Another device's data arrived (sync, debounced): the screens' data and
+  // the settings that came with it (the day's five, the models) are read
+  // again. The theme and the other device settings stay this device's own.
+  // A drill or check-in that is open carries on with the plan it started
+  // with; an open course page takes its fresh progress.
+  useSyncReload(() => {
+    void (async () => {
+      await reloadAll();
+      const fresh = await api.getCourseProgress().catch(() => null);
+      if (!fresh) return;
+      setOverlay((current) => {
+        if (current.kind !== "course") return current;
+        const progress = fresh.find((entry) => entry.course.id === current.progress.course.id);
+        return progress ? { ...current, progress } : current;
+      });
+    })();
+  });
 
   // Reminders follow the day: re-armed on every launch (the OS drops them
   // after a reboot or an update), and whenever the day is done or what is
@@ -608,6 +629,14 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "devices") {
+    return (
+      <div className="app">
+        <Devices onBack={() => setOverlay({ kind: "none" })} />
+      </div>
+    );
+  }
+
   if (overlay.kind === "audio") {
     return (
       <div className="app">
@@ -752,6 +781,7 @@ export default function App() {
           }
           onOpenAudio={() => setOverlay({ kind: "audio" })}
           onOpenHowTo={() => setOverlay({ kind: "howTo" })}
+          onOpenDevices={() => setOverlay({ kind: "devices" })}
         />
       ) : null}
 

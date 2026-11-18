@@ -233,7 +233,7 @@
   font-size: var(--font-caption);
   line-height: 1.5;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 /* A lesson's pictures, on its page. */
@@ -381,7 +381,7 @@
   font-size: var(--font-small);
   line-height: var(--leading-small);
   font-weight: var(--weight-bold);
-  overflow-wrap: anywhere;
+  word-break: break-all;
   background: var(--surface);
   border: 1.5px solid var(--line);
   transition: transform 0.15s, background var(--duration), border-color var(--duration);
@@ -1280,7 +1280,7 @@ body:has(.session-foot) .conversation-control {
 .session-body {
   min-height: 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 .session-top,
 .session-body,
@@ -1291,7 +1291,7 @@ body:has(.session-foot) .conversation-control {
 .bubble {
   min-width: 0;
   max-width: calc(100% - var(--control-md));
-  overflow-wrap: anywhere;
+  word-break: break-all;
   flex-wrap: wrap;
 }
 .bubble > .grow {
@@ -1500,4 +1500,13 @@ button.id-chip {
 .id-chip[data-missing] {
   opacity: 0.6;
   font-style: italic;
+}
+
+/* ------------------------------------------------- a pairing code as text */
+/* One long word: it breaks anywhere rather than widen the sheet. */
+.sync-code {
+  display: block;
+  word-break: break-all;
+  font-family: var(--font-mono);
+  text-align: center;
 }
