@@ -150,6 +150,22 @@ const CHECK_RULES: &str = "You judge how advanced language-learning material is,
     itself — its vocabulary, grammar and the tasks its lessons set — not how long it is. Reply \
     with JSON only: {\"level\": \"A2\", \"why\": \"one short sentence\"}.";
 
+/// Tokens a level check may use, thinking included.
+const CHECK_TOKENS: u32 = 2000;
+
+/// Days before a course whose check gave no level is tried again.
+const RETRY_AFTER_DAYS: i64 = 7;
+
+/// The level in a reply cut off before its JSON closed — `{"level": "A2",
+/// "why": "The` — so a check that did answer is not thrown away.
+fn salvage_level(text: &str) -> Option<&'static str> {
+    let at = text.find("\"level\"")?;
+    let after = &text[at + "\"level\"".len()..];
+    let value = after.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let end = value.find('"').unwrap_or(value.len()).min(4);
+    normalize(&value[..end])
+}
+
 #[derive(Deserialize)]
 struct Verdict {
     level: String,
@@ -185,18 +201,24 @@ pub async fn check(db: &Db, course_id: i64) -> Result<Checked> {
         (ai::api_key(conn)?, ai::partner_model(conn)?, material(conn, course_id)?, given, title)
     };
     let messages = [ai::Wire::system(CHECK_RULES), ai::Wire::user(text)];
-    let reply = ai::complete_json(&key, &model, &messages, 300).await?;
+    // Room for a reasoning model's thinking, which counts against the limit:
+    // with too little, the answer is cut off after a few words.
+    let reply = ai::complete_json(&key, &model, &messages, CHECK_TOKENS).await?;
     let verdict = ai::json_in::<Verdict>(&reply.text)
         .ok()
-        .and_then(|v| normalize(&v.level).map(|level| (level, v.why)));
-    let Some((checked, why)) = verdict else {
-        crate::diagnostics::unreadable_reply(&format!("The level check of “{title}”"), &reply.text);
-        return Err(Error::msg("The level check did not answer."));
-    };
-    let outcome = reconcile(given.as_deref(), checked);
+        .and_then(|v| normalize(&v.level).map(|level| (level, v.why)))
+        .or_else(|| salvage_level(&reply.text).map(|level| (level, String::new())));
     let mut guard = db.lock();
     let conn = &mut *guard;
     let _ = crate::costs::record_tokens(conn, crate::costs::PARTNER, &model, reply.cost, "level check", reply.tokens);
+    let Some((checked, why)) = verdict else {
+        crate::diagnostics::unreadable_reply(&format!("The level check of “{title}”"), &reply.text);
+        // Tried: the next try waits (see [`RETRY_AFTER_DAYS`]), instead of
+        // paying for the same check at every start.
+        diesel::update(courses::table.find(course_id)).set(courses::level_checked_at.eq(db::now_secs())).execute(conn)?;
+        return Err(Error::msg("The level check did not answer."));
+    };
+    let outcome = reconcile(given.as_deref(), checked);
     diesel::update(courses::table.find(course_id))
         .set((courses::level.eq(outcome.level), courses::level_checked_at.eq(db::now_secs())))
         .execute(conn)?;
@@ -223,8 +245,10 @@ pub fn check_unchecked_in_background(app: &tauri::AppHandle) {
             if ai::api_key(&mut guard).is_err() {
                 return;
             }
+            let retry = db::now_secs() - RETRY_AFTER_DAYS * 86_400;
             courses::table
-                .filter(courses::level_checked_at.is_null())
+                // Never tried, or tried a while ago without an answer.
+                .filter(courses::level_checked_at.is_null().or(courses::level_checked_at.lt(retry)))
                 // A given level stands: only unlevelled courses are checked.
                 .filter(courses::level.is_null())
                 .filter(courses::closed_at.is_null())
@@ -236,8 +260,17 @@ pub fn check_unchecked_in_background(app: &tauri::AppHandle) {
                 .unwrap_or_default()
         };
         for id in ids {
-            if let Err(error) = check(&db, id).await {
-                crate::diagnostics::note("background", format!("Checking course {id}'s level failed: {error}"));
+            match check(&db, id).await {
+                Ok(_) => {}
+                // Offline (or the app was sent to the background): the
+                // rest would fail the same way. They wait for the next start.
+                Err(Error::Http(error)) => {
+                    crate::diagnostics::note("background", format!("Checking course levels stopped: {error}"));
+                    break;
+                }
+                Err(error) => {
+                    crate::diagnostics::note("background", format!("Checking course {id}'s level failed: {error}"));
+                }
             }
         }
     });
@@ -258,6 +291,14 @@ mod tests {
         // Further apart, the check wins; an unlevelled course takes it.
         assert_eq!(reconcile(Some("A1"), "B2"), Checked { level: "A1", changed: false }, "a given level stands");
         assert_eq!(reconcile(None, "A2"), Checked { level: "A2", changed: true });
+    }
+
+    #[test]
+    fn a_cut_off_reply_still_gives_its_level() {
+        assert_eq!(salvage_level(r#"{"level": "A2", "why"#), Some("A2"));
+        assert_eq!(salvage_level(r#"{"level":"b1"#), Some("B1"));
+        assert_eq!(salvage_level(r#"{"level": ""#), None);
+        assert_eq!(salvage_level(", `w Zakopanem`). * Complexity level:"), None);
     }
 
     #[test]

@@ -326,6 +326,9 @@ CREATE TABLE IF NOT EXISTS files (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS files_kind ON files(kind);
+-- A file's details without its bytes (files.rs reads them from here: the
+-- row itself holds the bytes before `path`).
+CREATE INDEX IF NOT EXISTS files_meta ON files(id, kind, name, mime, size, path);
 
 -- Generated speech, so a line is only ever paid for once and replays work
 -- offline. Keyed by the exact text plus the model and voice that produced it,

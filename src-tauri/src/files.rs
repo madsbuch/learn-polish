@@ -35,15 +35,34 @@ pub const WORD_IMAGE: &str = "word_image";
 
 /// A file's details, without its bytes.
 #[allow(dead_code)] // every column, though not every caller reads each
-#[derive(Debug, Clone, Queryable, Selectable)]
-#[diesel(table_name = files, check_for_backend(diesel::sqlite::Sqlite))]
+#[derive(Debug, Clone, QueryableByName)]
 pub struct FileInfo {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub id: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub kind: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub mime: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub size: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub path: Option<String>,
+}
+
+// A file's details are read through the `files_meta` index, never the row:
+// `path` was added after `bytes`, so reading it from the row walks the whole
+// file — a song's audio, megabytes — from disk. Read from the index, the
+// Music tab's 30 songs took a fraction of a millisecond instead of a second.
+const META: &str = "SELECT id, kind, name, mime, size, path FROM files INDEXED BY files_meta";
+
+#[derive(QueryableByName)]
+struct PathRow {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    id: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    path: String,
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -67,10 +86,9 @@ pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) 
 }
 
 pub fn info(conn: &mut Conn, id: i64) -> Result<FileInfo> {
-    files::table
-        .find(id)
-        .select(FileInfo::as_select())
-        .first(conn)
+    diesel::sql_query(format!("{META} WHERE id = ?"))
+        .bind::<diesel::sql_types::BigInt, _>(id)
+        .get_result(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That file no longer exists."))
 }
@@ -87,13 +105,17 @@ pub fn read(conn: &mut Conn, id: i64) -> Result<(String, Vec<u8>)> {
 
 /// Where each file's copy on disk is, for those that have one.
 pub fn paths(conn: &mut Conn, ids: &[i64]) -> Result<std::collections::HashMap<i64, String>> {
-    Ok(files::table
-        .filter(files::id.eq_any(ids))
-        .filter(files::path.is_not_null())
-        .select((files::id, files::path.assume_not_null()))
-        .load::<(i64, String)>(conn)?
-        .into_iter()
-        .collect())
+    let mut found = std::collections::HashMap::new();
+    for chunk in ids.chunks(500) {
+        // Ids are integers: written into the query, they cannot inject.
+        let list = chunk.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+        let rows: Vec<PathRow> = diesel::sql_query(format!(
+            "SELECT id, path FROM files INDEXED BY files_meta WHERE path IS NOT NULL AND id IN ({list})"
+        ))
+        .load(conn)?;
+        found.extend(rows.into_iter().map(|row| (row.id, row.path)));
+    }
+    Ok(found)
 }
 
 /// Deletes files and their copies on disk. A file still referenced where
@@ -295,11 +317,18 @@ pub fn sync_to_disk(app: &AppHandle) {
             }
             // Only rows that still have a path: rewriting a row rewrites its
             // bytes too, and doing that to every clip at every start was slow.
-            diesel::update(
-                files::table.filter(files::kind.ne_all([SONG_AUDIO, SONG_IMAGE])).filter(files::path.is_not_null()),
-            )
-            .set(files::path.eq(None::<String>))
-                .execute(&mut *db.lock())?;
+            // They are found through the index, not by reading every row.
+            let stale: Vec<PathRow> = diesel::sql_query(format!(
+                "SELECT id, path FROM files INDEXED BY files_meta \
+                 WHERE path IS NOT NULL AND kind NOT IN ('{SONG_AUDIO}', '{SONG_IMAGE}')"
+            ))
+            .load(&mut *db.lock())?;
+            if !stale.is_empty() {
+                let ids: Vec<i64> = stale.iter().map(|row| row.id).collect();
+                diesel::update(files::table.filter(files::id.eq_any(ids)))
+                    .set(files::path.eq(None::<String>))
+                    .execute(&mut *db.lock())?;
+            }
             let ids: Vec<i64> = files::table
                 .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
                 .select(files::id)
