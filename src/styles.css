@@ -885,8 +885,8 @@ body:has(.conversation-control) .line {
   border: 1px solid var(--line-soft);
   box-shadow: var(--card-shadow);
   /* One layer with its own paint: when the box scrolls to the next line
-     (FollowLyrics, one smooth scroll per line), it moves as one piece
-     instead of repainting in halves (seen in WKWebView). */
+     (FollowLyrics, one smooth scroll per line), everything in it moves
+     together (see .follow-line on why its fade animates colours only). */
   transform: translateZ(0);
   will-change: scroll-position;
   contain: paint;
@@ -901,6 +901,27 @@ body:has(.conversation-control) .line {
   padding: var(--space-1) var(--space-2);
   margin: 0 calc(var(--space-2) * -1);
   border-radius: var(--radius-md);
+  /* The highlight fades from line to line. Colours only, never opacity: an
+     opacity fade lifts the line into a layer of its own in WebKit (the Mac),
+     which then scrolls a moment apart from the rest of the box — half the
+     box moving, then the other half. Colours are painted with the box, so
+     it moves as one piece (Chrome on Android was fine either way). */
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+.follow-line .pl,
+.follow-line .en,
+.follow-line .gloss {
+  transition: color 0.3s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .follow-line,
+  .follow-line .pl,
+  .follow-line .en,
+  .follow-line .gloss {
+    transition: none;
+  }
 }
 /* Who speaks, in a podcast with a cast: shown when it changes. */
 .follow-speaker,
