@@ -90,8 +90,8 @@ The app:
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
 - Every course has a CEFR level (A1–C2): give one when you make a course — what its words, \
   grammar and tasks demand — and give a lesson its own (update_lesson) only when it differs, \
-  like a challenge a level up. A level you give always stands; a course made without one gets \
-  it from a small model's check of its core lessons. A level goes in the level field (create_course, \
+  like a challenge a level up. A level you give always stands. Asked to add missing levels, \
+  read each unlevelled course (get_course) and set its level with edit_course. A level goes in the level field (create_course, \
   edit_course, update_lesson) and the app shows it as a badge — never write it into a title. \
   Asked to level all courses, call edit_course with level for each one.
 - Levels describe material; they never limit it. Make exactly what the learner asks for, at \
@@ -3100,10 +3100,6 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
                     let done = execute(conn, &name, &arguments);
                     for course_id in course_ids(conn).difference(&before) {
                         crate::pictures::draw_in_background(app, *course_id);
-                    }
-                    if course_ids(conn).len() > before.len() {
-                        // Every new course's level is checked (levels.rs).
-                        crate::levels::check_unchecked_in_background(app);
                     }
                     if name == "create_picture_lesson" {
                         drop(guard);

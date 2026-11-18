@@ -133,6 +133,8 @@ export default function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [courses, setCourses] = useState<CourseProgress[]>([]);
   const [tab, setTab] = useState<Tab>("exercises");
+  /** A request for the tutor from a button elsewhere ("Add levels"): starts a new conversation. */
+  const [tutorAsk, setTutorAsk] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
 
   // Studying a lesson — its page, its drill, its check-in — often means pen
@@ -609,7 +611,10 @@ export default function App() {
           courses={courses}
           onOpenLesson={(lesson) => setOverlay({ kind: "lesson", lessonId: lesson.id, back: { kind: "none" } })}
           onOpenCourse={(progress) => setOverlay({ kind: "course", progress, back: { kind: "none" } })}
-          onOpenTutor={() => setTab("tutor")}
+          onOpenTutor={(ask) => {
+            setTutorAsk(ask ?? null);
+            setTab("tutor");
+          }}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
           onOpenXpDay={(day) => setOverlay({ kind: "xpDay", day, back: { kind: "none" } })}
           onOpenSearch={() => setOverlay({ kind: "search" })}
@@ -640,6 +645,8 @@ export default function App() {
           }}
           onChanged={() => void reloadAll()}
           onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
+          ask={tutorAsk}
+          onAsked={() => setTutorAsk(null)}
         />
       ) : null}
 

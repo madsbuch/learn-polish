@@ -28,6 +28,10 @@ function greeting(): string {
   return "Dobry wieczór";
 }
 
+/** What "Add levels" asks the tutor. */
+const LEVEL_ASK =
+  "Add a CEFR level to every course that doesn't have one yet: read each (get_course) and set its level with edit_course. Change nothing else.";
+
 /** Rough minutes for a list of lessons, for the summary line. */
 function estimate(lessons: Lesson[]): number {
   return lessons.reduce((sum, lesson) => sum + lessonMinutes(lesson), 0);
@@ -72,7 +76,8 @@ export function Exercises({
   courses: CourseProgress[];
   onOpenLesson: (lesson: Lesson) => void;
   onOpenCourse: (progress: CourseProgress) => void;
-  onOpenTutor: () => void;
+  /** Opens the tutor; with `ask`, a new conversation that starts with it. */
+  onOpenTutor: (ask?: string) => void;
   onOpenProgress: () => void;
   /** What earned a day's XP. */
   onOpenXpDay: (day: number) => void;
@@ -88,6 +93,9 @@ export function Exercises({
   // The folder of one-offs (Other lessons) comes last of all, and only
   // when it has lessons.
   const open = courses.filter((t) => t.closedAt === null && !t.openEnded);
+  // Courses without a level: the tutor levels them when asked (nothing does
+  // it behind the learner's back — PRINCIPLES.md).
+  const unlevelled = open.filter((t) => !t.course.level).length;
   const folders = courses.filter((t) => t.openEnded && t.totalLessons > 0);
   const active = [
     ...open.filter((t) => t.status === "active"),
@@ -247,7 +255,7 @@ export function Exercises({
                   icon="✨"
                   title="Build your first Polish course"
                   action={
-                    <Button variant="primary" size="sm" onClick={onOpenTutor}>
+                    <Button variant="primary" size="sm" onClick={() => onOpenTutor()}>
                       Create a course
                     </Button>
                   }
@@ -257,13 +265,18 @@ export function Exercises({
               </List>
             ) : (
               <Stack gap={3}>
+                {unlevelled > 0 ? (
+                  <Button variant="primary" wide onClick={() => onOpenTutor(LEVEL_ASK)}>
+                    {`✨ Add levels to ${unlevelled === 1 ? "1 course" : `${unlevelled} courses`}`}
+                  </Button>
+                ) : null}
                 <CourseList entries={active} onOpen={onOpenCourse} />
                 <List>
                   <ListItem
                     leading={<Avatar>✨</Avatar>}
                     title="New course or lesson"
                     subtitle="Ask the tutor for anything — a theme, a conjugation, a grammar point"
-                    onClick={onOpenTutor}
+                    onClick={() => onOpenTutor()}
                   />
                 </List>
               </Stack>

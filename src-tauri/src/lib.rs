@@ -103,9 +103,6 @@ pub fn run() {
                 songs::resume_pending(app);
                 // Picture lessons whose drawing an earlier run did not finish.
                 pictures::draw_missing_in_background(app);
-                // Courses not levelled yet (from before levels, or made while
-                // offline) are checked, one at a time.
-                levels::check_unchecked_in_background(app);
                 files::sync_to_disk(app);
                 // Lessons built on Wikipedia, checked against it every three months.
                 wiki::check_due_in_background(app);

@@ -1,20 +1,19 @@
 //! How advanced a course is, on the CEFR scale learners know: A1 (a first
-//! course) to C2. The tutor gives each course a level when it makes it, and
-//! a level given always stands; a course without one gets it from a small
-//! model's reading of its core lessons. A lesson can carry its own level — a
-//! challenge above its course — and otherwise has its course's. A level is
-//! shown as a badge, never written into a title (see [`split_title`]).
+//! course) to C2. The tutor gives each course a level when it makes it; a
+//! course without one gets it when the learner asks — the Exercises tab
+//! offers "Add levels" then, which asks the tutor. Nothing levels courses
+//! behind the learner's back (PRINCIPLES.md). A lesson can carry its own
+//! level — a challenge above its course — and otherwise has its course's. A
+//! level is shown as a badge, never written into a title (see
+//! [`split_title`]).
 //!
 //! Levels describe material; they never limit what can be made or done.
 
 use diesel::prelude::*;
-use serde::Deserialize;
-use tauri::Manager;
 
-use crate::ai;
-use crate::db::{self, Conn, Db};
+use crate::db::Conn;
 use crate::error::{Error, Result};
-use crate::schema::{conversation_lines, course_lessons, courses, lessons, sentences, words};
+use crate::schema::{courses, lessons};
 
 /// The CEFR scale, lowest first.
 pub const LEVELS: &[&str] = &["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -110,196 +109,17 @@ pub fn set_lesson_level(conn: &mut Conn, lesson_id: i64, level: Option<&str>) ->
     Ok(level)
 }
 
-/// What the checker reads: the course's own material, briefly.
-fn material(conn: &mut Conn, course_id: i64) -> Result<String> {
-    let (title, summary): (String, String) =
-        courses::table.find(course_id).select((courses::title_en, courses::summary_en)).first(conn)?;
-    // Challenges are beyond the course's level by design: they would pull
-    // the reading up, so the check reads the core only.
-    let ids: Vec<i64> = course_lessons::table
-        .inner_join(lessons::table)
-        .filter(course_lessons::course_id.eq(course_id))
-        .filter(lessons::challenge.eq(0))
-        .select(course_lessons::lesson_id)
-        .load(conn)?;
-    let listed: Vec<(String, String, String)> = lessons::table
-        .filter(lessons::id.eq_any(&ids))
-        .select((lessons::lesson_type, lessons::title, lessons::objectives))
-        .load(conn)?;
-    let vocabulary: Vec<String> =
-        words::table.filter(words::lesson_id.eq_any(&ids)).select(words::pl).limit(60).load(conn)?;
-    let examples: Vec<String> =
-        sentences::table.filter(sentences::lesson_id.eq_any(&ids)).select(sentences::pl).limit(25).load(conn)?;
-    let lines: Vec<String> = conversation_lines::table
-        .filter(conversation_lines::lesson_id.eq_any(&ids))
-        .select(conversation_lines::pl)
-        .limit(20)
-        .load(conn)?;
-    let mut text = format!("Course: {title}\n{summary}\n\nLessons:\n");
-    for (kind, title, objectives) in listed {
-        text.push_str(&format!("- {kind}: {title} {objectives}\n"));
-    }
-    text.push_str(&format!("\nWords: {}\n", vocabulary.join(", ")));
-    text.push_str(&format!("\nSentences:\n{}\n", examples.join("\n")));
-    text.push_str(&format!("\nDialogue:\n{}\n", lines.join("\n")));
-    Ok(text)
-}
-
-const CHECK_RULES: &str = "You judge how advanced language-learning material is, on the CEFR scale \
-    (A1, A2, B1, B2, C1, C2), for an adult learning Polish from English. Judge the material \
-    itself — its vocabulary, grammar and the tasks its lessons set — not how long it is. Reply \
-    with JSON only: {\"level\": \"A2\", \"why\": \"one short sentence\"}.";
-
-/// Tokens a level check may use, thinking included.
-const CHECK_TOKENS: u32 = 2000;
-
-/// Days before a course whose check gave no level is tried again.
-const RETRY_AFTER_DAYS: i64 = 7;
-
-/// The level in a reply cut off before its JSON closed — `{"level": "A2",
-/// "why": "The` — so a check that did answer is not thrown away.
-fn salvage_level(text: &str) -> Option<&'static str> {
-    let at = text.find("\"level\"")?;
-    let after = &text[at + "\"level\"".len()..];
-    let value = after.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
-    let end = value.find('"').unwrap_or(value.len()).min(4);
-    normalize(&value[..end])
-}
-
-#[derive(Deserialize)]
-struct Verdict {
-    level: String,
-    #[serde(default)]
-    why: String,
-}
-
-/// What a check decided: the level kept, and whether the check changed it.
-#[derive(Debug, PartialEq)]
-pub struct Checked {
-    pub level: &'static str,
-    pub changed: bool,
-}
-
-/// What a checked level does to a course's own: an unlevelled course takes
-/// it; a level that was given — by the learner, or the tutor on their
-/// behalf — always stands (PRINCIPLES.md: levels never limit, and the app
-/// is not paternal). The check only fills in what is missing.
-pub fn reconcile(given: Option<&str>, checked: &'static str) -> Checked {
-    match given.and_then(normalize) {
-        None => Checked { level: checked, changed: true },
-        Some(given) => Checked { level: given, changed: false },
-    }
-}
-
-/// Checks one course's level with a small model, and records the outcome.
-pub async fn check(db: &Db, course_id: i64) -> Result<Checked> {
-    let (key, model, text, given, title) = {
-        let mut guard = db.lock();
-        let conn = &mut *guard;
-        let (given, title): (Option<String>, String) =
-            courses::table.find(course_id).select((courses::level, courses::title_en)).first(conn)?;
-        (ai::api_key(conn)?, ai::partner_model(conn)?, material(conn, course_id)?, given, title)
-    };
-    let messages = [ai::Wire::system(CHECK_RULES), ai::Wire::user(text)];
-    // Room for a reasoning model's thinking, which counts against the limit:
-    // with too little, the answer is cut off after a few words.
-    let reply = ai::complete_json(&key, &model, &messages, CHECK_TOKENS).await?;
-    let verdict = ai::json_in::<Verdict>(&reply.text)
-        .ok()
-        .and_then(|v| normalize(&v.level).map(|level| (level, v.why)))
-        .or_else(|| salvage_level(&reply.text).map(|level| (level, String::new())));
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    let _ = crate::costs::record_tokens(conn, crate::costs::PARTNER, &model, reply.cost, "level check", reply.tokens);
-    let Some((checked, why)) = verdict else {
-        crate::diagnostics::unreadable_reply(&format!("The level check of “{title}”"), &reply.text);
-        // Tried: the next try waits (see [`RETRY_AFTER_DAYS`]), instead of
-        // paying for the same check at every start.
-        diesel::update(courses::table.find(course_id)).set(courses::level_checked_at.eq(db::now_secs())).execute(conn)?;
-        return Err(Error::msg("The level check did not answer."));
-    };
-    let outcome = reconcile(given.as_deref(), checked);
-    diesel::update(courses::table.find(course_id))
-        .set((courses::level.eq(outcome.level), courses::level_checked_at.eq(db::now_secs())))
-        .execute(conn)?;
-    if outcome.changed && given.is_some() {
-        crate::diagnostics::note(
-            "level",
-            format!(
-                "“{title}” was made as {}, but reads as {checked} ({why}): it is shown as {checked}.",
-                given.as_deref().unwrap_or("?")
-            ),
-        );
-    }
-    Ok(outcome)
-}
-
-/// Checks, in the background, every course not checked yet: new ones, and
-/// those from before levels — one at a time, so it costs little.
-pub fn check_unchecked_in_background(app: &tauri::AppHandle) {
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let db = app.state::<Db>();
-        let ids: Vec<i64> = {
-            let mut guard = db.lock();
-            if ai::api_key(&mut guard).is_err() {
-                return;
-            }
-            let retry = db::now_secs() - RETRY_AFTER_DAYS * 86_400;
-            courses::table
-                // Never tried, or tried a while ago without an answer.
-                .filter(courses::level_checked_at.is_null().or(courses::level_checked_at.lt(retry)))
-                // A given level stands: only unlevelled courses are checked.
-                .filter(courses::level.is_null())
-                .filter(courses::closed_at.is_null())
-                // A folder of one-offs has no level of its own.
-                .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED))
-                .order(courses::id)
-                .select(courses::id)
-                .load(&mut *guard)
-                .unwrap_or_default()
-        };
-        for id in ids {
-            match check(&db, id).await {
-                Ok(_) => {}
-                // Offline (or the app was sent to the background): the
-                // rest would fail the same way. They wait for the next start.
-                Err(Error::Http(error)) => {
-                    crate::diagnostics::note("background", format!("Checking course levels stopped: {error}"));
-                    break;
-                }
-                Err(error) => {
-                    crate::diagnostics::note("background", format!("Checking course {id}'s level failed: {error}"));
-                }
-            }
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn levels_are_read_loosely_and_checked_within_a_step() {
+    fn levels_are_read_loosely() {
         assert_eq!(normalize(" a2 "), Some("A2"));
         assert_eq!(normalize("B1+"), Some("B1"));
         assert_eq!(normalize("beginner"), None);
-        // The tutor's level stands when the check is within a step of it.
-        assert_eq!(reconcile(Some("A2"), "B1"), Checked { level: "A2", changed: false });
-        assert_eq!(reconcile(Some("A2"), "A1"), Checked { level: "A2", changed: false });
-        // Further apart, the check wins; an unlevelled course takes it.
-        assert_eq!(reconcile(Some("A1"), "B2"), Checked { level: "A1", changed: false }, "a given level stands");
-        assert_eq!(reconcile(None, "A2"), Checked { level: "A2", changed: true });
     }
 
-    #[test]
-    fn a_cut_off_reply_still_gives_its_level() {
-        assert_eq!(salvage_level(r#"{"level": "A2", "why"#), Some("A2"));
-        assert_eq!(salvage_level(r#"{"level":"b1"#), Some("B1"));
-        assert_eq!(salvage_level(r#"{"level": ""#), None);
-        assert_eq!(salvage_level(", `w Zakopanem`). * Complexity level:"), None);
-    }
 
     #[test]
     fn levels_come_out_of_titles() {

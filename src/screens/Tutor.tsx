@@ -72,8 +72,13 @@ export function Tutor({
   hasApiKey,
   hasModel,
   onOpenSettings,
+  ask = null,
+  onAsked,
   ...shared
 }: Shared & {
+  /** A message to start a new conversation with (a button elsewhere asked the tutor). */
+  ask?: string | null;
+  onAsked?: () => void;
   hasApiKey: boolean;
   /** A key alone is not enough — a model has to be chosen too. */
   hasModel: boolean;
@@ -89,6 +94,14 @@ export function Tutor({
   // All conversations, or only the ones about a word ("Talk about it").
   const [filter, setFilter] = useState<"all" | "word">("all");
   const wide = useWideLayout();
+
+  // Asked from elsewhere: a new conversation that starts with the request.
+  useEffect(() => {
+    if (!ask) return;
+    setOpening(ask);
+    setOpen("new");
+    onAsked?.();
+  }, [ask, onAsked]);
 
   function start(text: string) {
     const message = text.trim();
