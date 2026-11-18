@@ -488,7 +488,7 @@ fn pairing_codes_round_trip_and_garbage_is_rejected() {
         host_name: "Phone".into(),
         host_key: vec![1; 32],
         token: [9; 32],
-        addrs: vec!["192.168.1.20:47822".into()],
+        addrs: vec!["192.168.1.20:47812".into()],
     };
     let code = o.encode().unwrap();
     assert!(code.starts_with("polski-pair:1:"), "{code}");
@@ -700,4 +700,98 @@ fn renaming_this_device_renames_its_entry_in_the_vault() {
     assert_eq!(name, "Desk");
     assert_eq!(identity(&mut c).unwrap().name, "Desk");
     assert!(crate::sync::service::set_name(&mut c, " ").is_err());
+}
+
+/// A device's database as the app holds it: listening on `port`, which it
+/// tells the devices it syncs with.
+#[derive(Clone)]
+struct Listening {
+    db: Arc<Db>,
+    port: u16,
+}
+
+impl Store for Listening {
+    fn db(&self) -> &Db {
+        &self.db
+    }
+
+    fn listen_port(&self) -> Option<u16> {
+        Some(self.port)
+    }
+}
+
+fn last_addr(of: &Db, peer: &Db) -> Option<String> {
+    let id = me(peer).device_id.to_string();
+    crate::schema::sync_peers::table
+        .find(&id)
+        .select(crate::schema::sync_peers::last_addr)
+        .first::<Option<String>>(&mut *of.lock())
+        .optional()
+        .unwrap()
+        .flatten()
+}
+
+/// Waits for the host's side of a sync to have recorded `peer`'s address:
+/// it finishes on its own task, a moment after the client.
+async fn recorded_addr(of: &Db, peer: &Db, expected: &str) -> Option<String> {
+    for _ in 0..100 {
+        let addr = last_addr(of, peer);
+        if addr.as_deref() == Some(expected) {
+            return addr;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    last_addr(of, peer)
+}
+
+/// The side that was connected to records where the other listens — the
+/// address the connection came from, at the port it says — so a computer
+/// learns where the phone is from the phone's own syncs, and reaches it
+/// there itself without discovery.
+#[tokio::test]
+async fn the_side_connected_to_records_where_the_other_listens() {
+    let h = host().await;
+    let phone = device();
+    let slot: PairingSlot = Arc::new(Mutex::new(None));
+    let (port, _) = listen(phone.db.clone(), slot, "127.0.0.1", 0, |_| {}).await.unwrap();
+    let listening = Listening { db: phone.db.clone(), port };
+    join(&listening, &offer_from(&h).await, false).await.unwrap();
+    let at = format!("127.0.0.1:{port}");
+    assert_eq!(recorded_addr(&h.dev.db, &phone.db, &at).await.as_deref(), Some(at.as_str()), "recorded on joining");
+
+    // An idle sync (no comparison) records it too.
+    exec(&h.dev.db, "UPDATE sync_peers SET last_addr = '10.9.9.9:1'");
+    let mut outcome = None;
+    for _ in 0..100 {
+        outcome = sync_with(&listening, h.addr).await.unwrap();
+        if outcome.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(outcome.unwrap().digest_skipped);
+    assert_eq!(recorded_addr(&h.dev.db, &phone.db, &at).await.as_deref(), Some(at.as_str()));
+
+    // A device that doesn't listen (a background run) says no port: what
+    // was recorded stays, rather than its connection's throwaway port.
+    memory(&phone.db, "from the background");
+    sync_now(&phone.db, h.addr).await.unwrap();
+    // Once the host has finished with it (it's busy until then).
+    sync_now(&phone.db, h.addr).await.unwrap();
+    assert_eq!(last_addr(&h.dev.db, &phone.db).as_deref(), Some(at.as_str()));
+
+    // And the host reaches the phone there by itself.
+    memory(&h.dev.db, "for the phone");
+    let mut reached = false;
+    for _ in 0..100 {
+        let round = crate::sync::service::sync_round(&h.dev.db).await;
+        assert!(round.errors.is_empty(), "{:?}", round.errors);
+        if !round.outcomes.is_empty() {
+            reached = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(reached);
+    assert_eq!(count(&phone.db, "SELECT count(*) AS n FROM memories WHERE content = 'for the phone'"), 1);
 }

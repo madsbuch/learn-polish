@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Notify;
 
 use super::session::{self, Outcome, PairingOffer, PairingSlot, Received};
-use super::{app, discovery, engine, now_iso, with, Store};
+use super::{app, discovery, engine, now_iso, snapshots, with, Store};
 use crate::db::{self, Conn};
 use crate::error::{Error, Result};
 use crate::ids::DeviceId;
@@ -46,6 +46,8 @@ const IDLE_ROUND: Duration = if cfg!(any(target_os = "android", target_os = "ios
 /// How often the loop looks for a local change (`sync_state.seq` moving):
 /// a change is synced within this long, and a burst of them together.
 const DEBOUNCE: Duration = Duration::from_secs(3);
+/// How long after the app starts the computer looks for today's snapshot.
+const SNAPSHOT_DELAY: Duration = Duration::from_secs(60);
 /// How long a round waits for discovery's answers.
 const PROBE_WAIT: Duration = Duration::from_millis(800);
 
@@ -53,6 +55,8 @@ const PROBE_WAIT: Duration = Duration::from_millis(800);
 pub const CHANGED_EVENT: &str = "sync-changed";
 /// The event that says the status moved.
 pub const STATUS_EVENT: &str = "sync-status";
+/// The event that says the app came back to the front (lib.rs).
+pub const RESUMED_EVENT: &str = "app-resumed";
 
 /// What sync is doing: the payload of `sync-status`, and part of the status.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -77,6 +81,15 @@ pub struct SyncService {
     /// The last error noted in the Diagnostics log, so one that repeats every
     /// round is noted once.
     last_noted: Mutex<Option<String>>,
+    /// Answering other devices' discovery probes, bound again on a later
+    /// round when it couldn't be.
+    responder: discovery::Responder,
+    /// The front end has started (its first command): the Android plugins
+    /// are loaded by then, and the background job can be scheduled.
+    app_up: AtomicBool,
+    /// What the Android background job was last successfully set to:
+    /// scheduled (true) or cancelled (false); nothing yet this launch.
+    background_job: Mutex<Option<bool>>,
 }
 
 /// The service as the commands receive it.
@@ -107,19 +120,72 @@ impl SyncService {
         }
     }
 
+    /// The port this device listens for its vault on, once it does.
+    pub fn port(&self) -> Option<u16> {
+        Some(self.port.load(Ordering::SeqCst)).filter(|p| *p != 0)
+    }
+
+    /// The front end has started: called by its first command (`init_app`).
+    pub fn app_is_up(&self) {
+        self.app_up.store(true, Ordering::SeqCst);
+    }
+
+    /// Answers discovery, if it isn't yet: at start, and again each round
+    /// until it can (another program may hold the port for a while).
+    async fn keep_answering(&self, port: u16) {
+        let state = self.discovery_state.clone();
+        let answering = self
+            .responder
+            .ensure(app::DISCOVERY_PORT, move || state.lock().ok()?.clone().map(|(tag, id)| (tag, id, port)))
+            .await;
+        // Not answering only means this device isn't found by broadcast; it
+        // still asks, and is reached at the address it was last seen at.
+        if let Err(e) = answering {
+            self.note(&format!("Could not answer other devices looking for this one (trying again): {e}"));
+        }
+    }
+
+    /// Android's background sync (the sync-background plugin, background.rs):
+    /// scheduled while this device has another to sync with, cancelled when it
+    /// has none (left the vault, removed the last other device) — a job with
+    /// nothing to do would still wake the phone every half hour. Asked each
+    /// round: only once the front end is up (the plugin isn't ready before),
+    /// and again until the plugin has done it — then once per launch, which
+    /// keeps the job's timing and takes a new database path if there is one.
+    async fn keep_background_job(&self, app: &AppHandle) {
+        if !cfg!(target_os = "android") || !self.app_up.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(db_path) = self.db_path.get().cloned() else { return };
+        let Ok(wanted) = with(app, paired).await else { return };
+        let done = *self.background_job.lock().unwrap_or_else(|e| e.into_inner());
+        if done == Some(wanted) {
+            return;
+        }
+        let app2 = app.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            if wanted {
+                tauri_plugin_sync_background::schedule(&app2, &db_path.to_string_lossy())
+            } else {
+                tauri_plugin_sync_background::cancel(&app2)
+            }
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
+        match result {
+            Ok(()) => *self.background_job.lock().unwrap_or_else(|e| e.into_inner()) = Some(wanted),
+            Err(e) if wanted => self.note(&format!("Could not schedule syncing in the background (trying again): {e}")),
+            Err(e) => self.note(&format!("Could not stop syncing in the background (trying again): {e}")),
+        }
+    }
+
     /// Starts listening, answering discovery and the sync loop, once. Called
     /// from the app's setup once the database is open.
     pub async fn start(self: &Arc<Self>, app: AppHandle, db_path: PathBuf) -> Result<()> {
         if self.started.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
-        // Android also syncs with the app closed: every half hour, on
-        // unmetered Wi-Fi (the sync-background plugin, background.rs).
-        // Scheduled again at each start, which keeps its timing.
-        if let Err(e) = tauri_plugin_sync_background::schedule(&app, &db_path.to_string_lossy()) {
-            self.note(&format!("Could not schedule syncing in the background: {e}"));
-        }
-        let _ = self.db_path.set(db_path);
+        let _ = self.db_path.set(db_path.clone());
         // The key pair, made now rather than on the first sync.
         with(&app, session::identity).await?;
 
@@ -139,17 +205,36 @@ impl SyncService {
         .await?;
         self.port.store(port, Ordering::SeqCst);
 
-        // Discovery answers. Another app instance holding the port only
-        // means this one isn't found by broadcast; it still asks, and is
-        // reached at the address it was last seen at.
-        match discovery::bind_responder(app::DISCOVERY_PORT).await {
-            Ok(socket) => {
-                let state = self.discovery_state.clone();
-                tokio::spawn(discovery::respond(socket, move || {
-                    state.lock().ok()?.clone().map(|(tag, id)| (tag, id, port))
-                }));
+        // Discovery answers (and again each round, if this fails).
+        self.keep_answering(port).await;
+
+        // The computer keeps a copy of the database a day, while it syncs
+        // (snapshots.rs): what sync brings over can't then take anything
+        // past going back. A phone has the computer's.
+        if cfg!(not(any(target_os = "android", target_os = "ios"))) {
+            if let Some(dir) = snapshots::dir_for(&db_path) {
+                let (svc, app) = (self.clone(), app.clone());
+                tokio::spawn(async move {
+                    // Not while the app is starting: the copy reads the whole
+                    // database, and the first screens read it too.
+                    tokio::time::sleep(SNAPSHOT_DELAY).await;
+                    loop {
+                        if with(&app, paired).await.unwrap_or(false) {
+                            let (path, dir) = (db_path.clone(), dir.clone());
+                            let taken = tokio::task::spawn_blocking(move || snapshots::run(&path, &dir, &snapshots::today()))
+                                .await
+                                .map_err(|e| Error::msg(e.to_string()))
+                                .and_then(|r| r);
+                            match taken {
+                                Ok(Some(path)) => crate::diagnostics::note("database", format!("Today's copy of the database: {}", path.display())),
+                                Ok(None) => {}
+                                Err(e) => svc.note(&format!("Could not take today's copy of the database: {e}")),
+                            }
+                        }
+                        tokio::time::sleep(snapshots::EVERY).await;
+                    }
+                });
             }
-            Err(e) => self.note(&format!("Could not answer other devices looking for this one: {e}")),
         }
 
         // The loop: soon after a change, and every so often anyway.
@@ -166,6 +251,7 @@ impl SyncService {
                 if let (Some(vault), Ok(mut d)) = (&state.vault_id, svc.discovery_state.lock()) {
                     *d = Some((discovery::vault_tag(vault), state.device_id.clone()));
                 }
+                svc.keep_background_job(&app).await;
                 if state.vault_id.is_none() {
                     continue;
                 }
@@ -177,6 +263,7 @@ impl SyncService {
                     continue;
                 }
                 last_round = Some(Instant::now());
+                svc.keep_answering(port).await;
                 svc.round(&app).await;
                 // This round's own writes move seq (rows applied): re-read,
                 // so they alone don't call for another round.
@@ -219,10 +306,9 @@ impl SyncService {
     }
 
     async fn offer(&self, app: &AppHandle) -> Result<SyncOffer> {
-        let port = self.port.load(Ordering::SeqCst);
-        if port == 0 {
+        let Some(port) = self.port() else {
             return Err(Error::msg("Sync isn't listening yet. Try again in a moment."));
-        }
+        };
         let addrs = session::local_addrs(port);
         if addrs.is_empty() {
             return Err(Error::msg("This device isn't on a local network (Wi-Fi)."));
@@ -335,6 +421,25 @@ struct Peer {
     id: String,
     #[diesel(sql_type = Nullable<Text>)]
     last_addr: Option<String>,
+}
+
+/// Whether this device is in a vault with at least one other device (not
+/// revoked) — whether there is anyone to sync with. Only reads: the
+/// background run asks before it writes anything.
+pub fn paired(conn: &mut Conn) -> Result<bool> {
+    #[derive(QueryableByName)]
+    struct Found {
+        #[diesel(sql_type = BigInt)]
+        n: i64,
+    }
+    let found = diesel::sql_query(
+        "SELECT count(*) AS n FROM sync_state s JOIN vault_devices d ON d.id <> s.device_id
+         WHERE s.id = 1 AND s.vault_id IS NOT NULL
+           AND (s.public_key IS NULL OR d.public_key <> lower(hex(s.public_key)))
+           AND d.public_key NOT IN (SELECT public_key FROM vault_revocations)",
+    )
+    .get_result::<Found>(conn)?;
+    Ok(found.n > 0)
 }
 
 /// The vault's other devices (not revoked), with where each was last reached.
@@ -587,10 +692,15 @@ pub async fn sync_join(app: AppHandle, svc: SyncState<'_>, code: String, replace
     svc.join(&app, &code, replace).await
 }
 
-/// Syncs with the vault's devices now rather than in a few seconds.
+/// Syncs with the vault's devices now rather than in a few seconds: the
+/// Devices screen's button, and the app coming back to the front. Nothing
+/// when there's nobody to sync with.
 #[tauri::command]
-pub fn sync_now(svc: SyncState<'_>) {
-    svc.kick();
+pub async fn sync_now(app: AppHandle, svc: SyncState<'_>) -> Result<()> {
+    if with(&app, paired).await? {
+        svc.kick();
+    }
+    Ok(())
 }
 
 /// Removes a device from the vault (its key is revoked).

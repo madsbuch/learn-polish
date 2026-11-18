@@ -43,3 +43,11 @@ export function onSyncChanged(handler: (received: SyncReceived) => void): Promis
 export function onSyncStatus(handler: (activity: SyncActivity) => void): Promise<UnlistenFn> {
   return onEvent(SyncActivitySchema, "sync-status", (event) => handler(event.payload));
 }
+
+/**
+ * The app came back to the front: a phone's app resumed, a computer's
+ * window focused (`app-resumed`, from the Rust core). No payload.
+ */
+export function onAppResumed(handler: () => void): Promise<UnlistenFn> {
+  return onSignal("app-resumed", handler);
+}

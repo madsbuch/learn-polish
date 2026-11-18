@@ -68,7 +68,10 @@ pub(crate) fn read_settings(conn: &mut Conn) -> Result<Settings> {
 /// resolving it inside a multi-threaded process is not portable — every "day"
 /// boundary in the app depends on this value.
 #[tauri::command]
-pub async fn init_app(db: State<'_, Db>, tz_offset_minutes: i64) -> Result<Settings> {
+pub async fn init_app(db: State<'_, Db>, sync: crate::sync::service::SyncState<'_>, tz_offset_minutes: i64) -> Result<Settings> {
+    // The web view is up, and with it the Android plugins: sync may now
+    // schedule its background job.
+    sync.app_is_up();
     // The webview can start before the database has opened (Android); wait
     // for it here, the first command, so later ones find it open.
     let asked = std::time::Instant::now();

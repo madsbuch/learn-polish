@@ -1,36 +1,86 @@
 // Sync between the learner's devices, as the screens see it (docs/SYNC.md):
-// reloading when another device's data arrives, and saying what sync holds
-// and does in plain words.
+// reloading when another device's data arrives or the app comes back to the
+// front (syncing then too), and saying what sync holds and does in plain words.
 
 import { useEffect, useRef } from "react";
 
-import { onSyncChanged } from "./events";
+import { api } from "./api";
+import { onAppResumed, onSyncChanged } from "./events";
 import type { SyncHeld } from "./types";
 
 /** A burst of incoming batches reloads the screens once, this long after the last. */
 const RELOAD_DEBOUNCE_MS = 1200;
+/**
+ * Coming back to the front can say so several ways at once (the page turns
+ * visible, the window gains focus, the phone's app resumes): one reload and
+ * one sync, this long after the last of them.
+ */
+const RESUME_DEBOUNCE_MS = 800;
+/**
+ * At most one resume's reload and sync this often: a computer's window gains
+ * focus every time the learner clicks back into it. Also how long after
+ * starting a resume is ignored, the screens having just loaded.
+ */
+const RESUME_MIN_GAP_MS = 15_000;
 
 const reloaders = new Set<() => void>();
 let listening = false;
+let watchingResume = false;
 let timer: number | undefined;
+let resumeTimer: number | undefined;
+let lastResume = Date.now();
+
+/** Every screen showing data it loaded reads it again (debounced). */
+function reloadScreens() {
+  window.clearTimeout(timer);
+  timer = window.setTimeout(() => {
+    for (const reload of reloaders) reload();
+  }, RELOAD_DEBOUNCE_MS);
+}
+
+/**
+ * Back in front. A background sync may have brought data in while the app
+ * was away (Android's job, every half hour), and it tells no screen: so
+ * they reload, as after a sync. And a sync now, rather than at the loop's
+ * next turn, for what changed on the other device meanwhile — it does
+ * nothing when this device has no other to sync with, and its own news
+ * (`sync-changed`) reloads the screens again if it brings anything.
+ */
+function resumed() {
+  window.clearTimeout(resumeTimer);
+  resumeTimer = window.setTimeout(() => {
+    const now = Date.now();
+    if (now - lastResume < RESUME_MIN_GAP_MS) return;
+    lastResume = now;
+    reloadScreens();
+    void api.syncNow().catch(() => {
+      // Logged by the call; the loop syncs on its own anyway.
+    });
+  }, RESUME_DEBOUNCE_MS);
+}
 
 function listen() {
-  if (listening) return;
-  listening = true;
-  void onSyncChanged(() => {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      for (const reload of reloaders) reload();
-    }, RELOAD_DEBOUNCE_MS);
-  }).catch(() => {
-    // No Tauri (a browser preview): nothing ever arrives.
-    listening = false;
-  });
+  if (!listening) {
+    listening = true;
+    void onSyncChanged(reloadScreens).catch(() => {
+      // No Tauri (a browser preview): nothing ever arrives.
+      listening = false;
+    });
+  }
+  if (!watchingResume) {
+    watchingResume = true;
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") resumed();
+    });
+    void onAppResumed(resumed).catch(() => {
+      // No Tauri: the page's own visibility is all there is.
+    });
+  }
 }
 
 /**
  * Calls `reload` when another device's data has arrived (debounced: one call
- * for a whole sync). For screens that show data they loaded themselves. A
+ * for a whole sync), and when the app comes back to the front. For screens that show data they loaded themselves. A
  * screen where the learner is typing or practising shouldn't use it: it
  * finishes on the data it has.
  */

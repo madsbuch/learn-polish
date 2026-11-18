@@ -85,6 +85,13 @@ pub struct Hello {
     pub epoch: String,
     /// "dev" for a development build, "release" otherwise. The two never sync.
     pub build: String,
+    /// The TCP port this device listens on, when it listens (the app does; a
+    /// background run doesn't). The side it connected to records where to
+    /// reach it: the address the connection came from, at this port — the
+    /// connection's own port is a throwaway one. Absent from an older
+    /// version, which is then just not recorded.
+    #[serde(default)]
+    pub port: Option<u16>,
 }
 
 /// What kind of build this is, for [`Hello::build`].
@@ -188,14 +195,31 @@ fn hello(conn: &mut Conn, me: &Identity) -> Result<Hello> {
         vault_id: me.vault_id.clone(),
         epoch: current_epoch(conn)?,
         build: build_kind().to_string(),
+        port: None,
     })
 }
 
-/// Identity and hello together, for a session about to start.
-fn introduce(conn: &mut Conn) -> Result<(Identity, Hello)> {
-    let me = identity(conn)?;
-    let hello = hello(conn, &me)?;
-    Ok((me, hello))
+/// The hello for a session about to start, with the port this device
+/// listens on, if it does.
+async fn introduce<S: Store>(store: &S) -> Result<Hello> {
+    let mut hello = with(store, |c| {
+        let me = identity(c)?;
+        hello(c, &me)
+    })
+    .await?;
+    hello.port = store.listen_port();
+    Ok(hello)
+}
+
+/// Where a device that connected here can be reached: the address its
+/// connection came from, at the port it says it listens on. Nothing when it
+/// doesn't listen (or doesn't say): its connection's port is a throwaway one,
+/// and recording that would replace an address that works.
+fn reachable_at(from: Option<SocketAddr>, theirs: &Hello) -> Option<SocketAddr> {
+    match (from, theirs.port) {
+        (Some(from), Some(port)) if port != 0 => Some(SocketAddr::new(from.ip(), port)),
+        _ => None,
+    }
 }
 
 #[derive(QueryableByName)]
@@ -516,7 +540,12 @@ async fn client_session<S: Store>(
     Ok(Outcome { peer_id: peer, peer_name: theirs.name, received, complete, differences, digest_skipped: false })
 }
 
-async fn server_session<S: Store>(ch: &mut Channel, store: &S, me: &Hello, theirs: Hello) -> Result<Outcome> {
+/// The listening side of a sync. `from` is where the connection came from:
+/// recorded, with the port the other side listens on, as where to reach it
+/// next time — so a computer learns where the phone is from the phone's own
+/// syncs, without depending on discovery (which a network may block).
+async fn server_session<S: Store>(ch: &mut Channel, store: &S, me: &Hello, theirs: Hello, from: Option<SocketAddr>) -> Result<Outcome> {
+    let addr = reachable_at(from, &theirs);
     let checked = {
         let (me, theirs, key) = (me.clone(), theirs.clone(), ch.remote_key.clone());
         with(store, move |c| check_peer(c, &me, &theirs, &key, None)).await
@@ -541,14 +570,14 @@ async fn server_session<S: Store>(ch: &mut Channel, store: &S, me: &Hello, their
         // The client saw nothing move after a sync that ended identical.
         Msg::SkipDigest => {
             let (p, epoch) = (peer.clone(), theirs.epoch.clone());
-            with(store, move |c| record_outcome(c, &p, &epoch, None, true)).await?;
+            with(store, move |c| record_outcome(c, &p, &epoch, addr, true)).await?;
             return Ok(Outcome { peer_id: peer, peer_name: theirs.name, received, complete: true, differences: vec![], digest_skipped: true });
         }
         _ => return Err(Error::msg("expected a digest")),
     };
     ch.send(&Msg::Digest(with(store, engine::digest).await?)).await?;
     let t = theirs.clone();
-    let (complete, differences, removed) = with(store, move |c| finish_sync(c, &t, &their_digest, None)).await?;
+    let (complete, differences, removed) = with(store, move |c| finish_sync(c, &t, &their_digest, addr)).await?;
     received.removed = removed;
     Ok(Outcome { peer_id: peer, peer_name: theirs.name, received, complete, differences, digest_skipped: false })
 }
@@ -601,7 +630,7 @@ pub async fn sync_with<S: Store>(store: &S, addr: SocketAddr) -> Result<Option<O
     if !with(store, move |c| key_known(c, &key)).await? {
         return Err(Error::msg(format!("{addr}: answered by a device outside the vault")));
     }
-    let (_, hello) = with(store, introduce).await?;
+    let hello = introduce(store).await?;
     match client_session(&mut ch, store, &hello, Some(addr), None).await {
         // The other side is mid-sync with someone (or just finishing with
         // this one): not a failure, just another time.
@@ -745,7 +774,7 @@ pub async fn join<S: Store>(store: &S, offer: &PairingOffer, replace: bool) -> R
         }
         let (vault, s, p) = (offer.vault_id.clone(), secret.clone(), public.clone());
         with(store, move |c| engine::reset_for_join(c, &vault, new_id, Some((&s, &p)), replace)).await?;
-        let (_, hello) = with(store, introduce).await?;
+        let hello = introduce(store).await?;
         return client_session(&mut ch, store, &hello, Some(addr), Some(offer.host_key.clone())).await;
     }
     Err(Error::msg(format!("couldn't reach {}: {last_error}", offer.host_name)))
@@ -786,6 +815,7 @@ fn admit(conn: &mut Conn, device_id: &str, name: &str, platform: &str, key: &[u8
 /// Handles one incoming connection: a sync, or a device joining with the
 /// code currently on screen.
 pub async fn serve<S: Store>(store: &S, mut stream: TcpStream, slot: &PairingSlot) -> Result<Outcome> {
+    let from = stream.peer_addr().ok();
     let me = with(store, identity).await?;
     match Channel::purpose(&mut stream).await? {
         PURPOSE_SYNC => {
@@ -801,8 +831,8 @@ pub async fn serve<S: Store>(store: &S, mut stream: TcpStream, slot: &PairingSlo
                 let _ = ch.send(&Msg::Refused { reason: BUSY.into() }).await;
                 return Err(Error::msg(BUSY));
             };
-            let (_, hello) = with(store, introduce).await?;
-            server_session(&mut ch, store, &hello, theirs).await
+            let hello = introduce(store).await?;
+            server_session(&mut ch, store, &hello, theirs, from).await
         }
         PURPOSE_PAIR => {
             let token = {
@@ -842,8 +872,8 @@ pub async fn serve<S: Store>(store: &S, mut stream: TcpStream, slot: &PairingSlo
             let Msg::Hello(theirs) = expect(&mut ch).await? else {
                 return Err(Error::msg("expected a hello"));
             };
-            let (_, hello) = with(store, introduce).await?;
-            server_session(&mut ch, store, &hello, theirs).await
+            let hello = introduce(store).await?;
+            server_session(&mut ch, store, &hello, theirs, from).await
         }
         _ => Err(Error::msg(format!("not a {} connection", app::APP_NAME))),
     }

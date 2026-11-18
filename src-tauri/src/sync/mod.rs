@@ -12,6 +12,7 @@
 //! - [`instance`]: noticing a database restored from an older copy.
 //! - [`service`]: the app's side — the loop, the commands, the events.
 //! - [`background`]: one sync with the app closed (Android's background job).
+//! - [`snapshots`]: the computer's daily copies of the database.
 //! - [`app`]: the names and ports that make this app's sync its own.
 //!
 //! The tables that never sync are [`triggers::LOCAL_TABLES`]; everything else
@@ -33,6 +34,7 @@ pub mod engine;
 pub mod instance;
 pub mod service;
 pub mod session;
+pub mod snapshots;
 pub mod triggers;
 pub mod wire;
 #[cfg(test)]
@@ -89,6 +91,14 @@ pub(crate) fn ensure_state(conn: &mut Conn) -> Result<()> {
 /// responsive while a sync runs.
 pub trait Store: Clone + Send + Sync + 'static {
     fn db(&self) -> &Db;
+
+    /// The TCP port this device listens for its vault on, if it does: told
+    /// to the devices it syncs with, so they know where to reach it
+    /// (session.rs, `Hello::port`). A background run, or a test's database
+    /// on its own, doesn't listen.
+    fn listen_port(&self) -> Option<u16> {
+        None
+    }
 }
 
 impl Store for std::sync::Arc<Db> {
@@ -101,6 +111,11 @@ impl<R: tauri::Runtime> Store for tauri::AppHandle<R> {
     fn db(&self) -> &Db {
         use tauri::Manager;
         self.state::<Db>().inner()
+    }
+
+    fn listen_port(&self) -> Option<u16> {
+        use tauri::Manager;
+        self.try_state::<std::sync::Arc<service::SyncService>>().and_then(|s| s.port())
     }
 }
 

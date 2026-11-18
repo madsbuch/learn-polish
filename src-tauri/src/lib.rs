@@ -48,7 +48,7 @@ mod work;
 mod xplog;
 
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use db::Db;
 
@@ -91,7 +91,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_songplayer::init())
-        // Android's background sync (sync/background.rs): scheduled by sync's start.
+        // Android's background sync (sync/background.rs): scheduled by sync's
+        // loop once the front end is up, while there is a device to sync with.
         .plugin(tauri_plugin_sync_background::init())
         // Scanning another device's API keys off a QR code (phones only).
         .plugin(barcode_scanner())
@@ -145,6 +146,21 @@ pub fn run() {
                 wiki::check_due_in_background(app);
             });
             Ok(())
+        })
+        // Back in front (a phone's app resumed, a computer's window focused):
+        // the front end reloads what it shows and asks for a sync
+        // (src/lib/sync.ts). A background sync ran meanwhile, perhaps, and it
+        // tells no one.
+        .on_window_event(|window, event| {
+            let resumed = match event {
+                tauri::WindowEvent::Focused(focused) => *focused,
+                #[cfg(mobile)]
+                tauri::WindowEvent::Resumed => true,
+                _ => false,
+            };
+            if resumed {
+                let _ = window.emit(sync::service::RESUMED_EVENT, ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::init_app,

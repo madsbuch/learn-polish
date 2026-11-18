@@ -706,6 +706,37 @@ fn joining_needs_an_empty_device_and_then_receives_everything() {
     assert_eq!(count(&mut devices[1], "SELECT count(*) AS n FROM memories"), 30);
 }
 
+/// Tally's: a write made on a device right after (and, here, in the middle
+/// of) a sync is recorded as an ordinary local change — not taken for part of
+/// what the sync applied — and reaches the other device.
+#[test]
+fn local_writes_made_during_a_sync_are_still_recorded() {
+    let (mut a, mut b) = (device(), device());
+    memory(&mut a, MemoryId::new(), "oats");
+    sync_pair(&mut a, &mut b);
+    memory(&mut b, MemoryId::new(), "eggs");
+    let mut devices = [a, b];
+    settle(&mut devices);
+    assert_identical(&mut devices);
+    assert_eq!(count(&mut devices[0], "SELECT count(*) AS n FROM memories"), 2);
+
+    // Between two batches of a pull: the learner practises while a sync is
+    // half-way through.
+    let [mut a, mut b] = devices;
+    for i in 0..20 {
+        memory(&mut a, MemoryId::new(), &format!("fact {i}"));
+    }
+    pull_some(&mut b, &mut a, 1, 4);
+    memory(&mut b, MemoryId::new(), "written mid-sync");
+    let applying: i64 = sync_state::table.select(sync_state::applying).first(&mut b.conn).unwrap();
+    assert_eq!(applying, 0, "no apply is left open between batches");
+    let mut devices = [a, b];
+    settle(&mut devices);
+    assert_identical(&mut devices);
+    assert_eq!(count(&mut devices[0], "SELECT count(*) AS n FROM memories WHERE content = 'written mid-sync'"), 1);
+    assert_eq!(count(&mut devices[0], "SELECT count(*) AS n FROM memories"), 23);
+}
+
 #[test]
 fn the_digest_notices_any_difference() {
     let (mut a, b) = (device(), device());

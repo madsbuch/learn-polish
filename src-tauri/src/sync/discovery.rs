@@ -14,6 +14,8 @@
 //! The messages: `POLSKI/1 Q <tag> <me>` and `POLSKI/1 R <tag> <id> <port>`.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use sha2::{Digest as _, Sha256};
@@ -76,6 +78,43 @@ where
 /// Binds the answering socket on every interface.
 pub async fn bind_responder(port: u16) -> std::io::Result<UdpSocket> {
     UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)).await
+}
+
+/// This device's answering of discovery, kept up: bound when the app starts,
+/// and bound again on a later round when it couldn't be (another program had
+/// the port for a while: an instance of the app still closing, say) or when
+/// the socket failed. Without it this device is still found where it was
+/// last reached, but not by broadcast — after a network change, not at all.
+#[derive(Default)]
+pub struct Responder {
+    running: Arc<AtomicBool>,
+}
+
+impl Responder {
+    /// Answers on `port` if not already answering. `state` is as for
+    /// [`respond`]. `Ok(true)` when it started answering just now.
+    pub async fn ensure<F>(&self, port: u16, state: F) -> std::io::Result<bool>
+    where
+        F: Fn() -> Option<(String, String, u16)> + Send + 'static,
+    {
+        if self.running.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+        let socket = bind_responder(port).await?;
+        self.running.store(true, Ordering::SeqCst);
+        let running = self.running.clone();
+        tokio::spawn(async move {
+            respond(socket, state).await;
+            // The socket failed: bound afresh next round.
+            running.store(false, Ordering::SeqCst);
+        });
+        Ok(true)
+    }
+
+    #[cfg(test)]
+    pub fn running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
 }
 
 /// Where to send a probe: the broadcast address, plus each address a peer
@@ -145,20 +184,44 @@ mod tests {
         assert!(probe("vault-a", "phone", &[addr], Duration::from_millis(200)).await.is_empty());
     }
 
+    #[tokio::test]
+    async fn answering_starts_on_a_later_round_once_the_port_is_free() {
+        // Another program holds the port when the app starts.
+        let other = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
+        let port = other.local_addr().unwrap().port();
+        let responder = Responder::default();
+        let state = || Some(("vault-a".to_string(), "mac".to_string(), 5002u16));
+        assert!(responder.ensure(port, state).await.is_err());
+        assert!(!responder.running());
+        // Still taken next round: still not answering, and no harm done.
+        assert!(responder.ensure(port, state).await.is_err());
+        // Let go: the next round answers, and later rounds leave it be.
+        drop(other);
+        assert!(responder.ensure(port, state).await.unwrap());
+        assert!(!responder.ensure(port, state).await.unwrap());
+        assert!(responder.running());
+        let to: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        let found = probe("vault-a", "phone", &[to], Duration::from_millis(300)).await;
+        assert_eq!(found, vec![Found { device_id: "mac".into(), addr: "127.0.0.1:5002".parse().unwrap() }]);
+    }
+
     #[test]
     fn junk_is_ignored() {
         assert_eq!(parse_query("hello"), None);
         assert_eq!(parse_reply("POLSKI/1 R tag id notaport"), None);
-        assert_eq!(parse_reply("POLSKI/1 R tag id 47822"), Some(("tag", "id", 47822)));
+        assert_eq!(parse_reply("POLSKI/1 R tag id 47812"), Some(("tag", "id", 47812)));
         // Another app's answers are not ours.
-        assert_eq!(parse_reply("TALLY/1 R tag id 47822"), None);
+        assert_eq!(parse_reply("TALLY/1 R tag id 47812"), None);
         assert_eq!(parse_query("POLSKI/1 Q tag me"), Some(("tag", "me")));
     }
 
     #[test]
     fn probes_go_to_the_broadcast_address_and_last_known_peers() {
-        let t = targets(&["192.168.1.5:47822".into(), "garbage".into(), "192.168.1.5:50000".into()], app::DISCOVERY_PORT);
-        assert_eq!(t, vec!["255.255.255.255:47821".parse().unwrap(), "192.168.1.5:47821".parse().unwrap()]);
+        let t = targets(&["192.168.1.5:47812".into(), "garbage".into(), "192.168.1.5:50000".into()], app::DISCOVERY_PORT);
+        assert_eq!(t, vec!["255.255.255.255:47811".parse().unwrap(), "192.168.1.5:47811".parse().unwrap()]);
+        // Its own ports, not Tally's (47821/47822) or Dansk's (47831/47832):
+        // two apps on one device would otherwise fight over the discovery port.
+        assert_eq!((app::DISCOVERY_PORT, app::SYNC_PORT), (47811, 47812));
     }
 
     #[test]

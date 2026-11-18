@@ -1,5 +1,5 @@
 // Apply the same app-specific Android resources locally and in CI.
-import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,7 +39,52 @@ for (const permission of ["android.permission.INTERNET", "android.permission.ACC
   if (permitted.includes(`android:name="${permission}"`)) continue;
   permitted = permitted.replace(/<application\b/, `<uses-permission android:name="${permission}" />\n    <application`);
 }
+// No Android backup, and no copying to a new phone, of the app's files.
+// The database carries this device's sync identity (its device id, key and
+// history: src-tauri/src/sync/). Brought back by Android onto a new phone,
+// or onto this one after a reinstall, it would be an older copy of this
+// device posing as it — what it wrote since would never reach the vault, and
+// the vault's devices would take it for this one. A new phone joins the
+// vault instead (Settings → Devices), which brings everything. Android 12+
+// reads dataExtractionRules; older versions allowBackup and
+// fullBackupContent. Applied whether or not the project was prepared before:
+// each attribute is set to its value, never added twice.
+const backupOff = {
+  "android:allowBackup": "false",
+  "android:fullBackupContent": "false",
+  "android:dataExtractionRules": "@xml/data_extraction_rules",
+};
+let backupMatched = false;
+const noBackup = permitted.replace(/<application\b[^>]*>/, (tag) => {
+  backupMatched = true;
+  let out = tag;
+  for (const [name, value] of Object.entries(backupOff)) {
+    const attribute = new RegExp(`${name}="[^"]*"`);
+    out = attribute.test(out)
+      ? out.replace(attribute, `${name}="${value}"`)
+      : out.replace(/<application\b/, `<application\n        ${name}="${value}"`);
+  }
+  return out;
+});
+if (!backupMatched) throw new Error("The application element was not found in the Android manifest.");
+const domains = ["root", "file", "database", "sharedpref", "external"];
+const excluded = domains.map((domain) => `        <exclude domain="${domain}" path="." />`).join("\n");
+const rules = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Nothing goes to cloud backup or device-to-device transfer: the database
+     carries this device's sync identity. Sync between the learner's devices
+     is the backup. Written by scripts/prepare-android.mjs, which says more. -->
+<data-extraction-rules>
+    <cloud-backup>
+${excluded}
+    </cloud-backup>
+    <device-transfer>
+${excluded}
+    </device-transfer>
+</data-extraction-rules>
+`;
+mkdirSync(join(main, "res/xml"), { recursive: true });
+writeFileSync(join(main, "res/xml/data_extraction_rules.xml"), rules);
 writeFileSync(activities[0], activity);
-writeFileSync(manifestPath, permitted);
+writeFileSync(manifestPath, noBackup);
 cpSync(join(root, "src-tauri/icons/android"), join(main, "res"), { recursive: true });
-console.log("Prepared Polski's Android package, keyboard handling and launcher icons.");
+console.log("Prepared Polski's Android package, keyboard handling, backup rules and launcher icons.");

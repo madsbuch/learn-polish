@@ -12,7 +12,8 @@ this file says why.
   scans it. From then on the two are one *vault*: they sync whenever both are
   open on the same Wi-Fi, a few seconds after a change, and the phone also
   every 30 minutes in the background (Android WorkManager, unmetered network
-  only). A **Sync now** button, and a list of the vault's devices with when
+  only), and whenever the app comes back to the front, which also reloads
+  what is on screen (a background sync tells no screen). A **Sync now** button, and a list of the vault's devices with when
   each last synced; a device can be removed (its key is revoked).
 - **Joining** wipes the joining device's synced data and takes the vault's.
   If it holds data of its own, it says so (how many courses, lessons, words)
@@ -85,14 +86,25 @@ this file says why.
 
 ## Transport (as Tally)
 
-- **Discovery:** UDP broadcast on port 47821, `POLSKI/1 Q <tag> <me>` answered
+- **Discovery:** UDP broadcast on port 47811, `POLSKI/1 Q <tag> <me>` answered
   by `POLSKI/1 R <tag> <id> <port>`; the tag is the first 8 bytes of
   `sha256("polski-vault:" + vault_id)`. (Dansk: `DANSK/1`, `dansk-vault:`, and
-  its own ports, so the two apps never meet.)
-- **Connection:** TCP (preferred port 47822), Noise `XX_25519_ChaChaPoly_BLAKE2s`
+  its own ports, 47831/47832, so the two apps never meet. Tally, on 47821/47822,
+  is a third: each app on one device needs its own discovery port, since only
+  one can answer on a port.)
+- **Connection:** TCP (preferred port 47812), Noise `XX_25519_ChaChaPoly_BLAKE2s`
   for sync and `XXpsk3` with the QR's one-time token for pairing; messages in
   MessagePack, chunked, at most 256 MiB; a peer's static key must be in
   `vault_devices` and not in `vault_revocations`.
+- **Addresses:** each side records where the other was reached
+  (`sync_peers.last_addr`), and a round tries it when discovery finds
+  nothing. The side connected to records the address the connection came
+  from, at the port the other says it listens on (`Hello.port`; none from a
+  background run, which doesn't listen): a computer learns where the phone is
+  from the phone's own syncs. Unlike Tally, which records only the side that
+  connected.
+- **Discovery answers** that couldn't start (another program on the port) are
+  tried again every round.
 - **Pairing:** the QR holds `polski-pair:1:` + the vault, the host's id, name,
   key and addresses, and a token valid for 10 minutes, used once.
 - **Protocol:** `Hello` → `Seen` → the client pulls → `YourTurn` → the server
@@ -105,13 +117,34 @@ this file says why.
   script), `wire.rs`, `discovery.rs`, `session.rs`, `service.rs` (the loop and
   the commands), `background.rs` (Android), tests beside each.
 - `src-tauri/plugins/sync-background`: the WorkManager job (Kotlin → JNI),
-  scheduled by `service.rs` at every start. The JNI entry point needs
+  scheduled by `service.rs`'s loop once the front end is up (`init_app`: the
+  plugin isn't ready before) and while this device has another in its vault,
+  tried again each round until it is, then once per launch; cancelled when
+  there is no other device any more. The JNI entry point needs
   `#[no_mangle]`, which the app crate's `unsafe_code = "forbid"` refuses, so
   the plugin's `jni_entry!` macro writes it (as `tauri::mobile_entry_point`
   writes the app's others) around the safe `background::run_blocking`. A run
-  skips a database the app hasn't upgraded yet (`db::is_current`).
+  skips a database the app hasn't upgraded yet (`db::is_current`). It doesn't
+  open the database the app's way (`db::open`: upgrade, clean-ups, integrity
+  check): a plain connection with the same settings, then, only if this
+  device is in a vault with another, the instance check and one round —
+  otherwise it writes nothing. The app may be open in the same process: both
+  wait out the other's writes (`busy_timeout`), no transaction spans network
+  IO, and one sync runs per device at a time.
+- `snapshots.rs`: on a computer in a vault, a copy of the database a day
+  (`VACUUM INTO`, marked as a copy for `instance.rs`) in `snapshots/` beside
+  `backups/`: one a day for a week, then one a week to four weeks (fewer
+  than Tally: the database holds song audio, so a copy can be large). Sync mirrors a mistake within minutes; these go back past one.
+  Their own folder, so db.rs's pruning of `backups/` and theirs never touch
+  each other's files.
+- Android backup is off (`scripts/prepare-android.mjs`: `allowBackup`,
+  `fullBackupContent`, `data_extraction_rules.xml`): a database restored onto
+  a new phone would carry this device's sync identity. A new phone joins.
 - `src/screens/Devices.tsx`, `src/lib/sync.ts` (`useSyncReload`: screens
-  showing data they loaded reload, debounced, when `sync-changed` arrives;
-  a drill or check-in in progress keeps its own data).
+  showing data they loaded reload, debounced, when `sync-changed` arrives
+  and when the app comes back to the front — page visible, `app-resumed`
+  from lib.rs on focus or resume — which also asks for a sync (`sync_now`,
+  nothing when not paired), at most once per 15 s; a drill or check-in in
+  progress keeps its own data).
 - Every schema change from now on re-creates the triggers of the tables it
   touches; a test fails if a synced table's triggers don't list its columns.

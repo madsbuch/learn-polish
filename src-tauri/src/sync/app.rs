@@ -14,11 +14,11 @@ pub const DISCOVERY_PROTOCOL: &str = "POLSKI/1";
 pub const VAULT_TAG_PREFIX: &str = "polski-vault:";
 
 /// The UDP port every device answers discovery on.
-pub const DISCOVERY_PORT: u16 = 47821;
+pub const DISCOVERY_PORT: u16 = 47811;
 
 /// The TCP port a device listens for its vault on, if it is free (any free
 /// one otherwise: discovery says which).
-pub const SYNC_PORT: u16 = 47822;
+pub const SYNC_PORT: u16 = 47812;
 
 /// What a pairing code (the QR) starts with: a code from another app, or a
 /// later version of this one, is refused by name.

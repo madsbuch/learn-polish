@@ -4,7 +4,7 @@
 //! app runs (docs/SYNC.md).
 //!
 //! Two halves. Rust → Kotlin is Tauri's bridge: [`schedule`] asks the
-//! plugin to set up the job. Kotlin → Rust is JNI: the job runs without the
+//! plugin to set up the job, [`cancel`] to drop it. Kotlin → Rust is JNI: the job runs without the
 //! web view or Tauri, so it calls a native method, and [`jni_entry!`] makes
 //! that method out of a plain function of the app's.
 
@@ -49,6 +49,24 @@ pub fn schedule<R: Runtime>(app: &AppHandle<R>, db_path: &str) -> Result<(), Str
     }
     #[cfg(not(target_os = "android"))]
     let _ = (app, db_path);
+    Ok(())
+}
+
+/// Cancels the background sync (this device has nobody to sync with any
+/// more). Does nothing off Android, or when nothing was scheduled.
+pub fn cancel<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        let native = app.try_state::<Native<R>>().ok_or("the background sync plugin is not set up")?;
+        // An empty object, not nothing: the Kotlin side reads its arguments
+        // as a JSON object.
+        #[derive(serde::Serialize)]
+        struct NoArgs {}
+        native.0.run_mobile_plugin::<serde::de::IgnoredAny>("cancel", NoArgs {}).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
     Ok(())
 }
 
