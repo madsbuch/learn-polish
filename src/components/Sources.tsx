@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { Avatar, Button, IconButton, Inline, List, ListItem, Screen, Section, Segmented, Spinner, Stack, Text } from "../design";
+import {
+  Avatar,
+  Button,
+  IconButton,
+  Inline,
+  List,
+  ListItem,
+  Screen,
+  Section,
+  Segmented,
+  Spinner,
+  Stack,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
-import type { ArticleView, WikiSource } from "../lib/types";
+import type { ArticleView, LessonId, WikiSource } from "../lib/types";
 import { ExternalIcon } from "./icons";
 import { Markdown } from "./Markdown";
 import { WikiArticle } from "./WikiArticle";
@@ -45,7 +58,7 @@ export function Sources({
   onRead,
   onChecked,
 }: {
-  lessonId: number;
+  lessonId: LessonId;
   /** What the last check changed. */
   factNote: string | null;
   factCheckedAt: number | null;
@@ -67,8 +80,8 @@ export function Sources({
       title="Sources"
       info={
         <p>
-          The lesson is written from these Wikipedia articles. Read them here — in Polish too, when
-          Polish Wikipedia has the article. Every three months the lesson is checked against them again.
+          The lesson is written from these Wikipedia articles. Read them here — in Polish too, when Polish Wikipedia has
+          the article. Every three months the lesson is checked against them again.
         </p>
       }
     >
@@ -80,8 +93,8 @@ export function Sources({
       <SourceList sources={sources} onRead={onRead} />
       <Inline gap={2} justify="between">
         <Text variant="caption" tone="faint">
-          {factCheckedAt ? `Checked ${new Date(factCheckedAt * 1000).toLocaleDateString()}` : "Not checked yet"} ·
-          again every three months
+          {factCheckedAt ? `Checked ${new Date(factCheckedAt * 1000).toLocaleDateString()}` : "Not checked yet"} · again
+          every three months
         </Text>
         <Button
           size="sm"
@@ -174,8 +187,8 @@ export function ArticleReader({
       {article ? (
         <Stack gap={2}>
           <Text variant="caption" tone="faint" as="p">
-            From Wikipedia, the free encyclopedia — “{article.title}”, available under the Creative
-            Commons Attribution-ShareAlike 4.0 licence.
+            From Wikipedia, the free encyclopedia — “{article.title}”, available under the Creative Commons
+            Attribution-ShareAlike 4.0 licence.
           </Text>
           <Button wide icon={<ExternalIcon />} onClick={openExternally}>
             Open on Wikipedia

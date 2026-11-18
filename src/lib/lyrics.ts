@@ -25,8 +25,7 @@ export function sectionLabel(kind: SongSectionKind): string {
 
 function kindOf(label: string): SongSectionKind {
   const lower = label.toLowerCase();
-  if (lower.startsWith("chorus") || lower.startsWith("hook") || lower.startsWith("refrain"))
-    return "chorus";
+  if (lower.startsWith("chorus") || lower.startsWith("hook") || lower.startsWith("refrain")) return "chorus";
   if (lower.startsWith("bridge")) return "bridge";
   if (lower.startsWith("intro")) return "intro";
   if (lower.startsWith("outro")) return "outro";
@@ -63,9 +62,7 @@ export function textToSections(text: string): SongSection[] {
     const bar = line.indexOf("|");
     // A line without "|" is taken as Polish only.
     current.lines.push(
-      bar < 0
-        ? { en: "", pl: line }
-        : { en: line.slice(0, bar).trim(), pl: line.slice(bar + 1).trim() },
+      bar < 0 ? { en: "", pl: line } : { en: line.slice(0, bar).trim(), pl: line.slice(bar + 1).trim() },
     );
   }
   return sections.filter((section) => section.lines.length > 0);

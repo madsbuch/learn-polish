@@ -22,6 +22,8 @@ use crate::db::{self, Conn};
 use crate::schema::{lessons, checkins, course_lessons, sentences, songs, courses, words};
 use crate::text::clean;
 use crate::error::{Error, Result};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// Words per word drill when a course's words are cut into drills: enough to
 /// be worth it, small enough to finish in a minute or two.
@@ -54,7 +56,7 @@ pub const COMPLEXITIES: &[&str] = &["low", "medium", "high"];
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Lesson {
-    pub id: i64,
+    pub id: LessonId,
     /// Its type: one of lesson_types::REGISTRY.
     #[serde(rename = "type")]
     pub lesson_type: String,
@@ -66,11 +68,11 @@ pub struct Lesson {
     pub complexity: String,
     /// The first course it was listed in, for display. None only for a lesson
     /// that is about to go.
-    pub course_id: Option<i64>,
+    pub course_id: Option<CourseId>,
     /// That course's title.
     pub course_title: Option<String>,
     /// Every course that lists it.
-    pub course_ids: Vec<i64>,
+    pub course_ids: Vec<CourseId>,
     /// Who made it: "starter" (came with the app) | "tutor" | "you".
     /// Informational only — every lesson can be edited and deleted.
     pub origin: String,
@@ -99,17 +101,17 @@ pub struct Lesson {
     pub level: Option<String>,
     pub items: i64,
     /// A listening lesson's song.
-    pub song_id: Option<i64>,
+    pub song_id: Option<SongId>,
 }
 
 /// A word of a lesson, with its picture if it has one.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WordPicture {
-    pub word_id: i64,
+    pub word_id: WordId,
     pub word: String,
     pub meaning: String,
-    pub image: Option<i64>,
+    pub image: Option<FileId>,
 }
 
 /// A lesson with everything its page shows.
@@ -130,7 +132,7 @@ pub struct LessonDetail {
     /// The last check-in's feedback, if any.
     pub last_feedback: Option<String>,
     /// The courses that list it: (id, English title, Polish title).
-    pub courses: Vec<(i64, String, String)>,
+    pub courses: Vec<(CourseId, String, String)>,
     /// A conversation drill's dialogue.
     pub lines: Vec<crate::models::DialogueLine>,
     /// What the last check against the lesson's sources changed, if anything.
@@ -157,7 +159,7 @@ pub struct Overview {
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = lessons, check_for_backend(diesel::sqlite::Sqlite))]
 struct LessonRow {
-    id: i64,
+    id: LessonId,
     lesson_type: String,
     title: String,
     summary: String,
@@ -175,7 +177,7 @@ struct LessonRow {
     passed: i64,
     mastery: i64,
     level: Option<String>,
-    song_id: Option<i64>,
+    song_id: Option<SongId>,
     mastered_at: Option<i64>,
 }
 
@@ -194,40 +196,43 @@ struct NewLesson<'a> {
     period_days: i64,
     origin: &'a str,
     created_at: i64,
-    song_id: Option<i64>,
+    song_id: Option<SongId>,
 }
 
-fn insert(conn: &mut Conn, lesson: NewLesson) -> Result<i64> {
-    Ok(diesel::insert_into(lessons::table).values(&lesson).returning(lessons::id).get_result(conn)?)
+fn insert(conn: &mut Conn, lesson: NewLesson) -> Result<LessonId> {
+    Ok(diesel::insert_into(lessons::table)
+        .values((lessons::id.eq(LessonId::new()), &lesson))
+        .returning(lessons::id)
+        .get_result(conn)?)
 }
 
 /// Completes lesson rows with what lives elsewhere: the courses that list
 /// them (the first one also by title) and how many items they own.
 fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
-    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let mut listed: HashMap<i64, Vec<(i64, String)>> = HashMap::new();
+    let ids: Vec<LessonId> = rows.iter().map(|r| r.id).collect();
+    let mut listed: HashMap<LessonId, Vec<(CourseId, String)>> = HashMap::new();
     for (lesson, course, title) in course_lessons::table
         .inner_join(courses::table)
         .filter(course_lessons::lesson_id.eq_any(&ids))
         .order(course_lessons::rowid)
         .select((course_lessons::lesson_id, courses::id, courses::title_en))
-        .load::<(i64, i64, String)>(conn)?
+        .load::<(LessonId, CourseId, String)>(conn)?
     {
         listed.entry(lesson).or_default().push((course, title));
     }
-    let mut items: HashMap<i64, i64> = HashMap::new();
+    let mut items: HashMap<LessonId, i64> = HashMap::new();
     for (lesson, n) in words::table
         .filter(words::lesson_id.eq_any(&ids))
         .group_by(words::lesson_id)
         .select((words::lesson_id, count_star()))
-        .load::<(i64, i64)>(conn)?
+        .load::<(LessonId, i64)>(conn)?
         .into_iter()
         .chain(
             sentences::table
                 .filter(sentences::lesson_id.eq_any(&ids))
                 .group_by(sentences::lesson_id)
                 .select((sentences::lesson_id, count_star()))
-                .load::<(i64, i64)>(conn)?,
+                .load::<(LessonId, i64)>(conn)?,
         )
     {
         *items.entry(lesson).or_default() += n;
@@ -267,7 +272,7 @@ fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
         .collect())
 }
 
-pub fn load(conn: &mut Conn, id: i64) -> Result<Lesson> {
+pub fn load(conn: &mut Conn, id: LessonId) -> Result<Lesson> {
     let row = lessons::table
         .find(id)
         .select(LessonRow::as_select())
@@ -277,7 +282,7 @@ pub fn load(conn: &mut Conn, id: i64) -> Result<Lesson> {
     Ok(assemble(conn, vec![row])?.remove(0))
 }
 
-pub fn detail(conn: &mut Conn, id: i64) -> Result<LessonDetail> {
+pub fn detail(conn: &mut Conn, id: LessonId) -> Result<LessonDetail> {
     let lesson = load(conn, id)?;
     let (content, objectives, fact_note, fact_checked_at): (String, String, Option<String>, Option<i64>) = lessons::table
         .find(id)
@@ -311,7 +316,7 @@ pub fn detail(conn: &mut Conn, id: i64) -> Result<LessonDetail> {
         .filter(words::lesson_id.eq(id))
         .order((words::ord, words::id))
         .select((words::id, words::pl, words::en, words::image_file_id))
-        .load::<(i64, String, String, Option<i64>)>(conn)?
+        .load::<(WordId, String, String, Option<FileId>)>(conn)?
         .into_iter()
         .map(|(word_id, word, meaning, image)| WordPicture { word_id, word, meaning, image })
         .collect();
@@ -337,7 +342,7 @@ pub fn course_order() -> (Desc<courses::created_at>, Asc<courses::ord>, Asc<cour
 }
 
 /// A course's lessons, in the course's order.
-pub fn for_course(conn: &mut Conn, course_id: i64) -> Result<Vec<Lesson>> {
+pub fn for_course(conn: &mut Conn, course_id: CourseId) -> Result<Vec<Lesson>> {
     let rows = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
@@ -357,7 +362,7 @@ pub fn overview(conn: &mut Conn) -> Result<Overview> {
 }
 
 /// Lessons by id, in the order given.
-fn load_in_order(conn: &mut Conn, ids: &[i64]) -> Result<Vec<Lesson>> {
+fn load_in_order(conn: &mut Conn, ids: &[LessonId]) -> Result<Vec<Lesson>> {
     let rows = lessons::table.filter(lessons::id.eq_any(ids)).select(LessonRow::as_select()).load(conn)?;
     let mut list = assemble(conn, rows)?;
     list.sort_by_key(|b| ids.iter().position(|id| *id == b.id));
@@ -487,7 +492,7 @@ pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level:
 /// Marks a lesson mastered once it has earned it. Mastery is for good
 /// (PRINCIPLES.md): once stamped, nothing — a fail included — takes it
 /// away, and nothing changes its points or help level again.
-pub fn stamp_mastered(conn: &mut Conn, lesson_id: i64) -> Result<bool> {
+pub fn stamp_mastered(conn: &mut Conn, lesson_id: LessonId) -> Result<bool> {
     let (passed, mastery, lesson_type, support, at): (i64, i64, String, i64, Option<i64>) = lessons::table
         .find(lesson_id)
         .select((lessons::passed, lessons::mastery, lessons::lesson_type, lessons::support_level, lessons::mastered_at))
@@ -528,17 +533,17 @@ pub fn is_extra_practice(lesson: &Lesson, today: i64) -> bool {
 /// nothing to fix). An early pass never brings the next check-in closer
 /// than it already was.
 #[cfg(test)]
-pub fn record(conn: &mut Conn, lesson_id: i64, result: &str) -> Result<Lesson> {
+pub fn record(conn: &mut Conn, lesson_id: LessonId, result: &str) -> Result<Lesson> {
     record_graded(conn, lesson_id, result, false)
 }
 
 /// Records a go at a lesson — mastery, schedule, passed, minutes — all or
 /// nothing (one transaction; inside another, a savepoint).
-pub fn record_graded(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -> Result<Lesson> {
+pub fn record_graded(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: bool) -> Result<Lesson> {
     conn.transaction(|tx| record_graded_steps(tx, lesson_id, result, ace))
 }
 
-fn record_graded_steps(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool) -> Result<Lesson> {
+fn record_graded_steps(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: bool) -> Result<Lesson> {
     if !["pass", "partial", "fail"].contains(&result) {
         return Err(Error::msg(format!("Unknown result '{result}'.")));
     }
@@ -572,7 +577,7 @@ fn record_graded_steps(conn: &mut Conn, lesson_id: i64, result: &str, ace: bool)
 }
 
 /// Makes a lesson due today (the learner or the tutor wants it now).
-pub fn due_now(conn: &mut Conn, lesson_id: i64) -> Result<Lesson> {
+pub fn due_now(conn: &mut Conn, lesson_id: LessonId) -> Result<Lesson> {
     let today = db::today(conn);
     diesel::update(lessons::table.find(lesson_id)).set(lessons::due_day.eq(today)).execute(conn)?;
     load(conn, lesson_id)
@@ -605,7 +610,7 @@ pub struct NewStudy {
     pub period_days: Option<i64>,
     /// The course to file it under; None files it in "Other lessons".
     #[serde(default, alias = "course_id")]
-    pub course_id: Option<i64>,
+    pub course_id: Option<CourseId>,
 }
 
 pub fn create_study(conn: &mut Conn, input: NewStudy, origin: &str) -> Result<Lesson> {
@@ -668,7 +673,7 @@ pub struct NewWriting {
     pub period_days: Option<i64>,
     /// The course to file it under; None files it in "Other lessons".
     #[serde(default, alias = "course_id")]
-    pub course_id: Option<i64>,
+    pub course_id: Option<CourseId>,
 }
 
 pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Result<Lesson> {
@@ -713,18 +718,18 @@ pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Resul
 /// for, else in "Other lessons". Like any lesson, it can be moved or shared later.
 pub fn create_listening(
     conn: &mut Conn,
-    song_id: i64,
+    song_id: SongId,
     complexity: Option<&str>,
     focus: Option<&str>,
-    course: Option<i64>,
+    course: Option<CourseId>,
     origin: &str,
 ) -> Result<Lesson> {
     if let Some(id) =
-        lessons::table.filter(lessons::song_id.eq(song_id)).select(lessons::id).first::<i64>(conn).optional()?
+        lessons::table.filter(lessons::song_id.eq(song_id)).select(lessons::id).first::<LessonId>(conn).optional()?
     {
         return load(conn, id);
     }
-    let (title, song_course): (String, Option<i64>) = songs::table
+    let (title, song_course): (String, Option<CourseId>) = songs::table
         .find(song_id)
         .select((songs::title, songs::course_id))
         .first(conn)
@@ -771,7 +776,7 @@ pub fn create_listening(
 #[allow(clippy::too_many_arguments)]
 pub fn create_drill(
     conn: &mut Conn,
-    course_id: i64,
+    course_id: CourseId,
     title: &str,
     summary: &str,
     lesson_type: &str,
@@ -841,7 +846,7 @@ struct LessonEdit {
     scaffold: Option<Option<String>>,
 }
 
-pub fn update(conn: &mut Conn, id: i64, changes: LessonChanges) -> Result<Lesson> {
+pub fn update(conn: &mut Conn, id: LessonId, changes: LessonChanges) -> Result<Lesson> {
     load(conn, id)?;
     if let Some(complexity) = &changes.complexity {
         check_complexity(complexity)?;
@@ -872,7 +877,7 @@ pub fn update(conn: &mut Conn, id: i64, changes: LessonChanges) -> Result<Lesson
 
 /// Deletes a lesson everywhere, with its words, sentences, dialogue and
 /// check-in history.
-pub fn delete(conn: &mut Conn, id: i64) -> Result<String> {
+pub fn delete(conn: &mut Conn, id: LessonId) -> Result<String> {
     let lesson = load(conn, id)?;
     diesel::delete(lessons::table.find(id)).execute(conn)?;
     Ok(lesson.title)
@@ -945,8 +950,8 @@ pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
         let file = parse_lesson(text)?;
         let slug = format!("lesson/{}", file.slug);
         // Written once: a lesson already there (by its slug) is left alone.
-        let added: Option<i64> = diesel::insert_or_ignore_into(lessons::table)
-            .values(NewLesson {
+        let added: Option<LessonId> = diesel::insert_or_ignore_into(lessons::table)
+            .values((lessons::id.eq(LessonId::derived("lesson", &slug)), NewLesson {
                 slug: Some(&slug),
                 lesson_type: "study",
                 ord: crate::convert::count(ord),
@@ -959,7 +964,7 @@ pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
                 origin: "starter",
                 created_at: db::now_secs(),
                 ..Default::default()
-            })
+            }))
             .returning(lessons::id)
             .get_result(conn)
             .optional()?;
@@ -976,6 +981,8 @@ pub fn seed_lessons(conn: &mut Conn) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub mod commands {
+    #[allow(unused_imports)]
+    use crate::ids::*;
     use tauri::State;
 
     use crate::db::Db;
@@ -987,27 +994,27 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn lessons_for_course(db: State<'_, Db>, course_id: i64) -> Result<Vec<super::Lesson>> {
+    pub async fn lessons_for_course(db: State<'_, Db>, course_id: CourseId) -> Result<Vec<super::Lesson>> {
         super::for_course(&mut db.lock(), course_id)
     }
 
     /// A course's lessons, most important first, the mastered ones last —
     /// its page's list (see plan::order_for_course).
     #[tauri::command]
-    pub async fn lessons_by_importance(db: State<'_, Db>, course_id: i64) -> Result<Vec<super::Lesson>> {
+    pub async fn lessons_by_importance(db: State<'_, Db>, course_id: CourseId) -> Result<Vec<super::Lesson>> {
         let mut guard = db.lock();
         let lessons = super::for_course(&mut guard, course_id)?;
         crate::plan::order_for_course(&mut guard, lessons)
     }
 
     #[tauri::command]
-    pub async fn lesson_detail(db: State<'_, Db>, lesson_id: i64) -> Result<super::LessonDetail> {
+    pub async fn lesson_detail(db: State<'_, Db>, lesson_id: LessonId) -> Result<super::LessonDetail> {
         super::detail(&mut db.lock(), lesson_id)
     }
 
     /// The learner changes how often a lesson checks in.
     #[tauri::command]
-    pub async fn lesson_set_period(db: State<'_, Db>, lesson_id: i64, period_days: i64) -> Result<super::Lesson> {
+    pub async fn lesson_set_period(db: State<'_, Db>, lesson_id: LessonId, period_days: i64) -> Result<super::Lesson> {
         super::update(
             &mut db.lock(),
             lesson_id,
@@ -1017,18 +1024,18 @@ pub mod commands {
 
     /// The learner marks a lesson as a challenge (or back into the course).
     #[tauri::command]
-    pub async fn lesson_set_challenge(db: State<'_, Db>, lesson_id: i64, challenge: bool) -> Result<super::Lesson> {
+    pub async fn lesson_set_challenge(db: State<'_, Db>, lesson_id: LessonId, challenge: bool) -> Result<super::Lesson> {
         super::update(&mut db.lock(), lesson_id, super::LessonChanges { challenge: Some(challenge), ..Default::default() })
     }
 
     /// The listening lesson for a song, made on first ask.
     #[tauri::command]
-    pub async fn lesson_for_song(db: State<'_, Db>, song_id: i64) -> Result<super::Lesson> {
+    pub async fn lesson_for_song(db: State<'_, Db>, song_id: SongId) -> Result<super::Lesson> {
         super::create_listening(&mut db.lock(), song_id, None, None, None, "you")
     }
 
     #[tauri::command]
-    pub async fn lesson_delete(db: State<'_, Db>, lesson_id: i64) -> Result<()> {
+    pub async fn lesson_delete(db: State<'_, Db>, lesson_id: LessonId) -> Result<()> {
         super::delete(&mut db.lock(), lesson_id).map(|_| ())
     }
 }

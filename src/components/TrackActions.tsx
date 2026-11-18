@@ -4,7 +4,7 @@ import { Banner, Button, List, ListItem, Sheet, Spinner } from "../design";
 import { PlayerIcon } from "./icons";
 import { api, errorMessage } from "../lib/api";
 import { canShare, shareTrack, type QueueItem } from "../lib/player";
-import type { Playlist } from "../lib/types";
+import type { Playlist, TrackId } from "../lib/types";
 
 /** Picks a playlist for a take — or makes a new one with it. */
 export function AddToPlaylist({
@@ -12,7 +12,7 @@ export function AddToPlaylist({
   onClose,
   onDone,
 }: {
-  trackId: number;
+  trackId: TrackId;
   onClose: () => void;
   /** Called with a short confirmation, e.g. "Added to Morning run". */
   onDone: (message: string) => void;
@@ -23,7 +23,10 @@ export function AddToPlaylist({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.playlistsList().then(setPlaylists).catch((cause) => setError(errorMessage(cause)));
+    api
+      .playlistsList()
+      .then(setPlaylists)
+      .catch((cause) => setError(errorMessage(cause)));
   }, []);
 
   async function act(action: () => Promise<Playlist>) {

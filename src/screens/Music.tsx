@@ -45,7 +45,7 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { Playlist, Settings, Song, WikiSource } from "../lib/types";
+import type { LessonId, Playlist, PlaylistId, Settings, Song, SongId, TrackId, WikiSource } from "../lib/types";
 import { EpisodeSources, PodcastSound } from "../components/Podcast";
 import { ArticleReader } from "../components/Sources";
 import { PodcastComposer } from "./PodcastComposer";
@@ -58,10 +58,10 @@ import { SongComposer } from "./SongComposer";
  */
 type View =
   | { kind: "library" }
-  | { kind: "song"; songId: number }
-  | { kind: "playlist"; playlistId: number }
+  | { kind: "song"; songId: SongId }
+  | { kind: "playlist"; playlistId: PlaylistId }
   | { kind: "compose"; what: "song" | "podcast" }
-  | { kind: "article"; songId: number; source: WikiSource };
+  | { kind: "article"; songId: SongId; source: WikiSource };
 
 /** Every downloaded take, in library order. */
 function allTakes(songs: Song[]): QueueItem[] {
@@ -149,11 +149,11 @@ export function Music({
 }: {
   settings: Settings;
   /** Set when the player asks to show a song's page. */
-  openSongId: number | null;
+  openSongId: SongId | null;
   onOpenSettings: () => void;
   onSongOpened: () => void;
   /** Opens a lesson's page (a song's listening lesson). */
-  onOpenLesson: (lessonId: number) => void;
+  onOpenLesson: (lessonId: LessonId) => void;
   /** Opens the full player (lyrics that follow the music). */
   onOpenPlayer: () => void;
 }) {
@@ -202,7 +202,7 @@ export function Music({
   }, [openSongId, onSongOpened]);
 
   const tracks = useMemo(() => {
-    const map = new Map<number, QueueItem>();
+    const map = new Map<TrackId, QueueItem>();
     for (const item of allTakes(songs ?? [])) map.set(item.track.id, item);
     return map;
   }, [songs]);
@@ -455,7 +455,7 @@ function TrackCover({ item, size = 48 }: { item: QueueItem; size?: number }) {
   );
 }
 
-function useIsCurrent(trackId: number): boolean {
+function useIsCurrent(trackId: TrackId): boolean {
   const player = usePlayer();
   return currentItem(player)?.track.id === trackId;
 }
@@ -501,12 +501,12 @@ function SongList({
   songs: Song[] | null;
   selecting: boolean;
   onSelecting: (selecting: boolean) => void;
-  onOpen: (songId: number) => void;
+  onOpen: (songId: SongId) => void;
   onCompose?: () => void;
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<SongId>>(new Set());
 
   if (songs === null) return <Spinner />;
   if (songs.length === 0) {
@@ -531,7 +531,7 @@ function SongList({
 
   const queue = libraryQueue(songs);
 
-  function pick(songId: number) {
+  function pick(songId: SongId) {
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(songId)) next.delete(songId);
@@ -673,7 +673,7 @@ function SongPage({
   onRead: (source: WikiSource) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [adding, setAdding] = useState<number | null>(null);
+  const [adding, setAdding] = useState<TrackId | null>(null);
   const exporter = useTrackExport(onMessage);
   const player = usePlayer();
   const playingId = currentItem(player)?.track.id ?? null;
@@ -867,7 +867,7 @@ function SongPage({
 
 // ------------------------------------------------------------------ playlists
 
-function playlistItems(playlist: Playlist, tracks: Map<number, QueueItem>) {
+function playlistItems(playlist: Playlist, tracks: Map<TrackId, QueueItem>) {
   return playlist.entries
     .map((entry) => ({ entry, item: tracks.get(entry.trackId) }))
     .filter((row): row is { entry: (typeof playlist.entries)[number]; item: QueueItem } => Boolean(row.item));
@@ -882,10 +882,10 @@ function PlaylistList({
   onError,
 }: {
   playlists: Playlist[] | null;
-  tracks: Map<number, QueueItem>;
+  tracks: Map<TrackId, QueueItem>;
   /** The playlist open beside the list (wide windows). */
-  current?: number;
-  onOpen: (playlistId: number) => void;
+  current?: PlaylistId;
+  onOpen: (playlistId: PlaylistId) => void;
   onCreated: (playlist: Playlist) => void;
   onError: (message: string) => void;
 }) {
@@ -956,7 +956,7 @@ function PlaylistPage({
   onError,
 }: {
   playlist: Playlist;
-  tracks: Map<number, QueueItem>;
+  tracks: Map<TrackId, QueueItem>;
   onChanged: (playlist: Playlist) => void;
   onDeleted: () => void;
   onError: (message: string) => void;

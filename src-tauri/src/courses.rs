@@ -19,6 +19,8 @@ use crate::db::{self, Conn};
 use crate::schema::{lessons, conversation_lines, course_lessons, course_lines, course_sentences, course_words, sentences, songs, courses, words};
 use crate::text::clean;
 use crate::error::{Error, Result};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 const MAX_WORDS: usize = 120;
 const MAX_SENTENCES: usize = 60;
@@ -67,7 +69,7 @@ pub struct NewCourse {
 /// What a course holds after a change, reported back to the tutor.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CourseSummary {
-    pub course_id: i64,
+    pub course_id: CourseId,
     pub title: String,
     pub words: i64,
     pub sentences: i64,
@@ -104,7 +106,7 @@ fn normalize_pos(pos: &str) -> String {
     code.to_string()
 }
 
-pub fn require_course(conn: &mut Conn, course_id: i64) -> Result<String> {
+pub fn require_course(conn: &mut Conn, course_id: CourseId) -> Result<String> {
     courses::table
         .find(course_id)
         .select(courses::title_en)
@@ -115,7 +117,7 @@ pub fn require_course(conn: &mut Conn, course_id: i64) -> Result<String> {
 
 /// Like [`require_course`], for changes: a course closed as mastered is
 /// finished, so nothing is added to it — revisiting its theme is a new course.
-pub fn require_open_course(conn: &mut Conn, course_id: i64) -> Result<String> {
+pub fn require_open_course(conn: &mut Conn, course_id: CourseId) -> Result<String> {
     let title = require_course(conn, course_id)?;
     let closed: Option<i64> = courses::table.find(course_id).select(courses::closed_at).first(conn)?;
     if closed.is_some() {
@@ -135,12 +137,12 @@ pub const OLD_FOLDERS: [&str; 3] = ["lessons", "listening", "writing"];
 
 /// Lessons only closed courses list: retired, so check-ins no longer bring
 /// them back. A lesson an open course lists too stays.
-pub fn retired_lessons(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
-    let listed: Vec<(i64, Option<i64>)> = course_lessons::table
+pub fn retired_lessons(conn: &mut Conn) -> Result<std::collections::HashSet<LessonId>> {
+    let listed: Vec<(LessonId, Option<i64>)> = course_lessons::table
         .inner_join(courses::table)
         .select((course_lessons::lesson_id, courses::closed_at))
         .load(conn)?;
-    let open: std::collections::HashSet<i64> = listed.iter().filter(|(_, closed)| closed.is_none()).map(|(id, _)| *id).collect();
+    let open: std::collections::HashSet<LessonId> = listed.iter().filter(|(_, closed)| closed.is_none()).map(|(id, _)| *id).collect();
     Ok(listed.into_iter().filter(|(id, closed)| closed.is_some() && !open.contains(id)).map(|(id, _)| id).collect())
 }
 
@@ -162,7 +164,7 @@ pub struct CourseClosed {
 /// trophy, stays readable, and its lessons leave play (unless an open course
 /// lists them too). Only a mastered course, and not the Other lessons
 /// folder, can be closed. To revisit its theme, the tutor makes a new course.
-pub fn close(conn: &mut Conn, course_id: i64) -> Result<CourseClosed> {
+pub fn close(conn: &mut Conn, course_id: CourseId) -> Result<CourseClosed> {
     let title = require_open_course(conn, course_id)?;
     let current = status(conn, course_id)?;
     if current.open_ended {
@@ -173,7 +175,7 @@ pub fn close(conn: &mut Conn, course_id: i64) -> Result<CourseClosed> {
     }
     let now = db::now_secs();
     diesel::update(courses::table.find(course_id)).set(courses::closed_at.eq(now)).execute(conn)?;
-    let ids: Vec<i64> =
+    let ids: Vec<LessonId> =
         course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?;
     let words: i64 = words::table.filter(words::lesson_id.eq_any(&ids)).count().get_result(conn)?;
     let earned: Vec<(i64, i64)> = crate::schema::xp_log::table
@@ -194,12 +196,15 @@ fn next_ord(conn: &mut Conn) -> Result<i64> {
     Ok(courses::table.select(max(courses::ord)).first::<Option<i64>>(conn)?.unwrap_or(0) + 1)
 }
 
-fn insert_course(conn: &mut Conn, slug: Option<&str>, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
+fn insert_course(conn: &mut Conn, slug: Option<&str>, title: &str, title_pl: &str, summary: &str) -> Result<CourseId> {
     let ord = next_ord(conn)?;
     let now = db::now_secs();
+    // A built-in course (a fixed slug) has the same id on every device.
+    let id = slug.map_or_else(CourseId::new, |slug| CourseId::derived("course", slug));
     let slug = slug.map(str::to_string).unwrap_or_else(|| format!("course-{now}-{ord}"));
     Ok(diesel::insert_into(courses::table)
         .values((
+            courses::id.eq(id),
             courses::slug.eq(slug),
             courses::ord.eq(ord),
             courses::kind.eq("course"),
@@ -255,7 +260,7 @@ pub fn create(conn: &mut Conn, input: NewCourse, origin: &str) -> Result<CourseS
 
 /// The course with this slug, made (empty) if it does not exist yet. For the
 /// courses lessons are filed in when nobody chose one.
-pub fn ensure(conn: &mut Conn, slug: &str, title: &str, title_pl: &str, summary: &str) -> Result<i64> {
+pub fn ensure(conn: &mut Conn, slug: &str, title: &str, title_pl: &str, summary: &str) -> Result<CourseId> {
     if let Some(id) = courses::table.filter(courses::slug.eq(slug)).select(courses::id).first(conn).optional()? {
         return Ok(id);
     }
@@ -265,7 +270,7 @@ pub fn ensure(conn: &mut Conn, slug: &str, title: &str, title_pl: &str, summary:
 /// Where a lesson goes that belongs to no course: a song to listen to, a
 /// situation to write, a question answered on its own. A folder, not a
 /// course — it never ends, and the course list shows it last.
-pub fn other_course(conn: &mut Conn) -> Result<i64> {
+pub fn other_course(conn: &mut Conn) -> Result<CourseId> {
     ensure(conn, OTHER, OTHER_TITLES.0, OTHER_TITLES.1, "One-off lessons that belong to no course.")
 }
 
@@ -280,7 +285,7 @@ pub const GRAMMAR_CULTURE: (&str, &str) = ("Grammar & culture", "Gramatyka i kul
 /// Listening, Writing) into Other lessons, keeping their order, and removes
 /// the empty folders. Lessons, their history and mastery are untouched.
 pub fn merge_old_folders(conn: &mut Conn) -> Result<()> {
-    let old: Vec<i64> =
+    let old: Vec<CourseId> =
         courses::table.filter(courses::slug.eq_any(OLD_FOLDERS)).order(courses::id).select(courses::id).load(conn)?;
     if old.is_empty() {
         return Ok(());
@@ -293,7 +298,7 @@ pub fn merge_old_folders(conn: &mut Conn) -> Result<()> {
             .first::<Option<i64>>(conn)?
             .unwrap_or(0);
         for folder in &old {
-            let lessons: Vec<i64> = course_lessons::table
+            let lessons: Vec<LessonId> = course_lessons::table
                 .filter(course_lessons::course_id.eq(folder))
                 .order(course_lessons::ord)
                 .select(course_lessons::lesson_id)
@@ -317,7 +322,7 @@ pub fn merge_old_folders(conn: &mut Conn) -> Result<()> {
 
 /// Where the starter lessons are. Dated like the other starter courses, so
 /// it sorts with them.
-pub fn grammar_course(conn: &mut Conn) -> Result<i64> {
+pub fn grammar_course(conn: &mut Conn) -> Result<CourseId> {
     let id = ensure(
         conn,
         "grammar-essentials",
@@ -331,7 +336,7 @@ pub fn grammar_course(conn: &mut Conn) -> Result<i64> {
 
 /// A course with nothing in it yet (tests).
 #[cfg(test)]
-pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<i64> {
+pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<CourseId> {
     let title = clean(title);
     if title.is_empty() {
         return Err(Error::msg("A course needs a title."));
@@ -344,7 +349,7 @@ pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<i64> 
 // ---------------------------------------------------------------------------
 
 /// Lists a lesson in a course, at the end. Listing it again changes nothing.
-pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()> {
+pub fn add_lesson(conn: &mut Conn, course_id: CourseId, lesson_id: LessonId) -> Result<()> {
     require_open_course(conn, course_id)?;
     let ord = course_lessons::table
         .filter(course_lessons::course_id.eq(course_id))
@@ -362,7 +367,7 @@ pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()>
     // A listening lesson filed in a real course gives a song without one its
     // course, so the song is known to belong there from now on.
     let open_ended = OPEN_ENDED.contains(&courses::table.find(course_id).select(courses::slug).first::<String>(conn)?.as_str());
-    let song: Option<i64> = lessons::table.find(lesson_id).select(lessons::song_id).first(conn).optional()?.flatten();
+    let song: Option<SongId> = lessons::table.find(lesson_id).select(lessons::song_id).first(conn).optional()?.flatten();
     if let (Some(song), false) = (song, open_ended) {
         diesel::update(songs::table.find(song).filter(songs::course_id.is_null()))
             .set(songs::course_id.eq(course_id))
@@ -373,7 +378,7 @@ pub fn add_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<()>
 
 /// Takes a lesson out of a course. Out of its last course, the lesson is
 /// deleted with its words, sentences and history; returns true then.
-pub fn remove_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<bool> {
+pub fn remove_lesson(conn: &mut Conn, course_id: CourseId, lesson_id: LessonId) -> Result<bool> {
     require_open_course(conn, course_id)?;
     let removed = diesel::delete(course_lessons::table.find((course_id, lesson_id))).execute(conn)?;
     if removed == 0 {
@@ -382,7 +387,7 @@ pub fn remove_lesson(conn: &mut Conn, course_id: i64, lesson_id: i64) -> Result<
     delete_if_orphaned(conn, lesson_id)
 }
 
-fn delete_if_orphaned(conn: &mut Conn, lesson_id: i64) -> Result<bool> {
+fn delete_if_orphaned(conn: &mut Conn, lesson_id: LessonId) -> Result<bool> {
     let listed: i64 = course_lessons::table.filter(course_lessons::lesson_id.eq(lesson_id)).count().get_result(conn)?;
     if listed == 0 {
         diesel::delete(lessons::table.find(lesson_id)).execute(conn)?;
@@ -392,7 +397,7 @@ fn delete_if_orphaned(conn: &mut Conn, lesson_id: i64) -> Result<bool> {
 }
 
 /// Moves a lesson from one course to another (its words go with it).
-pub fn move_lesson(conn: &mut Conn, lesson_id: i64, from: i64, to: i64) -> Result<()> {
+pub fn move_lesson(conn: &mut Conn, lesson_id: LessonId, from: CourseId, to: CourseId) -> Result<()> {
     if from == to {
         return Ok(());
     }
@@ -406,9 +411,9 @@ pub fn move_lesson(conn: &mut Conn, lesson_id: i64, from: i64, to: i64) -> Resul
 
 /// Puts a course's lessons in this order. Lessons left out keep their relative
 /// order after the ones given.
-pub fn order_lessons(conn: &mut Conn, course_id: i64, lesson_ids: &[i64]) -> Result<()> {
-    let current: Vec<i64> = crate::lessons::for_course(conn, course_id)?.iter().map(|b| b.id).collect();
-    let mut order: Vec<i64> = Vec::new();
+pub fn order_lessons(conn: &mut Conn, course_id: CourseId, lesson_ids: &[LessonId]) -> Result<()> {
+    let current: Vec<LessonId> = crate::lessons::for_course(conn, course_id)?.iter().map(|b| b.id).collect();
+    let mut order: Vec<LessonId> = Vec::new();
     for id in lesson_ids.iter().chain(current.iter()) {
         if current.contains(id) && !order.contains(id) {
             order.push(*id);
@@ -427,7 +432,7 @@ pub fn order_lessons(conn: &mut Conn, course_id: i64, lesson_ids: &[i64]) -> Res
 // ---------------------------------------------------------------------------
 
 /// The Polish of every word a course's lessons own, lowercased.
-fn course_words_known(conn: &mut Conn, course_id: i64) -> Result<HashSet<String>> {
+fn course_words_known(conn: &mut Conn, course_id: CourseId) -> Result<HashSet<String>> {
     Ok(course_words::table
         .filter(course_words::course_id.eq(course_id))
         .select(course_words::pl)
@@ -438,7 +443,7 @@ fn course_words_known(conn: &mut Conn, course_id: i64) -> Result<HashSet<String>
 }
 
 /// The Polish of every sentence a course's lessons own, lowercased.
-fn course_sentences_known(conn: &mut Conn, course_id: i64) -> Result<HashSet<String>> {
+fn course_sentences_known(conn: &mut Conn, course_id: CourseId) -> Result<HashSet<String>> {
     Ok(course_sentences::table
         .filter(course_sentences::course_id.eq(course_id))
         .select(course_sentences::pl)
@@ -453,7 +458,7 @@ fn course_sentences_known(conn: &mut Conn, course_id: i64) -> Result<HashSet<Str
 /// one). Anything the course already teaches is skipped and counted.
 pub fn cut_into_drills(
     conn: &mut Conn,
-    course_id: i64,
+    course_id: CourseId,
     words: &[NewWord],
     sentences: &[NewSentence],
     dialogue: &[NewLine],
@@ -461,7 +466,7 @@ pub fn cut_into_drills(
 ) -> Result<i64> {
     let title_pl: String = courses::table.find(course_id).select(courses::title_pl).first(conn)?;
     let mut skipped = 0;
-    let drills_of = |conn: &mut Conn, format: &str| -> Result<Vec<i64>> {
+    let drills_of = |conn: &mut Conn, format: &str| -> Result<Vec<LessonId>> {
         Ok(course_lessons::table
             .inner_join(lessons::table)
             .filter(course_lessons::course_id.eq(course_id))
@@ -565,7 +570,7 @@ pub fn cut_into_drills(
 /// Adds words, sentences or dialogue lines to an existing course.
 pub fn extend(
     conn: &mut Conn,
-    course_id: i64,
+    course_id: CourseId,
     words: &[NewWord],
     sentences: &[NewSentence],
     dialogue: &[NewLine],
@@ -587,7 +592,7 @@ pub fn extend(
 
 /// Puts items into one lesson, after what it has. Items it already holds (by
 /// their Polish) are skipped; returns how many.
-pub fn insert_items(conn: &mut Conn, lesson_id: i64, items: &Items) -> Result<i64> {
+pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Result<i64> {
     let mut skipped = 0;
 
     let mut ord = words::table
@@ -602,6 +607,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: i64, items: &Items) -> Result<i6
         }
         let added = diesel::insert_or_ignore_into(words::table)
             .values((
+                words::id.eq(WordId::new()),
                 words::lesson_id.eq(lesson_id),
                 words::ord.eq(ord),
                 words::pl.eq(pl),
@@ -628,6 +634,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: i64, items: &Items) -> Result<i6
         }
         let added = diesel::insert_or_ignore_into(sentences::table)
             .values((
+                sentences::id.eq(SentenceId::new()),
                 sentences::lesson_id.eq(lesson_id),
                 sentences::ord.eq(ord),
                 sentences::pl.eq(pl),
@@ -654,6 +661,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: i64, items: &Items) -> Result<i6
         let gender = if line.gender.trim().eq_ignore_ascii_case("m") { "m" } else { "f" };
         diesel::insert_into(conversation_lines::table)
             .values((
+                conversation_lines::id.eq(LineId::new()),
                 conversation_lines::lesson_id.eq(lesson_id),
                 conversation_lines::ord.eq(ord),
                 conversation_lines::speaker.eq(if speaker.is_empty() { "?".to_string() } else { speaker }),
@@ -672,13 +680,13 @@ pub fn insert_items(conn: &mut Conn, lesson_id: i64, items: &Items) -> Result<i6
 /// practise goes too.
 pub fn remove_items(
     conn: &mut Conn,
-    course_id: i64,
+    course_id: CourseId,
     remove_words: &[String],
     remove_sentences: &[String],
 ) -> Result<CourseSummary> {
     require_open_course(conn, course_id)?;
     conn.transaction::<_, Error, _>(|conn| {
-        let listed: Vec<i64> =
+        let listed: Vec<LessonId> =
             course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?;
         let words_out: Vec<String> = remove_words.iter().map(|pl| clean(pl)).collect();
         let sentences_out: Vec<String> = remove_sentences.iter().map(|pl| clean(pl)).collect();
@@ -689,24 +697,24 @@ pub fn remove_items(
         )
         .execute(conn)?;
         // Drills left with nothing to practise.
-        let owners: HashSet<i64> = words::table
+        let owners: HashSet<LessonId> = words::table
             .select(words::lesson_id)
             .filter(words::lesson_id.eq_any(&listed))
-            .load::<i64>(conn)?
+            .load::<LessonId>(conn)?
             .into_iter()
-            .chain(sentences::table.select(sentences::lesson_id).filter(sentences::lesson_id.eq_any(&listed)).load::<i64>(conn)?)
+            .chain(sentences::table.select(sentences::lesson_id).filter(sentences::lesson_id.eq_any(&listed)).load::<LessonId>(conn)?)
             .chain(
                 conversation_lines::table
                     .select(conversation_lines::lesson_id)
                     .filter(conversation_lines::lesson_id.eq_any(&listed))
-                    .load::<i64>(conn)?,
+                    .load::<LessonId>(conn)?,
             )
             .collect();
-        let empty: Vec<i64> = lessons::table
+        let empty: Vec<LessonId> = lessons::table
             .filter(lessons::id.eq_any(&listed))
             .filter(lessons::lesson_type.eq_any(crate::lesson_types::REGISTRY.iter().filter(|t| t.is_drill()).map(|t| t.id)))
             .select(lessons::id)
-            .load::<i64>(conn)?
+            .load::<LessonId>(conn)?
             .into_iter()
             .filter(|id| !owners.contains(id))
             .collect();
@@ -716,7 +724,7 @@ pub fn remove_items(
     summary(conn, course_id, 0)
 }
 
-pub fn rename(conn: &mut Conn, course_id: i64, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<CourseSummary> {
+pub fn rename(conn: &mut Conn, course_id: CourseId, title: Option<&str>, title_pl: Option<&str>, summary_text: Option<&str>) -> Result<CourseSummary> {
     require_open_course(conn, course_id)?;
     let course = courses::table.find(course_id);
     if let Some(title) = title.map(clean).filter(|t| !t.is_empty()) {
@@ -735,8 +743,8 @@ pub fn rename(conn: &mut Conn, course_id: i64, title: Option<&str>, title_pl: Op
 /// theme; then words, lessons and sentences interleaved, so each lesson
 /// comes when its words are known; listening after; writing — using it all
 /// in a situation — last.
-pub fn arrange_path(conn: &mut Conn, course_id: i64) -> Result<()> {
-    let rows: Vec<(i64, String)> = course_lessons::table
+pub fn arrange_path(conn: &mut Conn, course_id: CourseId) -> Result<()> {
+    let rows: Vec<(LessonId, String)> = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
         .order((course_lessons::ord, course_lessons::lesson_id))
@@ -744,7 +752,7 @@ pub fn arrange_path(conn: &mut Conn, course_id: i64) -> Result<()> {
         .load(conn)?;
     // Each type says where it goes (lesson_types::PathGroup).
     use crate::lesson_types::PathGroup;
-    let pick = |group: PathGroup| -> Vec<i64> {
+    let pick = |group: PathGroup| -> Vec<LessonId> {
         rows.iter()
             .filter(|(_, t)| crate::lesson_types::get(t).map_or(PathGroup::Study, |t| t.path) == group)
             .map(|(id, _)| *id)
@@ -774,19 +782,19 @@ pub fn arrange_path(conn: &mut Conn, course_id: i64) -> Result<()> {
     path.extend(listening);
     path.extend(writing);
     // Anything not sorted above keeps its place at the end.
-    let placed: HashSet<i64> = path.iter().copied().collect();
+    let placed: HashSet<LessonId> = path.iter().copied().collect();
     path.extend(rows.iter().map(|(id, ..)| *id).filter(|id| !placed.contains(id)));
     order_lessons(conn, course_id, &path)
 }
 
 /// Deletes a course. Its lessons go with it — and their words and history —
 /// unless another course also lists them. Returns its title.
-pub fn delete(conn: &mut Conn, course_id: i64) -> Result<String> {
+pub fn delete(conn: &mut Conn, course_id: CourseId) -> Result<String> {
     let title = require_course(conn, course_id)?;
     conn.transaction::<_, Error, _>(|conn| {
-        let lessons: Vec<i64> =
+        let lessons: Vec<LessonId> =
             course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?;
-        let image: Option<i64> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
+        let image: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
         diesel::delete(courses::table.find(course_id)).execute(conn)?;
         crate::files::delete(conn, &image.into_iter().collect::<Vec<_>>())?;
         for lesson in lessons {
@@ -797,7 +805,7 @@ pub fn delete(conn: &mut Conn, course_id: i64) -> Result<String> {
     Ok(title)
 }
 
-fn summary(conn: &mut Conn, course_id: i64, skipped: i64) -> Result<CourseSummary> {
+fn summary(conn: &mut Conn, course_id: CourseId, skipped: i64) -> Result<CourseSummary> {
     Ok(CourseSummary {
         course_id,
         title: require_course(conn, course_id)?,
@@ -813,6 +821,8 @@ fn summary(conn: &mut Conn, course_id: i64, skipped: i64) -> Result<CourseSummar
 // ---------------------------------------------------------------------------
 
 pub mod commands {
+    #[allow(unused_imports)]
+    use crate::ids::*;
     use tauri::State;
 
     use crate::db::Db;
@@ -820,7 +830,7 @@ pub mod commands {
 
     /// Deletes a course with all its lessons, words and practice history.
     #[tauri::command]
-    pub async fn course_delete(db: State<'_, Db>, course_id: i64) -> Result<()> {
+    pub async fn course_delete(db: State<'_, Db>, course_id: CourseId) -> Result<()> {
         super::delete(&mut db.lock(), course_id).map(|_| ())
     }
 
@@ -828,7 +838,7 @@ pub mod commands {
     #[tauri::command]
     pub async fn course_rename(
         db: State<'_, Db>,
-        course_id: i64,
+        course_id: CourseId,
         title: String,
         title_pl: String,
         summary: String,
@@ -838,20 +848,20 @@ pub mod commands {
 
     /// Closes a mastered course (see [`super::close`]).
     #[tauri::command]
-    pub async fn course_close(db: State<'_, Db>, course_id: i64) -> Result<super::CourseClosed> {
+    pub async fn course_close(db: State<'_, Db>, course_id: CourseId) -> Result<super::CourseClosed> {
         super::close(&mut db.lock(), course_id)
     }
 
     /// Lists a lesson in another course too.
     #[tauri::command]
-    pub async fn lesson_add_to_course(db: State<'_, Db>, lesson_id: i64, course_id: i64) -> Result<()> {
+    pub async fn lesson_add_to_course(db: State<'_, Db>, lesson_id: LessonId, course_id: CourseId) -> Result<()> {
         super::add_lesson(&mut db.lock(), course_id, lesson_id)
     }
 
     /// Takes a lesson out of a course; true when that was its last course and
     /// the lesson was deleted.
     #[tauri::command]
-    pub async fn lesson_remove_from_course(db: State<'_, Db>, lesson_id: i64, course_id: i64) -> Result<bool> {
+    pub async fn lesson_remove_from_course(db: State<'_, Db>, lesson_id: LessonId, course_id: CourseId) -> Result<bool> {
         super::remove_lesson(&mut db.lock(), course_id, lesson_id)
     }
 }
@@ -903,7 +913,7 @@ pub struct CourseStatus {
     pub closed_at: Option<i64>,
 }
 
-pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
+pub fn status(conn: &mut Conn, course_id: CourseId) -> Result<CourseStatus> {
     let list: Vec<(i64, i64, i64, String, Option<i64>, String, String)> = course_lessons::table
         .inner_join(lessons::table)
         .filter(course_lessons::course_id.eq(course_id))
@@ -979,7 +989,7 @@ pub fn status(conn: &mut Conn, course_id: i64) -> Result<CourseStatus> {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Milestone {
-    pub course_id: i64,
+    pub course_id: CourseId,
     pub title: String,
     pub mastered: bool,
 }
@@ -987,7 +997,7 @@ pub struct Milestone {
 /// Courses that have reached completed or mastered since last asked: each
 /// is noted, so it is celebrated once.
 pub fn milestones(conn: &mut Conn) -> Result<Vec<Milestone>> {
-    let open: Vec<(i64, String, Option<i64>, Option<i64>)> = courses::table
+    let open: Vec<(CourseId, String, Option<i64>, Option<i64>)> = courses::table
         .filter(courses::completed_at.is_null().or(courses::mastered_at.is_null()))
         .select((courses::id, courses::title_en, courses::completed_at, courses::mastered_at))
         .load(conn)?;

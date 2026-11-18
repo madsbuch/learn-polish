@@ -1,3 +1,4 @@
+import type { FileId } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 /**
@@ -6,6 +7,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
  * from the database (files.rs), with ranges for seeking. Always load files
  * this way, never by a path on disk.
  */
-export function fileUrl(id: number): string {
-  return convertFileSrc(String(id), "media");
+export function fileUrl(id: FileId): string {
+  return convertFileSrc(id, "media");
 }

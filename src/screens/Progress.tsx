@@ -10,30 +10,14 @@ function Heatmap({ stats }: { stats: Stats }) {
     const day = stats.day - offset;
     const entry = byDay.get(day);
     // A done day is full; a frozen one shows the freeze that kept the run.
-    const level = entry?.completed
-      ? 3
-      : !entry || entry.xp === 0
-        ? 0
-        : entry.xp >= 75
-          ? 2
-          : 1;
+    const level = entry?.completed ? 3 : !entry || entry.xp === 0 ? 0 : entry.xp >= 75 ? 2 : 1;
     cells.push(<i key={day} data-level={level} data-frozen={entry?.frozen || undefined} />);
   }
   return <div className="heat">{cells}</div>;
 }
 
 /** One line of the vocabulary card: a count, its total, and a bar. */
-function Measure({
-  label,
-  value,
-  max,
-  tone,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  tone?: "gold" | "mint";
-}) {
+function Measure({ label, value, max, tone }: { label: string; value: number; max: number; tone?: "gold" | "mint" }) {
   return (
     <Stack gap={2}>
       <Inline justify="between">

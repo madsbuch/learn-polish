@@ -13,6 +13,8 @@ use tauri::State;
 use crate::db::{self, Conn, Db};
 use crate::error::Result;
 use crate::schema::{courses, course_lessons, day_log, lessons, xp_log};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// Notes something that earned (or, with 0, did not earn) XP.
 #[allow(clippy::too_many_arguments)]
@@ -20,13 +22,14 @@ pub fn write(
     conn: &mut Conn,
     day: i64,
     run: &str,
-    lesson_id: Option<i64>,
+    lesson_id: Option<LessonId>,
     label: &str,
     xp: i64,
     note: &str,
 ) -> Result<()> {
     diesel::insert_into(xp_log::table)
         .values((
+            xp_log::id.eq(XpEntryId::new()),
             xp_log::day.eq(day),
             xp_log::at.eq(db::now_secs()),
             xp_log::run.eq(run),
@@ -74,7 +77,7 @@ pub struct Entry {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {
-    pub lesson_id: Option<i64>,
+    pub lesson_id: Option<LessonId>,
     pub lesson_title: String,
     pub course_title: Option<String>,
     pub started_at: i64,
@@ -96,19 +99,19 @@ pub struct XpDay {
 /// A day's XP: its total, and what earned it, run by run in order.
 pub fn day(conn: &mut Conn, day: i64) -> Result<XpDay> {
     let total = day_log::table.find(day).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
-    let rows: Vec<(i64, String, Option<i64>, String, i64, String)> = xp_log::table
+    let rows: Vec<(i64, String, Option<LessonId>, String, i64, String)> = xp_log::table
         .filter(xp_log::day.eq(day))
         .order(xp_log::id)
         .select((xp_log::at, xp_log::run, xp_log::lesson_id, xp_log::label, xp_log::xp, xp_log::note))
         .load(conn)?;
-    let ids: Vec<i64> = rows.iter().filter_map(|r| r.2).collect();
-    let titles: HashMap<i64, String> =
+    let ids: Vec<LessonId> = rows.iter().filter_map(|r| r.2).collect();
+    let titles: HashMap<LessonId, String> =
         lessons::table.filter(lessons::id.eq_any(&ids)).select((lessons::id, lessons::title)).load(conn)?.into_iter().collect();
-    let course_of: HashMap<i64, String> = course_lessons::table
+    let course_of: HashMap<LessonId, String> = course_lessons::table
         .inner_join(courses::table)
         .filter(course_lessons::lesson_id.eq_any(&ids))
         .select((course_lessons::lesson_id, courses::title_en))
-        .load::<(i64, String)>(conn)?
+        .load::<(LessonId, String)>(conn)?
         .into_iter()
         .collect();
     let mut order: Vec<String> = Vec::new();

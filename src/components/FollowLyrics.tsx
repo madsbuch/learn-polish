@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { sectionLabel } from "../lib/lyrics";
 import { livePosition, seek, usePlayer, type QueueItem } from "../lib/player";
-import type { TimedLine } from "../lib/types";
+import type { TimedLine, TrackId } from "../lib/types";
 
 /**
  * Lyrics that follow the music: the line being sung is highlighted and kept
@@ -22,7 +22,7 @@ function lastSpeaker(lines: { speaker?: string | null; section: string | null }[
 export function FollowLyrics({ item }: { item: QueueItem }) {
   const player = usePlayer();
   const trackId = item.track.id;
-  const [fetched, setFetched] = useState<{ id: number; lines: TimedLine[] | null } | null>(null);
+  const [fetched, setFetched] = useState<{ id: TrackId; lines: TimedLine[] | null } | null>(null);
   const [, tick] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const currentRef = useRef<HTMLButtonElement>(null);

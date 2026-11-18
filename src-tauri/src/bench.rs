@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{Emitter, State};
 
+#[allow(unused_imports)]
+use crate::ids::*;
 use crate::ai::{self, Wire};
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
@@ -148,7 +150,7 @@ pub struct ItemResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BenchRun {
-    pub id: i64,
+    pub id: BenchRunId,
     pub model: String,
     pub created_at: i64,
     pub score: i64,
@@ -443,6 +445,7 @@ pub async fn bench_run(app: tauri::AppHandle, db: State<'_, Db>, model: String) 
     }
     let id = diesel::insert_into(bench_runs::table)
         .values((
+            bench_runs::id.eq(BenchRunId::new()),
             bench_runs::model.eq(&model),
             bench_runs::created_at.eq(db::now_secs()),
             bench_runs::score.eq(score),
@@ -454,11 +457,11 @@ pub async fn bench_run(app: tauri::AppHandle, db: State<'_, Db>, model: String) 
             bench_runs::items.eq(serde_json::to_string(&items_out)?),
         ))
         .returning(bench_runs::id)
-        .get_result::<i64>(conn)?;
+        .get_result::<BenchRunId>(conn)?;
     load(conn, id)
 }
 
-type Row = (i64, String, i64, i64, i64, i64, i64, f64, Option<f64>, String);
+type Row = (BenchRunId, String, i64, i64, i64, i64, i64, f64, Option<f64>, String);
 
 fn from_row(row: Row) -> BenchRun {
     let (id, model, created_at, score, polish, tools, rules, seconds, cost_usd, items) = row;
@@ -502,7 +505,7 @@ fn columns() -> (
     )
 }
 
-fn load(conn: &mut Conn, id: i64) -> Result<BenchRun> {
+fn load(conn: &mut Conn, id: BenchRunId) -> Result<BenchRun> {
     Ok(from_row(bench_runs::table.find(id).select(columns()).first::<Row>(conn)?))
 }
 
@@ -523,7 +526,7 @@ pub async fn bench_runs(db: State<'_, Db>) -> Result<Vec<BenchRun>> {
 }
 
 #[tauri::command]
-pub async fn bench_delete(db: State<'_, Db>, id: i64) -> Result<()> {
+pub async fn bench_delete(db: State<'_, Db>, id: BenchRunId) -> Result<()> {
     diesel::delete(bench_runs::table.find(id)).execute(&mut *db.lock())?;
     Ok(())
 }

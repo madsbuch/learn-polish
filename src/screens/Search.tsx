@@ -15,7 +15,7 @@ import {
   Stack,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { CataloguePage, CourseProgress } from "../lib/types";
+import type { CataloguePage, CourseId, CourseProgress } from "../lib/types";
 
 type Kind = "words" | "sentences";
 
@@ -23,16 +23,10 @@ type Kind = "words" | "sentences";
 const PAGE = 200;
 
 /** Every word and sentence in the app, searchable in Polish or English. */
-export function Search({
-  courses,
-  onBack,
-}: {
-  courses: CourseProgress[];
-  onBack: () => void;
-}) {
+export function Search({ courses, onBack }: { courses: CourseProgress[]; onBack: () => void }) {
   const [section, setSection] = useState<Kind>("words");
   const [query, setQuery] = useState("");
-  const [courseId, setCourseId] = useState<number | null>(null);
+  const [courseId, setCourseId] = useState<CourseId | null>(null);
   const [page, setPage] = useState<CataloguePage | null>(null);
   const [error, setError] = useState<string | null>(null);
 

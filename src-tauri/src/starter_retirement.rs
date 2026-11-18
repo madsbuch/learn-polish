@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 use crate::db::{self, Conn};
 use crate::error::{Error, Result};
 use crate::schema::{lessons, conversation_lines, course_lessons, sentences, songs, courses, wiki_sources, words};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 const RETIRED: &str = "bundled_courses_retired_v1";
 
@@ -30,8 +32,8 @@ const LEGACY_COURSES: &[(&str, &str)] = &[
 ];
 
 /// Hash the complete editable definition, without database IDs or review state.
-fn fingerprint(conn: &mut Conn, course_id: i64) -> Result<Option<String>> {
-    let course: (String, String, String, String, i64, Option<i64>) = courses::table
+fn fingerprint(conn: &mut Conn, course_id: CourseId) -> Result<Option<String>> {
+    let course: (String, String, String, String, i64, Option<FileId>) = courses::table
         .find(course_id)
         .select((courses::slug, courses::title_pl, courses::title_en, courses::summary_en, courses::created_at, courses::image_file_id))
         .first(conn)?;
@@ -42,7 +44,7 @@ fn fingerprint(conn: &mut Conn, course_id: i64) -> Result<Option<String>> {
         return Ok(None);
     }
     let mut definition = vec![serde_json::to_value((&course.0, &course.1, &course.2, &course.3))?];
-    let listed: Vec<(i64, i64)> = course_lessons::table
+    let listed: Vec<(LessonId, i64)> = course_lessons::table
         .filter(course_lessons::course_id.eq(course_id))
         .order((course_lessons::ord, course_lessons::lesson_id))
         .select((course_lessons::lesson_id, course_lessons::ord))
@@ -53,7 +55,7 @@ fn fingerprint(conn: &mut Conn, course_id: i64) -> Result<Option<String>> {
         {
             return Ok(None);
         }
-        let mut lesson: (Option<String>, String, String, String, String, String, String, String, i64, String, i64, Option<i64>) = lessons::table
+        let mut lesson: (Option<String>, String, String, String, String, String, String, String, i64, String, i64, Option<SongId>) = lessons::table
             .find(lesson_id)
             .select((lessons::slug, lessons::lesson_type, lessons::lesson_type, lessons::title, lessons::summary,
                 lessons::complexity, lessons::content, lessons::objectives, lessons::period_days,
@@ -94,7 +96,7 @@ fn legacy_kind_and_format(lesson_type: &str) -> (&'static str, String) {
 
 fn retire_matching(conn: &mut Conn, manifest: &[(&str, &str)]) -> Result<()> {
     for (slug, expected) in manifest {
-        let id = courses::table.filter(courses::slug.eq(slug)).select(courses::id).first::<i64>(conn).optional()?;
+        let id = courses::table.filter(courses::slug.eq(slug)).select(courses::id).first::<CourseId>(conn).optional()?;
         if let Some(id) = id {
             if fingerprint(conn, id)?.as_deref() == Some(*expected) {
                 crate::courses::delete(conn, id)?;
@@ -141,7 +143,7 @@ mod tests {
         conn
     }
 
-    fn course(conn: &mut Conn, slug: &str) -> i64 {
+    fn course(conn: &mut Conn, slug: &str) -> CourseId {
         courses::table.filter(courses::slug.eq(slug)).select(courses::id).first(conn).unwrap()
     }
 
@@ -186,13 +188,13 @@ mod tests {
         let own = crate::courses::create_empty(&mut conn, "My practice", "Made by me").unwrap();
         crate::courses::add_lesson(&mut conn, own, shared_lesson).unwrap();
         let changed_word = course(&mut conn, "travel");
-        let word = schema::course_words::table.filter(schema::course_words::course_id.eq(changed_word)).select(schema::course_words::id).first::<i64>(&mut conn).unwrap();
+        let word = schema::course_words::table.filter(schema::course_words::course_id.eq(changed_word)).select(schema::course_words::id).first::<WordId>(&mut conn).unwrap();
         diesel::update(words::table.find(word)).set(words::en.eq("my edited translation")).execute(&mut conn).unwrap();
         let scheduled = course(&mut conn, "home");
         let scheduled_lesson = practice_lessons::for_course(&mut conn, scheduled).unwrap()[0].id;
         practice_lessons::update(&mut conn, scheduled_lesson, practice_lessons::LessonChanges { period_days: Some(19), ..Default::default() }).unwrap();
         run(&mut conn).unwrap();
-        let retained: Vec<i64> = courses::table.select(courses::id).load(&mut conn).unwrap();
+        let retained: Vec<CourseId> = courses::table.select(courses::id).load(&mut conn).unwrap();
         for id in [renamed, extended, edited, shared, changed_word, scheduled, own] {
             assert!(retained.contains(&id), "customized course {id} was lost");
         }

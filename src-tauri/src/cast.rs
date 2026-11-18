@@ -24,6 +24,8 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::db::{self, Conn, Db};
 use crate::schema::{song_tracks, songs};
 use crate::error::{Error, Result};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 const SSDP_ADDR: &str = "239.255.255.250:1900";
 const SONOS_ST: &str = "urn:schemas-upnp-org:device:ZonePlayer:1";
@@ -65,7 +67,7 @@ pub struct CastDevice {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CastItem {
-    pub track_id: i64,
+    pub track_id: TrackId,
     pub title: String,
     pub artist: String,
 }
@@ -77,7 +79,7 @@ pub struct CastState {
     pub items: Vec<CastItem>,
     /// Index into `items` of the song Sonos is on.
     pub index: i64,
-    pub track_id: Option<i64>,
+    pub track_id: Option<TrackId>,
     pub playing: bool,
     /// Raw UPnP state: PLAYING, PAUSED_PLAYBACK, STOPPED, TRANSITIONING.
     pub transport: String,
@@ -515,7 +517,7 @@ fn mime_for(path: &str) -> &'static str {
 }
 
 /// Serves a file from the files table, whole or by range, over HTTP.
-async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, file_id: i64) -> Result<()> {
+async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, file_id: FileId) -> Result<()> {
     let file = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
@@ -576,8 +578,8 @@ where
 }
 
 /// A take's audio and cover art files.
-fn track_files(conn: &mut Conn, track_id: i64) -> Result<Option<(i64, Option<i64>)>> {
-    let ids: Option<(Option<i64>, Option<i64>)> = song_tracks::table
+fn track_files(conn: &mut Conn, track_id: TrackId) -> Result<Option<(FileId, Option<FileId>)>> {
+    let ids: Option<(Option<FileId>, Option<FileId>)> = song_tracks::table
         .find(track_id)
         .select((song_tracks::audio_file_id, song_tracks::image_file_id))
         .first(conn)
@@ -609,7 +611,9 @@ async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAd
     match parts.as_slice() {
         // /media/<token>/<track>.mp3 and /art/<token>/<track> — for the speaker.
         [kind @ ("media" | "art"), token, file] if *token == server.token => {
-            let track_id: i64 = file.split('.').next().unwrap_or("").parse().unwrap_or(-1);
+            let Ok(track_id) = TrackId::parse(file.split('.').next().unwrap_or("")) else {
+                return respond(&mut stream, "404 Not Found", "text/plain", b"unknown").await;
+            };
             let files = {
                 let db = app.state::<Db>();
                 let mut guard = db.lock();
@@ -665,7 +669,7 @@ struct Session {
     generation: u64,
     last: Option<CastState>,
     /// The track whose play has already been counted on this pass.
-    counted: Option<i64>,
+    counted: Option<TrackId>,
 }
 
 #[derive(Default)]
@@ -695,7 +699,7 @@ fn session_device(app: &AppHandle) -> Result<CastDevice> {
         .ok_or_else(|| Error::msg("Not casting."))
 }
 
-pub fn didl(title: &str, artist: &str, url: &str, art: &str, mime: &str, id: i64) -> String {
+pub fn didl(title: &str, artist: &str, url: &str, art: &str, mime: &str, id: TrackId) -> String {
     format!(
         "<DIDL-Lite xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
          xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" \
@@ -720,7 +724,7 @@ pub fn play_mode(repeat: &str) -> &'static str {
     }
 }
 
-fn load_items(conn: &mut Conn, track_ids: &[i64]) -> Result<Vec<(CastItem, String)>> {
+fn load_items(conn: &mut Conn, track_ids: &[TrackId]) -> Result<Vec<(CastItem, String)>> {
     let mut items = Vec::new();
     for id in track_ids {
         let row: Option<(String, String)> = song_tracks::table
@@ -771,7 +775,7 @@ async fn poll_once(app: &AppHandle) -> Result<CastState> {
     let uri = tag_text(&position, "TrackURI").unwrap_or_default();
     let ours = uri.starts_with(&prefix);
     let track_id = ours
-        .then(|| uri[prefix.len()..].split('.').next().and_then(|id| id.parse::<i64>().ok()))
+        .then(|| uri[prefix.len()..].split('.').next().and_then(|id| TrackId::parse(id).ok()))
         .flatten();
     let index = track_id
         .and_then(|id| items.iter().position(|item| item.track_id == id))
@@ -965,7 +969,7 @@ pub async fn cast_start(
     app: AppHandle,
     db: State<'_, Db>,
     device: CastDevice,
-    track_ids: Vec<i64>,
+    track_ids: Vec<TrackId>,
     index: i64,
     repeat: String,
 ) -> Result<CastState> {
@@ -1269,7 +1273,7 @@ mod tests {
 
     #[test]
     fn metadata_names_the_song() {
-        let meta = didl("Kawa & mleko", "Poproszę <kawę>", "http://h/media/t/1.mp3", "http://h/art/t/1", "audio/mpeg", 1);
+        let meta = didl("Kawa & mleko", "Poproszę <kawę>", "http://h/media/t/1.mp3", "http://h/art/t/1", "audio/mpeg", TrackId::derived("test", "1"));
         assert!(meta.contains("<dc:title>Kawa &amp; mleko</dc:title>"));
         assert!(meta.contains("<dc:creator>Poproszę &lt;kawę&gt;</dc:creator>"));
         assert!(meta.contains("protocolInfo=\"http-get:*:audio/mpeg:*\">http://h/media/t/1.mp3</res>"));

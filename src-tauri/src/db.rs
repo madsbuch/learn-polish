@@ -15,7 +15,9 @@ use diesel::sql_types::{BigInt, Text};
 #[cfg(test)]
 use crate::content::{self, Conversation};
 use crate::error::{Error, Result};
-use crate::schema::{lessons, course_lessons, settings, song_tracks, courses, tutor_conversations, tutor_messages};
+use crate::schema::{lessons, course_lessons, settings, courses};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// The app's database connection.
 pub type Conn = SqliteConnection;
@@ -185,9 +187,11 @@ mod legacy {
     }
 }
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
-const SCHEMA: &str = r#"
+/// The schema up to version 6 (integer ids): what an older database is
+/// brought to before it is converted to version 7 (upgrade_v7.rs).
+const LEGACY_SCHEMA: &str = r#"
 -- A course is a course: a folder of lessons (see course_lessons). `kind` is
 -- always 'course' now (it once told built-in courses from programmes).
 CREATE TABLE IF NOT EXISTS courses (
@@ -609,6 +613,9 @@ CREATE TABLE IF NOT EXISTS word_examples (
 );
 "#;
 
+/// The schema: version 7, tagged ids (`schema.sql`).
+const SCHEMA: &str = include_str!("schema.sql");
+
 /// Backups kept before upgrades: the newest ones.
 const BACKUPS_KEPT: usize = 2;
 
@@ -645,6 +652,23 @@ fn back_up_before_upgrade(conn: &mut Conn, path: &std::path::Path) -> Result<()>
 }
 
 fn migrate(conn: &mut Conn) -> Result<()> {
+    // A database from before tagged ids: brought up to version 6 the way it
+    // always was, then converted. A new one is made as version 7 directly.
+    if crate::upgrade_v7::needed(conn)? || table_exists(conn, "blocks")? {
+        upgrade_to_v6(conn)?;
+        crate::upgrade_v7::run(conn, SCHEMA)?;
+        // The demo course's rows: the derived ids a fresh install gives them.
+        conn.transaction::<_, Error, _>(crate::demo_course::rekey)?;
+    }
+    conn.batch_execute(SCHEMA)?;
+    // Columns added after version 7 go here, each with an idempotent ALTER
+    // (and a bump of SCHEMA_VERSION).
+    conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+    Ok(())
+}
+
+/// Every upgrade up to version 6, in order (integer ids throughout).
+fn upgrade_to_v6(conn: &mut Conn) -> Result<()> {
     let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;
     if version < 3 && table_exists(conn, "words")? {
         upgrade_to_english_only(conn)?;
@@ -658,7 +682,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     if version < 6 && table_exists(conn, "blocks")? {
         upgrade_to_lessons_and_courses(conn)?;
     }
-    conn.batch_execute(SCHEMA)?;
+    conn.batch_execute(LEGACY_SCHEMA)?;
     flatten_lesson_types(conn)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
@@ -731,7 +755,7 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     if !column_exists(conn, "wiki_sources", "song_id")? {
         upgrade_sources_for_podcasts(conn)?;
     }
-    conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+    conn.batch_execute("PRAGMA user_version = 6")?;
     Ok(())
 }
 
@@ -877,7 +901,9 @@ fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
             let audio = take.audio_bytes.or_else(|| std::fs::read(&take.audio_path).ok()).filter(|b| !b.is_empty());
             let Some(audio) = audio else {
                 // Nothing left to play: the take goes (and leaves its playlists).
-                diesel::delete(song_tracks::table.find(take.id)).execute(tx)?;
+                diesel::sql_query("DELETE FROM song_tracks WHERE id = ?")
+                    .bind::<diesel::sql_types::BigInt, _>(take.id)
+                    .execute(tx)?;
                 continue;
             };
             let audio_id = moved_file(tx, crate::files::SONG_AUDIO, &take.audio_path, take.song_id, take.ord, &audio, "mp3")?;
@@ -891,8 +917,10 @@ fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
                 }
                 _ => None,
             };
-            diesel::update(song_tracks::table.find(take.id))
-                .set((song_tracks::audio_file_id.eq(audio_id), song_tracks::image_file_id.eq(image_id)))
+            diesel::sql_query("UPDATE song_tracks SET audio_file_id = ?, image_file_id = ? WHERE id = ?")
+                .bind::<diesel::sql_types::BigInt, _>(audio_id)
+                .bind::<diesel::sql_types::Nullable<diesel::sql_types::BigInt>, _>(image_id)
+                .bind::<diesel::sql_types::BigInt, _>(take.id)
                 .execute(tx)?;
         }
         Ok(())
@@ -910,7 +938,8 @@ fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
 }
 
 /// A song file from before the files table, as a file row. The copy on disk
-/// is kept where it is.
+/// is kept where it is. (Before schema version 7: ids are still integers,
+/// so this writes plain SQL rather than through the typed schema.)
 fn moved_file(
     conn: &mut Conn,
     kind: &str,
@@ -935,13 +964,27 @@ fn moved_file(
         _ if kind == crate::files::SONG_AUDIO => "audio/mpeg",
         _ => "image/jpeg",
     };
-    let id = crate::files::store(conn, kind, &format!("song-{song_id}-{ord}.{ext}"), mime, bytes)?;
-    if std::path::Path::new(old_path).exists() {
-        diesel::update(crate::schema::files::table.find(id))
-            .set(crate::schema::files::path.eq(old_path))
-            .execute(conn)?;
+    #[derive(diesel::QueryableByName)]
+    struct NewId {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        id: i64,
     }
-    Ok(id)
+    use sha2::Digest as _;
+    let sha256: String = sha2::Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let path = std::path::Path::new(old_path).exists().then_some(old_path);
+    let row: NewId = diesel::sql_query(
+        "INSERT INTO files (kind, name, mime, size, sha256, bytes, path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind::<diesel::sql_types::Text, _>(kind)
+    .bind::<diesel::sql_types::Text, _>(format!("song-{song_id}-{ord}.{ext}"))
+    .bind::<diesel::sql_types::Text, _>(mime)
+    .bind::<diesel::sql_types::BigInt, _>(crate::convert::count(bytes.len()))
+    .bind::<diesel::sql_types::Text, _>(sha256)
+    .bind::<diesel::sql_types::Binary, _>(bytes)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(path)
+    .bind::<diesel::sql_types::BigInt, _>(now_secs())
+    .get_result(conn)?;
+    Ok(row.id)
 }
 
 fn column_exists(conn: &mut Conn, table: &str, column: &str) -> Result<bool> {
@@ -954,20 +997,15 @@ fn column_exists(conn: &mut Conn, table: &str, column: &str) -> Result<bool> {
 /// Messages from before conversations existed become one conversation, so
 /// nothing the learner talked about disappears.
 fn adopt_loose_tutor_messages(conn: &mut Conn) -> Result<()> {
-    let loose = tutor_messages::table.filter(tutor_messages::conversation_id.is_null());
-    let times: Vec<i64> = loose.select(tutor_messages::created_at).load(conn)?;
-    let (Some(first), Some(last)) = (times.iter().min(), times.iter().max()) else {
-        return Ok(());
-    };
-    let id: i64 = diesel::insert_into(tutor_conversations::table)
-        .values((
-            tutor_conversations::title.eq("Earlier conversation"),
-            tutor_conversations::created_at.eq(first),
-            tutor_conversations::updated_at.eq(last),
-        ))
-        .returning(tutor_conversations::id)
-        .get_result(conn)?;
-    diesel::update(loose).set(tutor_messages::conversation_id.eq(id)).execute(conn)?;
+    // Before version 7: integer ids, so plain SQL (the typed schema is
+    // version 7's).
+    conn.batch_execute(
+        "INSERT INTO tutor_conversations (title, created_at, updated_at)
+             SELECT 'Earlier conversation', min(created_at), max(created_at)
+             FROM tutor_messages WHERE conversation_id IS NULL HAVING count(*) > 0;
+         UPDATE tutor_messages SET conversation_id = last_insert_rowid()
+             WHERE conversation_id IS NULL AND changes() > 0;",
+    )?;
     Ok(())
 }
 
@@ -1330,7 +1368,7 @@ fn initialize_courses(conn: &mut Conn) -> Result<()> {
 #[cfg(test)]
 pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
     // Historical regression fixtures model the release before the small demo.
-    let demo = courses::table.filter(courses::slug.eq(crate::demo_course::SLUG)).select(courses::id).first::<i64>(conn).optional()?;
+    let demo = courses::table.filter(courses::slug.eq(crate::demo_course::SLUG)).select(courses::id).first::<CourseId>(conn).optional()?;
     if let Some(demo) = demo {
         crate::courses::delete(conn, demo)?;
     }
@@ -1399,28 +1437,28 @@ pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
 pub fn unify_courses(conn: &mut Conn) -> Result<()> {
     conn.transaction::<_, Error, _>(|conn| {
         // Starter courses keep their order; former programmes follow.
-        let mut all: Vec<(i64, String, i64, i64)> = courses::table
+        let mut all: Vec<(CourseId, String, i64, i64)> = courses::table
             .select((courses::id, courses::kind, courses::ord, courses::created_at))
             .load(conn)?;
         all.sort_by_key(|(id, kind, ord, created)| (kind == "programme", *ord, *created, *id));
         for (i, (id, ..)) in all.iter().enumerate() {
-            diesel::update(courses::table.find(id))
+            diesel::update(courses::table.find(*id))
                 .set((courses::ord.eq(crate::convert::count(i) + 1), courses::kind.eq("course")))
                 .execute(conn)?;
         }
 
         // Lessons no course lists: lessons, listening lessons, anything else.
-        let listed: std::collections::HashSet<i64> =
-            course_lessons::table.select(course_lessons::lesson_id).load::<i64>(conn)?.into_iter().collect();
-        let mut loose: Vec<(i64, Option<String>, Option<i64>, i64)> = lessons::table
+        let listed: std::collections::HashSet<LessonId> =
+            course_lessons::table.select(course_lessons::lesson_id).load::<LessonId>(conn)?.into_iter().collect();
+        let mut loose: Vec<(LessonId, Option<String>, Option<SongId>, i64)> = lessons::table
             .select((lessons::id, lessons::slug, lessons::song_id, lessons::ord))
-            .load::<(i64, Option<String>, Option<i64>, i64)>(conn)?
+            .load::<(LessonId, Option<String>, Option<SongId>, i64)>(conn)?
             .into_iter()
             .filter(|(id, ..)| !listed.contains(id))
             .collect();
         loose.sort_by_key(|(id, _, _, ord)| (*ord, *id));
         let starter = |slug: &Option<String>| slug.as_deref().is_some_and(|s| s.starts_with("lesson/"));
-        let groups: [(Vec<i64>, fn(&mut Conn) -> Result<i64>); 3] = [
+        let groups: [(Vec<LessonId>, fn(&mut Conn) -> Result<CourseId>); 3] = [
             (loose.iter().filter(|(_, slug, ..)| starter(slug)).map(|b| b.0).collect(), crate::courses::grammar_course),
             (
                 loose.iter().filter(|(_, slug, song, _)| !starter(slug) && song.is_some()).map(|b| b.0).collect(),
@@ -1498,7 +1536,7 @@ pub fn today(conn: &mut Conn) -> i64 {
 
 /// The id of the course at a position in the course list (1-based).
 #[cfg(test)]
-pub fn require_course_id(conn: &mut Conn, ord: i64) -> Result<i64> {
+pub fn require_course_id(conn: &mut Conn, ord: i64) -> Result<CourseId> {
     courses::table
         .filter(courses::ord.eq(ord))
         .select(courses::id)

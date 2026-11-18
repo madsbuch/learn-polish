@@ -52,11 +52,7 @@ export function Inline({
   className?: string;
   children: ReactNode;
 }) {
-  return (
-    <div className={cx("inline", `gap-${gap}`, justify, align, wrap && "wrap", className)}>
-      {children}
-    </div>
-  );
+  return <div className={cx("inline", `gap-${gap}`, justify, align, wrap && "wrap", className)}>{children}</div>;
 }
 
 /** Takes the remaining room in an Inline. */
@@ -193,7 +189,9 @@ export function Screen({
   // so Back and the input are always in reach.
   return (
     <>
-      <div className="screen-top" data-width={width}>{head}</div>
+      <div className="screen-top" data-width={width}>
+        {head}
+      </div>
       <div className="screen" data-width={width} data-nav={nav} data-footer="true">
         <div className="screen-body">{children}</div>
       </div>
@@ -405,9 +403,7 @@ export function ListItem({
         <span className={cx("list-item__title", selectable && "selectable")} data-one-line={oneLine}>
           {title}
         </span>
-        {subtitle ? (
-          <span className={cx("list-item__subtitle", selectable && "selectable")}>{subtitle}</span>
-        ) : null}
+        {subtitle ? <span className={cx("list-item__subtitle", selectable && "selectable")}>{subtitle}</span> : null}
       </span>
       {trailing && trailingInside ? <span className="list-item__trailing">{trailing}</span> : null}
       {showChevron ? (
@@ -640,15 +636,7 @@ export function SettingRow({
 }
 
 /** A labelled form control. */
-export function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: ReactNode;
-  hint?: ReactNode;
-  children: ReactNode;
-}) {
+export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="field">
       <span className="field__label">{label}</span>
@@ -671,11 +659,7 @@ export function Segmented<T extends string>({
   return (
     <div className="segmented" role="group">
       {options.map((option) => (
-        <button
-          key={option.value}
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-        >
+        <button key={option.value} aria-pressed={option.value === value} onClick={() => onChange(option.value)}>
           {option.label}
         </button>
       ))}
@@ -731,13 +715,7 @@ export function Badge({
   );
 }
 
-export function Banner({
-  tone = "info",
-  children,
-}: {
-  tone?: "info" | "error" | "ok";
-  children: ReactNode;
-}) {
+export function Banner({ tone = "info", children }: { tone?: "info" | "error" | "ok"; children: ReactNode }) {
   return (
     <div className="banner" data-tone={tone} role={tone === "error" ? "alert" : "status"}>
       {children}

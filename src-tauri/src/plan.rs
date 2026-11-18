@@ -23,6 +23,8 @@ use crate::lesson_types::minutes as minutes_for;
 use crate::db::{self, Conn};
 use crate::error::Result;
 use crate::schema::{course_lessons, courses, lessons, day_log};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// Lessons a day, unless the learner sets another number (Settings).
 pub const DEFAULT_DAILY: i64 = 5;
@@ -36,7 +38,7 @@ pub fn daily_count(conn: &mut Conn) -> i64 {
 
 /// The lightest day near `today + gap` for a lesson's next check-in:
 /// within a tenth of the gap either side (short gaps stay exact).
-pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: i64) -> Result<i64> {
+pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: LessonId) -> Result<i64> {
     let target = today + gap;
     if gap < 4 {
         return Ok(target);
@@ -72,7 +74,7 @@ pub fn log_minutes(conn: &mut Conn, day: i64, minutes: i64, early: bool) -> Resu
 
 #[derive(Queryable)]
 struct Scheduled {
-    id: i64,
+    id: LessonId,
     due_day: Option<i64>,
     last_day: Option<i64>,
     interval_days: i64,
@@ -89,7 +91,7 @@ impl Scheduled {
 }
 
 /// Lessons out of play: mastered ones, and ones only closed courses list.
-pub fn out_of_play(conn: &mut Conn) -> Result<HashSet<i64>> {
+pub fn out_of_play(conn: &mut Conn) -> Result<HashSet<LessonId>> {
     let mut out = crate::courses::retired_lessons(conn)?;
     out.extend(in_play_or_not(conn)?.into_iter().filter(|l| l.mastered()).map(|l| l.id));
     Ok(out)
@@ -142,15 +144,15 @@ fn importance(lesson: &Scheduled, today: i64) -> (u8, f64) {
 
 /// The next new lessons: from the newest courses first, each in its own
 /// order — what the tutor just made is what the learner asked for.
-fn new_lessons(conn: &mut Conn, playing: &HashSet<i64>, limit: usize) -> Result<Vec<i64>> {
+fn new_lessons(conn: &mut Conn, playing: &HashSet<LessonId>, limit: usize) -> Result<Vec<LessonId>> {
     let mut found = Vec::new();
     for course in courses::table
         .filter(courses::closed_at.is_null())
         .order(crate::lessons::course_order())
         .select(courses::id)
-        .load::<i64>(conn)?
+        .load::<CourseId>(conn)?
     {
-        let listed: Vec<(i64, i64, i64, Option<i64>)> = course_lessons::table
+        let listed: Vec<(LessonId, i64, i64, Option<i64>)> = course_lessons::table
             .inner_join(lessons::table)
             .filter(course_lessons::course_id.eq(course))
             .order((course_lessons::ord, lessons::id))
@@ -175,7 +177,7 @@ fn new_lessons(conn: &mut Conn, playing: &HashSet<i64>, limit: usize) -> Result<
 /// Today's lessons, chosen the first time they are asked for each day and
 /// kept: any already done today, then what is due, most important first,
 /// then new ones while there is room (at most [`MAX_NEW`]).
-fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
+fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<LessonId>> {
     if db::get_setting_i64(conn, "daily_day", -1) == today {
         if let Some(ids) = db::get_setting(conn, "daily_ids")?.and_then(|json| serde_json::from_str(&json).ok()) {
             return Ok(ids);
@@ -185,7 +187,7 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
     // Lessons already done today count toward the day: chosen after work
     // has been done (the first day after an update, or a new size set
     // mid-day), the list starts with that work, not from nothing.
-    let mut done_today: Vec<i64> = lessons::table
+    let mut done_today: Vec<LessonId> = lessons::table
         .filter(lessons::last_day.eq(today))
         .order(lessons::id)
         .select(lessons::id)
@@ -203,7 +205,7 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
     let mut ids = done_today;
     ids.extend(due.iter().take(size - ids.len()).map(|l| l.id));
     if ids.len() < size {
-        let playing: HashSet<i64> =
+        let playing: HashSet<LessonId> =
             in_play(conn)?.into_iter().map(|l| l.id).filter(|id| !ids.contains(id)).collect();
         ids.extend(new_lessons(conn, &playing, (size - ids.len()).min(MAX_NEW))?);
     }
@@ -217,7 +219,7 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<i64>> {
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
     /// Today's lessons still to do, most important first.
-    pub left: Vec<i64>,
+    pub left: Vec<LessonId>,
     /// How many today asked for, and how many of those are done.
     pub total: usize,
     pub done: usize,
@@ -226,7 +228,7 @@ pub struct Plan {
 pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
     let list = todays_list(conn, today)?;
     let out = out_of_play(conn)?;
-    let state: Vec<(i64, Option<i64>)> = lessons::table
+    let state: Vec<(LessonId, Option<i64>)> = lessons::table
         .filter(lessons::id.eq_any(&list))
         .select((lessons::id, lessons::last_day))
         .load(conn)?;
@@ -257,7 +259,7 @@ pub fn remaining(conn: &mut Conn, day: i64) -> Result<i64> {
 /// chosen in), then the mastered ones. Ties keep the course's own order.
 pub fn order_for_course(conn: &mut Conn, lessons: Vec<crate::lessons::Lesson>) -> Result<Vec<crate::lessons::Lesson>> {
     let today = db::today(conn);
-    let facts: std::collections::HashMap<i64, Scheduled> = in_play_or_not(conn)?.into_iter().map(|l| (l.id, l)).collect();
+    let facts: std::collections::HashMap<LessonId, Scheduled> = in_play_or_not(conn)?.into_iter().map(|l| (l.id, l)).collect();
     let mut ranked: Vec<(usize, (u8, f64), crate::lessons::Lesson)> = lessons
         .into_iter()
         .enumerate()

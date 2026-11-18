@@ -27,9 +27,10 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
-import type { CourseClosed, Lesson, Sentence, CourseProgress, Word } from "../lib/types";
+import type { CourseClosed, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/types";
 import { onEvent } from "../lib/events";
 import { z } from "zod";
+import { CourseIdSchema, FileIdSchema } from "../lib/types";
 
 export type CourseSection = "lessons" | "words" | "sentences";
 
@@ -51,7 +52,7 @@ export function CourseDetail({
   initialSection?: CourseSection;
   today: number;
   onBack: () => void;
-  onOpenLesson: (lessonId: number) => void;
+  onOpenLesson: (lessonId: LessonId) => void;
   onDeleted: () => void;
   /** The course was renamed; reload the lists that show it. */
   onChanged: () => void;
@@ -69,7 +70,7 @@ export function CourseDetail({
   });
   const [renaming, setRenaming] = useState<typeof names | null>(null);
   // The picture's file id.
-  const [picture, setPicture] = useState<number | null>(progress.imageFileId);
+  const [picture, setPicture] = useState<FileId | null>(progress.imageFileId);
   const [drawing, setDrawing] = useState(false);
   const [celebrating, setCelebrating] = useState<CourseClosed | null>(null);
 
@@ -93,7 +94,7 @@ export function CourseDetail({
 
   // Drawn in the background for a new course: show it as soon as it is in.
   useEffect(() => {
-    const off = onEvent(z.object({ courseId: z.number(), fileId: z.number() }), "pictures://changed", (event) => {
+    const off = onEvent(z.object({ courseId: CourseIdSchema, fileId: FileIdSchema }), "pictures://changed", (event) => {
       if (event.payload.courseId === courseId) setPicture(event.payload.fileId);
     });
     return () => {
@@ -437,7 +438,7 @@ function CourseLessons({
   today: number;
   /** Closed as mastered: its lessons no longer come back, so no dates. */
   closed: boolean;
-  onOpen: (lessonId: number) => void;
+  onOpen: (lessonId: LessonId) => void;
 }) {
   const [showMastered, setShowMastered] = useState(false);
   const open = lessons.filter((lesson) => standing(lesson) !== "mastered");

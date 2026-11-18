@@ -157,9 +157,7 @@ const PICKS: Record<Job, { family: keyof typeof FAMILIES; why: string }[]> = {
  * newest model of the first family that has one, per pick.
  */
 function recommended(models: AiModel[], job: Job): { model: AiModel; why: string }[] {
-  const usable = models.filter(
-    (m) => m.tools && !m.id.includes(":") && !/preview|exp|image|audio|tts/.test(m.id),
-  );
+  const usable = models.filter((m) => m.tools && !m.id.includes(":") && !/preview|exp|image|audio|tts/.test(m.id));
   const picks: { model: AiModel; why: string }[] = [];
   for (const { family, why } of PICKS[job]) {
     for (const pattern of FAMILIES[family]) {
@@ -324,7 +322,12 @@ function ModelPicker({
                 <br />
               </>
             ) : null}
-            {[scored ? `Benchmark ${scored.score}` : null, estimate, priceLine(model), estimate ? null : contextLine(model.contextLength)]
+            {[
+              scored ? `Benchmark ${scored.score}` : null,
+              estimate,
+              priceLine(model),
+              estimate ? null : contextLine(model.contextLength),
+            ]
               .filter(Boolean)
               .join(" · ")}
           </>

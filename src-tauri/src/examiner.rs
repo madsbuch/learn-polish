@@ -23,6 +23,8 @@ use crate::db::{self, Conn, Db};
 use crate::schema::{checkin_messages, checkins};
 use crate::error::{Error, Result};
 use crate::stats;
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// How many questions to ask, by complexity.
 fn question_plan(complexity: &str) -> &'static str {
@@ -230,7 +232,7 @@ How to play it:
     ))
 }
 
-fn previous_feedback(conn: &mut Conn, lesson_id: i64) -> Result<Option<String>> {
+fn previous_feedback(conn: &mut Conn, lesson_id: LessonId) -> Result<Option<String>> {
     Ok(checkins::table
         .filter(checkins::lesson_id.eq(lesson_id))
         .filter(checkins::finished_at.is_not_null())
@@ -298,7 +300,7 @@ pub struct Assessment {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckinTurn {
-    pub checkin_id: i64,
+    pub checkin_id: CheckinId,
     /// What the examiner just said (may be empty when it only finished).
     pub reply: String,
     pub assessment: Option<Assessment>,
@@ -311,7 +313,7 @@ pub struct CheckinTurn {
 /// Rounds per turn: memory calls, then the question or verdict.
 const MAX_ROUNDS: usize = 3;
 
-fn history(conn: &mut Conn, checkin_id: i64) -> Result<Vec<Wire>> {
+fn history(conn: &mut Conn, checkin_id: CheckinId) -> Result<Vec<Wire>> {
     Ok(checkin_messages::table
         .filter(checkin_messages::checkin_id.eq(checkin_id))
         .order(checkin_messages::id)
@@ -322,9 +324,10 @@ fn history(conn: &mut Conn, checkin_id: i64) -> Result<Vec<Wire>> {
         .collect())
 }
 
-fn append(conn: &mut Conn, checkin_id: i64, role: &str, content: &str) -> Result<()> {
+fn append(conn: &mut Conn, checkin_id: CheckinId, role: &str, content: &str) -> Result<()> {
     diesel::insert_into(checkin_messages::table)
         .values((
+            checkin_messages::id.eq(CheckinMessageId::new()),
             checkin_messages::checkin_id.eq(checkin_id),
             checkin_messages::role.eq(role),
             checkin_messages::content.eq(content),
@@ -336,12 +339,12 @@ fn append(conn: &mut Conn, checkin_id: i64, role: &str, content: &str) -> Result
 
 /// Records the verdict: schedules the lesson, awards XP and counts the day.
 /// Records a verdict, all or nothing (one transaction).
-pub fn record(conn: &mut Conn, checkin_id: i64, assessment: Assessment) -> Result<(Assessment, bool)> {
+pub fn record(conn: &mut Conn, checkin_id: CheckinId, assessment: Assessment) -> Result<(Assessment, bool)> {
     conn.transaction(|tx| record_steps(tx, checkin_id, assessment))
 }
 
-fn record_steps(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) -> Result<(Assessment, bool)> {
-    let lesson_id: i64 = checkins::table.find(checkin_id).select(checkins::lesson_id).first(conn)?;
+fn record_steps(conn: &mut Conn, checkin_id: CheckinId, mut assessment: Assessment) -> Result<(Assessment, bool)> {
+    let lesson_id: LessonId = checkins::table.find(checkin_id).select(checkins::lesson_id).first(conn)?;
     if !["pass", "partial", "fail"].contains(&assessment.result.as_str()) {
         assessment.result = "partial".into();
     }
@@ -417,14 +420,14 @@ fn record_steps(conn: &mut Conn, checkin_id: i64, mut assessment: Assessment) ->
 async fn turn(
     app: &tauri::AppHandle,
     db: &Db,
-    checkin_id: i64,
+    checkin_id: CheckinId,
     user: Option<String>,
     stream_id: &str,
 ) -> Result<CheckinTurn> {
     let (wire, writing, model) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let (lesson_id, finished): (i64, Option<i64>) =
+        let (lesson_id, finished): (LessonId, Option<i64>) =
             checkins::table.find(checkin_id).select((checkins::lesson_id, checkins::finished_at)).first(conn)?;
         if finished.is_some() {
             return Err(Error::msg("This check-in is already finished."));
@@ -509,7 +512,7 @@ async fn turn(
 pub async fn checkin_start(
     app: tauri::AppHandle,
     db: State<'_, Db>,
-    lesson_id: i64,
+    lesson_id: LessonId,
     stream_id: String,
 ) -> Result<CheckinTurn> {
     let checkin_id = {
@@ -520,9 +523,9 @@ pub async fn checkin_start(
             return Err(Error::msg("Only study lessons have an interview."));
         }
         diesel::insert_into(checkins::table)
-            .values((checkins::lesson_id.eq(lesson_id), checkins::started_at.eq(db::now_secs())))
+            .values((checkins::id.eq(CheckinId::new()), checkins::lesson_id.eq(lesson_id), checkins::started_at.eq(db::now_secs())))
             .returning(checkins::id)
-            .get_result::<i64>(conn)?
+            .get_result::<CheckinId>(conn)?
     };
     turn(&app, &db, checkin_id, None, &stream_id).await
 }
@@ -533,7 +536,7 @@ pub async fn checkin_start(
 pub async fn checkin_end(
     app: tauri::AppHandle,
     db: State<'_, Db>,
-    checkin_id: i64,
+    checkin_id: CheckinId,
     stream_id: String,
 ) -> Result<CheckinTurn> {
     turn(&app, &db, checkin_id, Some(LEARNER_ENDED.to_string()), &stream_id).await
@@ -544,7 +547,7 @@ pub async fn checkin_end(
 pub async fn checkin_send(
     app: tauri::AppHandle,
     db: State<'_, Db>,
-    checkin_id: i64,
+    checkin_id: CheckinId,
     message: String,
     stream_id: String,
 ) -> Result<CheckinTurn> {
@@ -570,7 +573,7 @@ fn bare(text: &str) -> String {
 /// result is kept only if, with the tags taken out, the lesson is exactly
 /// what it was — so nothing else can change.
 #[tauri::command]
-pub async fn lesson_add_players(db: State<'_, Db>, lesson_id: i64) -> Result<lessons::LessonDetail> {
+pub async fn lesson_add_players(db: State<'_, Db>, lesson_id: LessonId) -> Result<lessons::LessonDetail> {
     let (content, key, model) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -694,7 +697,7 @@ fn parse_bank(text: &str) -> Option<Vec<GoalHelp>> {
 /// A writing lesson's word bank: for each goal, a sentence starter and a few
 /// words to use. Made once by the partner's model, then kept.
 #[tauri::command]
-pub async fn writing_scaffold(db: State<'_, Db>, lesson_id: i64) -> Result<Vec<GoalHelp>> {
+pub async fn writing_scaffold(db: State<'_, Db>, lesson_id: LessonId) -> Result<Vec<GoalHelp>> {
     let (detail, stored, key, model) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -740,11 +743,11 @@ pub async fn writing_scaffold(db: State<'_, Db>, lesson_id: i64) -> Result<Vec<G
 /// a blank or two for a goal not reached yet, with its meaning. Not sent to
 /// the partner.
 #[tauri::command]
-pub async fn writing_hint(db: State<'_, Db>, checkin_id: i64) -> Result<String> {
+pub async fn writing_hint(db: State<'_, Db>, checkin_id: CheckinId) -> Result<String> {
     let (detail, past, key, model) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let lesson_id: i64 = checkins::table.find(checkin_id).select(checkins::lesson_id).first(conn)?;
+        let lesson_id: LessonId = checkins::table.find(checkin_id).select(checkins::lesson_id).first(conn)?;
         let past: Vec<(String, String)> = checkin_messages::table
             .filter(checkin_messages::checkin_id.eq(checkin_id))
             .order(checkin_messages::id)

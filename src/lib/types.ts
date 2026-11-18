@@ -6,9 +6,63 @@
 
 import { z } from "zod";
 
+/**
+ * A tagged id (DATA.md): its kind's prefix, an underscore and 26 base32
+ * characters — `ls_01jd6x7k2m8q9r4t5v6w7x8y9z`. Each kind is its own branded
+ * type, so a course id where a lesson id belongs is a type error.
+ */
+function typeId<B extends string>(prefix: string) {
+  return z
+    .string()
+    .regex(
+      new RegExp(`^${prefix}_[0-7][0-9a-hjkmnp-tv-z]{25}$`),
+      `not a ${prefix}_ id`,
+    )
+    .brand<B>();
+}
+
+export const CourseIdSchema = typeId<"CourseId">("crs");
+export type CourseId = z.infer<typeof CourseIdSchema>;
+export const LessonIdSchema = typeId<"LessonId">("ls");
+export type LessonId = z.infer<typeof LessonIdSchema>;
+export const WordIdSchema = typeId<"WordId">("wd");
+export type WordId = z.infer<typeof WordIdSchema>;
+export const SentenceIdSchema = typeId<"SentenceId">("sn");
+export type SentenceId = z.infer<typeof SentenceIdSchema>;
+export const LineIdSchema = typeId<"LineId">("dl");
+export type LineId = z.infer<typeof LineIdSchema>;
+export const SongIdSchema = typeId<"SongId">("sg");
+export type SongId = z.infer<typeof SongIdSchema>;
+export const TrackIdSchema = typeId<"TrackId">("tk");
+export type TrackId = z.infer<typeof TrackIdSchema>;
+export const PlaylistIdSchema = typeId<"PlaylistId">("pl");
+export type PlaylistId = z.infer<typeof PlaylistIdSchema>;
+export const EntryIdSchema = typeId<"EntryId">("pe");
+export type EntryId = z.infer<typeof EntryIdSchema>;
+export const FileIdSchema = typeId<"FileId">("fl");
+export type FileId = z.infer<typeof FileIdSchema>;
+export const CheckinIdSchema = typeId<"CheckinId">("ci");
+export type CheckinId = z.infer<typeof CheckinIdSchema>;
+export const CheckinMessageIdSchema = typeId<"CheckinMessageId">("cm");
+export type CheckinMessageId = z.infer<typeof CheckinMessageIdSchema>;
+export const ConversationIdSchema = typeId<"ConversationId">("cv");
+export type ConversationId = z.infer<typeof ConversationIdSchema>;
+export const MessageIdSchema = typeId<"MessageId">("msg");
+export type MessageId = z.infer<typeof MessageIdSchema>;
+export const MemoryIdSchema = typeId<"MemoryId">("mem");
+export type MemoryId = z.infer<typeof MemoryIdSchema>;
+export const SourceIdSchema = typeId<"SourceId">("src");
+export type SourceId = z.infer<typeof SourceIdSchema>;
+export const XpEntryIdSchema = typeId<"XpEntryId">("xp");
+export type XpEntryId = z.infer<typeof XpEntryIdSchema>;
+export const CostIdSchema = typeId<"CostId">("cost");
+export type CostId = z.infer<typeof CostIdSchema>;
+export const BenchRunIdSchema = typeId<"BenchRunId">("bench");
+export type BenchRunId = z.infer<typeof BenchRunIdSchema>;
+
 // Mirrors the serde structs in src-tauri/src/models.rs.
 export const CourseSchema = z.object({
-  id: z.number(),
+  id: CourseIdSchema,
   ord: z.number(),
   slug: z.string(),
   /** Always "course": every course is a course, a folder of lessons. */
@@ -22,21 +76,21 @@ export const CourseSchema = z.object({
 export type Course = z.infer<typeof CourseSchema>;
 
 export const WordSchema = z.object({
-  id: z.number(),
+  id: WordIdSchema,
   pl: z.string(),
   meaning: z.string(),
   pos: z.string(),
   /** The drill it belongs to. */
-  lessonId: z.number(),
+  lessonId: LessonIdSchema,
   lesson: z.string(),
 });
 export type Word = z.infer<typeof WordSchema>;
 
 export const SentenceSchema = z.object({
-  id: z.number(),
+  id: SentenceIdSchema,
   pl: z.string(),
   meaning: z.string(),
-  lessonId: z.number(),
+  lessonId: LessonIdSchema,
   lesson: z.string(),
 });
 export type Sentence = z.infer<typeof SentenceSchema>;
@@ -110,7 +164,7 @@ export const PairSchema = z.object({
   pl: z.string(),
   en: z.string(),
   /** Picture lessons: the card shows this picture instead of the English. */
-  image: z.number().nullable(),
+  image: FileIdSchema.nullable(),
 });
 export type Pair = z.infer<typeof PairSchema>;
 
@@ -118,7 +172,7 @@ export const ExerciseSchema = z.object({
   key: z.string(),
   kind: ExerciseKindSchema,
   itemKind: z.enum(["word", "sentence", "dialogue", "set"]),
-  itemId: z.number(),
+  itemId: z.string(),
   isNew: z.boolean(),
   prompt: z.string(),
   hint: z.string(),
@@ -132,9 +186,9 @@ export const ExerciseSchema = z.object({
   /** Memory cards: the Polish/English pairs to find. */
   pairs: z.array(PairSchema),
   /** The item's picture (a file id), when it has one. */
-  image: z.number().nullable(),
+  image: FileIdSchema.nullable(),
   /** Picture lessons: each option's picture, in the order of `options`. */
-  optionImages: z.array(z.number().nullable()),
+  optionImages: z.array(FileIdSchema.nullable()),
   /** Dialogue gaps: the conversation just before the gap, oldest first. */
   context: z.array(DialogueLineSchema),
 });
@@ -151,7 +205,7 @@ export const SessionPlanSchema = z.object({
   reviewSentences: z.number(),
   alreadyCompleted: z.boolean(),
   /** The drill lesson this session practises. */
-  lessonId: z.number(),
+  lessonId: LessonIdSchema,
   /** Done before and not due: extra practice — half XP, schedule unchanged. */
   extra: z.boolean(),
 });
@@ -166,7 +220,7 @@ export type LessonResult = z.infer<typeof LessonResultSchema>;
 
 /** A unit of learning in a course: a drill, or a study, writing or listening lesson. */
 export const LessonSchema = z.object({
-  id: z.number(),
+  id: LessonIdSchema,
   /** Its type: one of the registered lesson types (see lib/lessonTypes.ts). */
   type: z.string(),
   /** How it is practised, from its type. */
@@ -175,10 +229,10 @@ export const LessonSchema = z.object({
   summary: z.string(),
   complexity: ComplexitySchema,
   /** The first course it was listed in, for display. */
-  courseId: z.number().nullable(),
+  courseId: CourseIdSchema.nullable(),
   courseTitle: z.string().nullable(),
   /** Every course that lists it. */
-  courseIds: z.array(z.number()),
+  courseIds: z.array(CourseIdSchema),
   /** Who made it; informational — every lesson can be edited and deleted. */
   origin: z.enum(["starter", "tutor", "you"]),
   periodDays: z.number(),
@@ -202,16 +256,16 @@ export const LessonSchema = z.object({
   level: z.string().nullable(),
   items: z.number(),
   /** A listening lesson's song. */
-  songId: z.number().nullable(),
+  songId: SongIdSchema.nullable(),
 });
 export type Lesson = z.infer<typeof LessonSchema>;
 
 /** A lesson's word, with its picture if it has one. */
 export const WordPictureSchema = z.object({
-  wordId: z.number(),
+  wordId: WordIdSchema,
   word: z.string(),
   meaning: z.string(),
-  image: z.number().nullable(),
+  image: FileIdSchema.nullable(),
 });
 export type WordPicture = z.infer<typeof WordPictureSchema>;
 
@@ -222,7 +276,7 @@ export const LessonDetailSchema = LessonSchema.extend({
   sentences: z.array(z.tuple([z.string(), z.string()])),
   lastFeedback: z.string().nullable(),
   /** The courses that list it: [id, English title, Polish title]. */
-  courses: z.array(z.tuple([z.number(), z.string(), z.string()])),
+  courses: z.array(z.tuple([CourseIdSchema, z.string(), z.string()])),
   /** A conversation drill's dialogue. */
   lines: z.array(DialogueLineSchema),
   /** What the last check against the lesson's Wikipedia sources changed. */
@@ -245,7 +299,7 @@ export type XpEntry = z.infer<typeof XpEntrySchema>;
 
 /** One go at a lesson, or one check-in. */
 export const XpRunSchema = z.object({
-  lessonId: z.number().nullable(),
+  lessonId: LessonIdSchema.nullable(),
   lessonTitle: z.string(),
   courseTitle: z.string().nullable(),
   /** Unix seconds. */
@@ -276,6 +330,14 @@ export const XpHistoryDaySchema = z.object({
 export type XpHistoryDay = z.infer<typeof XpHistoryDaySchema>;
 
 /** A note in Settings → Diagnostics. */
+/** What a TypeID names (ids_resolve): its kind and title; no title once deleted. */
+export const ResolvedIdSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  title: z.string().nullable(),
+});
+export type ResolvedId = z.infer<typeof ResolvedIdSchema>;
+
 export const DiagnosticEntrySchema = z.object({
   /** Unix seconds. */
   at: z.number(),
@@ -327,7 +389,7 @@ export const AssessmentSchema = z.object({
 export type Assessment = z.infer<typeof AssessmentSchema>;
 
 export const CheckinTurnSchema = z.object({
-  checkinId: z.number(),
+  checkinId: CheckinIdSchema,
   reply: z.string(),
   assessment: AssessmentSchema.nullable(),
   firstCompletionToday: z.boolean(),
@@ -378,7 +440,7 @@ export const CourseProgressSchema = z.object({
   /** Lessons done at least once. */
   startedLessons: z.number(),
   /** The course's picture: a file id, loaded with fileUrl(). */
-  imageFileId: z.number().nullable(),
+  imageFileId: FileIdSchema.nullable(),
   /** Completed: every core lesson passed once. Mastered: every lesson mastered, challenges too. */
   status: z.enum(["active", "completed", "mastered"]),
   /** Lessons needed to complete it (not challenges), and how many are passed. */
@@ -421,7 +483,7 @@ export const CourseClosedSchema = z.object({
 export type CourseClosed = z.infer<typeof CourseClosedSchema>;
 
 export const MilestoneSchema = z.object({
-  courseId: z.number(),
+  courseId: CourseIdSchema,
   title: z.string(),
   mastered: z.boolean(),
 });
@@ -558,14 +620,14 @@ export const TutorActionSchema = z.object({
     "playlistChanged",
   ]),
   label: z.string(),
-  courseId: z.number().nullable(),
-  songId: z.number().nullable(),
-  lessonId: z.number().nullable(),
+  courseId: CourseIdSchema.nullable(),
+  songId: SongIdSchema.nullable(),
+  lessonId: LessonIdSchema.nullable(),
 });
 export type TutorAction = z.infer<typeof TutorActionSchema>;
 
 export const ConversationSchema = z.object({
-  id: z.number(),
+  id: ConversationIdSchema,
   title: z.string(),
   /** The last thing said, shortened. */
   preview: z.string(),
@@ -583,14 +645,14 @@ export type Conversation = z.infer<typeof ConversationSchema>;
 
 /** `tutor_talk_about`: the conversation about a word, new or carried on. */
 export const TalkAboutSchema = z.object({
-  conversationId: z.number(),
+  conversationId: ConversationIdSchema,
   existing: z.boolean(),
 });
 export type TalkAbout = z.infer<typeof TalkAboutSchema>;
 
 export const ChatMessageSchema = z.object({
-  id: z.number(),
-  conversationId: z.number(),
+  id: MessageIdSchema,
+  conversationId: ConversationIdSchema,
   role: z.enum(["user", "assistant"]),
   content: z.string(),
   actions: z.array(TutorActionSchema),
@@ -599,14 +661,14 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 /** `tutor_send` returns at once; the reply follows in the background. */
 export const TutorStartedSchema = z.object({
-  conversationId: z.number(),
+  conversationId: ConversationIdSchema,
   message: ChatMessageSchema,
 });
 export type TutorStarted = z.infer<typeof TutorStartedSchema>;
 
 /** `tutor://done`: a background reply finished, or failed. */
 export const TutorDoneSchema = z.object({
-  conversationId: z.number(),
+  conversationId: ConversationIdSchema,
   message: ChatMessageSchema.nullable(),
   error: z.string().nullable(),
 });
@@ -657,7 +719,7 @@ export type AudioCacheStats = z.infer<typeof AudioCacheStatsSchema>;
 
 /** How much of one course can be played without the network. */
 export const CourseAudioSchema = z.object({
-  courseId: z.number(),
+  courseId: CourseIdSchema,
   title: z.string(),
   titlePl: z.string(),
   total: z.number(),
@@ -687,14 +749,14 @@ export type AudioItem = z.infer<typeof AudioItemSchema>;
 
 /** A Wikipedia article a study lesson or a podcast is built on. */
 export const WikiSourceSchema = z.object({
-  id: z.number(),
-  lessonId: z.number().nullable(),
-  songId: z.number().nullable(),
+  id: SourceIdSchema,
+  lessonId: LessonIdSchema.nullable(),
+  songId: SongIdSchema.nullable(),
   lang: z.string(),
   title: z.string(),
   url: z.string(),
   summary: z.string(),
-  imageFileId: z.number().nullable(),
+  imageFileId: FileIdSchema.nullable(),
   /** Polish Wikipedia has it too. */
   polishTitle: z.string().nullable(),
   checkedAt: z.number(),
@@ -722,7 +784,7 @@ export type WikiHit = z.infer<typeof WikiHitSchema>;
 
 /** The outcome of checking a lesson against its sources. */
 export const FactCheckSchema = z.object({
-  lessonId: z.number(),
+  lessonId: LessonIdSchema,
   title: z.string(),
   updated: z.boolean(),
   note: z.string().nullable(),
@@ -751,7 +813,13 @@ export const SongLineSchema = z.object({
 });
 export type SongLine = z.infer<typeof SongLineSchema>;
 
-export const SongSectionKindSchema = z.enum(["verse", "chorus", "bridge", "intro", "outro"]);
+export const SongSectionKindSchema = z.enum([
+  "verse",
+  "chorus",
+  "bridge",
+  "intro",
+  "outro",
+]);
 export type SongSectionKind = z.infer<typeof SongSectionKindSchema>;
 
 export const SongSectionSchema = z.object({
@@ -834,7 +902,7 @@ export interface SongOrigin {
   /** What the lyrics or script had to meet (the tutor's). */
   requirements?: string;
   /** The song or podcast this one varies. */
-  basedOn?: number | null;
+  basedOn?: SongId | null;
   /** Everything the writer was given besides the request. */
   given?: {
     words: string[];
@@ -846,56 +914,63 @@ export interface SongOrigin {
   };
   instructionsVersion?: string;
   /** Revisions and edits after the first draft, each with the draft before it. */
-  steps?: { kind: string; by: string; text: string; model: string; before: SongDraft | null }[];
+  steps?: {
+    kind: string;
+    by: string;
+    text: string;
+    model: string;
+    before: SongDraft | null;
+  }[];
 }
-export const SongOriginSchema: z.ZodType<SongOrigin> = z.object({
-  brief: z.string(),
-  requestedStyle: z.string(),
-  requestedVocalGender: z.string(),
-  requestedChorus: z.string(),
-  length: z.string(),
-  songwriterModel: z.string(),
-  revisions: z.array(z.string()),
-  /** What a podcast was written from: its Wikipedia article (and the Polish one). */
-  sources: z.array(PodcastSourceSchema).optional(),
-  sourceImage: z.string().optional(),
-  requestedArticles: z.array(z.string()).optional(),
-  story: z.boolean().optional(),
-  requestedCast: z.string().optional(),
-  /** Made from today's news, and the stories it told. */
-  news: z.boolean().optional(),
-  newsItems: z.array(NewsItemSchema).optional(),
-  /** "composer" or "tutor". */
-  madeBy: z.string().optional(),
-  /** What the lyrics or script had to meet (the tutor's). */
-  requirements: z.string().optional(),
-  /** The song or podcast this one varies. */
-  basedOn: z.number().nullable().optional(),
-  /** Everything the writer was given besides the request. */
-  given: z
-    .object({
-      words: z.array(z.string()),
-      sentences: z.array(z.string()),
-      weakWords: z.array(z.string()),
-      existingChoruses: z.array(z.string()),
-      memories: z.array(z.string()),
-      reading: z.string(),
-    })
-    .optional(),
-  instructionsVersion: z.string().optional(),
-  /** Revisions and edits after the first draft, each with the draft before it. */
-  steps: z
-    .array(
-      z.object({
-        kind: z.string(),
-        by: z.string(),
-        text: z.string(),
-        model: z.string(),
-        before: z.lazy(() => SongDraftSchema).nullable(),
-      }),
-    )
-    .optional(),
-});
+export const SongOriginSchema: z.ZodType<SongOrigin, z.ZodTypeDef, unknown> =
+  z.object({
+    brief: z.string(),
+    requestedStyle: z.string(),
+    requestedVocalGender: z.string(),
+    requestedChorus: z.string(),
+    length: z.string(),
+    songwriterModel: z.string(),
+    revisions: z.array(z.string()),
+    /** What a podcast was written from: its Wikipedia article (and the Polish one). */
+    sources: z.array(PodcastSourceSchema).optional(),
+    sourceImage: z.string().optional(),
+    requestedArticles: z.array(z.string()).optional(),
+    story: z.boolean().optional(),
+    requestedCast: z.string().optional(),
+    /** Made from today's news, and the stories it told. */
+    news: z.boolean().optional(),
+    newsItems: z.array(NewsItemSchema).optional(),
+    /** "composer" or "tutor". */
+    madeBy: z.string().optional(),
+    /** What the lyrics or script had to meet (the tutor's). */
+    requirements: z.string().optional(),
+    /** The song or podcast this one varies. */
+    basedOn: SongIdSchema.nullable().optional(),
+    /** Everything the writer was given besides the request. */
+    given: z
+      .object({
+        words: z.array(z.string()),
+        sentences: z.array(z.string()),
+        weakWords: z.array(z.string()),
+        existingChoruses: z.array(z.string()),
+        memories: z.array(z.string()),
+        reading: z.string(),
+      })
+      .optional(),
+    instructionsVersion: z.string().optional(),
+    /** Revisions and edits after the first draft, each with the draft before it. */
+    steps: z
+      .array(
+        z.object({
+          kind: z.string(),
+          by: z.string(),
+          text: z.string(),
+          model: z.string(),
+          before: z.lazy(() => SongDraftSchema).nullable(),
+        }),
+      )
+      .optional(),
+  });
 
 export const SongDraftSchema = z.object({
   title: z.string(),
@@ -906,7 +981,7 @@ export const SongDraftSchema = z.object({
   vocalGender: z.string(),
   sections: z.array(SongSectionSchema),
   /** The course it is filed in (through its listening lesson). */
-  courseId: z.number().nullable().optional(),
+  courseId: CourseIdSchema.nullable().optional(),
   /** How it came about — kept with the song; pass it back unchanged. */
   origin: SongOriginSchema.optional(),
   /** "podcast" for a spoken episode; "song" (or absent) for a song. */
@@ -968,12 +1043,12 @@ export const TimedLineSchema = z.object({
 export type TimedLine = z.infer<typeof TimedLineSchema>;
 
 export const SongTrackSchema = z.object({
-  id: z.number(),
-  songId: z.number(),
+  id: TrackIdSchema,
+  songId: SongIdSchema,
   ord: z.number(),
   /** The take's audio and cover art: file ids, loaded with fileUrl(). */
-  audioFileId: z.number(),
-  imageFileId: z.number().nullable(),
+  audioFileId: FileIdSchema,
+  imageFileId: FileIdSchema.nullable(),
   /** Copies on disk, only for Android's native player. */
   audioPath: z.string(),
   imagePath: z.string().nullable(),
@@ -985,7 +1060,7 @@ export const SongTrackSchema = z.object({
 export type SongTrack = z.infer<typeof SongTrackSchema>;
 
 export const SongSchema = SongDraftSchema.extend({
-  id: z.number(),
+  id: SongIdSchema,
   status: z.enum(["generating", "ready", "failed"]),
   error: z.string().nullable(),
   createdAt: z.number(),
@@ -995,13 +1070,13 @@ export type Song = z.infer<typeof SongSchema>;
 
 export const PlaylistEntrySchema = z.object({
   /** The entry itself; the same take may be in a playlist twice. */
-  id: z.number(),
-  trackId: z.number(),
+  id: EntryIdSchema,
+  trackId: TrackIdSchema,
 });
 export type PlaylistEntry = z.infer<typeof PlaylistEntrySchema>;
 
 export const PlaylistSchema = z.object({
-  id: z.number(),
+  id: PlaylistIdSchema,
   name: z.string(),
   entries: z.array(PlaylistEntrySchema),
 });
@@ -1029,7 +1104,7 @@ export const CastDeviceSchema = z.object({
 export type CastDevice = z.infer<typeof CastDeviceSchema>;
 
 export const CastItemSchema = z.object({
-  trackId: z.number(),
+  trackId: TrackIdSchema,
   title: z.string(),
   artist: z.string(),
 });
@@ -1039,7 +1114,7 @@ export const CastStateSchema = z.object({
   device: CastDeviceSchema,
   items: z.array(CastItemSchema),
   index: z.number(),
-  trackId: z.number().nullable(),
+  trackId: TrackIdSchema.nullable(),
   playing: z.boolean(),
   transport: z.string(),
   position: z.number(),
@@ -1082,12 +1157,18 @@ export const CostSummarySchema = z.object({
 });
 export type CostSummary = z.infer<typeof CostSummarySchema>;
 
-export const MemoryCategorySchema = z.enum(["goal", "preference", "context", "strength", "struggle"]);
+export const MemoryCategorySchema = z.enum([
+  "goal",
+  "preference",
+  "context",
+  "strength",
+  "struggle",
+]);
 export type MemoryCategory = z.infer<typeof MemoryCategorySchema>;
 
 /** One fact the agents remember about the learner. */
 export const MemorySchema = z.object({
-  id: z.number(),
+  id: MemoryIdSchema,
   content: z.string(),
   category: MemoryCategorySchema,
   /** "tutor", "examiner" or "you". */
@@ -1143,7 +1224,7 @@ export type BenchItem = z.infer<typeof BenchItemSchema>;
 
 /** A benchmark run on one model. */
 export const BenchRunSchema = z.object({
-  id: z.number(),
+  id: BenchRunIdSchema,
   model: z.string(),
   createdAt: z.number(),
   score: z.number(),

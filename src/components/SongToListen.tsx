@@ -2,13 +2,23 @@ import { useEffect, useState } from "react";
 
 import { Button, Card, IconButton, Inline, Stack, Text } from "../design";
 import { api } from "../lib/api";
-import { currentItem, formatTime, libraryQueue, playQueue, preferredTake, toggle, usePlayer, type QueueItem } from "../lib/player";
+import {
+  currentItem,
+  formatTime,
+  libraryQueue,
+  playQueue,
+  preferredTake,
+  toggle,
+  usePlayer,
+  type QueueItem,
+} from "../lib/player";
 import { Cover } from "./Cover";
 import { PlayerIcon } from "./icons";
 import { Lyrics } from "./Lyrics";
+import type { SongId } from "../lib/types";
 
 /** The take of a song to listen to: its favourite take, once it is ready. */
-export function useSongItem(songId: number | null): { item: QueueItem | null; loading: boolean } {
+export function useSongItem(songId: SongId | null): { item: QueueItem | null; loading: boolean } {
   const [item, setItem] = useState<QueueItem | null>(null);
   const [loading, setLoading] = useState(songId !== null);
   useEffect(() => {
@@ -41,7 +51,7 @@ export function playSong(item: QueueItem, isCurrent: boolean) {
  * A listening lesson's song: play it, and reveal the lyrics only when asked —
  * the point is to understand it by ear.
  */
-export function SongToListen({ songId }: { songId: number }) {
+export function SongToListen({ songId }: { songId: SongId }) {
   const { item, loading } = useSongItem(songId);
   const player = usePlayer();
   const [showLyrics, setShowLyrics] = useState(false);

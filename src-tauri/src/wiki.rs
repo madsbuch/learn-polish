@@ -14,6 +14,8 @@ use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
 use crate::files;
 use crate::schema::{lessons, songs, wiki_sources};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// How often a lesson's lesson is compared with its sources again.
 pub const CHECK_EVERY_DAYS: i64 = 90;
@@ -331,29 +333,29 @@ pub async fn current_revision(lang: &str, title: &str) -> Result<i64> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Owner {
     /// A study lesson, which is written from it and checked against it.
-    Lesson(i64),
+    Lesson(LessonId),
     /// A podcast episode, which is written from it.
-    Song(i64),
+    Song(SongId),
 }
 
 /// A source as a lesson's or an episode's page shows it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
-    pub id: i64,
-    pub lesson_id: Option<i64>,
-    pub song_id: Option<i64>,
+    pub id: SourceId,
+    pub lesson_id: Option<LessonId>,
+    pub song_id: Option<SongId>,
     pub lang: String,
     pub title: String,
     pub url: String,
     pub summary: String,
-    pub image_file_id: Option<i64>,
+    pub image_file_id: Option<FileId>,
     /// Polish Wikipedia has it too.
     pub polish_title: Option<String>,
     pub checked_at: i64,
 }
 
-type SourceRow = (i64, Option<i64>, Option<i64>, String, String, String, String, Option<i64>, Option<String>, i64);
+type SourceRow = (SourceId, Option<LessonId>, Option<SongId>, String, String, String, String, Option<FileId>, Option<String>, i64);
 
 fn source_from(row: SourceRow) -> Source {
     let (id, lesson_id, song_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
@@ -383,11 +385,11 @@ fn owned_by(conn: &mut Conn, owner: Owner) -> Result<Vec<Source>> {
     Ok(query.load::<SourceRow>(conn)?.into_iter().map(source_from).collect())
 }
 
-pub fn sources_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<Source>> {
+pub fn sources_of(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<Source>> {
     owned_by(conn, Owner::Lesson(lesson_id))
 }
 
-pub fn sources_of_song(conn: &mut Conn, song_id: i64) -> Result<Vec<Source>> {
+pub fn sources_of_song(conn: &mut Conn, song_id: SongId) -> Result<Vec<Source>> {
     owned_by(conn, Owner::Song(song_id))
 }
 
@@ -395,7 +397,7 @@ pub fn sources_of_song(conn: &mut Conn, song_id: i64) -> Result<Vec<Source>> {
 /// copy of the same article), with its Polish version's text and its picture.
 pub fn store(
     conn: &mut Conn,
-    lesson_id: i64,
+    lesson_id: LessonId,
     article: &Article,
     polish: Option<&Article>,
     picture: Option<(String, Vec<u8>)>,
@@ -428,7 +430,7 @@ pub fn store_for(
             songs::table
                 .find(id)
                 .select(songs::id)
-                .first::<i64>(conn)
+                .first::<SongId>(conn)
                 .optional()?
                 .ok_or_else(|| Error::msg("That podcast no longer exists."))?;
             (None, Some(id))
@@ -447,7 +449,7 @@ pub fn store_for(
     let now = db::now_secs();
     let siblings = owned_by(conn, owner)?;
     let ord = crate::convert::count(siblings.len());
-    let existing: Option<(i64, Option<i64>)> = wiki_sources::table
+    let existing: Option<(SourceId, Option<FileId>)> = wiki_sources::table
         .filter(wiki_sources::lesson_id.is(lesson_id))
         .filter(wiki_sources::song_id.is(song_id))
         .filter(wiki_sources::lang.eq(&article.lang))
@@ -480,6 +482,7 @@ pub fn store_for(
         }
         None => diesel::insert_into(wiki_sources::table)
             .values((
+                wiki_sources::id.eq(SourceId::new()),
                 wiki_sources::lesson_id.eq(lesson_id),
                 wiki_sources::song_id.eq(song_id),
                 wiki_sources::ord.eq(ord),
@@ -502,7 +505,7 @@ pub fn store_for(
 
 /// Fetches an article and attaches it to a study lesson: the tutor's
 /// attach_source, for new and existing lessons alike.
-pub async fn attach(db: &Db, lesson_id: i64, lang: &str, title: &str) -> Result<Source> {
+pub async fn attach(db: &Db, lesson_id: LessonId, lang: &str, title: &str) -> Result<Source> {
     attach_to(db, Owner::Lesson(lesson_id), lang, title).await
 }
 
@@ -540,8 +543,8 @@ async fn download_picture(url: &str) -> Result<(String, Vec<u8>)> {
     Ok((mime, bytes))
 }
 
-pub fn remove(conn: &mut Conn, source_id: i64) -> Result<()> {
-    let image: Option<Option<i64>> =
+pub fn remove(conn: &mut Conn, source_id: SourceId) -> Result<()> {
+    let image: Option<Option<FileId>> =
         wiki_sources::table.find(source_id).select(wiki_sources::image_file_id).first(conn).optional()?;
     diesel::delete(wiki_sources::table.find(source_id)).execute(conn)?;
     files::delete(conn, &image.flatten().into_iter().collect::<Vec<_>>())?;
@@ -550,7 +553,7 @@ pub fn remove(conn: &mut Conn, source_id: i64) -> Result<()> {
 
 /// What the examiner and the fact check read: each source's lead, and as
 /// much of the rest as fits.
-pub fn reading_for(conn: &mut Conn, lesson_id: i64, limit: usize) -> Result<String> {
+pub fn reading_for(conn: &mut Conn, lesson_id: LessonId, limit: usize) -> Result<String> {
     let rows: Vec<(String, String)> = wiki_sources::table
         .filter(wiki_sources::lesson_id.eq(lesson_id))
         .order(wiki_sources::ord)
@@ -583,7 +586,7 @@ fn clip(text: &str, limit: usize) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FactCheck {
-    pub lesson_id: i64,
+    pub lesson_id: LessonId,
     pub title: String,
     /// The lesson was out of date and has been corrected.
     pub updated: bool,
@@ -592,12 +595,12 @@ pub struct FactCheck {
 }
 
 /// Lessons whose sources have not been compared with Wikipedia for three months.
-pub fn lessons_due(conn: &mut Conn, now: i64) -> Result<Vec<i64>> {
+pub fn lessons_due(conn: &mut Conn, now: i64) -> Result<Vec<LessonId>> {
     // Only lessons are checked: an episode is recorded once, as it was written.
-    let mut ids: Vec<i64> = wiki_sources::table
+    let mut ids: Vec<LessonId> = wiki_sources::table
         .filter(wiki_sources::checked_at.lt(now - CHECK_EVERY_DAYS * 86_400))
         .select(wiki_sources::lesson_id)
-        .load::<Option<i64>>(conn)?
+        .load::<Option<LessonId>>(conn)?
         .into_iter()
         .flatten()
         .collect();
@@ -635,8 +638,8 @@ pub fn check_due_in_background(app: &tauri::AppHandle) {
 /// fetched again; if any did (or `force`), an AI reads the lesson against
 /// them and corrects what is out of date — nothing else — noting what
 /// changed. Unchanged articles cost nothing.
-pub async fn fact_check(db: &Db, lesson_id: i64, force: bool) -> Result<FactCheck> {
-    let (title, sources): (String, Vec<(i64, String, String, i64)>) = {
+pub async fn fact_check(db: &Db, lesson_id: LessonId, force: bool) -> Result<FactCheck> {
+    let (title, sources): (String, Vec<(SourceId, String, String, i64)>) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         let title = lessons::table.find(lesson_id).select(lessons::title).first(conn)?;
@@ -678,7 +681,7 @@ pub async fn fact_check(db: &Db, lesson_id: i64, force: bool) -> Result<FactChec
 
 /// Asks the model whether the lesson is out of date against its sources and,
 /// if so, stores the corrected lesson. Returns what changed.
-async fn correct_lesson(db: &Db, lesson_id: i64) -> Result<Option<String>> {
+async fn correct_lesson(db: &Db, lesson_id: LessonId) -> Result<Option<String>> {
     let (key, model, content, objectives, reading) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -758,7 +761,7 @@ fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn lesson_sources(db: State<'_, Db>, lesson_id: i64) -> Result<Vec<Source>> {
+pub async fn lesson_sources(db: State<'_, Db>, lesson_id: LessonId) -> Result<Vec<Source>> {
     sources_of(&mut db.lock(), lesson_id)
 }
 
@@ -776,7 +779,7 @@ pub struct ArticleView {
 }
 
 #[tauri::command]
-pub async fn source_article(db: State<'_, Db>, source_id: i64, polish: bool) -> Result<ArticleView> {
+pub async fn source_article(db: State<'_, Db>, source_id: SourceId, polish: bool) -> Result<ArticleView> {
     type Row = (String, String, String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
     let row: Row = wiki_sources::table
         .find(source_id)
@@ -819,7 +822,7 @@ pub async fn source_article(db: State<'_, Db>, source_id: i64, polish: bool) -> 
 
 /// An episode's sources, for its page.
 #[tauri::command]
-pub async fn song_sources(db: State<'_, Db>, song_id: i64) -> Result<Vec<Source>> {
+pub async fn song_sources(db: State<'_, Db>, song_id: SongId) -> Result<Vec<Source>> {
     sources_of_song(&mut db.lock(), song_id)
 }
 
@@ -827,7 +830,7 @@ pub async fn song_sources(db: State<'_, Db>, song_id: i64) -> Result<Vec<Source>
 /// still being made, or the article could not be fetched then), so it opens
 /// in the app's reader rather than outside it.
 #[tauri::command]
-pub async fn song_source_open(db: State<'_, Db>, song_id: i64, lang: String, title: String) -> Result<Source> {
+pub async fn song_source_open(db: State<'_, Db>, song_id: SongId, lang: String, title: String) -> Result<Source> {
     let kept = sources_of_song(&mut db.lock(), song_id)?;
     if let Some(source) = kept.into_iter().find(|s| s.lang == lang && s.title == title) {
         return Ok(source);
@@ -846,12 +849,12 @@ pub async fn wiki_find(query: String) -> Result<Vec<SearchHit>> {
 
 /// Checks one lesson against its sources now, whatever the date.
 #[tauri::command]
-pub async fn fact_check_lesson(db: State<'_, Db>, lesson_id: i64) -> Result<FactCheck> {
+pub async fn fact_check_lesson(db: State<'_, Db>, lesson_id: LessonId) -> Result<FactCheck> {
     fact_check(&db, lesson_id, true).await
 }
 
 #[tauri::command]
-pub async fn source_remove(db: State<'_, Db>, source_id: i64) -> Result<()> {
+pub async fn source_remove(db: State<'_, Db>, source_id: SourceId) -> Result<()> {
     remove(&mut db.lock(), source_id)
 }
 

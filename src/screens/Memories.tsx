@@ -22,7 +22,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { Memory, MemoryCategory, MemoryOverview } from "../lib/types";
+import type { Memory, MemoryCategory, MemoryId, MemoryOverview } from "../lib/types";
 
 const CATEGORIES: { value: MemoryCategory; title: string; label: string }[] = [
   { value: "goal", title: "Goals", label: "Goal" },
@@ -43,7 +43,7 @@ function when(seconds: number): string {
 }
 
 /** A new memory, or the one being edited. */
-type Editing = { id: number | null; content: string; category: MemoryCategory };
+type Editing = { id: MemoryId | null; content: string; category: MemoryCategory };
 
 /**
  * What the tutor and the examiner remember about the learner. Everything

@@ -9,13 +9,7 @@ import type { Settings } from "../lib/types";
 import { QrIcon, ScanIcon } from "./icons";
 
 /** Copy the API keys to another device: show them as a QR code, or scan one. */
-export function KeyShare({
-  settings,
-  onSettings,
-}: {
-  settings: Settings;
-  onSettings: (settings: Settings) => void;
-}) {
+export function KeyShare({ settings, onSettings }: { settings: Settings; onSettings: (settings: Settings) => void }) {
   const [showing, setShowing] = useState(false);
   const [scanning, setScanning] = useState(false);
   const hasKeys = settings.hasApiKey || settings.hasKieKey;
@@ -51,8 +45,8 @@ export function KeyShare({
       info={
         <>
           <p>
-            Copy your API keys to another device without typing them: show the QR code here and
-            scan it with Polski on the other device (Settings → Other devices → Scan).
+            Copy your API keys to another device without typing them: show the QR code here and scan it with Polski on
+            the other device (Settings → Other devices → Scan).
           </p>
           <p>The QR code holds the keys themselves, so only show it to a device you own.</p>
         </>
@@ -94,13 +88,17 @@ function ShowQr({ onClose }: { onClose: () => void }) {
         {error ? (
           <Text tone="dim">{error}</Text>
         ) : svg ? (
-          <div className="key-qr" role="img" aria-label="QR code with your API keys" dangerouslySetInnerHTML={{ __html: svg }} />
+          <div
+            className="key-qr"
+            role="img"
+            aria-label="QR code with your API keys"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
         ) : (
           <Loading />
         )}
         <Text variant="small" tone="dim" align="center">
-          On the other device, open Settings → Other devices → Scan. Anyone who sees this code can
-          use your keys.
+          On the other device, open Settings → Other devices → Scan. Anyone who sees this code can use your keys.
         </Text>
         <Button wide onClick={onClose}>
           Done

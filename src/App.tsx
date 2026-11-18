@@ -7,17 +7,24 @@ import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
 import { syncReminder } from "./lib/notifications";
 import { toast } from "./lib/toast";
-import { keepScreenAwake, resumeCast, syncRepeatFromSettings } from "./lib/player";
+import {
+  keepScreenAwake,
+  resumeCast,
+  syncRepeatFromSettings,
+} from "./lib/player";
 import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
+  CourseId,
+  CourseProgress,
+  LessonId,
   LessonOverview,
   LessonResult,
   SessionPlan,
   SessionResult,
   Settings,
+  SongId,
   Stats,
-  CourseProgress,
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
@@ -38,6 +45,7 @@ import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
 import { onEvent, onSignal } from "./lib/events";
 import { FactCheckSchema, TutorDoneSchema } from "./lib/types";
+import { setIdOpeners } from "./lib/ids";
 
 type Tab = "exercises" | "tutor" | "music" | "settings";
 
@@ -51,13 +59,13 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
 /** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
 type Overlay =
   | { kind: "none" }
-  | { kind: "lesson"; lessonId: number; back: Overlay }
+  | { kind: "lesson"; lessonId: LessonId; back: Overlay }
   | { kind: "session"; plan: SessionPlan; back: Overlay }
   | {
       kind: "checkin";
-      lessonId: number;
+      lessonId: LessonId;
       title: string;
-      songId: number | null;
+      songId: SongId | null;
       /** A writing lesson's situation and goals, shown above the conversation. */
       writing: Writing | null;
       back: Overlay;
@@ -139,16 +147,21 @@ export default function App() {
 
   // Studying a lesson — its page, its drill, its check-in — often means pen
   // and paper, not touching the phone: keep the screen on meanwhile.
-  const studying = overlay.kind === "lesson" || overlay.kind === "session" || overlay.kind === "checkin";
+  const studying =
+    overlay.kind === "lesson" ||
+    overlay.kind === "session" ||
+    overlay.kind === "checkin";
   useEffect(() => {
     keepScreenAwake(studying, "study");
   }, [studying]);
   const [error, setError] = useState<string | null>(null);
   /** A song the player asked the music tab to show. */
-  const [musicSong, setMusicSong] = useState<number | null>(null);
+  const [musicSong, setMusicSong] = useState<SongId | null>(null);
   const clearMusicSong = useCallback(() => setMusicSong(null), []);
   // Back on another tab goes to Exercises; back on Exercises leaves the app.
-  useBackHandler(overlay.kind === "none" && tab !== "exercises", () => setTab("exercises"));
+  useBackHandler(overlay.kind === "none" && tab !== "exercises", () =>
+    setTab("exercises"),
+  );
 
   const refresh = useCallback(async () => {
     const [nextOverview, nextStats, nextCourses] = await Promise.all([
@@ -167,7 +180,11 @@ export default function App() {
   const [bootRun, setBootRun] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    const track = async <T,>(label: string, command: string, run: () => Promise<T>): Promise<T> => {
+    const track = async <T,>(
+      label: string,
+      command: string,
+      run: () => Promise<T>,
+    ): Promise<T> => {
       const startedAt = Date.now();
       setBootSteps((steps) => [
         ...steps.filter((s) => s.command !== command),
@@ -176,7 +193,11 @@ export default function App() {
       const settle = (patch: Partial<BootStep>) =>
         !cancelled &&
         setBootSteps((steps) =>
-          steps.map((s) => (s.command === command ? { ...s, ...patch, ms: Date.now() - startedAt } : s)),
+          steps.map((s) =>
+            s.command === command
+              ? { ...s, ...patch, ms: Date.now() - startedAt }
+              : s,
+          ),
         );
       try {
         const value = await run();
@@ -201,9 +222,13 @@ export default function App() {
         // A speaker may still be playing from before a reload.
         resumeCast();
         const [nextOverview, nextStats, nextCourses] = await Promise.all([
-          track("Today's check-ins", "lessons_overview", () => api.lessonsOverview()),
+          track("Today's check-ins", "lessons_overview", () =>
+            api.lessonsOverview(),
+          ),
           track("Your stats", "get_stats", () => api.getStats()),
-          track("Your courses", "get_course_progress", () => api.getCourseProgress()),
+          track("Your courses", "get_course_progress", () =>
+            api.getCourseProgress(),
+          ),
         ]);
         if (cancelled) return;
         setOverview(nextOverview);
@@ -250,8 +275,13 @@ export default function App() {
       // Dialogue lines carry their speaker's gender so each is warmed in the
       // voice that will actually read it; everything else uses the default.
       const lines = [
-        ...session.dialogue.map((line) => ({ text: line.pl, gender: line.gender })),
-        ...session.exercises.filter((e) => e.itemKind !== "dialogue").map((e) => ({ text: e.pl, gender: "" })),
+        ...session.dialogue.map((line) => ({
+          text: line.pl,
+          gender: line.gender,
+        })),
+        ...session.exercises
+          .filter((e) => e.itemKind !== "dialogue")
+          .map((e) => ({ text: e.pl, gender: "" })),
       ];
       const seen = new Set<string>();
       const unique = lines.filter((line) => {
@@ -267,7 +297,7 @@ export default function App() {
 
   /** Starts a drill lesson's exercises. */
   const startDrill = useCallback(
-    async (lessonId: number, back: Overlay) => {
+    async (lessonId: LessonId, back: Overlay) => {
       stopAudio();
       try {
         const session = await api.lessonSession(lessonId);
@@ -281,16 +311,31 @@ export default function App() {
   );
 
   /** Opens a course by id (the tutor's buttons). */
-  const openCourseById = useCallback(async (courseId: number) => {
+  const openCourseById = useCallback(async (courseId: CourseId) => {
     try {
       const fresh = await api.getCourseProgress();
       setCourses(fresh);
       const progress = fresh.find((entry) => entry.course.id === courseId);
-      if (progress) setOverlay({ kind: "course", progress, back: { kind: "none" } });
+      if (progress)
+        setOverlay({ kind: "course", progress, back: { kind: "none" } });
     } catch (cause) {
       setError(errorMessage(cause));
     }
   }, []);
+
+  // What an id chip (a title shown in place of an id) opens.
+  useEffect(() => {
+    setIdOpeners({
+      course: (courseId) => void openCourseById(courseId),
+      lesson: (lessonId) =>
+        setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } }),
+      song: (songId) => {
+        setOverlay({ kind: "none" });
+        setTab("music");
+        setMusicSong(songId);
+      },
+    });
+  }, [openCourseById]);
 
   /** Something changed behind the screens' backs (the tutor acted). */
   const reloadAll = useCallback(async () => {
@@ -312,7 +357,12 @@ export default function App() {
   const dueCount = overview?.due.length;
   const streak = stats?.currentStreak;
   useEffect(() => {
-    if (remindersOn === undefined || reminderHour === undefined || reminderMinute === undefined) return;
+    if (
+      remindersOn === undefined ||
+      reminderHour === undefined ||
+      reminderMinute === undefined
+    )
+      return;
     void syncReminder({
       enabled: remindersOn,
       hour: reminderHour,
@@ -334,7 +384,10 @@ export default function App() {
   // The tutor answers in the background. Off screen, a finished reply is
   // announced with a notification, so the backend needs to know.
   useEffect(() => {
-    const report = () => void api.appVisibility(document.visibilityState === "visible").catch(() => {});
+    const report = () =>
+      void api
+        .appVisibility(document.visibilityState === "visible")
+        .catch(() => {});
     report();
     document.addEventListener("visibilitychange", report);
     return () => document.removeEventListener("visibilitychange", report);
@@ -364,7 +417,8 @@ export default function App() {
   // reloads, wherever the learner is.
   useEffect(() => {
     const off = onEvent(TutorDoneSchema, "tutor://done", (event) => {
-      if (event.payload.message && event.payload.message.actions.length > 0) void reloadAll();
+      if (event.payload.message && event.payload.message.actions.length > 0)
+        void reloadAll();
     });
     return () => {
       void off.then((stop) => stop());
@@ -415,7 +469,10 @@ export default function App() {
                 result: result.result,
                 nextDueDay: result.lesson.dueDay,
                 extra: result.extra,
-                score: result.total > 0 ? { correct: result.correct, total: result.total } : undefined,
+                score:
+                  result.total > 0
+                    ? { correct: result.correct, total: result.total }
+                    : undefined,
               },
               back: startedFrom(overlay.back),
             });
@@ -450,7 +507,9 @@ export default function App() {
           initialSection={overlay.section}
           today={overview.today}
           onBack={() => setOverlay(overlay.back)}
-          onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: overlay })}
+          onOpenLesson={(lessonId) =>
+            setOverlay({ kind: "lesson", lessonId, back: overlay })
+          }
           onDeleted={() => {
             setOverlay(overlay.back);
             void reloadAll();
@@ -482,7 +541,11 @@ export default function App() {
               writing:
                 // A type with a writing section is played out with a partner.
                 detail && lessonType(detail).sections.includes("writing")
-                  ? { situation: detail.content, goals: detail.objectives, supportLevel: detail.supportLevel }
+                  ? {
+                      situation: detail.content,
+                      goals: detail.objectives,
+                      supportLevel: detail.supportLevel,
+                    }
                   : null,
               back: overlay,
             });
@@ -519,7 +582,11 @@ export default function App() {
                 kind: "summary",
                 result,
                 xp: assessment.xp,
-                outcome: { title: overlay.title, result: assessment.result, nextDueDay: assessment.nextDueDay },
+                outcome: {
+                  title: overlay.title,
+                  result: assessment.result,
+                  nextDueDay: assessment.nextDueDay,
+                },
                 back,
               });
             } catch {
@@ -560,7 +627,10 @@ export default function App() {
   if (overlay.kind === "xpDay") {
     return (
       <div className="app">
-        <XpDayScreen day={overlay.day} onBack={() => setOverlay(overlay.back)} />
+        <XpDayScreen
+          day={overlay.day}
+          onBack={() => setOverlay(overlay.back)}
+        />
       </div>
     );
   }
@@ -572,8 +642,12 @@ export default function App() {
           stats={stats}
           courses={courses}
           onBack={() => setOverlay({ kind: "none" })}
-          onOpenCourse={(progress) => setOverlay({ kind: "course", progress, back: { kind: "progress" } })}
-          onOpenDay={(day) => setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })}
+          onOpenCourse={(progress) =>
+            setOverlay({ kind: "course", progress, back: { kind: "progress" } })
+          }
+          onOpenDay={(day) =>
+            setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })
+          }
         />
       </div>
     );
@@ -609,14 +683,24 @@ export default function App() {
           overview={overview}
           stats={stats}
           courses={courses}
-          onOpenLesson={(lesson) => setOverlay({ kind: "lesson", lessonId: lesson.id, back: { kind: "none" } })}
-          onOpenCourse={(progress) => setOverlay({ kind: "course", progress, back: { kind: "none" } })}
+          onOpenLesson={(lesson) =>
+            setOverlay({
+              kind: "lesson",
+              lessonId: lesson.id,
+              back: { kind: "none" },
+            })
+          }
+          onOpenCourse={(progress) =>
+            setOverlay({ kind: "course", progress, back: { kind: "none" } })
+          }
           onOpenTutor={(ask) => {
             setTutorAsk(ask ?? null);
             setTab("tutor");
           }}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
-          onOpenXpDay={(day) => setOverlay({ kind: "xpDay", day, back: { kind: "none" } })}
+          onOpenXpDay={(day) =>
+            setOverlay({ kind: "xpDay", day, back: { kind: "none" } })
+          }
           onOpenSearch={() => setOverlay({ kind: "search" })}
         />
       ) : null}
@@ -626,9 +710,13 @@ export default function App() {
           settings={settings}
           openSongId={musicSong}
           onSongOpened={clearMusicSong}
-          onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })}
+          onOpenLesson={(lessonId) =>
+            setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })
+          }
           onOpenSettings={() => setTab("settings")}
-          onOpenPlayer={() => setOverlay({ kind: "player", back: { kind: "none" } })}
+          onOpenPlayer={() =>
+            setOverlay({ kind: "player", back: { kind: "none" } })
+          }
         />
       ) : null}
 
@@ -638,13 +726,17 @@ export default function App() {
           hasModel={settings.aiModel.length > 0}
           onOpenSettings={() => setTab("settings")}
           onOpenCourse={(courseId) => void openCourseById(courseId)}
-          onOpenLesson={(lessonId) => setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })}
+          onOpenLesson={(lessonId) =>
+            setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })
+          }
           onOpenSong={(songId) => {
             setTab("music");
             setMusicSong(songId);
           }}
           onChanged={() => void reloadAll()}
-          onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
+          onOpenMemories={() =>
+            setOverlay({ kind: "memories", back: { kind: "none" } })
+          }
           ask={tutorAsk}
           onAsked={() => setTutorAsk(null)}
         />
@@ -655,7 +747,9 @@ export default function App() {
           settings={settings}
           onSettings={applySettings}
           onReset={() => void refresh()}
-          onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
+          onOpenMemories={() =>
+            setOverlay({ kind: "memories", back: { kind: "none" } })
+          }
           onOpenAudio={() => setOverlay({ kind: "audio" })}
           onOpenHowTo={() => setOverlay({ kind: "howTo" })}
         />

@@ -27,6 +27,8 @@ use crate::songs::{self, Song, SongDraft, SongLine, SongOrigin, SongSection, Sou
 use crate::speech::{self, Delivery};
 use crate::news;
 use crate::wiki;
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// The formats an episode can take, each a way of writing and reading it
 /// (see `format_of`). "pairs": each sentence in English, then in Polish.
@@ -147,7 +149,7 @@ pub struct PodcastRequest {
     /// What the script must meet, word for word (the tutor's).
     pub requirements: String,
     /// The episode or song this one varies, if any.
-    pub based_on: Option<i64>,
+    pub based_on: Option<SongId>,
     /// "composer" or "tutor"; empty: the composer.
     pub made_by: String,
     /// The Polish voice: "f" or "m".
@@ -817,7 +819,7 @@ pub async fn podcast_make(app: AppHandle, db: State<'_, Db>, request: PodcastReq
     songs::load_song(&mut db.lock(), id)
 }
 
-pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> Result<i64> {
+pub fn start_from_request(app: &AppHandle, db: &Db, request: PodcastRequest) -> Result<SongId> {
     let articles: Vec<String> = request
         .articles
         .iter()
@@ -967,7 +969,7 @@ pub async fn podcast_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft)
 }
 
 /// Saves a finished script and starts reading it in the background.
-pub fn start_episode(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
+pub fn start_episode(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<SongId> {
     let draft = normalize_episode(draft)?;
     let id = {
         let mut guard = db.lock();
@@ -985,13 +987,13 @@ pub fn start_episode(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> 
 pub async fn podcast_rerender(
     app: AppHandle,
     db: State<'_, Db>,
-    song_id: i64,
+    song_id: SongId,
     audio: Option<PodcastAudio>,
 ) -> Result<Song> {
     rerender(&app, &db, song_id, audio)
 }
 
-pub(crate) fn rerender(app: &AppHandle, db: &Db, song_id: i64, audio: Option<PodcastAudio>) -> Result<Song> {
+pub(crate) fn rerender(app: &AppHandle, db: &Db, song_id: SongId, audio: Option<PodcastAudio>) -> Result<Song> {
     {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -1008,7 +1010,7 @@ pub(crate) fn rerender(app: &AppHandle, db: &Db, song_id: i64, audio: Option<Pod
     songs::load_song(&mut db.lock(), song_id)
 }
 
-pub fn spawn_render(app: AppHandle, song_id: i64) {
+pub fn spawn_render(app: AppHandle, song_id: SongId) {
     // Keeps the app working with the screen off or another app in front.
     let busy = crate::work::begin(&app, "Making a podcast…");
     tauri::async_runtime::spawn(async move {
@@ -1025,7 +1027,7 @@ pub fn spawn_render(app: AppHandle, song_id: i64) {
 /// in-app reader: each with its layout, its Polish version and its picture.
 /// Done once, while the episode is recorded; an article that cannot be
 /// fetched now is simply left out (its link stays in the episode's origin).
-async fn keep_sources(db: &Db, song_id: i64, sources: &[Source]) {
+async fn keep_sources(db: &Db, song_id: SongId, sources: &[Source]) {
     let kept = wiki::sources_of_song(&mut db.lock(), song_id).unwrap_or_default();
     // Episodes from before kept the Polish article as a source of its own.
     let wanted: Vec<&Source> = sources.iter().filter(|s| s.lang != "pl" || sources.len() == 1).collect();
@@ -1053,7 +1055,7 @@ async fn make_clip(app: AppHandle, clip: Clip) -> Result<Vec<u8>> {
     speech::pcm_clip(&db, &clip.text, &clip.voice, clip.delivery, &clip.how).await
 }
 
-async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
+async fn render(app: &AppHandle, song_id: SongId) -> Result<()> {
     let db = app.state::<Db>();
     // Made in one go: first the script, if it is not written yet.
     let unwritten = songs::load_song(&mut db.lock(), song_id)?;
@@ -1084,7 +1086,7 @@ async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
                 .set(song_rows::podcast.eq(serde_json::to_string(&audio)?))
                 .execute(conn)?;
         }
-        let old: Option<(Option<i64>, Option<i64>)> = song_tracks::table
+        let old: Option<(Option<FileId>, Option<FileId>)> = song_tracks::table
             .filter(song_tracks::song_id.eq(song_id))
             .filter(song_tracks::remote_id.eq("episode"))
             .select((song_tracks::audio_file_id, song_tracks::image_file_id))
@@ -1163,6 +1165,7 @@ async fn render(app: &AppHandle, song_id: i64) -> Result<()> {
     let lines = serde_json::to_string(&episode.lines)?;
     diesel::insert_into(song_tracks::table)
         .values((
+            song_tracks::id.eq(TrackId::new()),
             song_tracks::song_id.eq(song_id),
             song_tracks::ord.eq(0),
             song_tracks::remote_id.eq("episode"),

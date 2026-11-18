@@ -9,9 +9,11 @@ use crate::db::{Conn, Db};
 use crate::error::{Error, Result};
 use crate::files;
 use crate::schema::{course_words, courses, lessons, words};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// What the picture should show, from the course's title, summary and words.
-pub fn prompt(conn: &mut Conn, course_id: i64) -> Result<String> {
+pub fn prompt(conn: &mut Conn, course_id: CourseId) -> Result<String> {
     let (title, title_pl, summary): (String, String, String) = courses::table
         .find(course_id)
         .select((courses::title_en, courses::title_pl, courses::summary_en))
@@ -45,7 +47,7 @@ pub fn prompt(conn: &mut Conn, course_id: i64) -> Result<String> {
 /// Draws a new picture for a course, replacing the old one. Returns its file
 /// id (the webview shows it through the media protocol).
 #[tauri::command]
-pub async fn course_picture(db: State<'_, Db>, course_id: i64) -> Result<i64> {
+pub async fn course_picture(db: State<'_, Db>, course_id: CourseId) -> Result<FileId> {
     draw(&db, course_id).await
 }
 
@@ -54,14 +56,14 @@ pub async fn course_picture(db: State<'_, Db>, course_id: i64) -> Result<i64> {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PictureChanged {
-    pub course_id: i64,
-    pub file_id: i64,
+    pub course_id: CourseId,
+    pub file_id: FileId,
 }
 
 /// Draws a new course's picture in the background — every course gets one
 /// without asking. A failure (no key, a model that draws nothing) is only
 /// logged: the course is there either way, and its page can try again.
-pub fn draw_in_background(app: &tauri::AppHandle, course_id: i64) {
+pub fn draw_in_background(app: &tauri::AppHandle, course_id: CourseId) {
     {
         // A folder of one-offs (Other lessons) gets no picture.
         use tauri::Manager;
@@ -86,7 +88,7 @@ pub fn draw_in_background(app: &tauri::AppHandle, course_id: i64) {
     });
 }
 
-async fn draw(db: &Db, course_id: i64) -> Result<i64> {
+async fn draw(db: &Db, course_id: CourseId) -> Result<FileId> {
     let (key, model, prompt) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -98,7 +100,7 @@ async fn draw(db: &Db, course_id: i64) -> Result<i64> {
     let _ = crate::costs::record(conn, crate::costs::PICTURES, "openrouter", &model, cost, "");
     let name = format!("course-{course_id}-{}.{}", crate::db::now_secs(), files::extension_for(&mime));
     let id = files::store(conn, files::COURSE_IMAGE, &name, &mime, &bytes)?;
-    let old: Option<i64> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
+    let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
     diesel::update(courses::table.find(course_id)).set(courses::image_file_id.eq(id)).execute(conn)?;
     if let Some(old) = old {
         files::delete(conn, &[old])?;
@@ -108,11 +110,11 @@ async fn draw(db: &Db, course_id: i64) -> Result<i64> {
 
 /// Removes a course's picture.
 #[tauri::command]
-pub async fn course_picture_delete(db: State<'_, Db>, course_id: i64) -> Result<()> {
+pub async fn course_picture_delete(db: State<'_, Db>, course_id: CourseId) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let old: Option<i64> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
-    diesel::update(courses::table.find(course_id)).set(courses::image_file_id.eq(None::<i64>)).execute(conn)?;
+    let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
+    diesel::update(courses::table.find(course_id)).set(courses::image_file_id.eq(None::<FileId>)).execute(conn)?;
     files::delete(conn, &old.into_iter().collect::<Vec<_>>())?;
     Ok(())
 }
@@ -162,10 +164,10 @@ pub fn shrink(bytes: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Words being drawn right now, so one is never drawn twice at once.
-static DRAWING: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+static DRAWING: std::sync::Mutex<Vec<WordId>> = std::sync::Mutex::new(Vec::new());
 
 /// Draws a word's picture, replacing the one it had. Returns its file id.
-pub async fn draw_word(db: &Db, word_id: i64) -> Result<i64> {
+pub async fn draw_word(db: &Db, word_id: WordId) -> Result<FileId> {
     let (key, model, prompt) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -184,7 +186,7 @@ pub async fn draw_word(db: &Db, word_id: i64) -> Result<i64> {
     let _ = crate::costs::record(conn, crate::costs::PICTURES, "openrouter", &model, cost, "word");
     let name = format!("word-{word_id}-{}.jpg", crate::db::now_secs());
     let id = files::store(conn, files::WORD_IMAGE, &name, "image/jpeg", &small)?;
-    let old: Option<Option<i64>> = words::table.find(word_id).select(words::image_file_id).first(conn).optional()?;
+    let old: Option<Option<FileId>> = words::table.find(word_id).select(words::image_file_id).first(conn).optional()?;
     let Some(old) = old else {
         // The word went while it was drawn.
         files::delete(conn, &[id])?;
@@ -201,14 +203,14 @@ pub async fn draw_word(db: &Db, word_id: i64) -> Result<i64> {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WordPictureChanged {
-    pub lesson_id: i64,
-    pub word_id: i64,
-    pub file_id: Option<i64>,
+    pub lesson_id: LessonId,
+    pub word_id: WordId,
+    pub file_id: Option<FileId>,
 }
 
 /// The words of a picture lesson still without a picture (none for any
 /// other type: only picture lessons have pictures).
-pub fn missing(conn: &mut Conn, lesson_id: i64) -> Result<Vec<i64>> {
+pub fn missing(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<WordId>> {
     let lesson_type: String = lessons::table.find(lesson_id).select(lessons::lesson_type).first(conn)?;
     if lesson_type != "pictures" {
         return Ok(Vec::new());
@@ -223,10 +225,10 @@ pub fn missing(conn: &mut Conn, lesson_id: i64) -> Result<Vec<i64>> {
 
 /// Draws the given words' pictures in the background, a few at a time, each
 /// announced as it lands. Words already being drawn are skipped.
-pub fn draw_words_in_background(app: &tauri::AppHandle, lesson_id: i64, word_ids: Vec<i64>) {
-    let word_ids: Vec<i64> = {
+pub fn draw_words_in_background(app: &tauri::AppHandle, lesson_id: LessonId, word_ids: Vec<WordId>) {
+    let word_ids: Vec<WordId> = {
         let mut drawing = DRAWING.lock().unwrap_or_else(|e| e.into_inner());
-        let fresh: Vec<i64> = word_ids.into_iter().filter(|id| !drawing.contains(id)).collect();
+        let fresh: Vec<WordId> = word_ids.into_iter().filter(|id| !drawing.contains(id)).collect();
         drawing.extend(&fresh);
         fresh
     };
@@ -263,7 +265,7 @@ pub fn draw_words_in_background(app: &tauri::AppHandle, lesson_id: i64, word_ids
 pub fn draw_missing_in_background(app: &tauri::AppHandle) {
     use tauri::Manager;
     let db = app.state::<Db>();
-    let lessons: Vec<i64> = {
+    let lessons: Vec<LessonId> = {
         let mut guard = db.lock();
         lessons::table
             .filter(lessons::lesson_type.eq("pictures"))
@@ -282,7 +284,7 @@ pub fn draw_missing_in_background(app: &tauri::AppHandle) {
 /// Draws a picture lesson's missing pictures in the background; returns how
 /// many are on the way.
 #[tauri::command]
-pub async fn lesson_add_pictures(app: tauri::AppHandle, db: State<'_, Db>, lesson_id: i64) -> Result<usize> {
+pub async fn lesson_add_pictures(app: tauri::AppHandle, db: State<'_, Db>, lesson_id: LessonId) -> Result<usize> {
     let missing = {
         let mut guard = db.lock();
         crate::ai::api_key(&mut guard)?;
@@ -295,17 +297,17 @@ pub async fn lesson_add_pictures(app: tauri::AppHandle, db: State<'_, Db>, lesso
 
 /// Draws one word's picture again (or for the first time).
 #[tauri::command]
-pub async fn word_picture_draw(db: State<'_, Db>, word_id: i64) -> Result<i64> {
+pub async fn word_picture_draw(db: State<'_, Db>, word_id: WordId) -> Result<FileId> {
     draw_word(&db, word_id).await
 }
 
 /// Removes a word's picture; it is practised without one.
 #[tauri::command]
-pub async fn word_picture_delete(db: State<'_, Db>, word_id: i64) -> Result<()> {
+pub async fn word_picture_delete(db: State<'_, Db>, word_id: WordId) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let old: Option<i64> = words::table.find(word_id).select(words::image_file_id).first(conn)?;
-    diesel::update(words::table.find(word_id)).set(words::image_file_id.eq(None::<i64>)).execute(conn)?;
+    let old: Option<FileId> = words::table.find(word_id).select(words::image_file_id).first(conn)?;
+    diesel::update(words::table.find(word_id)).set(words::image_file_id.eq(None::<FileId>)).execute(conn)?;
     files::delete(conn, &old.into_iter().collect::<Vec<_>>())?;
     Ok(())
 }

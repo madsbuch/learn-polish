@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Inline, Stack, Text } from "../design";
 import { api } from "../lib/api";
-import type { WordExample } from "../lib/types";
+import type { WordExample, WordId } from "../lib/types";
 import { SlowButton, SpeakButton } from "./ui";
 
 /**
@@ -17,7 +17,7 @@ export function WrongAnswerReview({
   pl: string;
   meaning: string;
   /** Set for words; sentences have no examples of their own. */
-  wordId: number | null;
+  wordId: WordId | null;
 }) {
   const [examples, setExamples] = useState<WordExample[] | null>(null);
   const [loading, setLoading] = useState(false);

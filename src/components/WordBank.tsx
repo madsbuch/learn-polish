@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Button, Inline, Spinner, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { GoalHelp, Phrase } from "../lib/types";
+import type { GoalHelp, LessonId, Phrase } from "../lib/types";
 
 /** True when the phrase is already in the message being written. */
 function used(draft: string, phrase: Phrase): boolean {
@@ -20,7 +20,7 @@ export function WordBank({
   draft,
   onUse,
 }: {
-  lessonId: number;
+  lessonId: LessonId;
   draft: string;
   onUse: (text: string) => void;
 }) {
@@ -43,11 +43,7 @@ export function WordBank({
   return (
     <div className="word-bank" data-open={open}>
       <Inline justify="between" gap={2}>
-        <button
-          className="word-bank__toggle"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
+        <button className="word-bank__toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           <Text variant="eyebrow">Word bank</Text>
           <span aria-hidden="true">{open ? "▾" : "▸"}</span>
         </button>
@@ -98,9 +94,7 @@ export function WordBank({
                   className="word-chip"
                   data-starter={i === 0 || undefined}
                   data-used={done || undefined}
-                  onClick={() =>
-                    onUse(i === 0 ? phrase.pl.replace(/…$/, " ") : phrase.pl)
-                  }
+                  onClick={() => onUse(i === 0 ? phrase.pl.replace(/…$/, " ") : phrase.pl)}
                 >
                   {done ? `✓ ${phrase.pl}` : phrase.pl}
                   <span>{phrase.en}</span>

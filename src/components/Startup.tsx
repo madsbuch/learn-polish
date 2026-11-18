@@ -26,7 +26,9 @@ export function Startup({ steps, onRetry }: { steps: BootStep[]; onRetry: () => 
   const [version, setVersion] = useState("");
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 500);
-    getVersion().then(setVersion).catch(() => {});
+    getVersion()
+      .then(setVersion)
+      .catch(() => {});
     return () => window.clearInterval(timer);
   }, []);
   const failed = steps.some((step) => step.state === "failed");

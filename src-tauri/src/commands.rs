@@ -21,6 +21,8 @@ use crate::keyshare;
 use crate::models::*;
 use crate::songs;
 use crate::stats;
+#[allow(unused_imports)]
+use crate::ids::*;
 
 // ---------------------------------------------------------------------------
 // Setup and settings
@@ -217,7 +219,7 @@ pub async fn get_course_progress(db: State<'_, Db>) -> Result<Vec<CourseProgress
 
 /// Words in one course, or in all of them, whose Polish or English contains
 /// `needle`, in course order. A word in a lesson two courses list is one word.
-fn matching_words(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> Result<Vec<Word>> {
+fn matching_words(conn: &mut Conn, course_id: Option<CourseId>, needle: &str) -> Result<Vec<Word>> {
     let mut query = course_words::table
         .inner_join(lessons::table)
         .order((course_words::course_id, course_words::ord))
@@ -239,7 +241,7 @@ fn matching_words(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> Resu
     }
     let mut seen = std::collections::HashSet::new();
     Ok(query
-        .load::<(i64, String, String, String, i64, String)>(conn)?
+        .load::<(WordId, String, String, String, LessonId, String)>(conn)?
         .into_iter()
         .filter(|row| seen.insert(row.0))
         .map(|(id, pl, meaning, pos, lesson_id, lesson)| Word { id, pl, meaning, pos, lesson_id, lesson })
@@ -247,7 +249,7 @@ fn matching_words(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> Resu
 }
 
 /// The same for sentences.
-fn matching_sentences(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> Result<Vec<Sentence>> {
+fn matching_sentences(conn: &mut Conn, course_id: Option<CourseId>, needle: &str) -> Result<Vec<Sentence>> {
     let mut query = course_sentences::table
         .inner_join(lessons::table)
         .order((course_sentences::course_id, course_sentences::ord))
@@ -268,7 +270,7 @@ fn matching_sentences(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> 
     }
     let mut seen = std::collections::HashSet::new();
     Ok(query
-        .load::<(i64, String, String, i64, String)>(conn)?
+        .load::<(SentenceId, String, String, LessonId, String)>(conn)?
         .into_iter()
         .filter(|row| seen.insert(row.0))
         .map(|(id, pl, meaning, lesson_id, lesson)| Sentence { id, pl, meaning, lesson_id, lesson })
@@ -276,20 +278,20 @@ fn matching_sentences(conn: &mut Conn, course_id: Option<i64>, needle: &str) -> 
 }
 
 /// The query behind [`browse_words`], callable without Tauri (tests).
-pub fn browse_words_in(conn: &mut Conn, course_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
+pub fn browse_words_in(conn: &mut Conn, course_id: Option<CourseId>, query: String, limit: i64) -> Result<Vec<Word>> {
     let mut words = matching_words(conn, course_id, query.trim())?;
     words.truncate(crate::convert::index(limit.clamp(1, 500)));
     Ok(words)
 }
 
 #[tauri::command]
-pub async fn browse_words(db: State<'_, Db>, course_id: Option<i64>, query: String, limit: i64) -> Result<Vec<Word>> {
+pub async fn browse_words(db: State<'_, Db>, course_id: Option<CourseId>, query: String, limit: i64) -> Result<Vec<Word>> {
     browse_words_in(&mut db.lock(), course_id, query, limit)
 }
 
 /// One catalogue page: words and sentences matching a search, plus how many
 /// matched in total so the UI can say what it is not showing.
-pub fn browse_catalogue_in(conn: &mut Conn, course_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
+pub fn browse_catalogue_in(conn: &mut Conn, course_id: Option<CourseId>, query: String, limit: i64) -> Result<CataloguePage> {
     let limit = crate::convert::index(limit.clamp(1, 1000));
     let mut words = matching_words(conn, course_id, query.trim())?;
     let mut sentences = matching_sentences(conn, course_id, query.trim())?;
@@ -300,17 +302,17 @@ pub fn browse_catalogue_in(conn: &mut Conn, course_id: Option<i64>, query: Strin
 }
 
 #[tauri::command]
-pub async fn browse_catalogue(db: State<'_, Db>, course_id: Option<i64>, query: String, limit: i64) -> Result<CataloguePage> {
+pub async fn browse_catalogue(db: State<'_, Db>, course_id: Option<CourseId>, query: String, limit: i64) -> Result<CataloguePage> {
     browse_catalogue_in(&mut db.lock(), course_id, query, limit)
 }
 
 /// A course's sentences, in order.
-pub fn browse_sentences_in(conn: &mut Conn, course_id: i64) -> Result<Vec<Sentence>> {
+pub fn browse_sentences_in(conn: &mut Conn, course_id: CourseId) -> Result<Vec<Sentence>> {
     matching_sentences(conn, Some(course_id), "")
 }
 
 #[tauri::command]
-pub async fn browse_sentences(db: State<'_, Db>, course_id: i64) -> Result<Vec<Sentence>> {
+pub async fn browse_sentences(db: State<'_, Db>, course_id: CourseId) -> Result<Vec<Sentence>> {
     browse_sentences_in(&mut db.lock(), course_id)
 }
 

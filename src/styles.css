@@ -1479,3 +1479,25 @@ html.scanning #root {
   padding: var(--space-8) var(--gutter);
   background: var(--bg);
 }
+
+/* A title shown in place of an id (ls_…): see IdChip. */
+.id-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+  padding: 0 0.4em;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--line-soft);
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+button.id-chip {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.id-chip[data-missing] {
+  opacity: 0.6;
+  font-style: italic;
+}

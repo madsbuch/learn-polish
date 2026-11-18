@@ -28,8 +28,7 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/lessons";
-import type { Assessment } from "../lib/types";
-
+import type { Assessment, CheckinId, LessonId, SongId } from "../lib/types";
 
 /** A writing lesson's situation and goals. */
 export interface Writing {
@@ -68,22 +67,22 @@ export function CheckIn({
   onClose,
   onFinished,
 }: {
-  lessonId: number;
+  lessonId: LessonId;
   /** For a listening lesson: its song, playable during the check-in. */
-  songId: number | null;
+  songId: SongId | null;
   /** For a writing lesson: the conversation is with a partner, in Polish. */
   writing?: Writing | null;
   title: string;
   onClose: () => void;
   /** The verdict is in; `first` is true when it earned today's streak. */
-  onFinished: (first: boolean, checkinId: number, assessment: Assessment) => void;
+  onFinished: (first: boolean, checkinId: CheckinId, assessment: Assessment) => void;
 }) {
-  const [checkinId, setCheckinId] = useState<number | null>(null);
+  const [checkinId, setCheckinId] = useState<CheckinId | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const stream = useAiStream();
   const live = stream.text;
   // Busy from the start: the examiner opens with the first question.
-  const busy = stream.streaming || checkinId === null && !stream.error;
+  const busy = stream.streaming || (checkinId === null && !stream.error);
   const [draft, setDraft] = useState("");
   const error = stream.error;
   const [assessment, setAssessment] = useState<Assessment | null>(null);
@@ -192,7 +191,12 @@ export function CheckIn({
       }
       footer={
         assessment ? (
-          <Button variant="primary" size="lg" wide onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}>
+          <Button
+            variant="primary"
+            size="lg"
+            wide
+            onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}
+          >
             Done
           </Button>
         ) : (
@@ -214,9 +218,7 @@ export function CheckIn({
         <Stack gap={2}>
           <Banner tone="error">{error}</Banner>
           {checkinId === null ? (
-            <Button onClick={() => void exchange((streamId) => api.checkinStart(lessonId, streamId))}>
-              Try again
-            </Button>
+            <Button onClick={() => void exchange((streamId) => api.checkinStart(lessonId, streamId))}>Try again</Button>
           ) : null}
         </Stack>
       ) : null}
@@ -316,18 +318,12 @@ export function CheckIn({
                 </Inline>
               }
             />
-            <ListItem
-              title={writing ? "How it went" : "What the examiner said"}
-              subtitle={assessment.summary}
-            />
+            <ListItem title={writing ? "How it went" : "What the examiner said"} subtitle={assessment.summary} />
             {assessment.strengths.length > 0 ? (
               <ListItem title="Strong" subtitle={assessment.strengths.join(" · ")} />
             ) : null}
             {assessment.toReview.length > 0 ? (
-              <ListItem
-                title={writing ? "Corrections" : "Go over again"}
-                subtitle={assessment.toReview.join(" · ")}
-              />
+              <ListItem title={writing ? "Corrections" : "Go over again"} subtitle={assessment.toReview.join(" · ")} />
             ) : null}
             <ListItem title="Next check-in" subtitle={dayToDate(assessment.nextDueDay)} />
           </List>

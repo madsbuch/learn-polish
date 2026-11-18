@@ -50,7 +50,10 @@ export function XpDayScreen({ day, onBack }: { day: number; onBack: () => void }
   const [data, setData] = useState<XpDay | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.xpDay(day).then(setData).catch((cause) => setError(errorMessage(cause)));
+    api
+      .xpDay(day)
+      .then(setData)
+      .catch((cause) => setError(errorMessage(cause)));
   }, [day]);
 
   return (
@@ -71,9 +74,9 @@ export function XpDayScreen({ day, onBack }: { day: number; onBack: () => void }
           title="What earned it"
           info={
             <p>
-              Each go at a lesson, drill or conversation, in order. Open one to see every answer: right
-              ones earn XP (harder exercises more, new items a little extra), mistakes and cards you
-              only read earn nothing, and extra practice earns half.
+              Each go at a lesson, drill or conversation, in order. Open one to see every answer: right ones earn XP
+              (harder exercises more, new items a little extra), mistakes and cards you only read earn nothing, and
+              extra practice earns half.
             </p>
           }
         >

@@ -6,12 +6,14 @@ use diesel::prelude::*;
 use serde::Serialize;
 
 use crate::schema::{conversation_lines, courses};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 #[derive(Debug, Clone, Serialize, Queryable, Selectable)]
 #[diesel(table_name = courses, check_for_backend(diesel::sqlite::Sqlite))]
 #[serde(rename_all = "camelCase")]
 pub struct Course {
-    pub id: i64,
+    pub id: CourseId,
     pub ord: i64,
     pub slug: String,
     /// Always "course" now (older databases told built-in courses from
@@ -30,22 +32,22 @@ pub struct Course {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Word {
-    pub id: i64,
+    pub id: WordId,
     pub pl: String,
     pub meaning: String,
     pub pos: String,
     /// The drill it belongs to, and that drill's title.
-    pub lesson_id: i64,
+    pub lesson_id: LessonId,
     pub lesson: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sentence {
-    pub id: i64,
+    pub id: SentenceId,
     pub pl: String,
     pub meaning: String,
-    pub lesson_id: i64,
+    pub lesson_id: LessonId,
     pub lesson: String,
 }
 
@@ -83,7 +85,8 @@ pub struct Exercise {
     pub kind: String,
     /// word | sentence | dialogue | set (several items at once, not scheduled)
     pub item_kind: String,
-    pub item_id: i64,
+    /// The word, sentence or lesson it is about (a TypeID).
+    pub item_id: String,
     pub is_new: bool,
     /// What the learner is shown.
     pub prompt: String,
@@ -103,9 +106,9 @@ pub struct Exercise {
     /// Memory cards: the Polish/English pairs to find.
     pub pairs: Vec<Pair>,
     /// The item's picture (a file id), when it has one.
-    pub image: Option<i64>,
+    pub image: Option<FileId>,
     /// Picture lessons: each option's picture, in the order of `options`.
-    pub option_images: Vec<Option<i64>>,
+    pub option_images: Vec<Option<FileId>>,
     /// Dialogue gaps: the conversation just before the gap, oldest first —
     /// enough to know where you are without remembering the whole script.
     pub context: Vec<DialogueLine>,
@@ -128,7 +131,7 @@ pub struct Pair {
     pub pl: String,
     pub en: String,
     /// Picture lessons: the card shows this picture instead of the English.
-    pub image: Option<i64>,
+    pub image: Option<FileId>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -145,7 +148,7 @@ pub struct SessionPlan {
     /// True when today's session has already been finished.
     pub already_completed: bool,
     /// The drill lesson this session practises.
-    pub lesson_id: i64,
+    pub lesson_id: LessonId,
     /// Done before and not due: extra practice — half XP, schedule unchanged.
     pub extra: bool,
 }
@@ -187,7 +190,7 @@ pub struct CourseProgress {
     /// Lessons done at least once.
     pub started_lessons: i64,
     /// The course's picture: a file id, shown through the media protocol.
-    pub image_file_id: Option<i64>,
+    pub image_file_id: Option<FileId>,
     /// Active, completed or mastered, and how far along.
     #[serde(flatten)]
     pub status: crate::courses::CourseStatus,
@@ -277,8 +280,8 @@ pub struct Settings {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
-    pub id: i64,
-    pub conversation_id: i64,
+    pub id: MessageId,
+    pub conversation_id: ConversationId,
     pub role: String,
     pub content: String,
     /// What the tutor did in the app during this turn.
@@ -289,7 +292,7 @@ pub struct ChatMessage {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Conversation {
-    pub id: i64,
+    pub id: ConversationId,
     pub title: String,
     /// The last thing said, shortened, for the list.
     pub preview: String,
@@ -315,13 +318,13 @@ pub struct TutorAction {
     /// One line for the learner, e.g. "Created “Colours” — 24 words".
     pub label: String,
     #[serde(default)]
-    pub course_id: Option<i64>,
+    pub course_id: Option<CourseId>,
     /// Set when the action is about a song (one the tutor started making).
     #[serde(default)]
-    pub song_id: Option<i64>,
+    pub song_id: Option<SongId>,
     /// Set when the action is about a lesson.
     #[serde(default)]
-    pub lesson_id: Option<i64>,
+    pub lesson_id: Option<LessonId>,
 }
 
 #[derive(Debug, Clone, Serialize)]

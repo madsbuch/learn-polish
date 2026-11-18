@@ -4,10 +4,11 @@ import { Button, Inline, Section, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
-import type { LessonDetail } from "../lib/types";
+import type { LessonDetail, WordId } from "../lib/types";
 import { SpeakButton } from "./ui";
 import { onEvent } from "../lib/events";
 import { z } from "zod";
+import { LessonIdSchema } from "../lib/types";
 
 /**
  * A picture lesson's pictures, one per word. Each can be drawn again or
@@ -17,13 +18,13 @@ import { z } from "zod";
 export function WordPictures({ lesson, onChanged }: { lesson: LessonDetail; onChanged: () => void }) {
   const words = lesson.wordPictures;
   const missing = words.filter((w) => w.image === null).length;
-  const [busy, setBusy] = useState<number | "all" | null>(null);
+  const [busy, setBusy] = useState<WordId | "all" | null>(null);
   const [waiting, setWaiting] = useState(false);
 
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
-    const off = onEvent(z.object({ lessonId: z.number() }), "pictures://word", (event) => {
+    const off = onEvent(z.object({ lessonId: LessonIdSchema }), "pictures://word", (event) => {
       if (event.payload.lessonId === lesson.id) changed.current();
     });
     return () => {
@@ -50,7 +51,7 @@ export function WordPictures({ lesson, onChanged }: { lesson: LessonDetail; onCh
     }
   }
 
-  async function act(wordId: number, run: () => Promise<unknown>) {
+  async function act(wordId: WordId, run: () => Promise<unknown>) {
     setBusy(wordId);
     try {
       await run();

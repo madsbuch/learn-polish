@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { SlowButton, SpeakButton } from "./ui";
+import { IdChip } from "./IdChip";
+import { TYPE_ID } from "../lib/ids";
 
 /**
  * A small markdown renderer for AI answers.
@@ -44,7 +46,14 @@ function renderBlocks(source: string): ReactNode[] {
         // Markdown h1/h2 inside a card should not dwarf the screen's own
         // heading, so everything shifts down a couple of levels visually.
         const shifted = block.level + 2;
-        const Tag = shifted <= 3 ? "h3" : shifted === 4 ? "h4" : shifted === 5 ? "h5" : "h6";
+        const Tag =
+          shifted <= 3
+            ? "h3"
+            : shifted === 4
+              ? "h4"
+              : shifted === 5
+                ? "h5"
+                : "h6";
         return (
           <Tag key={index} className={`md-h md-h${block.level}`}>
             {renderInline(block.text)}
@@ -55,7 +64,11 @@ function renderBlocks(source: string): ReactNode[] {
         return <p key={index}>{renderInline(block.text)}</p>;
       case "code":
         return (
-          <pre key={index} className="md-pre" data-language={block.language || undefined}>
+          <pre
+            key={index}
+            className="md-pre"
+            data-language={block.language || undefined}
+          >
             <code>{block.text}</code>
           </pre>
         );
@@ -169,7 +182,11 @@ function parseBlocks(source: string): Block[] {
     }
 
     // Display math: $$…$$ or \[…\], on one line or over several.
-    const opener = line.trim().startsWith("$$") ? "$$" : line.trim().startsWith("\\[") ? "\\[" : null;
+    const opener = line.trim().startsWith("$$")
+      ? "$$"
+      : line.trim().startsWith("\\[")
+        ? "\\["
+        : null;
     if (opener) {
       const closer = opener === "$$" ? "$$" : "\\]";
       flush();
@@ -216,7 +233,11 @@ function parseBlocks(source: string): Block[] {
     const heading = HEADING.exec(line);
     if (heading) {
       flush();
-      blocks.push({ kind: "heading", level: heading[1].length, text: heading[2] });
+      blocks.push({
+        kind: "heading",
+        level: heading[1].length,
+        text: heading[2],
+      });
       continue;
     }
 
@@ -260,10 +281,19 @@ function parseBlocks(source: string): Block[] {
 
 /** Ordered so that longer markers are tried before their prefixes. */
 const INLINE = [
+  // A TypeID (ls_…) is shown as the title of what it names. First, so the
+  // underscore inside it is never read as emphasis.
+  {
+    pattern: new RegExp(`(${TYPE_ID.source})`),
+    render: (body: string, key: number) => <IdChip key={key} id={body} />,
+  },
   // A small player the agents can offer: [[say: rozgrzewka]], or
   // [[say:m: Dzień dobry]] for a man's voice. First, so nothing inside it
   // is taken for emphasis.
-  { pattern: /\[\[say:\s*([^\]\n]+?)\s*\]\]/, render: (body: string, key: number) => <Say key={key} body={body} /> },
+  {
+    pattern: /\[\[say:\s*([^\]\n]+?)\s*\]\]/,
+    render: (body: string, key: number) => <Say key={key} body={body} />,
+  },
   {
     pattern: /`([^`]+)`/,
     render: (body: string, key: number) => (
@@ -274,26 +304,58 @@ const INLINE = [
   },
   // Inline math. `$` must hug its content ("$3 + 5$"), so prices like "$5 or
   // $6" stay text.
-  { pattern: /\$(?!\s)([^$\n]+?)(?<!\s)\$/, render: (body: string, key: number) => <MathTex key={key} tex={body} /> },
-  { pattern: /\\\((.+?)\\\)/, render: (body: string, key: number) => <MathTex key={key} tex={body} /> },
+  {
+    pattern: /\$(?!\s)([^$\n]+?)(?<!\s)\$/,
+    render: (body: string, key: number) => <MathTex key={key} tex={body} />,
+  },
+  {
+    pattern: /\\\((.+?)\\\)/,
+    render: (body: string, key: number) => <MathTex key={key} tex={body} />,
+  },
   {
     pattern: /\*\*([^*]+)\*\*/,
-    render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong>,
+    render: (body: string, key: number) => (
+      <strong key={key}>{renderInline(body)}</strong>
+    ),
   },
-  { pattern: /__([^_]+)__/, render: (body: string, key: number) => <strong key={key}>{renderInline(body)}</strong> },
-  { pattern: /\*([^*\n]+)\*/, render: (body: string, key: number) => <em key={key}>{renderInline(body)}</em> },
-  { pattern: /_([^_\n]+)_/, render: (body: string, key: number) => <em key={key}>{renderInline(body)}</em> },
+  {
+    pattern: /__([^_]+)__/,
+    render: (body: string, key: number) => (
+      <strong key={key}>{renderInline(body)}</strong>
+    ),
+  },
+  {
+    pattern: /\*([^*\n]+)\*/,
+    render: (body: string, key: number) => (
+      <em key={key}>{renderInline(body)}</em>
+    ),
+  },
+  {
+    pattern: /_([^_\n]+)_/,
+    render: (body: string, key: number) => (
+      <em key={key}>{renderInline(body)}</em>
+    ),
+  },
 ] as const;
 
 function renderInline(text: string): ReactNode {
   // Find whichever marker appears first, render around it, then recurse.
-  let best: { index: number; length: number; body: string; render: (body: string, key: number) => ReactNode } | null =
-    null;
+  let best: {
+    index: number;
+    length: number;
+    body: string;
+    render: (body: string, key: number) => ReactNode;
+  } | null = null;
 
   for (const { pattern, render } of INLINE) {
     const match = pattern.exec(text);
     if (match && (best === null || match.index < best.index)) {
-      best = { index: match.index, length: match[0].length, body: match[1], render };
+      best = {
+        index: match.index,
+        length: match[0].length,
+        body: match[1],
+        render,
+      };
     }
   }
 
@@ -325,7 +387,14 @@ function MathTex({ tex, display = false }: { tex: string; display?: boolean }) {
     katex
       .then((k) => {
         if (!current) return;
-        setMathml(k.renderToString(tex, { output: "mathml", displayMode: display, throwOnError: true, trust: false }));
+        setMathml(
+          k.renderToString(tex, {
+            output: "mathml",
+            displayMode: display,
+            throwOnError: true,
+            trust: false,
+          }),
+        );
       })
       .catch(() => current && setMathml(null));
     return () => {
@@ -335,7 +404,10 @@ function MathTex({ tex, display = false }: { tex: string; display?: boolean }) {
   if (mathml === null) return <code className="md-code">{tex}</code>;
   const Tag = display ? "div" : "span";
   return (
-    <Tag className={display ? "md-math md-math-display" : "md-math"} dangerouslySetInnerHTML={{ __html: mathml }} />
+    <Tag
+      className={display ? "md-math md-math-display" : "md-math"}
+      dangerouslySetInnerHTML={{ __html: mathml }}
+    />
   );
 }
 
@@ -350,7 +422,12 @@ function Say({ body }: { body: string }) {
   return (
     <span className="md-say" data-sentence={sentence || undefined}>
       {sentence ? <em>{text}</em> : <strong>{text}</strong>}
-      <SpeakButton text={text} gender={gender} size="sm" label={`Listen to ${text}`} />
+      <SpeakButton
+        text={text}
+        gender={gender}
+        size="sm"
+        label={`Listen to ${text}`}
+      />
       <SlowButton text={text} gender={gender} size="sm" />
     </span>
   );

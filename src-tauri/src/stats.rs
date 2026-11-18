@@ -9,6 +9,8 @@ use crate::schema::{achievements, lessons, checkins, course_lessons, course_sent
 use crate::error::Result;
 use crate::models::{Achievement, DayStat, Stats, CourseProgress};
 use crate::session;
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// About ten minutes: a drill and a conversation.
 /// Streak freezes kept at most; one is earned with every seven-day run.
@@ -337,14 +339,14 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
 /// (a lesson two closed courses list counts once).
 pub fn mastered_summary(conn: &mut Conn) -> Result<crate::models::MasteredSummary> {
     let closed = courses::table.filter(courses::closed_at.is_not_null());
-    let lesson_ids: std::collections::HashSet<i64> = course_lessons::table
+    let lesson_ids: std::collections::HashSet<LessonId> = course_lessons::table
         .inner_join(courses::table)
         .filter(courses::closed_at.is_not_null())
         .select(course_lessons::lesson_id)
-        .load::<i64>(conn)?
+        .load::<LessonId>(conn)?
         .into_iter()
         .collect();
-    let ids: Vec<i64> = lesson_ids.iter().copied().collect();
+    let ids: Vec<LessonId> = lesson_ids.iter().copied().collect();
     Ok(crate::models::MasteredSummary {
         courses: closed.count().get_result(conn)?,
         lessons: crate::convert::count(ids.len()),
@@ -353,28 +355,31 @@ pub fn mastered_summary(conn: &mut Conn) -> Result<crate::models::MasteredSummar
 }
 
 pub fn course_progress(conn: &mut Conn) -> Result<Vec<CourseProgress>> {
-    let ids: Vec<i64> = courses::table.order(crate::lessons::course_order()).select(courses::id).load(conn)?;
-    let seen = |kind: &'static str| reviews::table.filter(reviews::kind.eq(kind)).select(reviews::item_id);
+    let ids: Vec<CourseId> = courses::table.order(crate::lessons::course_order()).select(courses::id).load(conn)?;
+    // Has a review of this kind, at least this many days apart. (A review's
+    // item is a word's or a sentence's id: compared as text, in SQL.)
+    let seen = |kind: &'static str, interval: i64| {
+        diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+            "id IN (SELECT item_id FROM reviews WHERE kind = '{kind}' AND interval >= {interval})"
+        ))
+    };
     ids.into_iter()
         .map(|id| {
             let course = session::load_course(conn, id)?;
             let course_words = course_words::table.filter(course_words::course_id.eq(id));
             let course_sentences = course_sentences::table.filter(course_sentences::course_id.eq(id));
             let listed = course_lessons::table.filter(course_lessons::course_id.eq(id));
-            let image_file_id: Option<i64> = courses::table.find(id).select(courses::image_file_id).first(conn)?;
+            let image_file_id: Option<FileId> = courses::table.find(id).select(courses::image_file_id).first(conn)?;
             Ok(CourseProgress {
                 status: crate::courses::status(conn, id)?,
                 image_file_id,
                 course,
                 total_words: course_words.count().get_result(conn)?,
-                seen_words: course_words.filter(course_words::id.eq_any(seen("word"))).count().get_result(conn)?,
-                mastered_words: course_words
-                    .filter(course_words::id.eq_any(seen("word").filter(reviews::interval.ge(MASTERY_INTERVAL))))
-                    .count()
-                    .get_result(conn)?,
+                seen_words: course_words.filter(seen("word", 0)).count().get_result(conn)?,
+                mastered_words: course_words.filter(seen("word", MASTERY_INTERVAL)).count().get_result(conn)?,
                 total_sentences: course_sentences.count().get_result(conn)?,
                 seen_sentences: course_sentences
-                    .filter(course_sentences::id.eq_any(seen("sentence")))
+                    .filter(seen("sentence", 0))
                     .count()
                     .get_result(conn)?,
                 total_lessons: listed.count().get_result(conn)?,

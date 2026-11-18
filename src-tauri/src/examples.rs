@@ -11,6 +11,8 @@ use crate::ai::Wire;
 use crate::db::{Conn, Db};
 use crate::error::Result;
 use crate::schema::{sentences, word_examples, words};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Example {
@@ -21,7 +23,7 @@ pub struct Example {
 /// Two short sentences using the word, with their meaning. Empty when none
 /// can be had (no key and no course sentence uses it).
 #[tauri::command]
-pub async fn word_examples(db: State<'_, Db>, word_id: i64) -> Result<Vec<Example>> {
+pub async fn word_examples(db: State<'_, Db>, word_id: WordId) -> Result<Vec<Example>> {
     let (word, stored, ai) = {
         let mut guard = db.lock();
         let conn = &mut *guard;

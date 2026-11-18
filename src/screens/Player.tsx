@@ -37,6 +37,7 @@ import {
   usePlayer,
 } from "../lib/player";
 import { toast } from "../lib/toast";
+import type { SongId } from "../lib/types";
 
 /**
  * The player, on its own screen: what is playing, the controls, the lyrics
@@ -48,7 +49,7 @@ export function Player({
 }: {
   onClose: () => void;
   /** Shows the song's page in the music library. */
-  onOpenSong: (songId: number) => void;
+  onOpenSong: (songId: SongId) => void;
 }) {
   const player = usePlayer();
   const item = currentItem(player);
@@ -236,11 +237,7 @@ export function Player({
 
       {picking ? <CastPicker fallbackQueue={player.queue} onClose={() => setPicking(false)} /> : null}
       {adding ? (
-        <AddToPlaylist
-          trackId={item.track.id}
-          onClose={() => setAdding(false)}
-          onDone={(text) => toast(text)}
-        />
+        <AddToPlaylist trackId={item.track.id} onClose={() => setAdding(false)} onDone={(text) => toast(text)} />
       ) : null}
     </Screen>
   );

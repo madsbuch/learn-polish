@@ -93,9 +93,7 @@ export function PodcastComposer({
   }
 
   const ready =
-    Boolean(writer) &&
-    settings.hasApiKey &&
-    (news || topic.trim() !== "" || (!story && articles.length > 0));
+    Boolean(writer) && settings.hasApiKey && (news || topic.trim() !== "" || (!story && articles.length > 0));
 
   return (
     <Screen title="New podcast" onBack={onCancel}>
@@ -118,7 +116,9 @@ export function PodcastComposer({
               <input
                 value={topic}
                 placeholder={
-                  news ? "e.g. housing, cycling, football" : "e.g. the Wieliczka Salt Mine, octopuses, a day at the bakery"
+                  news
+                    ? "e.g. housing, cycling, football"
+                    : "e.g. the Wieliczka Salt Mine, octopuses, a day at the bakery"
                 }
                 onChange={(event) => setTopic(event.target.value)}
               />
@@ -157,11 +157,10 @@ export function PodcastComposer({
         title="Written from"
         info={
           <p>
-            Facts come from English Wikipedia articles — up to five. Pick them, or leave the list
-            empty to use the best match for the subject. The articles are kept with the episode, so
-            you can read them afterwards in the app (in Polish too). Today's news comes from the
-            news feeds of TVN24, Polsat News and RMF24, told only as far as the headlines and summaries go. A story is
-            made up, from no articles.
+            Facts come from English Wikipedia articles — up to five. Pick them, or leave the list empty to use the best
+            match for the subject. The articles are kept with the episode, so you can read them afterwards in the app
+            (in Polish too). Today's news comes from the news feeds of TVN24, Polsat News and RMF24, told only as far as
+            the headlines and summaries go. A story is made up, from no articles.
           </p>
         }
       >
@@ -178,8 +177,8 @@ export function PodcastComposer({
             />
             {news ? (
               <Text variant="small" tone="dim">
-                What's going on in Poland: the latest stories from TVN24, Polsat News and RMF24, with
-                Wikipedia for background. The stories are listed with the episode.
+                What's going on in Poland: the latest stories from TVN24, Polsat News and RMF24, with Wikipedia for
+                background. The stories are listed with the episode.
               </Text>
             ) : story ? (
               <Text variant="small" tone="dim">
@@ -330,8 +329,8 @@ export function PodcastComposer({
           Make the podcast
         </Button>
         <Text variant="caption" tone="faint" align="center">
-          Written by {writer || "—"} and read aloud in the background — a few minutes. You can lock the
-          phone or switch apps meanwhile.
+          Written by {writer || "—"} and read aloud in the background — a few minutes. You can lock the phone or switch
+          apps meanwhile.
         </Text>
       </Stack>
     </Screen>

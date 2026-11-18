@@ -33,7 +33,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { lessonType } from "../lib/lessonTypes";
 import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
-import type { LessonDetail, CourseProgress, WikiSource } from "../lib/types";
+import type { CourseProgress, LessonDetail, LessonId, WikiSource } from "../lib/types";
 
 const RESULT_TEXT = {
   pass: "Passed",
@@ -53,11 +53,11 @@ export function LessonPage({
   onCheckIn,
   onDeleted,
 }: {
-  lessonId: number;
+  lessonId: LessonId;
   today: number;
   onBack: () => void;
-  onStartDrill: (lessonId: number) => void;
-  onCheckIn: (lessonId: number) => void;
+  onStartDrill: (lessonId: LessonId) => void;
+  onCheckIn: (lessonId: LessonId) => void;
   onDeleted: () => void;
 }) {
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
@@ -90,7 +90,7 @@ export function LessonPage({
   // Opening a lesson downloads its audio at normal speed in the background
   // (conversation first, in each speaker's voice), so every 🔊 here plays at
   // once. Slow versions are made only when 🐢 asks for one.
-  const prefetched = useRef<number | null>(null);
+  const prefetched = useRef<LessonId | null>(null);
   useEffect(() => {
     if (!lesson || prefetched.current === lesson.id) return;
     prefetched.current = lesson.id;

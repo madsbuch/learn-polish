@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { Avatar, Button, Card, List, ListItem, Section, Segmented, SettingRow, Spinner, Stack, Switch, Text } from "../design";
+import {
+  Avatar,
+  Button,
+  Card,
+  List,
+  ListItem,
+  Section,
+  Segmented,
+  SettingRow,
+  Spinner,
+  Stack,
+  Switch,
+  Text,
+} from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import type { PodcastAudio, Song, WikiSource } from "../lib/types";
@@ -35,8 +48,7 @@ export function EpisodeSources({ song, onRead }: { song: Song; onRead: (source: 
         title="News"
         info={
           <p>
-            The stories this episode tells, from Polish news outlets. They belong to their outlets,
-            so they open there.
+            The stories this episode tells, from Polish news outlets. They belong to their outlets, so they open there.
           </p>
         }
       >
@@ -44,7 +56,14 @@ export function EpisodeSources({ song, onRead }: { song: Song; onRead: (source: 
           {stories.map((story) => (
             <ListItem
               key={story.url}
-              leading={<Avatar>{story.outlet.replace(/^www\./, "").slice(0, 2).toUpperCase()}</Avatar>}
+              leading={
+                <Avatar>
+                  {story.outlet
+                    .replace(/^www\./, "")
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </Avatar>
+              }
               title={story.title}
               subtitle={[story.outlet.replace(/^www\./, ""), story.date].filter(Boolean).join(" · ")}
               label={`Read “${story.title}” on ${story.outlet}`}
@@ -65,8 +84,8 @@ export function EpisodeSources({ song, onRead }: { song: Song; onRead: (source: 
         title="Sources"
         info={
           <p>
-            The episode is written from these Wikipedia articles. Read them here — in Polish too,
-            when Polish Wikipedia has the article. The reader can also open them on Wikipedia.
+            The episode is written from these Wikipedia articles. Read them here — in Polish too, when Polish Wikipedia
+            has the article. The reader can also open them on Wikipedia.
           </p>
         }
       >
@@ -128,10 +147,7 @@ export function PodcastSound({ song, onChanged }: { song: Song; onChanged: () =>
   const [audio, setAudio] = useState<PodcastAudio>(saved);
   const [busy, setBusy] = useState(false);
   // A new version of the episode (or another episode) resets the controls.
-  useEffect(
-    () => setAudio(saved),
-    [song.id, saved.english, saved.pause, saved.repeats, saved.slow, saved.voices],
-  );
+  useEffect(() => setAudio(saved), [song.id, saved.english, saved.pause, saved.repeats, saved.slow, saved.voices]);
 
   const cast = song.podcast?.cast ?? [];
   const nearest = PAUSES.reduce((best, p) => (Math.abs(p - audio.pause) < Math.abs(best - audio.pause) ? p : best));
@@ -142,11 +158,10 @@ export function PodcastSound({ song, onChanged }: { song: Song; onChanged: () =>
       title="Sound"
       info={
         <p>
-          Try what helps you most. A pause before the Polish gives you time to say it yourself
-          first; hearing it twice, or slowly, makes it easier to catch. Without the English you
-          hear only Polish, with the meaning in the lyrics. Making the audio again reuses every
-          sentence already read, so it is quick and free — only a new speed or voice has new
-          sentences read.
+          Try what helps you most. A pause before the Polish gives you time to say it yourself first; hearing it twice,
+          or slowly, makes it easier to catch. Without the English you hear only Polish, with the meaning in the lyrics.
+          Making the audio again reuses every sentence already read, so it is quick and free — only a new speed or voice
+          has new sentences read.
         </p>
       }
     >
@@ -228,7 +243,9 @@ export function PodcastSound({ song, onChanged }: { song: Song; onChanged: () =>
               label="Cast"
               description={cast
                 .map((member) =>
-                  [member.name, [member.character, member.voice].filter(Boolean).join(", ")].filter(Boolean).join(" — "),
+                  [member.name, [member.character, member.voice].filter(Boolean).join(", ")]
+                    .filter(Boolean)
+                    .join(" — "),
                 )
                 .join(" · ")}
             />

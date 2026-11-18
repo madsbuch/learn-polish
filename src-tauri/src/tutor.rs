@@ -29,6 +29,8 @@ use crate::session;
 use crate::songs;
 use crate::playlists;
 use crate::stats;
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// How much of the conversation is replayed to the model.
 const HISTORY_LIMIT: i64 = 30;
@@ -172,8 +174,8 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     };
     let due: Vec<String> = overview.due.iter().take(15).map(line).collect();
 
-    let listed: Vec<i64> = course_lessons::table.select(course_lessons::course_id).load(conn)?;
-    let all: Vec<(i64, String, String, Option<i64>, Option<String>)> = courses_table::table
+    let listed: Vec<CourseId> = course_lessons::table.select(course_lessons::course_id).load(conn)?;
+    let all: Vec<(CourseId, String, String, Option<i64>, Option<String>)> = courses_table::table
         .order(crate::lessons::course_order())
         .limit(80)
         .select((
@@ -206,7 +208,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         .collect();
 
     // Every study lesson, with the courses that list it.
-    let mut studies: Vec<(i64, String, String, i64, Vec<(i64, i64, String)>)> = Vec::new();
+    let mut studies: Vec<(LessonId, String, String, i64, Vec<(i64, i64, String)>)> = Vec::new();
     for (id, title, complexity, reps, course_ord, list_ord, course) in course_lessons::table
         .inner_join(lessons_table::table)
         .inner_join(courses_table::table)
@@ -221,7 +223,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
             course_lessons::ord,
             courses_table::title_en,
         ))
-        .load::<(i64, String, String, i64, i64, i64, String)>(conn)?
+        .load::<(LessonId, String, String, i64, i64, i64, String)>(conn)?
     {
         match studies.iter_mut().find(|l| l.0 == id) {
             Some(entry) => entry.4.push((course_ord, list_ord, course)),
@@ -1068,13 +1070,13 @@ impl Outcome {
     fn data(result: Value) -> Self {
         Outcome { result, action: None }
     }
-    fn acted(result: Value, kind: &str, label: String, course_id: Option<i64>) -> Self {
+    fn acted(result: Value, kind: &str, label: String, course_id: Option<CourseId>) -> Self {
         Outcome {
             result,
             action: Some(TutorAction { kind: kind.into(), label, course_id, song_id: None, lesson_id: None }),
         }
     }
-    fn lesson(result: Value, kind: &str, label: String, lesson_id: i64) -> Self {
+    fn lesson(result: Value, kind: &str, label: String, lesson_id: LessonId) -> Self {
         Outcome {
             result,
             action: Some(TutorAction {
@@ -1086,7 +1088,7 @@ impl Outcome {
             }),
         }
     }
-    fn song(result: Value, kind: &str, label: String, song_id: Option<i64>) -> Self {
+    fn song(result: Value, kind: &str, label: String, song_id: Option<SongId>) -> Self {
         Outcome {
             result,
             action: Some(TutorAction { kind: kind.into(), label, course_id: None, song_id, lesson_id: None }),
@@ -1097,7 +1099,7 @@ impl Outcome {
 #[derive(Deserialize)]
 struct CourseArg {
     #[serde(rename = "course_id", alias = "topic_id")]
-    course_id: i64,
+    course_id: CourseId,
 }
 
 #[derive(Deserialize)]
@@ -1117,7 +1119,7 @@ struct CreateArgs {
 #[derive(Deserialize)]
 struct ExtendArgs {
     #[serde(rename = "course_id", alias = "topic_id")]
-    course_id: i64,
+    course_id: CourseId,
     #[serde(default)]
     words: Vec<NewWord>,
     #[serde(default)]
@@ -1129,7 +1131,7 @@ struct ExtendArgs {
 #[derive(Deserialize)]
 struct EditArgs {
     #[serde(rename = "course_id", alias = "topic_id")]
-    course_id: i64,
+    course_id: CourseId,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -1152,32 +1154,32 @@ struct SettingsArgs {
 
 #[derive(Deserialize)]
 struct LessonArg {
-    lesson_id: i64,
+    lesson_id: LessonId,
 }
 
 #[derive(Deserialize)]
 struct MembershipArgs {
-    lesson_id: i64,
-    course_id: i64,
+    lesson_id: LessonId,
+    course_id: CourseId,
 }
 
 #[derive(Deserialize)]
 struct MoveArgs {
-    lesson_id: i64,
-    from_course_id: i64,
-    to_course_id: i64,
+    lesson_id: LessonId,
+    from_course_id: CourseId,
+    to_course_id: CourseId,
 }
 
 #[derive(Deserialize)]
 struct OrderArgs {
-    course_id: i64,
+    course_id: CourseId,
     #[serde(default)]
-    lesson_ids: Vec<i64>,
+    lesson_ids: Vec<LessonId>,
 }
 
 #[derive(Deserialize)]
 struct SourceArg {
-    source_id: i64,
+    source_id: SourceId,
 }
 
 #[derive(Deserialize)]
@@ -1191,7 +1193,7 @@ struct WikiArgs {
     #[serde(default)]
     section: Option<String>,
     #[serde(default)]
-    lesson_id: Option<i64>,
+    lesson_id: Option<LessonId>,
 }
 
 /// A tool call in today's names. Conversations saved before "blocks" became
@@ -1324,7 +1326,7 @@ struct DrillArgs {
     #[serde(default)]
     period_days: Option<i64>,
     #[serde(default, alias = "programme_id", alias = "topic_id")]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
 }
 
 #[derive(Deserialize)]
@@ -1334,19 +1336,19 @@ struct PictureLessonArgs {
     summary: String,
     words: Vec<NewWord>,
     #[serde(default, alias = "topic_id")]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
 }
 
 #[derive(Deserialize)]
 struct ListLessonsArgs {
     which: String,
     #[serde(default, rename = "course_id", alias = "topic_id")]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
 }
 
 #[derive(Deserialize)]
 struct UpdateLessonArgs {
-    lesson_id: i64,
+    lesson_id: LessonId,
     #[serde(default)]
     level: Option<String>,
     #[serde(flatten)]
@@ -1388,11 +1390,11 @@ struct SongArgs {
     about: String,
     /// Where its listening lesson is filed.
     #[serde(default, rename = "course_id", alias = "topic_id")]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
     #[serde(default)]
     requirements: String,
     #[serde(default)]
-    based_on: Option<i64>,
+    based_on: Option<SongId>,
     #[serde(default)]
     chorus_pl: String,
     #[serde(default)]
@@ -1429,7 +1431,7 @@ struct PodcastArgs {
     #[serde(default)]
     length: String,
     #[serde(default)]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
     #[serde(default)]
     voice: String,
     #[serde(default = "yes")]
@@ -1437,12 +1439,12 @@ struct PodcastArgs {
     #[serde(default)]
     requirements: String,
     #[serde(default)]
-    based_on: Option<i64>,
+    based_on: Option<SongId>,
 }
 
 #[derive(Deserialize)]
 struct ReviseSongArgs {
-    song_id: i64,
+    song_id: SongId,
     feedback: String,
 }
 
@@ -1467,7 +1469,7 @@ struct EditSection {
 
 #[derive(Deserialize)]
 struct EditSongArgs {
-    song_id: i64,
+    song_id: SongId,
     title: Option<String>,
     chorus_pl: Option<String>,
     chorus_en: Option<String>,
@@ -1481,16 +1483,16 @@ struct EditSongArgs {
 
 #[derive(Deserialize)]
 struct SingSongArgs {
-    song_id: i64,
+    song_id: SongId,
     #[serde(default = "yes")]
     listening_lesson: bool,
     #[serde(default, alias = "topic_id")]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
 }
 
 #[derive(Deserialize)]
 struct PodcastSoundArgs {
-    podcast_id: i64,
+    podcast_id: SongId,
     pause: Option<f64>,
     repeats: Option<u32>,
     slow: Option<bool>,
@@ -1500,9 +1502,9 @@ struct PodcastSoundArgs {
 
 #[derive(Deserialize)]
 struct ListeningArgs {
-    song_id: i64,
+    song_id: SongId,
     #[serde(default, alias = "topic_id")]
-    course_id: Option<i64>,
+    course_id: Option<CourseId>,
     #[serde(default)]
     complexity: Option<String>,
     #[serde(default)]
@@ -1511,7 +1513,7 @@ struct ListeningArgs {
 
 #[derive(Deserialize)]
 struct SongArg {
-    song_id: i64,
+    song_id: SongId,
 }
 
 /// "female", "male" or "any" — clearer for the model than "f"/"m"/"".
@@ -1524,14 +1526,14 @@ fn singer(vocal_gender: &str) -> &'static str {
 }
 
 /// Which course a song was written from, and where its listening lesson is.
-fn song_placement(conn: &mut Conn, song_id: i64) -> Result<Value> {
-    let course: Option<(i64, String)> = songs_table::table
+fn song_placement(conn: &mut Conn, song_id: SongId) -> Result<Value> {
+    let course: Option<(CourseId, String)> = songs_table::table
         .inner_join(courses_table::table)
         .filter(songs_table::id.eq(song_id))
         .select((courses_table::id, courses_table::title_en))
         .first(conn)
         .optional()?;
-    let lesson: Option<i64> = lessons_table::table
+    let lesson: Option<LessonId> = lessons_table::table
         .filter(lessons_table::song_id.eq(song_id))
         .select(lessons_table::id)
         .first(conn)
@@ -1553,21 +1555,21 @@ fn song_placement(conn: &mut Conn, song_id: i64) -> Result<Value> {
 
 #[derive(Deserialize)]
 struct DeleteSongsArgs {
-    song_ids: Vec<i64>,
+    song_ids: Vec<SongId>,
 }
 
 #[derive(Deserialize)]
 struct PlaylistArgs {
     #[serde(default)]
-    playlist_id: Option<i64>,
+    playlist_id: Option<PlaylistId>,
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    song_ids: Vec<i64>,
+    song_ids: Vec<SongId>,
 }
 
 impl PlaylistArgs {
-    fn id(&self) -> Result<i64> {
+    fn id(&self) -> Result<PlaylistId> {
         self.playlist_id.ok_or_else(|| Error::msg("Give a playlist_id (see list_playlists)."))
     }
 }
@@ -1825,7 +1827,7 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                     args.course_id.ok_or_else(|| Error::msg("Give a course_id."))?,
                 )?,
                 _ => {
-                    let ids: Vec<i64> = lessons_table::table
+                    let ids: Vec<LessonId> = lessons_table::table
                         .filter(lessons_table::lesson_type.eq("study"))
                         .order((lessons_table::ord, lessons_table::id))
                         .select(lessons_table::id)
@@ -2164,25 +2166,25 @@ fn list_courses(conn: &mut Conn) -> Result<Value> {
     Ok(Value::Array(courses))
 }
 
-fn course_detail(conn: &mut Conn, course_id: i64) -> Result<Value> {
+fn course_detail(conn: &mut Conn, course_id: CourseId) -> Result<Value> {
     let course = session::load_course(conn, course_id)?;
-    let rows: Vec<(i64, String, String, String, i64)> = course_words::table
+    let rows: Vec<(WordId, String, String, String, LessonId)> = course_words::table
         .filter(course_words::course_id.eq(course_id))
         .order(course_words::ord)
         .select((course_words::id, course_words::pl, course_words::en, course_words::pos, course_words::lesson_id))
         .load(conn)?;
-    let history: std::collections::HashMap<i64, (i64, i64)> = reviews::table
+    let history: std::collections::HashMap<String, (i64, i64)> = reviews::table
         .filter(reviews::kind.eq("word"))
-        .filter(reviews::item_id.eq_any(rows.iter().map(|r| r.0).collect::<Vec<_>>()))
+        .filter(reviews::item_id.eq_any(rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>()))
         .select((reviews::item_id, reviews::reps, reviews::lapses))
-        .load::<(i64, i64, i64)>(conn)?
+        .load::<(String, i64, i64)>(conn)?
         .into_iter()
         .map(|(id, reps, lapses)| (id, (reps, lapses)))
         .collect();
     let words: Vec<Value> = rows
         .into_iter()
         .map(|(id, pl, en, pos, lesson_id)| {
-            let seen = history.get(&id);
+            let seen = history.get(&id.to_string());
             json!({
                 "pl": pl,
                 "en": en,
@@ -2198,7 +2200,7 @@ fn course_detail(conn: &mut Conn, course_id: i64) -> Result<Value> {
         .filter(course_sentences::course_id.eq(course_id))
         .order(course_sentences::ord)
         .select((course_sentences::pl, course_sentences::en, course_sentences::lesson_id))
-        .load::<(String, String, i64)>(conn)?
+        .load::<(String, String, LessonId)>(conn)?
         .into_iter()
         .map(|(pl, en, lesson_id)| json!({ "pl": pl, "en": en, "lesson_id": lesson_id }))
         .collect();
@@ -2223,10 +2225,10 @@ fn course_detail(conn: &mut Conn, course_id: i64) -> Result<Value> {
 
 fn search(conn: &mut Conn, query: &str) -> Result<Value> {
     let pattern = format!("%{}%", query.trim());
-    let met: HashSet<i64> = reviews::table
+    let met: HashSet<String> = reviews::table
         .filter(reviews::kind.eq("word"))
         .select(reviews::item_id)
-        .load::<i64>(conn)?
+        .load::<String>(conn)?
         .into_iter()
         .collect();
     let mut seen = HashSet::new();
@@ -2243,7 +2245,7 @@ fn search(conn: &mut Conn, query: &str) -> Result<Value> {
             courses_table::id,
             course_words::lesson_id,
         ))
-        .load::<(i64, String, String, String, String, i64, i64)>(conn)?
+        .load::<(WordId, String, String, String, String, CourseId, LessonId)>(conn)?
         .into_iter()
         // A word in a lesson two courses list is one word.
         .filter(|row| seen.insert(row.0))
@@ -2251,7 +2253,7 @@ fn search(conn: &mut Conn, query: &str) -> Result<Value> {
         .map(|(id, pl, en, pos, course, course_id, lesson_id)| {
             json!({
                 "pl": pl, "en": en, "pos": pos, "course": course, "course_id": course_id,
-                "met": met.contains(&id), "lesson_id": lesson_id,
+                "met": met.contains(&id.to_string()), "lesson_id": lesson_id,
             })
         })
         .collect();
@@ -2260,7 +2262,7 @@ fn search(conn: &mut Conn, query: &str) -> Result<Value> {
         .inner_join(courses_table::table)
         .filter(course_sentences::pl.like(&pattern).or(course_sentences::en.like(&pattern)))
         .select((course_sentences::id, course_sentences::pl, course_sentences::en, courses_table::title_en))
-        .load::<(i64, String, String, String)>(conn)?
+        .load::<(SentenceId, String, String, String)>(conn)?
         .into_iter()
         .filter(|row| seen.insert(row.0))
         .take(15)
@@ -2272,7 +2274,7 @@ fn search(conn: &mut Conn, query: &str) -> Result<Value> {
 fn progress(conn: &mut Conn) -> Result<Value> {
     let s = stats::collect(conn)?;
     let hardest: Vec<Value> = words::table
-        .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(reviews::kind.eq("word"))))
+        .inner_join(reviews::table.on(diesel::dsl::sql::<diesel::sql_types::Bool>("reviews.item_id = words.id").and(reviews::kind.eq("word"))))
         .filter(reviews::lapses.gt(0))
         .order((reviews::lapses.desc(), reviews::ease.asc()))
         .limit(15)
@@ -2315,7 +2317,7 @@ fn progress(conn: &mut Conn) -> Result<Value> {
 }
 
 /// A draft as the tutor reads it: everything it can change.
-fn draft_view(id: i64, draft: &songs::SongDraft) -> Value {
+fn draft_view(id: SongId, draft: &songs::SongDraft) -> Value {
     json!({
         "song_id": id,
         "status": "draft — not made yet; sing_song makes it",
@@ -2339,7 +2341,7 @@ fn draft_view(id: i64, draft: &songs::SongDraft) -> Value {
     })
 }
 
-fn draft_outcome(app: &tauri::AppHandle, id: i64, draft: &songs::SongDraft, label: String) -> Outcome {
+fn draft_outcome(app: &tauri::AppHandle, id: SongId, draft: &songs::SongDraft, label: String) -> Outcome {
     songs::notify(app, id);
     Outcome { result: draft_view(id, draft), action: Some(TutorAction { kind: "songDraft".into(), label, course_id: None, song_id: Some(id), lesson_id: None }) }
 }
@@ -2499,7 +2501,7 @@ fn edit_song(app: &tauri::AppHandle, db: &Db, arguments: &str) -> Outcome {
 
 /// Files a song (or podcast) under the course it was made for, when one is
 /// given: its listening lesson then goes there too, now or later.
-fn file_song(conn: &mut db::Conn, song_id: i64, course_id: Option<i64>) -> Result<()> {
+fn file_song(conn: &mut db::Conn, song_id: SongId, course_id: Option<CourseId>) -> Result<()> {
     if let Some(course_id) = course_id {
         courses::require_open_course(conn, course_id)?;
         diesel::update(crate::schema::songs::table.find(song_id))
@@ -2681,7 +2683,7 @@ fn recent_checkins(conn: &mut Conn) -> Result<Value> {
         .order(checkins::finished_at.desc())
         .limit(8)
         .select((lessons_table::id, lessons_table::title, checkins::result, checkins::feedback))
-        .load::<(i64, String, Option<String>, Option<String>)>(conn)?
+        .load::<(LessonId, String, Option<String>, Option<String>)>(conn)?
         .into_iter()
         .map(|(id, title, result, feedback)| {
             json!({ "lesson_id": id, "lesson": title, "result": result, "examiner_said": feedback })
@@ -2698,12 +2700,12 @@ fn parse_actions(json: Option<String>) -> Vec<TutorAction> {
     json.and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
 }
 
-pub fn load_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<ChatMessage>> {
+pub fn load_history(conn: &mut Conn, conversation_id: ConversationId) -> Result<Vec<ChatMessage>> {
     Ok(tutor_messages::table
         .filter(tutor_messages::conversation_id.eq(conversation_id))
         .order(tutor_messages::id)
         .select((tutor_messages::id, tutor_messages::role, tutor_messages::content, tutor_messages::actions))
-        .load::<(i64, String, String, Option<String>)>(conn)?
+        .load::<(MessageId, String, String, Option<String>)>(conn)?
         .into_iter()
         .map(|(id, role, content, actions)| ChatMessage {
             id,
@@ -2717,7 +2719,7 @@ pub fn load_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<ChatMes
 
 /// The recent conversation as the model should see it. What the tutor did in
 /// earlier turns is spelled out, so it knows the ids of what it made.
-fn recent_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<Wire>> {
+fn recent_history(conn: &mut Conn, conversation_id: ConversationId) -> Result<Vec<Wire>> {
     let mut rows: Vec<(String, String, Option<String>)> = tutor_messages::table
         .filter(tutor_messages::conversation_id.eq(conversation_id))
         .order(tutor_messages::id.desc())
@@ -2747,15 +2749,16 @@ fn recent_history(conn: &mut Conn, conversation_id: i64) -> Result<Vec<Wire>> {
 
 fn append(
     conn: &mut Conn,
-    conversation_id: i64,
+    conversation_id: ConversationId,
     role: &str,
     content: &str,
     actions: &[TutorAction],
-) -> Result<i64> {
+) -> Result<MessageId> {
     let actions = if actions.is_empty() { None } else { Some(serde_json::to_string(actions)?) };
     let now = db::now_secs();
     let id = diesel::insert_into(tutor_messages::table)
         .values((
+            tutor_messages::id.eq(MessageId::new()),
             tutor_messages::conversation_id.eq(conversation_id),
             tutor_messages::role.eq(role),
             tutor_messages::content.eq(content),
@@ -2781,10 +2784,11 @@ pub fn title_from(message: &str) -> String {
     format!("{}…", at_word.trim_end_matches([',', '.', ';', ':']))
 }
 
-pub fn create_conversation(conn: &mut Conn, first_message: &str) -> Result<i64> {
+pub fn create_conversation(conn: &mut Conn, first_message: &str) -> Result<ConversationId> {
     let now = db::now_secs();
     Ok(diesel::insert_into(tutor_conversations::table)
         .values((
+            tutor_conversations::id.eq(ConversationId::new()),
             tutor_conversations::title.eq(title_from(first_message)),
             tutor_conversations::created_at.eq(now),
             tutor_conversations::updated_at.eq(now),
@@ -2794,7 +2798,7 @@ pub fn create_conversation(conn: &mut Conn, first_message: &str) -> Result<i64> 
 }
 
 pub fn list_conversations(conn: &mut Conn) -> Result<Vec<Conversation>> {
-    let heads: Vec<(i64, String, i64, Option<i64>, Option<String>, Option<String>)> = tutor_conversations::table
+    let heads: Vec<(ConversationId, String, i64, Option<i64>, Option<String>, Option<String>)> = tutor_conversations::table
         .order((tutor_conversations::updated_at.desc(), tutor_conversations::id.desc()))
         .select((
             tutor_conversations::id,
@@ -2844,12 +2848,12 @@ pub async fn tutor_conversations(db: State<'_, Db>) -> Result<Vec<Conversation>>
 }
 
 #[tauri::command]
-pub async fn tutor_history(db: State<'_, Db>, conversation_id: i64) -> Result<Vec<ChatMessage>> {
+pub async fn tutor_history(db: State<'_, Db>, conversation_id: ConversationId) -> Result<Vec<ChatMessage>> {
     load_history(&mut db.lock(), conversation_id)
 }
 
 #[tauri::command]
-pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String) -> Result<()> {
+pub async fn tutor_rename(db: State<'_, Db>, conversation_id: ConversationId, title: String) -> Result<()> {
     let title = crate::text::clean(&title);
     if title.is_empty() {
         return Err(Error::msg("A conversation needs a title."));
@@ -2863,7 +2867,7 @@ pub async fn tutor_rename(db: State<'_, Db>, conversation_id: i64, title: String
 /// Deletes one conversation and its messages. What the tutor made in the app
 /// (courses, lessons, songs) stays.
 #[tauri::command]
-pub async fn tutor_delete(db: State<'_, Db>, conversation_id: i64) -> Result<()> {
+pub async fn tutor_delete(db: State<'_, Db>, conversation_id: ConversationId) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
     diesel::delete(tutor_messages::table.filter(tutor_messages::conversation_id.eq(conversation_id))).execute(conn)?;
@@ -2883,7 +2887,7 @@ pub async fn app_visibility(visible: bool) -> Result<()> {
 
 /// The stream id a conversation's background reply streams under, so a
 /// screen opened later can follow it.
-fn job_stream(conversation_id: i64) -> String {
+fn job_stream(conversation_id: ConversationId) -> String {
     format!("tutor-{conversation_id}")
 }
 
@@ -2891,7 +2895,7 @@ fn job_stream(conversation_id: i64) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobDone {
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
     pub message: Option<ChatMessage>,
     pub error: Option<String>,
 }
@@ -2901,7 +2905,7 @@ pub struct JobDone {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Started {
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
     pub message: ChatMessage,
 }
 
@@ -2916,7 +2920,7 @@ pub async fn tutor_send(
     db: State<'_, Db>,
     message: String,
     // None starts a new conversation, titled after this message.
-    conversation_id: Option<i64>,
+    conversation_id: Option<ConversationId>,
 ) -> Result<Started> {
     let message = message.trim().to_string();
     if message.is_empty() {
@@ -2952,12 +2956,12 @@ pub async fn tutor_send(
 
 /// Asks again after a reply failed: the tutor answers the last message anew.
 #[tauri::command]
-pub async fn tutor_retry(app: tauri::AppHandle, db: State<'_, Db>, conversation_id: i64) -> Result<()> {
+pub async fn tutor_retry(app: tauri::AppHandle, db: State<'_, Db>, conversation_id: ConversationId) -> Result<()> {
     start_job(&app, &db, conversation_id)
 }
 
 /// Marks the conversation busy and starts the reply in the background.
-fn start_job(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<()> {
+fn start_job(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId) -> Result<()> {
     {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -3025,7 +3029,7 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
 }
 
 /// Runs one reply to the conversation's last message and stores it.
-async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<ChatMessage> {
+async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId) -> Result<ChatMessage> {
     let stream_id = job_stream(conversation_id);
     let (wire, model, word_chat) = {
         let mut guard = db.lock();
@@ -3141,8 +3145,8 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result
     Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
 }
 
-fn course_ids(conn: &mut Conn) -> HashSet<i64> {
-    courses_table::table.select(courses_table::id).load::<i64>(conn).map(|ids| ids.into_iter().collect()).unwrap_or_default()
+fn course_ids(conn: &mut Conn) -> HashSet<CourseId> {
+    courses_table::table.select(courses_table::id).load::<CourseId>(conn).map(|ids| ids.into_iter().collect()).unwrap_or_default()
 }
 
 /// How a conversation about one word or sentence goes (\"Talk about it\"):
@@ -3166,7 +3170,7 @@ pub(crate) fn word_chat_rules(about: &str) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TalkAbout {
-    pub conversation_id: i64,
+    pub conversation_id: ConversationId,
     /// The word had been talked about before: its conversation carries on.
     pub existing: bool,
 }
@@ -3179,7 +3183,7 @@ pub async fn tutor_talk_about(
     app: tauri::AppHandle,
     db: State<'_, Db>,
     item_kind: String,
-    item_id: i64,
+    item_id: String,
     // For a line of a conversation: its Polish and meaning.
     polish: Option<String>,
     meaning: Option<String>,
@@ -3189,11 +3193,11 @@ pub async fn tutor_talk_about(
         let conn = &mut *guard;
         let (polish, meaning): (String, String) = match item_kind.as_str() {
             "word" => crate::schema::words::table
-                .find(item_id)
+                .find(WordId::parse(&item_id).map_err(|e| Error::msg(e.to_string()))?)
                 .select((crate::schema::words::pl, crate::schema::words::en))
                 .first(conn)?,
             "sentence" => crate::schema::sentences::table
-                .find(item_id)
+                .find(SentenceId::parse(&item_id).map_err(|e| Error::msg(e.to_string()))?)
                 .select((crate::schema::sentences::pl, crate::schema::sentences::en))
                 .first(conn)?,
             "line" => match (polish, meaning) {
@@ -3203,7 +3207,7 @@ pub async fn tutor_talk_about(
             other => return Err(Error::msg(format!("Cannot talk about a '{other}'."))),
         };
         let about = format!("{polish} — {meaning}");
-        let existing: Option<i64> = tutor_conversations::table
+        let existing: Option<ConversationId> = tutor_conversations::table
             .filter(tutor_conversations::tag.eq("word"))
             .filter(tutor_conversations::about.eq(&about))
             .select(tutor_conversations::id)

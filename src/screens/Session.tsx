@@ -10,6 +10,7 @@ import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
 import { playCorrect, playWrong } from "../lib/sounds";
 import { exerciseModule, type AnswerState, type ExerciseProps } from "../exercises";
+import { WordIdSchema } from "../lib/types";
 
 /*
  * The practice session: a shell that steps through the plan's exercises. Each
@@ -219,7 +220,7 @@ export function Session({
               <WrongAnswerReview
                 pl={exercise.pl}
                 meaning={exercise.meaning}
-                wordId={exercise.itemKind === "word" ? exercise.itemId : null}
+                wordId={exercise.itemKind === "word" ? (WordIdSchema.safeParse(exercise.itemId).data ?? null) : null}
               />
             ) : exercise.itemKind !== "set" && (!result.correct || module.revealOnRight) ? (
               <Text variant="small" selectable>

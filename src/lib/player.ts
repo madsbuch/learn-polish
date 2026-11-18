@@ -19,7 +19,7 @@ import { platform } from "@tauri-apps/plugin-os";
 import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
 import { logCause } from "./log";
-import type { CastDevice, CastState, Song, SongTrack } from "./types";
+import type { CastDevice, CastState, Song, SongTrack, TrackId } from "./types";
 import { onEvent } from "./events";
 import { CastStateSchema } from "./types";
 
@@ -95,9 +95,9 @@ const isAndroid = (() => {
 // ------------------------------------------------------------- play counts
 
 /** A play counts once per pass, when the learner is half-way through. */
-let counted: { trackId: number } | null = null;
+let counted: { trackId: TrackId } | null = null;
 
-function maybeCount(trackId: number | undefined, position: number, duration: number) {
+function maybeCount(trackId: TrackId | undefined, position: number, duration: number) {
   if (trackId === undefined) return;
   if (position < 5) counted = null; // back at the start: a new pass
   if (counted?.trackId === trackId) return;
@@ -485,7 +485,7 @@ export function resumeCast() {
  */
 export function syncLibrary(songs: Song[]) {
   if (state.queue.length === 0) return;
-  const tracks = new Map<number, QueueItem>();
+  const tracks = new Map<TrackId, QueueItem>();
   for (const song of songs) for (const track of song.tracks) tracks.set(track.id, { song, track });
   const current = state.queue[state.index];
   if (current && !tracks.has(current.track.id) && !state.cast) {

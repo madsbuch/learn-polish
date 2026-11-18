@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, Stack, Text } from "../design";
 import { fileUrl } from "../lib/files";
-import type { Exercise } from "../lib/types";
+import type { Exercise, FileId } from "../lib/types";
 import { playMatch, playWrong } from "../lib/sounds";
 
 /**
@@ -113,7 +113,7 @@ interface Card {
   text: string;
   lang: "pl" | "en";
   /** Picture lessons: shown instead of the text. */
-  image: number | null;
+  image: FileId | null;
 }
 
 function shuffle<T>(items: T[]): T[] {

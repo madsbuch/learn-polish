@@ -11,6 +11,8 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+#[allow(unused_imports)]
+use crate::ids::*;
 use crate::agent::{tool, Tool};
 
 use crate::db::{self, Conn};
@@ -30,7 +32,7 @@ const SOFT_LIMIT: i64 = 150;
 #[diesel(table_name = memories)]
 #[serde(rename_all = "camelCase")]
 pub struct Memory {
-    pub id: i64,
+    pub id: MemoryId,
     pub content: String,
     pub category: String,
     /// "tutor", "examiner" or "you".
@@ -72,7 +74,7 @@ pub fn list(conn: &mut Conn) -> Result<Vec<Memory>> {
         .load(conn)?)
 }
 
-pub fn get(conn: &mut Conn, id: i64) -> Result<Memory> {
+pub fn get(conn: &mut Conn, id: MemoryId) -> Result<Memory> {
     memories::table
         .find(id)
         .select(Memory::as_select())
@@ -89,7 +91,7 @@ pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Resu
     let lowered = content.to_lowercase();
     let existing = memories::table
         .select((memories::id, memories::content))
-        .load::<(i64, String)>(conn)?
+        .load::<(MemoryId, String)>(conn)?
         .into_iter()
         .find(|(_, text)| text.to_lowercase() == lowered)
         .map(|(id, _)| id);
@@ -102,6 +104,7 @@ pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Resu
         }
         None => diesel::insert_into(memories::table)
             .values((
+                memories::id.eq(MemoryId::new()),
                 memories::content.eq(&content),
                 memories::category.eq(&category),
                 memories::source.eq(source),
@@ -116,7 +119,7 @@ pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Resu
 
 pub fn update(
     conn: &mut Conn,
-    id: i64,
+    id: MemoryId,
     content: Option<&str>,
     category: Option<&str>,
 ) -> Result<Memory> {
@@ -136,7 +139,7 @@ pub fn update(
     get(conn, id)
 }
 
-pub fn delete(conn: &mut Conn, id: i64) -> Result<Memory> {
+pub fn delete(conn: &mut Conn, id: MemoryId) -> Result<Memory> {
     let memory = get(conn, id)?;
     diesel::delete(memories::table.find(id)).execute(conn)?;
     Ok(memory)
@@ -266,7 +269,7 @@ struct RememberArgs {
 
 #[derive(Deserialize)]
 struct UpdateArgs {
-    id: i64,
+    id: MemoryId,
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
@@ -275,7 +278,7 @@ struct UpdateArgs {
 
 #[derive(Deserialize)]
 struct IdArgs {
-    id: i64,
+    id: MemoryId,
 }
 
 /// What a memory tool did: the result for the model, and a line for the
@@ -349,7 +352,7 @@ mod tests {
             r#"{"content":"  Wants to order food in Kraków in May ","category":"goal"}"#,
         );
         assert_eq!(out.label.as_deref(), Some("Remembered: Wants to order food in Kraków in May"));
-        let id = out.result["saved"]["id"].as_i64().unwrap();
+        let id = MemoryId::parse(out.result["saved"]["id"].as_str().unwrap()).unwrap();
 
         // Saying it again refreshes rather than duplicating.
         run_tool(conn, "examiner", "remember", r#"{"content":"wants to order food in Kraków in May","category":"goal"}"#);
@@ -366,11 +369,11 @@ mod tests {
             conn,
             "examiner",
             "update_memory",
-            &format!(r#"{{"id":{},"content":"Now uses the instrumental after z correctly","category":"strength"}}"#, struggle.id),
+            &format!(r#"{{"id":"{}","content":"Now uses the instrumental after z correctly","category":"strength"}}"#, struggle.id),
         );
         assert_eq!(updated.result["updated"]["category"], "strength");
 
-        run_tool(conn, "tutor", "forget_memory", &format!(r#"{{"id":{id}}}"#));
+        run_tool(conn, "tutor", "forget_memory", &format!(r#"{{"id":"{id}"}}"#));
         assert!(get(conn, id).is_err());
         let missing = run_tool(conn, "tutor", "forget_memory", r#"{"id":9999}"#);
         assert!(missing.result["error"].is_string());
@@ -388,6 +391,8 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 pub mod commands {
+    #[allow(unused_imports)]
+    use crate::ids::*;
     use serde::Serialize;
     use tauri::State;
 
@@ -430,7 +435,7 @@ pub mod commands {
     #[tauri::command]
     pub async fn memory_update(
         db: State<'_, Db>,
-        id: i64,
+        id: MemoryId,
         content: String,
         category: String,
     ) -> Result<MemoryOverview> {
@@ -441,7 +446,7 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn memory_delete(db: State<'_, Db>, id: i64) -> Result<MemoryOverview> {
+    pub async fn memory_delete(db: State<'_, Db>, id: MemoryId) -> Result<MemoryOverview> {
         let mut guard = db.lock();
         let conn = &mut *guard;
         delete(conn, id)?;

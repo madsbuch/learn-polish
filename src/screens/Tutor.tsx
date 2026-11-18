@@ -29,9 +29,15 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { useTutorJob } from "../lib/tutorJob";
 import { ensurePermission } from "../lib/notifications";
-import type { ChatMessage, Conversation, TutorAction } from "../lib/types";
+import type { ChatMessage, Conversation, ConversationId, CourseId, LessonId, SongId, TutorAction } from "../lib/types";
 import { onEvent } from "../lib/events";
 import { TutorDoneSchema } from "../lib/types";
+
+/** A message as shown: stored, or the learner's just sent (not stored yet). */
+type Shown = Omit<ChatMessage, "id" | "conversationId"> & {
+  id: ChatMessage["id"] | `pending-${number}`;
+  conversationId: ConversationId | null;
+};
 
 const STARTERS = [
   "Build me a course for learning the colours",
@@ -53,11 +59,11 @@ function when(seconds: number): string {
 
 type Shared = {
   /** Opens a course page. */
-  onOpenCourse: (courseId: number) => void;
+  onOpenCourse: (courseId: CourseId) => void;
   /** Opens a lesson's page. */
-  onOpenLesson: (lessonId: number) => void;
+  onOpenLesson: (lessonId: LessonId) => void;
   /** Shows a song in the Music tab. */
-  onOpenSong: (songId: number) => void;
+  onOpenSong: (songId: SongId) => void;
   /** The tutor changed something in the app; reload what the screens show. */
   onChanged: () => void;
   /** Opens what the agents remember. */
@@ -85,7 +91,7 @@ export function Tutor({
   onOpenSettings: () => void;
 }) {
   // null: the list; "new": a blank conversation; a number: that conversation.
-  const [open, setOpen] = useState<number | "new" | null>(null);
+  const [open, setOpen] = useState<ConversationId | "new" | null>(null);
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useDraft("list");
@@ -148,7 +154,7 @@ export function Tutor({
 
   // A conversation: on its own screen, or beside the list (`inSplit`), where
   // it has no way back because the list stays in view.
-  const chat = (target: number | "new", inSplit: boolean) => {
+  const chat = (target: ConversationId | "new", inSplit: boolean) => {
     const conversation = target === "new" ? null : (conversations?.find((entry) => entry.id === target) ?? null);
     return (
       <Chat
@@ -190,7 +196,7 @@ export function Tutor({
   return list(null);
 
   /** The conversations; `current` is the one open beside them (wide windows). */
-  function list(current: number | "new" | null) {
+  function list(current: ConversationId | "new" | null) {
     const inSplit = current !== null;
     return (
       <Screen
@@ -287,18 +293,18 @@ function Chat({
   onOpenMemories,
 }: Shared & {
   /** null for a conversation not yet started. */
-  conversationId: number | null;
+  conversationId: ConversationId | null;
   title: string;
   /** Sent once when the conversation opens (typed on the list). */
   firstMessage: string | null;
   /** The first reply arrived; the conversation now exists with this id. */
-  onStarted: (id: number) => void;
+  onStarted: (id: ConversationId) => void;
   /** Back to the list; left out beside it, where the list stays in view. */
   onBack?: () => void;
   onRenamed: () => void;
   onDeleted: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<Shown[]>([]);
   // What is being written survives leaving the conversation, and keeps
   // going while the tutor answers.
   const [draft, setDraft] = useDraft(conversationId === null ? "new" : String(conversationId));
@@ -355,7 +361,7 @@ function Chat({
     // time tutorSend returns, and answers in the background.
     setMessages((current) => [
       ...current,
-      { id: -Date.now(), conversationId: conversationId ?? 0, role: "user", content: message, actions: [] },
+      { id: `pending-${Date.now()}`, conversationId, role: "user", content: message, actions: [] },
     ]);
     scroll.follow();
     job.begin();

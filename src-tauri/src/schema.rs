@@ -7,12 +7,15 @@
 //! them.
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     xp_log (id) {
-        id -> BigInt,
+        id -> XpEntryIdSql,
         day -> BigInt,
         at -> BigInt,
         run -> Text,
-        lesson_id -> Nullable<BigInt>,
+        lesson_id -> Nullable<LessonIdSql>,
         label -> Text,
         xp -> BigInt,
         note -> Text,
@@ -20,8 +23,11 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     courses (id) {
-        id -> BigInt,
+        id -> CourseIdSql,
         slug -> Text,
         ord -> BigInt,
         kind -> Text,
@@ -29,7 +35,7 @@ diesel::table! {
         title_en -> Text,
         summary_en -> Text,
         created_at -> BigInt,
-        image_file_id -> Nullable<BigInt>,
+        image_file_id -> Nullable<FileIdSql>,
         completed_at -> Nullable<BigInt>,
         mastered_at -> Nullable<BigInt>,
         closed_at -> Nullable<BigInt>,
@@ -39,21 +45,27 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     words (id) {
-        id -> BigInt,
-        lesson_id -> BigInt,
+        id -> WordIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
         pos -> Text,
-        image_file_id -> Nullable<BigInt>,
+        image_file_id -> Nullable<FileIdSql>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     sentences (id) {
-        id -> BigInt,
-        lesson_id -> BigInt,
+        id -> SentenceIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -61,9 +73,12 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     conversation_lines (id) {
-        id -> BigInt,
-        lesson_id -> BigInt,
+        id -> LineIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
         speaker -> Text,
         gender -> Text,
@@ -75,7 +90,7 @@ diesel::table! {
 diesel::table! {
     reviews (kind, item_id) {
         kind -> Text,
-        item_id -> BigInt,
+        item_id -> Text,
         due_day -> BigInt,
         interval -> BigInt,
         ease -> Double,
@@ -86,12 +101,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     day_log (day) {
         day -> BigInt,
         xp -> BigInt,
         answered -> BigInt,
         correct -> BigInt,
-        course_id -> Nullable<BigInt>,
+        course_id -> Nullable<CourseIdSql>,
         completed -> BigInt,
         frozen -> BigInt,
         minutes -> BigInt,
@@ -116,8 +134,11 @@ diesel::table! {
 
 diesel::table! {
     /// Every file the app keeps (files.rs).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     files (id) {
-        id -> BigInt,
+        id -> FileIdSql,
         kind -> Text,
         name -> Text,
         mime -> Text,
@@ -131,10 +152,13 @@ diesel::table! {
 
 diesel::table! {
     /// Wikipedia articles a study lesson or a podcast is built on (wiki.rs).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     wiki_sources (id) {
-        id -> BigInt,
-        lesson_id -> Nullable<BigInt>,
-        song_id -> Nullable<BigInt>,
+        id -> SourceIdSql,
+        lesson_id -> Nullable<LessonIdSql>,
+        song_id -> Nullable<SongIdSql>,
         ord -> BigInt,
         lang -> Text,
         title -> Text,
@@ -143,7 +167,7 @@ diesel::table! {
         revid -> BigInt,
         summary -> Text,
         content -> Text,
-        image_file_id -> Nullable<BigInt>,
+        image_file_id -> Nullable<FileIdSql>,
         pl_title -> Nullable<Text>,
         pl_url -> Nullable<Text>,
         pl_content -> Nullable<Text>,
@@ -155,19 +179,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     speech_clips (cache_key) {
         cache_key -> Text,
         model -> Text,
         voice -> Text,
         text -> Text,
-        file_id -> BigInt,
+        file_id -> FileIdSql,
         created_at -> BigInt,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     lessons (id) {
-        id -> BigInt,
+        id -> LessonIdSql,
         slug -> Nullable<Text>,
         lesson_type -> Text,
         ord -> BigInt,
@@ -184,7 +214,7 @@ diesel::table! {
         reps -> BigInt,
         origin -> Text,
         created_at -> BigInt,
-        song_id -> Nullable<BigInt>,
+        song_id -> Nullable<SongIdSql>,
         fact_note -> Nullable<Text>,
         fact_checked_at -> Nullable<BigInt>,
         ease -> Double,
@@ -199,22 +229,28 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     course_lessons (course_id, lesson_id) {
         /// SQLite's implicit row id: the order a lesson was listed in its
         /// courses, so its first course is the one it was made in.
         rowid -> BigInt,
-        course_id -> BigInt,
-        lesson_id -> BigInt,
+        course_id -> CourseIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
     }
 }
 
 diesel::table! {
     /// A course's words: whatever its lessons own (a view).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     course_words (course_id, id) {
-        course_id -> BigInt,
-        id -> BigInt,
-        lesson_id -> BigInt,
+        course_id -> CourseIdSql,
+        id -> WordIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -224,10 +260,13 @@ diesel::table! {
 
 diesel::table! {
     /// A course's sentences (a view).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     course_sentences (course_id, id) {
-        course_id -> BigInt,
-        id -> BigInt,
-        lesson_id -> BigInt,
+        course_id -> CourseIdSql,
+        id -> SentenceIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
         pl -> Text,
         en -> Text,
@@ -236,10 +275,13 @@ diesel::table! {
 
 diesel::table! {
     /// A course's dialogue lines (a view).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     course_lines (course_id, id) {
-        course_id -> BigInt,
-        id -> BigInt,
-        lesson_id -> BigInt,
+        course_id -> CourseIdSql,
+        id -> LineIdSql,
+        lesson_id -> LessonIdSql,
         ord -> BigInt,
         speaker -> Text,
         gender -> Text,
@@ -249,9 +291,12 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     checkins (id) {
-        id -> BigInt,
-        lesson_id -> BigInt,
+        id -> CheckinIdSql,
+        lesson_id -> LessonIdSql,
         started_at -> BigInt,
         finished_at -> Nullable<BigInt>,
         result -> Nullable<Text>,
@@ -260,9 +305,12 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     checkin_messages (id) {
-        id -> BigInt,
-        checkin_id -> BigInt,
+        id -> CheckinMessageIdSql,
+        checkin_id -> CheckinIdSql,
         role -> Text,
         content -> Text,
         created_at -> BigInt,
@@ -270,8 +318,11 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     tutor_conversations (id) {
-        id -> BigInt,
+        id -> ConversationIdSql,
         title -> Text,
         created_at -> BigInt,
         updated_at -> BigInt,
@@ -283,19 +334,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     tutor_messages (id) {
-        id -> BigInt,
+        id -> MessageIdSql,
         role -> Text,
         content -> Text,
         actions -> Nullable<Text>,
         created_at -> BigInt,
-        conversation_id -> Nullable<BigInt>,
+        conversation_id -> Nullable<ConversationIdSql>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     songs (id) {
-        id -> BigInt,
+        id -> SongIdSql,
         title -> Text,
         chorus_pl -> Text,
         chorus_en -> Text,
@@ -308,7 +365,7 @@ diesel::table! {
         status -> Text,
         error -> Nullable<Text>,
         created_at -> BigInt,
-        course_id -> Nullable<BigInt>,
+        course_id -> Nullable<CourseIdSql>,
         /// JSON: how the song came about (songs::SongOrigin).
         origin -> Text,
         /// "song" (sung by Suno) or "podcast" (spoken, sentence by sentence).
@@ -319,42 +376,54 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     song_tracks (id) {
-        id -> BigInt,
-        song_id -> BigInt,
+        id -> TrackIdSql,
+        song_id -> SongIdSql,
         ord -> BigInt,
         remote_id -> Text,
         duration -> Double,
         play_count -> BigInt,
         last_played_at -> Nullable<BigInt>,
         aligned_words -> Nullable<Text>,
-        audio_file_id -> Nullable<BigInt>,
-        image_file_id -> Nullable<BigInt>,
+        audio_file_id -> Nullable<FileIdSql>,
+        image_file_id -> Nullable<FileIdSql>,
         /// JSON: lines with exact times, for audio the app put together itself.
         timed_lines -> Nullable<Text>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     playlists (id) {
-        id -> BigInt,
+        id -> PlaylistIdSql,
         name -> Text,
         created_at -> BigInt,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     playlist_tracks (id) {
-        id -> BigInt,
-        playlist_id -> BigInt,
-        track_id -> BigInt,
+        id -> EntryIdSql,
+        playlist_id -> PlaylistIdSql,
+        track_id -> TrackIdSql,
         ord -> BigInt,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     ai_costs (id) {
-        id -> BigInt,
+        id -> CostIdSql,
         day -> BigInt,
         feature -> Text,
         provider -> Text,
@@ -371,8 +440,11 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     memories (id) {
-        id -> BigInt,
+        id -> MemoryIdSql,
         content -> Text,
         category -> Text,
         source -> Text,
@@ -382,8 +454,11 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     word_examples (word_id) {
-        word_id -> BigInt,
+        word_id -> WordIdSql,
         examples -> Text,
         created_at -> BigInt,
     }
@@ -395,8 +470,11 @@ diesel::joinable!(sentences -> lessons (lesson_id));
 diesel::joinable!(conversation_lines -> lessons (lesson_id));
 diesel::joinable!(course_lessons -> lessons (lesson_id));
 diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     bench_runs (id) {
-        id -> BigInt,
+        id -> BenchRunIdSql,
         model -> Text,
         created_at -> BigInt,
         score -> BigInt,

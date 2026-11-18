@@ -10,6 +10,8 @@ use crate::db::{self, Conn};
 use crate::schema::{conversation_lines, course_lessons, course_lines, course_sentences, course_words, reviews, sentences, courses, words};
 use crate::error::Result;
 use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Course};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 const DIALOGUE_GAPS: usize = 3;
 /// Cards in the memory game: this many Polish/English pairs.
@@ -21,22 +23,22 @@ pub(crate) const GAP_SENTENCES: usize = 4;
 const TYPING_THRESHOLD: i64 = 3;
 
 pub struct WordRow {
-    pub id: i64,
+    pub id: WordId,
     pub pl: String,
     pub meaning: String,
     pub pos: String,
     pub reps: i64,
     /// Its picture, when it has one.
-    pub image: Option<i64>,
+    pub image: Option<FileId>,
 }
 
 pub struct SentenceRow {
-    pub id: i64,
+    pub id: SentenceId,
     pub pl: String,
     pub meaning: String,
 }
 
-pub fn load_course(conn: &mut Conn, course_id: i64) -> Result<Course> {
+pub fn load_course(conn: &mut Conn, course_id: CourseId) -> Result<Course> {
     courses::table
         .find(course_id)
         .select(Course::as_select())
@@ -46,7 +48,7 @@ pub fn load_course(conn: &mut Conn, course_id: i64) -> Result<Course> {
 }
 
 /// A course's dialogue: the lines of its conversation drills, in order.
-pub fn dialogue_lines(conn: &mut Conn, course_id: i64) -> Result<Vec<DialogueLine>> {
+pub fn dialogue_lines(conn: &mut Conn, course_id: CourseId) -> Result<Vec<DialogueLine>> {
     Ok(course_lines::table
         .filter(course_lines::course_id.eq(course_id))
         .order(course_lines::ord)
@@ -55,7 +57,7 @@ pub fn dialogue_lines(conn: &mut Conn, course_id: i64) -> Result<Vec<DialogueLin
 }
 
 /// The dialogue one lesson owns.
-pub fn lesson_lines(conn: &mut Conn, lesson_id: i64) -> Result<Vec<DialogueLine>> {
+pub fn lesson_lines(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<DialogueLine>> {
     Ok(conversation_lines::table
         .filter(conversation_lines::lesson_id.eq(lesson_id))
         .order((conversation_lines::ord, conversation_lines::id))
@@ -64,18 +66,18 @@ pub fn lesson_lines(conn: &mut Conn, lesson_id: i64) -> Result<Vec<DialogueLine>
 }
 
 /// The kinds of item a learner has met (has a review row for), by id.
-fn met(conn: &mut Conn, kind: &str, ids: &[i64]) -> Result<std::collections::HashMap<i64, i64>> {
+fn met(conn: &mut Conn, kind: &str, ids: &[String]) -> Result<std::collections::HashMap<String, i64>> {
     Ok(reviews::table
         .filter(reviews::kind.eq(kind))
         .filter(reviews::item_id.eq_any(ids))
         .select((reviews::item_id, reviews::reps))
-        .load::<(i64, i64)>(conn)?
+        .load::<(String, i64)>(conn)?
         .into_iter()
         .collect())
 }
 
 /// The courses a lesson is listed in.
-fn courses_of(conn: &mut Conn, lesson_id: i64) -> Result<Vec<i64>> {
+fn courses_of(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<CourseId>> {
     Ok(course_lessons::table
         .filter(course_lessons::lesson_id.eq(lesson_id))
         .select(course_lessons::course_id)
@@ -87,7 +89,7 @@ pub(crate) fn word_intro(w: &WordRow) -> Exercise {
         key: format!("w{}-intro", w.id),
         kind: "intro".into(),
         item_kind: "word".into(),
-        item_id: w.id,
+        item_id: w.id.to_string(),
         is_new: true,
         prompt: w.pl.clone(),
         hint: pretty_pos(&w.pos),
@@ -109,7 +111,7 @@ pub(crate) fn typing(w: &WordRow) -> Exercise {
         key: format!("w{}-type", w.id),
         kind: "type".into(),
         item_kind: "word".into(),
-        item_id: w.id,
+        item_id: w.id.to_string(),
         is_new: false,
         prompt: w.meaning.clone(),
         hint: pretty_pos(&w.pos),
@@ -131,7 +133,7 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
         key: format!("s{}-intro", s.id),
         kind: "sentenceIntro".into(),
         item_kind: "sentence".into(),
-        item_id: s.id,
+        item_id: s.id.to_string(),
         is_new: true,
         prompt: s.pl.clone(),
         hint: String::new(),
@@ -160,33 +162,33 @@ pub(crate) fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand
     }
 }
 
-pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(WordRow, bool)>> {
-    let rows: Vec<(i64, String, String, String, Option<i64>)> = words::table
+pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(WordRow, bool)>> {
+    let rows: Vec<(WordId, String, String, String, Option<FileId>)> = words::table
         .filter(words::lesson_id.eq(lesson_id))
         .order((words::ord, words::id))
         .select((words::id, words::pl, words::en, words::pos, words::image_file_id))
         .load(conn)?;
-    let reps = met(conn, "word", &rows.iter().map(|r| r.0).collect::<Vec<_>>())?;
+    let reps = met(conn, "word", &rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>())?;
     Ok(rows
         .into_iter()
         .map(|(id, pl, meaning, pos, image)| {
-            let seen = reps.get(&id).copied();
+            let seen = reps.get(&id.to_string()).copied();
             (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image }, seen.is_none())
         })
         .collect())
 }
 
-pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(SentenceRow, bool)>> {
-    let rows: Vec<(i64, String, String)> = sentences::table
+pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(SentenceRow, bool)>> {
+    let rows: Vec<(SentenceId, String, String)> = sentences::table
         .filter(sentences::lesson_id.eq(lesson_id))
         .order((sentences::ord, sentences::id))
         .select((sentences::id, sentences::pl, sentences::en))
         .load(conn)?;
-    let seen = met(conn, "sentence", &rows.iter().map(|r| r.0).collect::<Vec<_>>())?;
+    let seen = met(conn, "sentence", &rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>())?;
     Ok(rows
         .into_iter()
         .map(|(id, pl, meaning)| {
-            let new = !seen.contains_key(&id);
+            let new = !seen.contains_key(&id.to_string());
             (SentenceRow { id, pl, meaning }, new)
         })
         .collect())
@@ -214,7 +216,7 @@ pub struct Built {
 
 /// The exercises of one drill lesson, built by its type. Small on purpose:
 /// a low lesson is a minute or two of taps, never the whole course at once.
-pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
+pub fn build_lesson(conn: &mut Conn, lesson_id: LessonId) -> Result<SessionPlan> {
     let lesson = crate::lessons::load(conn, lesson_id)?;
     let lesson_type = crate::lesson_types::get(&lesson.lesson_type)?;
     let crate::lesson_types::Run::Exercises(build) = lesson_type.run else {
@@ -252,12 +254,12 @@ pub fn build_lesson(conn: &mut Conn, lesson_id: i64) -> Result<SessionPlan> {
 }
 
 /// A conversation drill's opening card: read the whole dialogue.
-pub(crate) fn dialogue_read(lesson_id: i64, course: &Course) -> Exercise {
+pub(crate) fn dialogue_read(lesson_id: LessonId, course: &Course) -> Exercise {
     Exercise {
         key: format!("d{lesson_id}-read"),
         kind: "dialogueRead".into(),
         item_kind: "dialogue".into(),
-        item_id: lesson_id,
+        item_id: lesson_id.to_string(),
         is_new: true,
         prompt: course.title.clone(),
         hint: course.summary.clone(),
@@ -284,7 +286,7 @@ pub(crate) fn picture_intro(w: &WordRow) -> Exercise {
 /// or see the word and pick the picture — in turn, as the word comes back.
 /// With too few pictures to choose from, the picture is shown and the word
 /// picked.
-pub(crate) fn practise_picture(w: &WordRow, pool: &Distractors, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Exercise {
+pub(crate) fn practise_picture(w: &WordRow, pool: &Distractors, images: &[(String, FileId)], rng: &mut impl rand::Rng) -> Exercise {
     let kind = if w.reps % 2 == 0 { "picturePick" } else { "wordPick" };
     let base = Exercise {
         key: format!("w{}-{kind}", w.id),
@@ -303,11 +305,11 @@ pub(crate) fn practise_picture(w: &WordRow, pool: &Distractors, images: &[(Strin
 
 /// Four pictures to choose from: the word's and three others', each of a
 /// different word. None with fewer than four.
-pub(crate) fn picture_options(w: &WordRow, images: &[(String, i64)], rng: &mut impl rand::Rng) -> Option<(Vec<String>, Vec<Option<i64>>)> {
-    let mut decoys: Vec<&(String, i64)> =
+pub(crate) fn picture_options(w: &WordRow, images: &[(String, FileId)], rng: &mut impl rand::Rng) -> Option<(Vec<String>, Vec<Option<FileId>>)> {
+    let mut decoys: Vec<&(String, FileId)> =
         images.iter().filter(|(pl, image)| pl != &w.pl && Some(*image) != w.image).collect();
     decoys.shuffle(rng);
-    let mut chosen: Vec<(String, i64)> = Vec::new();
+    let mut chosen: Vec<(String, FileId)> = Vec::new();
     for (pl, image) in decoys {
         if chosen.iter().all(|(p, i)| p != pl && i != image) {
             chosen.push((pl.clone(), *image));
@@ -326,13 +328,13 @@ pub(crate) fn picture_options(w: &WordRow, images: &[(String, i64)], rng: &mut i
 
 /// The pictured words of every course the lesson is in: decoys for the
 /// picture choices.
-pub(crate) fn picture_pool(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(String, i64)>> {
+pub(crate) fn picture_pool(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(String, FileId)>> {
     let courses = courses_of(conn, lesson_id)?;
-    let ids: Vec<i64> = course_words::table
+    let ids: Vec<WordId> = course_words::table
         .filter(course_words::course_id.eq_any(courses))
         .select(course_words::id)
         .load(conn)?;
-    let rows: Vec<(String, Option<i64>)> = words::table
+    let rows: Vec<(String, Option<FileId>)> = words::table
         .filter(words::id.eq_any(ids).or(words::lesson_id.eq(lesson_id)))
         .filter(words::image_file_id.is_not_null())
         .select((words::pl, words::image_file_id))
@@ -341,7 +343,7 @@ pub(crate) fn picture_pool(conn: &mut Conn, lesson_id: i64) -> Result<Vec<(Strin
 }
 
 /// The memory round of a picture lesson: pictures to match with their words.
-pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: LessonId, rng: &mut impl rand::Rng) -> Option<Exercise> {
     let mut pool: Vec<&&WordRow> = words.iter().collect();
     pool.shuffle(rng);
     let mut pairs: Vec<Pair> = Vec::new();
@@ -361,7 +363,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng:
         key,
         kind: "memory".into(),
         item_kind: "set".into(),
-        item_id,
+        item_id: item_id.to_string(),
         is_new: false,
         prompt: String::new(),
         hint: String::new(),
@@ -384,7 +386,7 @@ pub struct Distractors {
 }
 
 /// Decoys come from the words of every course the lesson is in.
-pub(crate) fn distractor_pool(conn: &mut Conn, lesson_id: i64) -> Result<Distractors> {
+pub(crate) fn distractor_pool(conn: &mut Conn, lesson_id: LessonId) -> Result<Distractors> {
     let courses = courses_of(conn, lesson_id)?;
     let rows: Vec<(String, String)> = course_words::table
         .filter(course_words::course_id.eq_any(courses))
@@ -418,7 +420,7 @@ pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rn
         key: format!("w{}-recognise", w.id),
         kind: "recognise".into(),
         item_kind: "word".into(),
-        item_id: w.id,
+        item_id: w.id.to_string(),
         is_new: false,
         prompt: w.pl.clone(),
         hint: pretty_pos(&w.pos),
@@ -440,7 +442,7 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
         key: format!("w{}-produce", w.id),
         kind: "produce".into(),
         item_kind: "word".into(),
-        item_id: w.id,
+        item_id: w.id.to_string(),
         is_new: false,
         prompt: w.meaning.clone(),
         hint: pretty_pos(&w.pos),
@@ -464,7 +466,7 @@ pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
         key: format!("s{}-order", s.id),
         kind: "wordOrder".into(),
         item_kind: "sentence".into(),
-        item_id: s.id,
+        item_id: s.id.to_string(),
         is_new: false,
         prompt: s.meaning.clone(),
         hint: String::new(),
@@ -493,7 +495,7 @@ const DIALOGUE_CONTEXT: usize = 3;
 ///   ones around the gap, which could follow just as well.
 pub(crate) fn dialogue_gaps(
     dialogue: &[DialogueLine],
-    lesson_id: i64,
+    lesson_id: LessonId,
     rng: &mut impl rand::Rng,
 ) -> Vec<Exercise> {
     if dialogue.len() < 5 {
@@ -516,7 +518,7 @@ pub(crate) fn dialogue_gaps(
                 key: format!("d{lesson_id}-gap{i}"),
                 kind: "dialogueGap".into(),
                 item_kind: "dialogue".into(),
-                item_id: lesson_id,
+                item_id: lesson_id.to_string(),
                 is_new: false,
                 prompt: previous.pl.clone(),
                 hint: format!("{} — {}", previous.speaker, line.speaker),
@@ -569,7 +571,7 @@ fn short_gloss(meaning: &str) -> String {
 }
 
 /// Face-down cards: find each Polish word's English partner.
-pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &mut impl rand::Rng) -> Option<Exercise> {
+pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rng: &mut impl rand::Rng) -> Option<Exercise> {
     let mut pool: Vec<&&WordRow> = words.iter().collect();
     pool.shuffle(rng);
     let mut pairs: Vec<Pair> = Vec::new();
@@ -591,7 +593,7 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &m
         key,
         kind: "memory".into(),
         item_kind: "set".into(),
-        item_id,
+        item_id: item_id.to_string(),
         is_new: false,
         prompt: String::new(),
         hint: String::new(),
@@ -653,7 +655,7 @@ fn make_gap(pl: &str, meaning: &str, course_words: &std::collections::HashSet<St
 /// bank of the missing words plus two that do not belong.
 pub(crate) fn gap_fill(
     conn: &mut Conn,
-    lesson_id: i64,
+    lesson_id: LessonId,
     session: &[&SentenceRow],
     // Only the given sentences, rather than topping up from the course.
     only_session: bool,
@@ -718,7 +720,7 @@ pub(crate) fn gap_fill(
         key: format!("t{lesson_id}-gaps"),
         kind: "gapFill".into(),
         item_kind: "set".into(),
-        item_id: lesson_id,
+        item_id: lesson_id.to_string(),
         is_new: false,
         prompt: String::new(),
         hint: String::new(),
@@ -807,7 +809,7 @@ mod dialogue_gap_tests {
         ];
         for seed in 0..20 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-            let gaps = dialogue_gaps(&dialogue, 1, &mut rng);
+            let gaps = dialogue_gaps(&dialogue, LessonId::derived("test", "dialogue"), &mut rng);
             assert_eq!(gaps.len(), DIALOGUE_GAPS);
             for gap in &gaps {
                 assert!(gap.prompt.ends_with('?'), "after a question: {}", gap.prompt);

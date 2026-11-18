@@ -40,7 +40,13 @@ export function watchKeyboard() {
     const visualKeyboard = typing && unzoomed && height - (viewport?.height ?? height) > threshold;
     const touchDevice = navigator.maxTouchPoints > 0 || window.matchMedia("(any-pointer: coarse)").matches;
     const layoutGap = restingHeight - height;
-    if (typing && touchDevice && unzoomed && layoutGap > threshold && (layoutKeyboard || performance.now() < openingUntil)) {
+    if (
+      typing &&
+      touchDevice &&
+      unzoomed &&
+      layoutGap > threshold &&
+      (layoutKeyboard || performance.now() < openingUntil)
+    ) {
       layoutKeyboard = true;
     } else {
       layoutKeyboard = false;

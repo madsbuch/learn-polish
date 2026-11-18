@@ -71,10 +71,10 @@ export function SessionSummary({
           {outcome?.extra
             ? `${outcome.title}${scoreText}: already passed today, so this is extra practice: half XP, and its schedule stays as it was.`
             : outcome
-            ? `${outcome.title}${scoreText}: ${OUTCOME[outcome.result]}.`
-            : result.firstCompletionToday
-              ? "Today's streak is safe."
-              : "Extra practice always counts."}
+              ? `${outcome.title}${scoreText}: ${OUTCOME[outcome.result]}.`
+              : result.firstCompletionToday
+                ? "Today's streak is safe."
+                : "Extra practice always counts."}
         </Text>
       </Stack>
 

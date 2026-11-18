@@ -95,14 +95,12 @@ export function CostCenter() {
         info={
           <>
             <p>
-              Every request to an AI service is logged with the feature that made it. Chat requests
-              — the tutor, conversations, song lyrics and explanations — are priced by OpenRouter
-              itself.
+              Every request to an AI service is logged with the feature that made it. Chat requests — the tutor,
+              conversations, song lyrics and explanations — are priced by OpenRouter itself.
             </p>
             <p>
-              Song audio is priced from the kie.ai credits Suno used, at about $0.005 a credit.
-              OpenRouter does not report a price for speech, so speech shows how many clips were
-              made. Replaying downloaded audio is free.
+              Song audio is priced from the kie.ai credits Suno used, at about $0.005 a credit. OpenRouter does not
+              report a price for speech, so speech shows how many clips were made. Replaying downloaded audio is free.
             </p>
             <p>Costs survive a progress reset and are part of the database export.</p>
           </>
@@ -110,7 +108,9 @@ export function CostCenter() {
       >
         {error ? <Banner tone="error">{error}</Banner> : null}
         {!summary ? (
-          error ? null : <Spinner />
+          error ? null : (
+            <Spinner />
+          )
         ) : (
           <Stack gap={3}>
             <StatGrid>
@@ -130,9 +130,7 @@ export function CostCenter() {
                     subtitle={
                       <Stack gap={1}>
                         {uses(cost)}
-                        {top > 0 && cost.costUsd > 0 ? (
-                          <Progress value={cost.costUsd} max={top} size="sm" />
-                        ) : null}
+                        {top > 0 && cost.costUsd > 0 ? <Progress value={cost.costUsd} max={top} size="sm" /> : null}
                       </Stack>
                     }
                     trailing={

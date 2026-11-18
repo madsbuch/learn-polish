@@ -13,6 +13,8 @@ use crate::models::*;
 use crate::session;
 use crate::srs;
 use crate::stats;
+#[allow(unused_imports)]
+use crate::ids::*;
 
 // ---------------------------------------------------------------------------
 // Answer checking
@@ -75,7 +77,7 @@ fn answers_match(expected: &str, given: &str) -> bool {
 pub struct SubmitAnswer {
     pub kind: String,
     pub item_kind: String,
-    pub item_id: i64,
+    pub item_id: String,
     pub is_new: bool,
     pub expected: String,
     pub given: String,
@@ -86,7 +88,7 @@ pub struct SubmitAnswer {
     pub extra: bool,
     /// The lesson, and this go at it (the session's key): for the XP log.
     #[serde(default)]
-    pub lesson_id: Option<i64>,
+    pub lesson_id: Option<LessonId>,
     #[serde(default)]
     pub run: String,
 }
@@ -141,10 +143,10 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
     // Conversation gaps exercise the dialogue rather than a scheduled item, so
     // they earn XP without creating review rows.
     if answer.item_kind == "word" || answer.item_kind == "sentence" {
-        let state = srs::load(conn, &answer.item_kind, answer.item_id)?
+        let state = srs::load(conn, &answer.item_kind, &answer.item_id)?
             .unwrap_or_else(|| srs::ReviewState::fresh(today));
         let next = srs::grade(state, grade, today);
-        srs::save(conn, &answer.item_kind, answer.item_id, &next)?;
+        srs::save(conn, &answer.item_kind, &answer.item_id, &next)?;
     }
 
     let mut xp = stats::xp_for_answer(&answer.kind, correct, answer.is_new);
@@ -203,7 +205,7 @@ fn unlocked_codes(conn: &mut Conn) -> Result<std::collections::HashSet<String>> 
 
 /// The exercises of a drill lesson.
 #[tauri::command]
-pub async fn lesson_session(db: State<'_, Db>, lesson_id: i64) -> Result<SessionPlan> {
+pub async fn lesson_session(db: State<'_, Db>, lesson_id: LessonId) -> Result<SessionPlan> {
     session::build_lesson(&mut db.lock(), lesson_id)
 }
 
@@ -225,18 +227,18 @@ pub struct LessonFinished {
 /// A drill is done: its score becomes a result that schedules the next
 /// check-in, and the day counts toward the streak.
 #[tauri::command]
-pub async fn lesson_finish(db: State<'_, Db>, lesson_id: i64, correct: i64, total: i64) -> Result<LessonFinished> {
+pub async fn lesson_finish(db: State<'_, Db>, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
     lesson_finish_in(&mut db.lock(), lesson_id, correct, total)
 }
 
 /// The work behind [`lesson_finish`], callable without Tauri (tests).
 /// Finishes a drill: its grade, schedule, mastery, XP and the day, all or
 /// nothing (one transaction).
-pub fn lesson_finish_in(conn: &mut Conn, lesson_id: i64, correct: i64, total: i64) -> Result<LessonFinished> {
+pub fn lesson_finish_in(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
     conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, correct, total))
 }
 
-fn lesson_finish_steps(conn: &mut Conn, lesson_id: i64, correct: i64, total: i64) -> Result<LessonFinished> {
+fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
     let before = unlocked_codes(conn)?;
     let result = lessons::result_from_score(correct, total);
     let today = db::today(conn);
@@ -262,12 +264,12 @@ fn lesson_finish_steps(conn: &mut Conn, lesson_id: i64, correct: i64, total: i64
 /// Stats after a check-in, for the summary screen. What counts as newly
 /// unlocked is what was unlocked since the check-in began.
 #[tauri::command]
-pub async fn checkin_summary(db: State<'_, Db>, checkin_id: i64, first_completion_today: bool) -> Result<SessionResult> {
+pub async fn checkin_summary(db: State<'_, Db>, checkin_id: CheckinId, first_completion_today: bool) -> Result<SessionResult> {
     let mut guard = db.lock();
     checkin_summary_in(&mut guard, checkin_id, first_completion_today)
 }
 
-pub fn checkin_summary_in(conn: &mut Conn, checkin_id: i64, first_completion_today: bool) -> Result<SessionResult> {
+pub fn checkin_summary_in(conn: &mut Conn, checkin_id: CheckinId, first_completion_today: bool) -> Result<SessionResult> {
     use crate::schema::checkins;
     let started: i64 = checkins::table.find(checkin_id).select(checkins::started_at).first(conn)?;
     let before: std::collections::HashSet<String> = achievements::table

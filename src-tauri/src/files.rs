@@ -23,6 +23,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
+use crate::ids::*;
 use crate::schema::files;
 
 pub const SPEECH: &str = "speech";
@@ -37,8 +38,8 @@ pub const WORD_IMAGE: &str = "word_image";
 #[allow(dead_code)] // every column, though not every caller reads each
 #[derive(Debug, Clone, QueryableByName)]
 pub struct FileInfo {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub id: i64,
+    #[diesel(sql_type = FileIdSql)]
+    pub id: FileId,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub kind: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
@@ -59,8 +60,8 @@ const META: &str = "SELECT id, kind, name, mime, size, path FROM files INDEXED B
 
 #[derive(QueryableByName)]
 struct PathRow {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    id: i64,
+    #[diesel(sql_type = FileIdSql)]
+    id: FileId,
     #[diesel(sql_type = diesel::sql_types::Text)]
     path: String,
 }
@@ -70,9 +71,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Stores a file and returns its id.
-pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<i64> {
+pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<FileId> {
     Ok(diesel::insert_into(files::table)
         .values((
+            files::id.eq(FileId::new()),
             files::kind.eq(kind),
             files::name.eq(name),
             files::mime.eq(mime),
@@ -85,16 +87,16 @@ pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) 
         .get_result(conn)?)
 }
 
-pub fn info(conn: &mut Conn, id: i64) -> Result<FileInfo> {
+pub fn info(conn: &mut Conn, id: FileId) -> Result<FileInfo> {
     diesel::sql_query(format!("{META} WHERE id = ?"))
-        .bind::<diesel::sql_types::BigInt, _>(id)
+        .bind::<FileIdSql, _>(id)
         .get_result(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That file no longer exists."))
 }
 
 /// A file's type and contents.
-pub fn read(conn: &mut Conn, id: i64) -> Result<(String, Vec<u8>)> {
+pub fn read(conn: &mut Conn, id: FileId) -> Result<(String, Vec<u8>)> {
     files::table
         .find(id)
         .select((files::mime, files::bytes))
@@ -104,11 +106,12 @@ pub fn read(conn: &mut Conn, id: i64) -> Result<(String, Vec<u8>)> {
 }
 
 /// Where each file's copy on disk is, for those that have one.
-pub fn paths(conn: &mut Conn, ids: &[i64]) -> Result<std::collections::HashMap<i64, String>> {
+pub fn paths(conn: &mut Conn, ids: &[FileId]) -> Result<std::collections::HashMap<FileId, String>> {
     let mut found = std::collections::HashMap::new();
     for chunk in ids.chunks(500) {
-        // Ids are integers: written into the query, they cannot inject.
-        let list = chunk.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+        // Ids are checked TypeIDs (letters, digits and an underscore):
+        // quoted into the query, they cannot inject.
+        let list = chunk.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",");
         let rows: Vec<PathRow> = diesel::sql_query(format!(
             "SELECT id, path FROM files INDEXED BY files_meta WHERE path IS NOT NULL AND id IN ({list})"
         ))
@@ -120,7 +123,7 @@ pub fn paths(conn: &mut Conn, ids: &[i64]) -> Result<std::collections::HashMap<i
 
 /// Deletes files and their copies on disk. A file still referenced where
 /// that is not allowed (a take's audio) is refused, and nothing is deleted.
-pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
+pub fn delete(conn: &mut Conn, ids: &[FileId]) -> Result<usize> {
     if ids.is_empty() {
         return Ok(0);
     }
@@ -141,16 +144,16 @@ pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
 
 /// Every file some row points at. This is the one list of the columns that
 /// reference files: a new one belongs here, with a foreign key in the schema.
-pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
+pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> {
     use crate::schema::{song_tracks, speech_clips, courses, wiki_sources, words};
-    let mut ids: std::collections::HashSet<i64> =
-        speech_clips::table.select(speech_clips::file_id).load::<i64>(conn)?.into_iter().collect();
-    let takes: Vec<(Option<i64>, Option<i64>)> =
+    let mut ids: std::collections::HashSet<FileId> =
+        speech_clips::table.select(speech_clips::file_id).load::<FileId>(conn)?.into_iter().collect();
+    let takes: Vec<(Option<FileId>, Option<FileId>)> =
         song_tracks::table.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?;
     ids.extend(takes.into_iter().flat_map(|(audio, image)| [audio, image]).flatten());
-    ids.extend(courses::table.select(courses::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
-    ids.extend(wiki_sources::table.select(wiki_sources::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
-    ids.extend(words::table.select(words::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
+    ids.extend(courses::table.select(courses::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(wiki_sources::table.select(wiki_sources::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(words::table.select(words::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     Ok(ids)
 }
 
@@ -158,14 +161,14 @@ pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
 /// many went.
 pub fn collect_orphans(conn: &mut Conn) -> Result<usize> {
     let used = referenced(conn)?;
-    let orphans: Vec<i64> =
-        files::table.select(files::id).load::<i64>(conn)?.into_iter().filter(|id| !used.contains(id)).collect();
+    let orphans: Vec<FileId> =
+        files::table.select(files::id).load::<FileId>(conn)?.into_iter().filter(|id| !used.contains(id)).collect();
     delete(conn, &orphans)
 }
 
 /// Writes a file's copy into `dir` unless a copy is already there, and
 /// returns its path.
-pub fn materialize(conn: &mut Conn, dir: &Path, id: i64) -> Result<String> {
+pub fn materialize(conn: &mut Conn, dir: &Path, id: FileId) -> Result<String> {
     let file = info(conn, id)?;
     if let Some(path) = &file.path {
         if Path::new(path).exists() {
@@ -202,7 +205,7 @@ extern "SQL" {
 
 /// Part of a file's bytes, read in SQLite so a range request does not load
 /// a whole song.
-pub fn read_range(conn: &mut Conn, id: i64, start: u64, length: u64) -> Result<Vec<u8>> {
+pub fn read_range(conn: &mut Conn, id: FileId, start: u64, length: u64) -> Result<Vec<u8>> {
     Ok(files::table
         .find(id)
         .select(substr(files::bytes, crate::convert::signed(start) + 1, crate::convert::signed(length)))
@@ -248,7 +251,7 @@ pub fn slice(size: u64, range: Option<(u64, Option<u64>)>) -> Slice {
 pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{header, Response, StatusCode};
     let not_found = || Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()).unwrap();
-    let Some(id) = request.uri().path().trim_matches('/').split('/').next().and_then(|s| s.parse::<i64>().ok())
+    let Some(id) = request.uri().path().trim_matches('/').split('/').next().and_then(|s| FileId::parse(s).ok())
     else {
         return not_found();
     };
@@ -324,12 +327,12 @@ pub fn sync_to_disk(app: &AppHandle) {
             ))
             .load(&mut *db.lock())?;
             if !stale.is_empty() {
-                let ids: Vec<i64> = stale.iter().map(|row| row.id).collect();
+                let ids: Vec<FileId> = stale.iter().map(|row| row.id).collect();
                 diesel::update(files::table.filter(files::id.eq_any(ids)))
                     .set(files::path.eq(None::<String>))
                     .execute(&mut *db.lock())?;
             }
-            let ids: Vec<i64> = files::table
+            let ids: Vec<FileId> = files::table
                 .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
                 .select(files::id)
                 .load(&mut *db.lock())?;

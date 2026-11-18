@@ -2,6 +2,8 @@
 
 use diesel::prelude::*;
 
+#[allow(unused_imports)]
+use crate::ids::*;
 use crate::db::Conn;
 use crate::schema::reviews;
 
@@ -92,7 +94,7 @@ pub fn grade(state: ReviewState, grade: i64, today: i64) -> ReviewState {
     next
 }
 
-pub fn load(conn: &mut Conn, kind: &str, item_id: i64) -> Result<Option<ReviewState>> {
+pub fn load(conn: &mut Conn, kind: &str, item_id: &str) -> Result<Option<ReviewState>> {
     Ok(reviews::table
         .find((kind, item_id))
         .select(ReviewState::as_select())
@@ -100,7 +102,7 @@ pub fn load(conn: &mut Conn, kind: &str, item_id: i64) -> Result<Option<ReviewSt
         .optional()?)
 }
 
-pub fn save(conn: &mut Conn, kind: &str, item_id: i64, state: &ReviewState) -> Result<()> {
+pub fn save(conn: &mut Conn, kind: &str, item_id: &str, state: &ReviewState) -> Result<()> {
     diesel::insert_into(reviews::table)
         .values((reviews::kind.eq(kind), reviews::item_id.eq(item_id), state))
         .on_conflict((reviews::kind, reviews::item_id))

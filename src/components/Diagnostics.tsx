@@ -2,12 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button, Inline, Section, Stack } from "../design";
 import { api, errorMessage } from "../lib/api";
+import { idsIn, resolveIds, withTitles } from "../lib/ids";
 import { toast } from "../lib/toast";
 import type { DiagnosticEntry } from "../lib/types";
 
-/** The entries as plain text, to paste into a message. */
+/**
+ * The entries as plain text, to paste into a message. Each id keeps its
+ * title beside it ("ls_01jd… (Pierwsze spotkanie)"), so the log reads on its
+ * own and the id is still there to look up.
+ */
 function asText(entries: DiagnosticEntry[]): string {
-  return entries.map((e) => `${new Date(e.at * 1000).toISOString()} [${e.kind}] ${e.message}`).join("\n");
+  return entries
+    .map(
+      (e) =>
+        `${new Date(e.at * 1000).toISOString()} [${e.kind}] ${withTitles(e.message)}`,
+    )
+    .join("\n");
 }
 
 /** Copies text, with a fallback for webviews without the clipboard API. */
@@ -38,7 +48,10 @@ export function Diagnostics() {
   const load = useCallback(() => {
     api
       .diagnostics()
-      .then(setEntries)
+      .then(async (found) => {
+        await resolveIds(found.flatMap((e) => idsIn(e.message)));
+        setEntries(found);
+      })
       .catch(() => setEntries([]));
   }, []);
   useEffect(load, [load]);
@@ -48,15 +61,20 @@ export function Diagnostics() {
       title="Diagnostics"
       info={
         <p>
-          What the app noted about itself: how long slow screens took to load, answers from AI models
-          it could not read, and work in the background that failed. Copy it to pass it on when
-          something seems wrong. It stays on this device.
+          What the app noted about itself: how long slow screens took to load,
+          answers from AI models it could not read, and work in the background
+          that failed. Copy it to pass it on when something seems wrong. It
+          stays on this device.
         </p>
       }
     >
       <Stack gap={3}>
         <pre className="diagnostics-log selectable">
-          {entries === null ? "Loading…" : entries.length === 0 ? "Nothing noted yet." : asText(entries)}
+          {entries === null
+            ? "Loading…"
+            : entries.length === 0
+              ? "Nothing noted yet."
+              : asText(entries)}
         </pre>
         <Inline gap={2} wrap>
           <Button

@@ -113,7 +113,7 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
       {talking ? (
         <WordChat
           itemKind="line"
-          itemId={0}
+          itemId=""
           title={talking.pl}
           meaning={talking.meaning}
           onClose={() => setTalking(null)}
