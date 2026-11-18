@@ -1,6 +1,8 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { z } from "zod";
 
+import { logError } from "./log";
+
 /**
  * Listens to an event from the Rust core, checking each payload against
  * `schema`: a payload of the wrong shape is reported and dropped, never
@@ -14,7 +16,14 @@ export function onEvent<S extends z.ZodTypeAny>(
   return listen<unknown>(name, (event) => {
     const parsed = schema.safeParse(event.payload);
     if (parsed.success) handler({ payload: parsed.data });
-    else console.error(`Unexpected payload for ${name}`, parsed.error.issues, event.payload);
+    else
+      logError(
+        "shape",
+        `Event ${name}: ${parsed.error.issues
+          .slice(0, 3)
+          .map((issue) => `${issue.path.join(".") || "(payload)"}: ${issue.message}`)
+          .join("; ")}`,
+      );
   });
 }
 

@@ -18,6 +18,7 @@ import { platform } from "@tauri-apps/plugin-os";
 
 import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
+import { logCause } from "./log";
 import type { CastDevice, CastState, Song, SongTrack } from "./types";
 import { onEvent } from "./events";
 import { CastStateSchema } from "./types";
@@ -79,6 +80,7 @@ function set(patch: Partial<PlayerState>) {
 }
 
 function fail(cause: unknown) {
+  logCause("player", cause);
   set({ error: errorMessage(cause) });
 }
 

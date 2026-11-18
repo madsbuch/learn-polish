@@ -2981,6 +2981,9 @@ fn start_job(app: &tauri::AppHandle, db: &Db, conversation_id: i64) -> Result<()
             let mut guard = db.lock();
             let conn = &mut *guard;
             let error = result.as_ref().err().map(|e| e.to_string());
+            if let Some(error) = &error {
+                crate::diagnostics::note("tutor", format!("Conversation {conversation_id}: {error}"));
+            }
             let _ = diesel::update(tutor_conversations::table.find(conversation_id))
                 .set((
                     tutor_conversations::job_started_at.eq(None::<i64>),

@@ -95,6 +95,31 @@ pub fn entries() -> Vec<Entry> {
     list
 }
 
+/// Notes an error the screens met: a command that failed, an answer of the
+/// wrong shape, an uncaught exception. Messages are trimmed.
+#[tauri::command]
+pub fn diagnostics_note(kind: String, message: String) {
+    let kind: String = kind.chars().take(40).collect();
+    note(if kind.is_empty() { "error" } else { &kind }, message.chars().take(EXCERPT * 4).collect::<String>());
+}
+
+/// Every panic goes in the log too (with where it happened), then on to the
+/// default handler.
+pub fn note_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let place = info.location().map(|l| format!(" at {}:{}", l.file(), l.line())).unwrap_or_default();
+        let message = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "a panic".into());
+        note("panic", format!("{message}{place}"));
+        default(info);
+    }));
+}
+
 #[tauri::command]
 pub fn diagnostics_list() -> Vec<Entry> {
     entries()

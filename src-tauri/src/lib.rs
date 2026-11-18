@@ -61,6 +61,7 @@ fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     diagnostics::started();
+    diagnostics::note_panics();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
@@ -160,6 +161,7 @@ pub fn run() {
             pictures::lesson_add_pictures,
             lesson_types::lesson_types,
             diagnostics::diagnostics_list,
+            diagnostics::diagnostics_note,
             xplog::xp_day,
             xplog::xp_history,
             diagnostics::diagnostics_clear,

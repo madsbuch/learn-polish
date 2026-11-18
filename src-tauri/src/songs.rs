@@ -1372,6 +1372,9 @@ pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Resu
 }
 
 pub(crate) fn set_status(conn: &mut Conn, id: i64, status: &str, error: Option<&str>) -> Result<()> {
+    if let Some(error) = error {
+        crate::diagnostics::note("music", format!("Song or episode {id} failed: {error}"));
+    }
     diesel::update(songs::table.find(id)).set((songs::status.eq(status), songs::error.eq(error))).execute(conn)?;
     Ok(())
 }

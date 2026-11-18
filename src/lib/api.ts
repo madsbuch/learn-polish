@@ -1,6 +1,8 @@
 import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { z } from "zod";
 
+import { describe, logCause, logError, markLogged } from "./log";
+
 import type {
   MemoryCategory,
   CastDevice,
@@ -79,18 +81,30 @@ export class ShapeError extends Error {
  * nothing crosses into the screens unchecked.
  */
 async function call<S extends z.ZodTypeAny>(schema: S, command: string, args?: InvokeArgs): Promise<z.infer<S>> {
-  const raw: unknown = await invoke<unknown>(command, args);
+  const raw = await invokeLogged(command, args);
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    console.error(command, parsed.error.issues, raw);
-    throw new ShapeError(command, parsed.error.issues);
+    const error = new ShapeError(command, parsed.error.issues);
+    logCause("shape", error);
+    throw error;
   }
   return parsed.data;
 }
 
+/** Runs a command; a failure goes in the Diagnostics log (never its arguments, which can hold keys). */
+async function invokeLogged(command: string, args?: InvokeArgs): Promise<unknown> {
+  try {
+    return await invoke<unknown>(command, args);
+  } catch (cause) {
+    logError("command", `${command}: ${describe(cause)}`);
+    markLogged(cause);
+    throw cause;
+  }
+}
+
 /** Runs a command whose result is nothing (Rust's `()`); nothing is read back. */
 async function run(command: string, args?: InvokeArgs): Promise<void> {
-  await invoke<unknown>(command, args);
+  await invokeLogged(command, args);
 }
 
 /** Minutes to add to UTC to get local time — the backend needs it to know when

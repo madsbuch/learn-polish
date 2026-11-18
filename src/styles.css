@@ -1472,3 +1472,10 @@ html.scanning #root {
     opacity: 0.8;
   }
 }
+
+/* When a screen fails to draw (ErrorBoundary). */
+.error-screen {
+  min-height: var(--app-height, 100dvh);
+  padding: var(--space-8) var(--gutter);
+  background: var(--bg);
+}
