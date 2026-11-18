@@ -3,15 +3,40 @@
  * else: they never set a font size, a colour or a spacing by hand. The rules
  * are in DESIGN.md; `scripts/check-design.mjs` enforces the mechanical ones.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
 import { useBackHandler } from "../lib/back";
 import { current as currentToasts, dismiss as dismissToast, subscribe as subscribeToasts } from "../lib/toast";
+import {
+  backward,
+  prefersReducedMotion,
+  recall,
+  remember,
+  ScreenEnterProvider,
+  useEnterDirection,
+  useScreenEnter,
+  useStagger,
+} from "./motion";
 import "./tokens.css";
 import "./base.css";
 import "./components.css";
+
+export {
+  backward,
+  CountUp,
+  Confetti,
+  markBack,
+  prefersReducedMotion,
+  recall,
+  remember,
+  useBump,
+  useCountUp,
+  useScreenEnter,
+  useStagger,
+  type ScreenEnter,
+} from "./motion";
 
 type Gap = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
@@ -125,8 +150,11 @@ export function Screen({
   footer,
   backdrop,
   width = "reading",
+  stagger,
   children,
 }: {
+  /** The body's blocks rise in one after another as it opens (a summary). */
+  stagger?: boolean;
   /**
    * A picture behind the top of the page (an image URL), fading into the
    * background; it drifts and fades as the page scrolls. Not with `footer`.
@@ -154,12 +182,19 @@ export function Screen({
   children: ReactNode;
 }) {
   const pushed = Boolean(onBack || onClose);
+  // Pushed screens slide in from the right, slid-up ones rise, a tab's root
+  // fades in; whatever is returned to comes back from the left.
+  const enter = useEnterDirection(onClose && !onBack ? "up" : pushed ? "push" : "tab");
+  const back = onBack ? backward(onBack) : undefined;
+  const close = onClose ? backward(onClose) : undefined;
+  const bodyStagger = useStagger();
+  const bodyClass = cx("screen-body", stagger && bodyStagger);
   // The system back button does what the screen's own ← or ⌄ does.
-  useBackHandler(pushed, onBack ?? onClose);
+  useBackHandler(pushed, back ?? close);
   const head = header ?? (
     <header className="screen-header" data-pushed={pushed}>
-      {onBack ? <IconButton icon={<BackIcon />} label="Back" onClick={onBack} /> : null}
-      {onClose ? <IconButton icon={<DownIcon />} label="Close" onClick={onClose} /> : null}
+      {back ? <IconButton icon={<BackIcon />} label="Back" onClick={back} /> : null}
+      {close ? <IconButton icon={<DownIcon />} label="Close" onClick={close} /> : null}
       <div className="screen-header__titles">
         {title ? (
           <h1 className="screen-header__title with-info">
@@ -178,27 +213,29 @@ export function Screen({
   );
   if (!footer) {
     return (
-      <div className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)}>
-        {backdrop ? <Backdrop src={backdrop} /> : null}
-        {head}
-        <div className="screen-body">{children}</div>
-      </div>
+      <ScreenEnterProvider value={enter}>
+        <div className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)} data-enter={enter}>
+          {backdrop ? <Backdrop src={backdrop} /> : null}
+          {head}
+          <div className={bodyClass}>{children}</div>
+        </div>
+      </ScreenEnterProvider>
     );
   }
   // With a footer (a chat), the header is docked too: only the middle scrolls,
   // so Back and the input are always in reach.
   return (
-    <>
-      <div className="screen-top" data-width={width}>
+    <ScreenEnterProvider value={enter}>
+      <div className="screen-top" data-width={width} data-enter={enter}>
         {head}
       </div>
-      <div className="screen" data-width={width} data-nav={nav} data-footer="true">
-        <div className="screen-body">{children}</div>
+      <div className="screen" data-width={width} data-nav={nav} data-footer="true" data-enter={enter}>
+        <div className={bodyClass}>{children}</div>
       </div>
-      <div className="screen-footer" data-width={width} data-nav={nav}>
+      <div className="screen-footer" data-width={width} data-nav={nav} data-enter={enter}>
         {footer}
       </div>
-    </>
+    </ScreenEnterProvider>
   );
 }
 
@@ -349,8 +386,10 @@ export function Hero({ className, children }: { className?: string; children: Re
 
 // ================================================================= lists
 
-export function List({ children }: { children: ReactNode }) {
-  return <div className="list">{children}</div>;
+export function List({ stagger, children }: { stagger?: boolean; children: ReactNode }) {
+  // `stagger`: its rows rise in one after another as the screen first shows them.
+  const rise = useStagger();
+  return <div className={cx("list", stagger && rise)}>{children}</div>;
 }
 
 /**
@@ -510,10 +549,13 @@ export function IconButton({
   failed,
   off,
   keepFocus,
+  pulse,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  /** A soft halo breathing around it while something it started goes on (play, while playing). */
+  pulse?: boolean;
   /**
    * Tapping it leaves focus (and the keyboard) where it is — for a send
    * button next to a text box. Otherwise the box loses focus first, the
@@ -536,6 +578,7 @@ export function IconButton({
       data-size={size}
       data-failed={failed || undefined}
       data-off={off || undefined}
+      data-pulse={pulse || undefined}
       disabled={disabled || loading}
       onPointerDown={keepFocus ? (event) => event.preventDefault() : undefined}
       onMouseDown={keepFocus ? (event) => event.preventDefault() : undefined}
@@ -727,6 +770,17 @@ export function Spinner() {
   return <span className="spinner" aria-label="Loading" />;
 }
 
+/** The other side of a chat is writing: three dots taking turns to light up. */
+export function Typing() {
+  return (
+    <span className="typing" role="status" aria-label="Writing">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
     <div className="center-screen">
@@ -740,18 +794,30 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   );
 }
 
+/**
+ * A bar. It fills in as it appears (from where it stood when last seen, with
+ * `memory`), and slides to a new value when it changes.
+ */
 export function Progress({
   value,
   max,
   tone,
   size,
+  memory,
 }: {
   value: number;
   max: number;
   tone?: "gold" | "mint";
   size?: "sm";
+  /** A name to remember it by, e.g. "course:12": shown again, it moves on from there. */
+  memory?: string;
 }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const enter = useScreenEnter();
+  // Where the fill starts as it appears: where it was last seen, or empty
+  // on a new screen (a screen returned to shows it where it is).
+  const [from] = useState(() => recall(memory) ?? (enter === "back" || prefersReducedMotion() ? pct : 0));
+  useEffect(() => remember(memory, pct), [memory, pct]);
   return (
     <div
       className="progress"
@@ -761,7 +827,7 @@ export function Progress({
       aria-valuenow={value}
       aria-valuemax={max}
     >
-      <span style={{ width: `${pct}%` }} />
+      <span style={{ "--pct": pct, "--from": from }} />
     </div>
   );
 }
@@ -809,6 +875,9 @@ export function EmptyState({
 
 // ================================================================= sheets
 
+/** How long a sheet takes to slide away (components.css → sheet-out). */
+const SHEET_CLOSE_MS = 180;
+
 /** A panel that slides up from the bottom. Tapping outside closes it. */
 export function Sheet({
   title,
@@ -825,22 +894,37 @@ export function Sheet({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  // Closing from the sheet itself (✕, outside, Escape, back) lets it slide
+  // away first; closed from outside (a choice made in it), it just goes.
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef(0);
+  const dismiss = useCallback(() => {
+    if (prefersReducedMotion()) {
+      onClose();
+      return;
+    }
+    if (closeTimer.current) return;
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, SHEET_CLOSE_MS);
+  }, [onClose]);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && dismiss();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [dismiss]);
   // Back closes the sheet, not the page under it.
-  useBackHandler(true, onClose);
+  useBackHandler(true, dismiss);
   // Rendered at the top of the page, so it never takes on the look of where
   // it was opened from (an ⓘ inside a bold, single-line title, say).
   return createPortal(
     <div
-      className="sheet-backdrop fade-in"
+      className="sheet-backdrop"
+      data-closing={closing || undefined}
       onClick={(event) => {
         // A portal still passes clicks up to where it was opened from.
         event.stopPropagation();
-        onClose();
+        dismiss();
       }}
     >
       <div
@@ -852,7 +936,7 @@ export function Sheet({
       >
         <div className="sheet-header">
           <h2>{title}</h2>
-          <IconButton icon={<CloseIcon />} label="Close" onClick={onClose} />
+          <IconButton icon={<CloseIcon />} label="Close" onClick={dismiss} />
         </div>
         {footer ? (
           <>

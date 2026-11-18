@@ -241,8 +241,16 @@ h3,
 
 /* ------------------------------------------------------------- motion */
 
+/*
+ * One motion language (DESIGN.md → Motion). Entrances run once, as a thing
+ * appears, on transform and opacity, with `backwards` fill only — so when
+ * they end nothing is left transformed or on a layer of its own (WebKit
+ * would otherwise scroll such layers a moment apart from the rest).
+ * Anything that repeats inside a scrolling box animates colours only.
+ */
+
 .fade-in {
-  animation: fade var(--duration) ease;
+  animation: fade var(--duration) var(--ease-out) backwards;
 }
 @keyframes fade {
   from {
@@ -251,12 +259,54 @@ h3,
   }
 }
 .pop {
-  animation: pop 0.28s cubic-bezier(0.2, 1.5, 0.4, 1);
+  animation: pop var(--duration-slow) var(--ease-spring) backwards;
 }
 @keyframes pop {
   from {
     transform: scale(0.9);
     opacity: 0;
+  }
+}
+/* Rising in: a row of a list, a block of a screen. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise-shift));
+  }
+}
+/* A screen coming in: pushed (from the right), returned to (from the
+   left), slid up, or a tab's root (a short rise). */
+@keyframes enter-push {
+  from {
+    opacity: 0;
+    transform: translateX(var(--enter-shift));
+  }
+}
+@keyframes enter-back {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--enter-shift) * -1));
+  }
+}
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--enter-shift) * 2));
+  }
+}
+/* Something earned: a quick swell that settles. */
+@keyframes bump {
+  40% {
+    transform: scale(var(--bump-scale, 1.12));
+  }
+}
+/* A moment of success: a glow that blooms and fades (shadow only). */
+@keyframes glow {
+  30% {
+    box-shadow: 0 0 0 6px var(--glow-colour, var(--glow-brand));
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
   }
 }
 @keyframes spin {
@@ -265,11 +315,17 @@ h3,
   }
 }
 @keyframes shake {
-  25% {
-    transform: translateX(-4px);
+  20% {
+    transform: translateX(-6px);
   }
-  75% {
-    transform: translateX(4px);
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
   }
 }
 @keyframes blink {
@@ -277,11 +333,29 @@ h3,
     opacity: 0;
   }
 }
+
+/* A list's rows (or a screen's blocks) rising one after another: useStagger
+   puts this class on the container for the first moment only. */
+.stagger > * {
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
+}
+.stagger > :nth-child(2) { animation-delay: calc(var(--stagger-step) * 1); }
+.stagger > :nth-child(3) { animation-delay: calc(var(--stagger-step) * 2); }
+.stagger > :nth-child(4) { animation-delay: calc(var(--stagger-step) * 3); }
+.stagger > :nth-child(5) { animation-delay: calc(var(--stagger-step) * 4); }
+.stagger > :nth-child(6) { animation-delay: calc(var(--stagger-step) * 5); }
+.stagger > :nth-child(7) { animation-delay: calc(var(--stagger-step) * 6); }
+.stagger > :nth-child(n + 8) { animation-delay: calc(var(--stagger-step) * 7); }
+
+/* The one guard: with reduced motion, everything is where it ends at once.
+   (JavaScript-driven motion checks prefersReducedMotion() itself.) */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
   }
 }

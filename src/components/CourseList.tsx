@@ -1,4 +1,4 @@
-import { Avatar, List, ListItem, Progress, Stack } from "../design";
+import { Avatar, List, ListItem, Progress, Stack, useStagger } from "../design";
 import { fileUrl } from "../lib/files";
 import { dayToDate } from "../lib/lessons";
 import type { CourseProgress } from "../lib/types";
@@ -36,8 +36,10 @@ export function CourseList({
   entries: CourseProgress[];
   onOpen: (progress: CourseProgress) => void;
 }) {
+  // The cards rise in one after another as the screen first shows them.
+  const rise = useStagger();
   return (
-    <div className="course-grid">
+    <div className={rise ? `course-grid ${rise}` : "course-grid"}>
       {entries.map((entry) =>
         entry.openEnded ? (
           // The folder of one-offs (Other lessons): a plain row, no progress.
@@ -66,9 +68,20 @@ export function CourseList({
                 <Stack gap={2}>
                   <span>{courseLine(entry)}</span>
                   {entry.status === "active" ? (
-                    <Progress value={entry.passedCore} max={Math.max(1, entry.coreLessons)} size="sm" />
+                    <Progress
+                      value={entry.passedCore}
+                      max={Math.max(1, entry.coreLessons)}
+                      size="sm"
+                      memory={`course:${entry.course.id}:passed`}
+                    />
                   ) : entry.status === "completed" && entry.closedAt === null ? (
-                    <Progress value={entry.masteryPoints} max={Math.max(1, entry.masteryMax)} size="sm" tone="gold" />
+                    <Progress
+                      value={entry.masteryPoints}
+                      max={Math.max(1, entry.masteryMax)}
+                      size="sm"
+                      tone="gold"
+                      memory={`course:${entry.course.id}:mastery`}
+                    />
                   ) : null}
                 </Stack>
               }

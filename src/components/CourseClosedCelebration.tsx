@@ -1,9 +1,5 @@
-import { useMemo } from "react";
-
-import { Button, Stack, Text } from "../design";
+import { Button, Confetti, CountUp, Stack, Text } from "../design";
 import type { CourseClosed } from "../lib/types";
-
-const COLOURS = ["var(--gold)", "var(--brand)", "var(--mint)", "var(--sky)", "var(--crimson)"];
 
 /**
  * Closing a mastered course: the learner's own celebration. A trophy rises,
@@ -11,37 +7,15 @@ const COLOURS = ["var(--gold)", "var(--brand)", "var(--mint)", "var(--sky)", "va
  * motion) when the system asks for reduced motion.
  */
 export function CourseClosedCelebration({ closed, onDone }: { closed: CourseClosed; onDone: () => void }) {
-  const pieces = useMemo(
-    () =>
-      Array.from({ length: 48 }, (_, i) => ({
-        x: `${(i * 37) % 100}%`,
-        delay: `${((i * 53) % 90) / 100}s`,
-        spin: `${(i * 71) % 360}deg`,
-        colour: COLOURS[i % COLOURS.length],
-      })),
-    [],
-  );
-  const stats: [string, string][] = [
-    [String(closed.lessons), closed.lessons === 1 ? "lesson" : "lessons"],
-    [String(closed.words), closed.words === 1 ? "word" : "words"],
-    [String(closed.days), closed.days === 1 ? "day" : "days"],
-    [String(closed.xp), "XP"],
+  const stats: [number, string][] = [
+    [closed.lessons, closed.lessons === 1 ? "lesson" : "lessons"],
+    [closed.words, closed.words === 1 ? "word" : "words"],
+    [closed.days, closed.days === 1 ? "day" : "days"],
+    [closed.xp, "XP"],
   ];
   return (
     <div className="course-closed" role="dialog" aria-modal="true" aria-label={`${closed.title} mastered`}>
-      <div className="course-closed-confetti" aria-hidden="true">
-        {pieces.map((piece, i) => (
-          <i
-            key={i}
-            style={{
-              "--x": piece.x,
-              "--delay": piece.delay,
-              "--spin": piece.spin,
-              "--colour": piece.colour,
-            }}
-          />
-        ))}
-      </div>
+      <Confetti rounds={2} />
       <Stack gap={5} align="center">
         <div className="course-closed-trophy" aria-hidden="true">
           🏆
@@ -57,7 +31,9 @@ export function CourseClosedCelebration({ closed, onDone }: { closed: CourseClos
         <div className="course-closed-stats">
           {stats.map(([value, label]) => (
             <Stack key={label} gap={1} align="center">
-              <Text variant="title">{value}</Text>
+              <Text variant="title">
+                <CountUp value={value} from={0} duration={1200} />
+              </Text>
               <Text variant="caption" tone="dim">
                 {label}
               </Text>

@@ -97,22 +97,28 @@ function NowPlaying({ onOpen }: { onOpen: () => void }) {
   const item = currentItem(player);
   if (!item) return null;
   return (
-    <List>
-      <ListItem
-        leading={<Cover fileId={item.track.imageFileId} size={44} />}
-        title={item.song.title}
-        subtitle={player.cast ? `Now playing on ${player.cast.device.name}` : "Now playing"}
-        label="Open the player"
-        onClick={onOpen}
-        trailing={
-          <IconButton
-            icon={player.playing ? <PlayerIcon.pause size={20} /> : <PlayerIcon.play size={20} />}
-            label={player.playing ? "Pause" : "Play"}
-            onClick={toggle}
-          />
-        }
-      />
-    </List>
+    <div className="now-playing">
+      <List>
+        <ListItem
+          leading={<Cover fileId={item.track.imageFileId} size={44} />}
+          title={item.song.title}
+          subtitle={player.cast ? `Now playing on ${player.cast.device.name}` : "Now playing"}
+          label="Open the player"
+          onClick={onOpen}
+          trailing={
+            <IconButton
+              icon={
+                <span className="icon-swap" key={player.playing ? "pause" : "play"}>
+                  {player.playing ? <PlayerIcon.pause size={20} /> : <PlayerIcon.play size={20} />}
+                </span>
+              }
+              label={player.playing ? "Pause" : "Play"}
+              onClick={toggle}
+            />
+          }
+        />
+      </List>
+    </div>
   );
 }
 
@@ -577,7 +583,7 @@ function SongList({
           )
         }
       >
-        <List>
+        <List stagger>
           {songs.map((song) => {
             if (selecting) {
               const checked = selected.has(song.id);

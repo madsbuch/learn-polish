@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { LessonRow } from "../components/LessonRow";
 import { Logo, SearchIcon } from "../components/icons";
@@ -7,6 +7,7 @@ import {
   Avatar,
   Badge,
   Button,
+  CountUp,
   EmptyState,
   Hero,
   IconButton,
@@ -17,6 +18,9 @@ import {
   Section,
   Stack,
   Text,
+  recall,
+  remember,
+  useStagger,
 } from "../design";
 import { lessonMinutes, minutes } from "../lib/lessons";
 import type { Lesson, LessonOverview, Stats, CourseProgress } from "../lib/types";
@@ -58,6 +62,28 @@ function celebration(day: number): string {
     "All done for today! 🙌",
   ];
   return lines[((day % lines.length) + lines.length) % lines.length];
+}
+
+/**
+ * Today's ring. It fills from where it stood when last seen (empty on the
+ * first visit) to where it stands now, and glows when this visit is the one
+ * that filled it.
+ */
+function GoalRing({ pct, label, children }: { pct: number; label: string; children: ReactNode }) {
+  const [from] = useState(() => recall("today:ring"));
+  useEffect(() => remember("today:ring", pct), [pct]);
+  const filled = pct >= 100 && from !== undefined && from < 100;
+  return (
+    <div
+      className="goal-ring"
+      data-filled={filled || undefined}
+      style={{ "--ring": pct, "--ring-from": from ?? 0 }}
+      role="img"
+      aria-label={label}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function Exercises({
@@ -106,6 +132,7 @@ export function Exercises({
   const [showMastered, setShowMastered] = useState(false);
   // The next of today's lessons; when they are done, nothing more.
   const upNext = overview.due[0] ?? null;
+  const rise = useStagger();
 
   return (
     <Screen
@@ -123,20 +150,15 @@ export function Exercises({
     >
       <div className="practice-layout">
         {courses.length > 0 || stats.totalXp > 0 ? (
-          <div className="practice-today">
+          <div className={rise ? `practice-today ${rise}` : "practice-today"}>
             {courses.length > 0 ? (
               <Hero className="practice-today__hero">
                 <Stack gap={4}>
                   <Inline gap={4}>
-                    <div
-                      className="goal-ring"
-                      style={{ "--value": goalPct }}
-                      role="img"
-                      aria-label={`${doneCount} of ${total} of today's lessons done`}
-                    >
+                    <GoalRing pct={goalPct} label={`${doneCount} of ${total} of today's lessons done`}>
                       <div>
                         <Text variant="title" weight="bold">
-                          {finished ? "🎉" : doneCount}
+                          {finished ? <span className="goal-ring__done">🎉</span> : <CountUp value={doneCount} memory="today:done" />}
                         </Text>
                         {finished ? null : (
                           <Text variant="caption" tone="dim">
@@ -144,11 +166,15 @@ export function Exercises({
                           </Text>
                         )}
                       </div>
-                    </div>
+                    </GoalRing>
                     <div className="grow">
                       <Inline gap={2} wrap>
                         <Text variant="eyebrow">{finished ? "Today is done ✓" : "Today"}</Text>
-                        {stats.currentStreak > 0 ? <Badge>🔥 {stats.currentStreak}</Badge> : null}
+                        {stats.currentStreak > 0 ? (
+                          <Badge>
+                            🔥 <CountUp value={stats.currentStreak} memory="streak" />
+                          </Badge>
+                        ) : null}
                         {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
                       </Inline>
                       <Text variant="title" as="h2">
@@ -200,7 +226,7 @@ export function Exercises({
                     </>
                   }
                 >
-                  <List>
+                  <List stagger>
                     {overview.due.map((lesson) => (
                       <LessonRow
                         key={lesson.id}
@@ -221,10 +247,17 @@ export function Exercises({
                   <ListItem
                     leading={<Avatar>📈</Avatar>}
                     title="Your progress"
-                    subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
+                    subtitle={
+                      <>
+                        <CountUp value={stats.wordsSeen} memory="words:seen" /> words · level{" "}
+                        <CountUp value={stats.level} memory="level" />
+                      </>
+                    }
                     trailing={
                       <Inline gap={1}>
-                        <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
+                        <Badge tone="crimson">
+                          🔥 <CountUp value={stats.currentStreak} memory="streak" />
+                        </Badge>
                       </Inline>
                     }
                     chevron
@@ -232,7 +265,11 @@ export function Exercises({
                   />
                   <ListItem
                     leading={<Avatar>⭐</Avatar>}
-                    title={`${stats.dayXp} XP today`}
+                    title={
+                      <>
+                        <CountUp value={stats.dayXp} memory="xp:today" /> XP today
+                      </>
+                    }
                     subtitle="See exactly what earned it"
                     chevron
                     onClick={() => onOpenXpDay(overview.today)}

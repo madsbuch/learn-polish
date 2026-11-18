@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Banner, Inline, Sheet, Spinner, Text } from "../design";
+import { Banner, Inline, Sheet, Text, Typing } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useTutorJob } from "../lib/tutorJob";
 import type { ChatMessage, ConversationId } from "../lib/types";
@@ -31,6 +31,8 @@ export function WordChat({
 }) {
   const [conversationId, setConversationId] = useState<ConversationId | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  /** Messages sent from this sheet, which rise into place (not the history). */
+  const sent = useRef(new Set<ChatMessage["id"]>());
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const job = useTutorJob(conversationId);
@@ -78,6 +80,7 @@ export function WordChat({
     job.begin();
     try {
       const started = await api.tutorSend(message, conversationId);
+      sent.current.add(started.message.id);
       setMessages((current) => [...current, started.message]);
     } catch (cause) {
       job.cancel();
@@ -113,12 +116,17 @@ export function WordChat({
     >
       <div className="chat word-chat">
         {shown.map((message) => (
-          <div key={message.id} className="msg selectable" data-role={message.role}>
+          <div
+            key={message.id}
+            className="msg selectable"
+            data-role={message.role}
+            data-fresh={sent.current.has(message.id) || undefined}
+          >
             {message.role === "assistant" ? <Markdown text={message.content} /> : message.content}
           </div>
         ))}
         {job.working ? (
-          <div className="msg" data-role="assistant">
+          <div className="msg" data-role="assistant" data-fresh>
             {job.text ? (
               <div>
                 <Markdown text={job.text} />
@@ -126,7 +134,7 @@ export function WordChat({
               </div>
             ) : (
               <Inline gap={2}>
-                <Spinner />
+                <Typing />
                 <Text variant="small" tone="faint">
                   {job.status ?? "Thinking…"}
                 </Text>

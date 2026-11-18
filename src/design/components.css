@@ -128,6 +128,28 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* How a screen comes in (Screen decides; see motion.tsx). Once, as it
+   mounts: the whole screen moves, never its rows one by one as it scrolls. */
+.screen[data-enter="tab"],
+.screen-top[data-enter="tab"],
+.screen-footer[data-enter="tab"] {
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
+}
+.screen[data-enter="push"],
+.screen-top[data-enter="push"],
+.screen-footer[data-enter="push"] {
+  animation: enter-push var(--duration-slow) var(--ease-out) backwards;
+}
+.screen[data-enter="back"],
+.screen-top[data-enter="back"],
+.screen-footer[data-enter="back"] {
+  animation: enter-back var(--duration-slow) var(--ease-out) backwards;
+}
+.screen[data-enter="up"],
+.screen-top[data-enter="up"],
+.screen-footer[data-enter="up"] {
+  animation: enter-up var(--duration-slow) var(--ease-out) backwards;
+}
 
 .nav {
   position: absolute;
@@ -169,7 +191,7 @@
   width: 56px;
   height: 30px;
   border-radius: var(--radius-full);
-  transition: background var(--duration), transform var(--duration);
+  transition: background var(--duration), transform var(--duration) var(--ease-spring);
 }
 .nav button[aria-current="page"] {
   color: var(--brand-ink);
@@ -179,6 +201,10 @@
 }
 .nav button:active .nav-glyph {
   transform: scale(0.92);
+}
+/* The tab just chosen: its icon pops into its pill. */
+.nav button[aria-current="page"] .nav-glyph svg {
+  animation: pop var(--duration-slow) var(--ease-spring) backwards;
 }
 
 .center-screen {
@@ -224,10 +250,12 @@
 .card[data-interactive="true"] {
   width: 100%;
   text-align: left;
-  transition: transform var(--duration-fast);
+  transition: transform var(--duration) var(--ease-spring), box-shadow var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
 }
 .card[data-interactive="true"]:active {
-  transform: scale(0.99);
+  transform: scale(0.985);
+  transition-duration: var(--duration-fast);
 }
 
 /* The one gradient surface: the top thing on a screen that matters most. */
@@ -295,6 +323,9 @@
   text-align: left;
   padding-right: var(--space-2);
   align-self: stretch;
+}
+button.list-item__main {
+  transition: background-color var(--duration) var(--ease-out), opacity var(--duration-fast);
 }
 button.list-item__main:active {
   opacity: 0.7;
@@ -392,11 +423,14 @@ button.list-item__main:active {
   white-space: normal;
   overflow-wrap: anywhere;
   text-align: center;
-  transition: transform var(--duration-fast), opacity var(--duration-fast),
-    background var(--duration-fast);
+  /* Pressed in quickly, sprung back on release. */
+  transition: transform var(--duration) var(--ease-spring), opacity var(--duration-fast),
+    background var(--duration-fast), box-shadow var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
 }
 .button:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.96);
+  transition-duration: var(--duration-fast);
 }
 .button:disabled {
   opacity: 0.45;
@@ -462,11 +496,40 @@ button.list-item__main:active {
   border-radius: var(--radius-full);
   color: var(--text-dim);
   font-size: var(--font-lead);
-  transition: transform var(--duration-fast), background var(--duration-fast);
+  transition: transform var(--duration) var(--ease-spring), background var(--duration-fast);
 }
 .icon-button:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(0.88);
   background: var(--tint);
+  transition-duration: var(--duration-fast);
+}
+/* An icon that changes with its state (play ↔ pause) pops in as it swaps:
+   the new one is a new element (keyed by the state). */
+.icon-swap {
+  display: grid;
+  place-items: center;
+  animation: icon-swap var(--duration-slow) var(--ease-spring) backwards;
+}
+@keyframes icon-swap {
+  from {
+    opacity: 0;
+    transform: scale(0.5) rotate(-30deg);
+  }
+}
+/* A soft halo breathing around it while what it started goes on (play). A
+   shadow, not a transform: painted with the button, so it never lifts the
+   button onto a layer of its own inside a scrolling page. */
+.icon-button[data-pulse] {
+  animation: halo 2.4s ease-in-out infinite;
+}
+@keyframes halo {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--on-hero-tint);
+  }
+  50% {
+    box-shadow: 0 0 0 10px var(--on-hero-tint);
+  }
 }
 .icon-button:disabled {
   opacity: 0.35;
@@ -584,7 +647,7 @@ button.list-item__main:active {
   border-radius: var(--radius-full);
   background: var(--inverse-bg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform var(--duration) var(--ease-out);
+  transition: transform var(--duration-slow) var(--ease-spring);
 }
 .switch[aria-checked="true"] {
   background: var(--brand);
@@ -795,24 +858,68 @@ button.badge:active {
   flex: none;
 }
 
+/* Typing: the other side of a chat is writing. Three dots taking turns to
+   light up — colours only, so the scrolling chat is never split into layers. */
+.typing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--leading-small);
+}
+.typing i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background-color: var(--line);
+  animation: typing 1.2s ease-in-out infinite;
+}
+.typing i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.typing i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+@keyframes typing {
+  30% {
+    background-color: var(--brand-ink);
+  }
+  60% {
+    background-color: var(--line);
+  }
+}
 .progress {
   height: 8px;
   border-radius: var(--radius-full);
   background: var(--tint-strong);
   overflow: hidden;
 }
+/* The fill is a full-width bar slid in from the left (a transform, so it
+   moves on the compositor), clipped by the track's round ends. It fills in
+   from --from as it appears and slides to a new --pct when it changes. */
 .progress > span {
   display: block;
   height: 100%;
   border-radius: var(--radius-full);
-  background: linear-gradient(90deg, var(--brand-ink), var(--sky));
-  transition: width 0.35s ease;
+  /* The gradient spans the filled part only, as it did when the bar was
+     drawn at its width: sized to it, at the bar's right end. */
+  background-image: linear-gradient(90deg, var(--brand-ink), var(--sky));
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: calc(var(--pct, 0) * 1%) 100%;
+  transform: translateX(calc((var(--pct, 0) - 100) * 1%));
+  transition: transform var(--duration-count) var(--ease-out);
+  animation: bar-fill var(--duration-count) var(--ease-out) backwards;
+}
+@keyframes bar-fill {
+  from {
+    transform: translateX(calc((var(--from, 0) - 100) * 1%));
+  }
 }
 .progress[data-tone="gold"] > span {
-  background: var(--gold-gradient);
+  background-image: var(--gold-gradient);
 }
 .progress[data-tone="mint"] > span {
-  background: linear-gradient(90deg, var(--mint), var(--sky));
+  background-image: linear-gradient(90deg, var(--mint), var(--sky));
 }
 .progress[data-size="sm"] {
   height: 5px;
@@ -869,8 +976,13 @@ button.badge:active {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  animation: scrim-in var(--duration) var(--ease-out) backwards;
+}
+.sheet-backdrop[data-closing] {
+  animation: scrim-out var(--duration) var(--ease-in) forwards;
 }
 .sheet {
+  animation: sheet-in var(--duration-slow) var(--ease-out) backwards;
   width: 100%;
   max-width: var(--sheet-width);
   max-height: 85%;
@@ -887,6 +999,42 @@ button.badge:active {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+/* Leaving, it slides back down (or, a dialog, shrinks away) before it is gone. */
+.sheet-backdrop[data-closing] .sheet {
+  animation: sheet-out var(--duration) var(--ease-in) forwards;
+}
+@keyframes scrim-in {
+  from {
+    background-color: transparent;
+  }
+}
+@keyframes scrim-out {
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.94);
+  }
+}
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 /* A sheet with a footer: only the body scrolls; the footer (a message box)
    stays put — on top of the keyboard when it is up. */
@@ -1102,7 +1250,7 @@ button.badge:active {
   font-size: var(--font-small);
   line-height: var(--leading-small);
   font-weight: var(--weight-medium);
-  animation: toast-in var(--duration) var(--ease-out);
+  animation: toast-in var(--duration-slow) var(--ease-spring) backwards;
 }
 .toast[data-tone="error"] {
   border-left-color: var(--bad);
@@ -1113,7 +1261,7 @@ button.badge:active {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-16px) scale(0.96);
   }
 }
 
@@ -1378,6 +1526,9 @@ button.badge:active {
   .sheet {
     max-height: 100%;
     border-radius: var(--radius-xl);
+    /* A dialog here: it springs open in place, and shrinks away. */
+    animation-name: dialog-in;
+    animation-timing-function: var(--ease-spring);
     padding: var(--space-4) var(--space-6) var(--space-6);
   }
 }
@@ -1390,9 +1541,34 @@ button.badge:active {
     max-height: min(100%, var(--sheet-max-height));
   }
 }
+@media (min-width: 768px) {
+  .sheet-backdrop[data-closing] .sheet {
+    animation-name: dialog-out;
+  }
+}
 @media (hover: hover) and (pointer: fine) {
   button.list-item__main:hover,
   .nav button:hover:not([aria-current="page"]) .nav-glyph {
+    background: var(--tint);
+  }
+  /* What can be clicked answers the mouse. Cards and buttons lift by their
+     shadow and border alone — no transform — so a page scrolled under a
+     resting pointer moves as one piece in WebKit. */
+  .card[data-interactive="true"]:hover {
+    box-shadow: var(--hover-shadow);
+    border-color: var(--line);
+  }
+  .button:not(:disabled):hover {
+    box-shadow: var(--hover-shadow);
+  }
+  .button[data-variant="secondary"]:not(:disabled):hover {
+    border-color: var(--brand);
+  }
+  .button[data-variant="plain"]:not(:disabled):hover {
+    background: var(--tint);
+    box-shadow: none;
+  }
+  .icon-button:not(:disabled):hover {
     background: var(--tint);
   }
   .nav button:hover:not([aria-current="page"]) {

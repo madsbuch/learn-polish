@@ -7,15 +7,40 @@
 
 /* ============================================================== home */
 
+/* The ring's fill, registered so it can be animated: it fills from
+   --ring-from as it appears and moves on whenever --ring changes. Painted,
+   not composited, so it never leaves the page's layer. */
+@property --ring {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
 .goal-ring {
-  --value: 0;
   width: 92px;
   height: 92px;
   border-radius: var(--radius-full);
   flex: none;
   display: grid;
   place-items: center;
-  background: conic-gradient(var(--gold) calc(var(--value) * 1%), rgba(255, 255, 255, 0.18) 0);
+  background: conic-gradient(var(--gold) calc(var(--ring) * 1%), rgba(255, 255, 255, 0.18) 0);
+  transition: --ring var(--duration-celebrate) var(--ease-out);
+  animation: ring-fill var(--duration-celebrate) var(--ease-out) backwards;
+}
+@keyframes ring-fill {
+  from {
+    --ring: var(--ring-from);
+  }
+}
+/* This visit filled it: a golden glow once the fill lands, and the 🎉 pops. */
+.goal-ring[data-filled] {
+  --glow-colour: var(--glow-gold);
+  animation:
+    ring-fill var(--duration-celebrate) var(--ease-out) backwards,
+    glow 0.8s var(--ease-out) var(--duration-celebrate);
+}
+.goal-ring[data-filled] .goal-ring__done {
+  display: inline-block;
+  animation: pop var(--duration-slow) var(--ease-spring) var(--duration-celebrate) backwards;
 }
 .goal-ring > div {
   width: 76px;
@@ -43,6 +68,10 @@
 }
 .session-top > .icon-button {
   margin-left: calc(var(--space-2) * -1);
+}
+/* The next exercise slides in from the right as the last one is left. */
+.exercise-in {
+  animation: enter-push var(--duration-slow) var(--ease-out) backwards;
 }
 .session-body {
   flex: 1;
@@ -103,6 +132,25 @@
 .option[data-state="wrong"] {
   border-color: var(--bad);
   background: var(--bad-bg);
+}
+/* Checked: the right answer swells and glows, a wrong pick shakes. Once, as
+   the verdict comes (the states are set then). A wide option swells least. */
+.option[data-state="right"],
+.picture-option[data-state="right"],
+.gap-slot[data-state="right"] {
+  --glow-colour: var(--glow-ok);
+  --bump-scale: 1.03;
+  animation:
+    bump var(--duration-slow) var(--ease-spring),
+    glow 0.7s var(--ease-out);
+}
+.gap-slot[data-state="right"] {
+  --bump-scale: 1.12;
+}
+.option[data-state="wrong"],
+.picture-option[data-state="wrong"],
+.gap-slot[data-state="wrong"] {
+  animation: shake 0.36s var(--ease-out);
 }
 
 /* Picture lessons: the picture on a card, and four pictures to choose from. */
@@ -324,6 +372,23 @@
   background: var(--bad-bg);
   border-color: var(--bad-line);
 }
+/* Right: it pops in glowing. Wrong: it pops in, then shakes its head. */
+.verdict.pop[data-correct="true"] {
+  --glow-colour: var(--glow-ok);
+  animation:
+    pop var(--duration-slow) var(--ease-spring) backwards,
+    glow 0.7s var(--ease-out) var(--duration-fast);
+}
+.verdict.pop[data-correct="false"] {
+  animation:
+    pop var(--duration-slow) var(--ease-spring) backwards,
+    shake 0.36s var(--ease-out) var(--duration-slow);
+}
+/* Holds an element that swells as a number in it grows (useBump). */
+.bump-target {
+  display: inline-flex;
+  flex: none;
+}
 
 /* Fill the gaps */
 .gap-line {
@@ -464,6 +529,22 @@ body:has(.conversation-control) .line {
   border-radius: var(--radius-lg);
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* A message just sent, and the tutor's reply as it starts: they rise into
+   place. Only those — a conversation opened with history appears still, and
+   nothing moves while the chat scrolls. */
+.msg[data-fresh] {
+  animation: msg-in var(--duration-slow) var(--ease-spring) backwards;
+  transform-origin: bottom left;
+}
+.msg[data-fresh][data-role="user"] {
+  transform-origin: bottom right;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise-shift)) scale(0.96);
+  }
 }
 .msg[data-role="user"] {
   align-self: flex-end;
@@ -781,6 +862,15 @@ body:has(.conversation-control) .line {
   --cover-size: min(232px, 62vw) !important;
   border-radius: var(--radius-lg);
   box-shadow: 0 10px 22px -10px rgba(10, 5, 50, 0.7);
+  transition: transform var(--duration-slow) var(--ease-spring);
+}
+/* Paused, the cover settles back a little; playing, it springs forward. */
+.player-cover[data-playing="false"] .cover {
+  transform: scale(0.92);
+}
+/* What is playing, at the top of Music: it slides in when playback starts. */
+.now-playing {
+  animation: rise var(--duration-slow) var(--ease-spring) backwards;
 }
 .player-cover .cover.placeholder {
   background: var(--on-hero-tint);
@@ -1284,6 +1374,15 @@ body:has(.session-foot) .conversation-control {
 }
 .course-grid > .list {
   display: flex;
+  transition: box-shadow var(--duration) var(--ease-out), border-color var(--duration) var(--ease-out);
+}
+/* A course card under the mouse lifts by its shadow (no transform: see
+   DESIGN.md → Motion on WebKit and scrolling pages). */
+@media (hover: hover) and (pointer: fine) {
+  .course-grid > .list:hover {
+    box-shadow: var(--hover-shadow);
+    border-color: var(--line);
+  }
 }
 .course-grid .list-item {
   height: 100%;
@@ -1558,7 +1657,21 @@ html.scanning #root {
 .course-closed-trophy {
   font-size: calc(var(--space-8) * 2.4);
   line-height: 1;
-  animation: trophy-rise 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  animation: trophy-rise var(--duration-celebrate) var(--ease-spring) both;
+}
+/* The summary's 🎉 on a day done or a new level: it rises like the trophy. */
+.celebrate-rise {
+  display: inline-block;
+  animation: trophy-rise var(--duration-celebrate) var(--ease-spring) backwards;
+}
+/* A new level: its badge swells and glows gold, after the XP has counted. */
+.level-up {
+  display: inline-flex;
+  border-radius: var(--radius-full);
+  --glow-colour: var(--glow-gold);
+  animation:
+    bump 0.5s var(--ease-spring) var(--duration-celebrate),
+    glow 0.9s var(--ease-out) var(--duration-celebrate);
 }
 .course-closed-stats {
   display: grid;
@@ -1569,12 +1682,22 @@ html.scanning #root {
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
-.course-closed-confetti {
+/* Confetti (the Confetti component): over its container, or `fixed` over
+   the whole window. Never on a scrolling list: it sits above everything. */
+.confetti {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   pointer-events: none;
 }
-.course-closed-confetti i {
+.confetti[data-fixed] {
+  position: fixed;
+  z-index: var(--z-toast);
+}
+.stagger > .confetti {
+  animation: none;
+}
+.confetti i {
   position: absolute;
   top: calc(var(--space-4) * -1);
   left: var(--x);
@@ -1583,7 +1706,7 @@ html.scanning #root {
   border-radius: var(--radius-sm);
   background: var(--colour);
   opacity: 0;
-  animation: confetti-fall 2.6s ease-in var(--delay) 2 both;
+  animation: confetti-fall 2.6s ease-in var(--delay) var(--rounds, 1) both;
 }
 @keyframes trophy-rise {
   from {

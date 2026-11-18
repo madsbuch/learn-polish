@@ -90,7 +90,7 @@ export function Player({
       <div className="player-layout" data-landscape={landscape}>
         <div className="player-controls">
           <Hero className="player-card">
-            <div className="player-cover">
+            <div className="player-cover" data-playing={player.playing}>
               <Cover fileId={item.track.imageFileId} size={232} />
             </div>
             <Stack gap={1} align="center">
@@ -141,8 +141,13 @@ export function Player({
               <IconButton
                 variant="inverse-solid"
                 size="xl"
-                icon={player.playing ? <PlayerIcon.pause size={26} /> : <PlayerIcon.play size={26} />}
+                icon={
+                  <span className="icon-swap" key={player.playing ? "pause" : "play"}>
+                    {player.playing ? <PlayerIcon.pause size={26} /> : <PlayerIcon.play size={26} />}
+                  </span>
+                }
                 label={player.playing ? "Pause" : "Play"}
+                pulse={player.playing}
                 onClick={toggle}
               />
               <IconButton variant="inverse" icon={<PlayerIcon.next />} label="Next" onClick={next} />

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { WordChat } from "../components/WordChat";
 import { WrongAnswerReview } from "../components/WrongAnswerReview";
 import { CloseIcon } from "../components/icons";
-import { Badge, Banner, Button, EmptyState, IconButton, Progress, Text } from "../design";
+import { Badge, Banner, Button, CountUp, EmptyState, IconButton, Progress, Text, useBump } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
@@ -52,6 +52,8 @@ export function Session({
   const [talking, setTalking] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
+  // The XP badge swells as points come in.
+  const xpRef = useBump<HTMLSpanElement>(sessionXp);
   // This go at the lesson, so the XP log keeps its answers together.
   const runKey = useRef(`${plan.lessonId}-${Date.now()}`);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -200,10 +202,14 @@ export function Session({
         <div className="grow">
           <Progress value={index} max={total} />
         </div>
-        <Badge tone="gold">+{sessionXp} XP</Badge>
+        <span className="bump-target" ref={xpRef}>
+          <Badge tone="gold">
+            +<CountUp value={sessionXp} duration={400} /> XP
+          </Badge>
+        </span>
       </div>
 
-      <div className="session-body fade-in" key={exercise.key} ref={bodyRef}>
+      <div className="session-body exercise-in" key={exercise.key} ref={bodyRef}>
         {error ? <Banner tone="error">{error}</Banner> : null}
 
         {module.render(exerciseProps)}

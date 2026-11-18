@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Logo, NavIcon } from "./components/icons";
-import { Banner, Stack } from "./design";
+import { Banner, markBack, Stack } from "./design";
 import { Startup, type BootStep } from "./components/Startup";
 import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
@@ -76,6 +76,8 @@ type Overlay =
       kind: "summary";
       result: SessionResult;
       xp: number;
+      /** The lesson took the learner up a level (the summary celebrates). */
+      levelUp?: boolean;
       outcome?: {
         title: string;
         result: LessonResult;
@@ -476,6 +478,7 @@ export default function App() {
           plan={overlay.plan}
           onQuit={() => {
             stopAudio();
+            markBack();
             setOverlay(overlay.back);
             void refresh();
           }}
@@ -485,6 +488,7 @@ export default function App() {
               kind: "summary",
               result,
               xp: sessionXp,
+              levelUp: result.stats.level > stats.level,
               outcome: {
                 title: result.lesson.title,
                 result: result.result,
@@ -509,8 +513,11 @@ export default function App() {
         <SessionSummary
           result={overlay.result}
           sessionXp={overlay.xp}
+          levelUp={overlay.levelUp}
           outcome={overlay.outcome}
           onDone={() => {
+            // Back to where the lesson was started: a return, not a new screen.
+            markBack();
             setOverlay(overlay.back);
             if (overlay.back.kind === "none") setTab("exercises");
             void refresh();
@@ -603,6 +610,7 @@ export default function App() {
                 kind: "summary",
                 result,
                 xp: assessment.xp,
+                levelUp: result.stats.level > stats.level,
                 outcome: {
                   title: overlay.title,
                   result: assessment.result,

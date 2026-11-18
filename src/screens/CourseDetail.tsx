@@ -497,7 +497,7 @@ function CourseLessons({
             </p>
           }
         >
-          <List>{open.map(row)}</List>
+          <List stagger>{open.map(row)}</List>
         </Section>
       ) : null}
       {masteredNow.length > 0 ? (

@@ -3,6 +3,8 @@ import {
   Avatar,
   Badge,
   Button,
+  Confetti,
+  CountUp,
   Hero,
   Inline,
   List,
@@ -27,14 +29,19 @@ const OUTCOME = {
   fail: "Not yet — 85% right passes; try again now, or it comes back tomorrow",
 } as const;
 
+const percent = (n: number) => `${n}%`;
+
 export function SessionSummary({
   result,
   sessionXp,
   outcome,
+  levelUp,
   onDone,
 }: {
   result: SessionResult;
   sessionXp: number;
+  /** This lesson took the learner to a new level: a small party. */
+  levelUp?: boolean;
   /** The lesson's verdict and when it checks in next. */
   outcome?: {
     title: string;
@@ -59,11 +66,14 @@ export function SessionSummary({
   const scoreText = score ? ` — ${score.correct} of ${score.total} right` : "";
   // The day is done: the goal reached, or everything due cleared.
   const goalMet = stats.completedToday;
+  // The day done, or a new level: confetti, once, as the summary appears.
+  const party = result.firstCompletionToday || Boolean(levelUp);
 
   return (
-    <Screen nav={false} header={<div />}>
+    <Screen nav={false} header={<div />} stagger>
+      {party ? <Confetti fixed pieces={36} /> : null}
       <Stack gap={2} align="center">
-        <Text variant="display" className="pop">
+        <Text variant="display" className={party ? "celebrate-rise" : "pop"}>
           {result.firstCompletionToday ? "🎉" : "👏"}
         </Text>
         <h1>{result.firstCompletionToday ? "Day done!" : "Nice work"}</h1>
@@ -88,7 +98,9 @@ export function SessionSummary({
 
       <Hero>
         <Stack gap={3} align="center">
-          <Text variant="display">+{sessionXp}</Text>
+          <Text variant="display">
+            +<CountUp value={sessionXp} from={0} duration={900} />
+          </Text>
           <Text weight="medium" tone="dim">
             XP this session
           </Text>
@@ -98,9 +110,17 @@ export function SessionSummary({
             </Text>
           ) : null}
           <Inline gap={2} justify="center">
-            <Badge>🔥 {stats.currentStreak} day streak</Badge>
+            <Badge>
+              🔥 <CountUp value={stats.currentStreak} memory="streak" /> day streak
+            </Badge>
             {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
-            <Badge>Level {stats.level}</Badge>
+            {levelUp ? (
+              <span className="level-up">
+                <Badge>Level {stats.level}</Badge>
+              </span>
+            ) : (
+              <Badge>Level {stats.level}</Badge>
+            )}
           </Inline>
           <Text variant="small" tone="dim" align="center">
             {goalMet
@@ -111,13 +131,19 @@ export function SessionSummary({
       </Hero>
 
       <StatGrid>
-        <Stat value={stats.dayXp} label="XP today" />
+        <Stat value={<CountUp value={stats.dayXp} memory="xp:today" />} label="XP today" />
         {score ? (
-          <Stat value={`${Math.round((score.correct / score.total) * 100)}%`} label="this lesson" />
+          <Stat
+            value={<CountUp value={Math.round((score.correct / score.total) * 100)} from={0} format={percent} />}
+            label="this lesson"
+          />
         ) : (
-          <Stat value={stats.wordsSeen} label="words met" />
+          <Stat value={<CountUp value={stats.wordsSeen} memory="words:seen" />} label="words met" />
         )}
-        <Stat value={`${Math.round(stats.accuracy * 100)}%`} label="accuracy, all time" />
+        <Stat
+          value={<CountUp value={Math.round(stats.accuracy * 100)} memory="accuracy" format={percent} />}
+          label="accuracy, all time"
+        />
       </StatGrid>
 
       {newlyUnlocked.length > 0 ? (

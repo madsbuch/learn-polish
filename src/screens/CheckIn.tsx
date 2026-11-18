@@ -16,7 +16,7 @@ import {
   ListItem,
   Screen,
   Section,
-  Spinner,
+  Typing,
   Stack,
   Text,
 } from "../design";
@@ -262,7 +262,13 @@ export function CheckIn({
               </Inline>
             </div>
           ) : (
-            <div key={i} className="msg selectable" data-role={line.role}>
+            <div
+              key={i}
+              className="msg selectable"
+              data-role={line.role}
+              // The learner's answers are all sent from here: each rises into place.
+              data-fresh={line.role === "user" || undefined}
+            >
               {line.role !== "assistant" ? (
                 line.content
               ) : writing ? (
@@ -279,7 +285,7 @@ export function CheckIn({
           ),
         )}
         {busy ? (
-          <div className="msg" data-role="assistant">
+          <div className="msg" data-role="assistant" data-fresh>
             {live ? (
               <div>
                 <Markdown text={writing ? unsay(live) : live} />
@@ -287,7 +293,7 @@ export function CheckIn({
               </div>
             ) : (
               <Inline gap={2}>
-                <Spinner />
+                <Typing />
                 <Text variant="small" tone="faint">
                   {lines.length === 0
                     ? writing

@@ -18,6 +18,7 @@ import {
   Section,
   Segmented,
   Spinner,
+  Typing,
   SplitView,
   Stack,
   Text,
@@ -497,7 +498,13 @@ function Chat({
 
       <div className="chat">
         {messages.map((message) => (
-          <div key={message.id} className="msg selectable" data-role={message.role}>
+          <div
+            key={message.id}
+            className="msg selectable"
+            data-role={message.role}
+            // Just sent: it rises into place (history and stored replies don't).
+            data-fresh={(typeof message.id === "string" && message.id.startsWith("pending-")) || undefined}
+          >
             {message.role === "assistant" ? (
               <>
                 <Markdown text={message.content} />
@@ -511,7 +518,7 @@ function Chat({
           </div>
         ))}
         {sending ? (
-          <div className="msg" data-role="assistant">
+          <div className="msg" data-role="assistant" data-fresh>
             {live ? (
               <div>
                 <Markdown text={live} />
@@ -520,7 +527,7 @@ function Chat({
             ) : null}
             {status || !live ? (
               <Inline gap={2}>
-                <Spinner />
+                <Typing />
                 <Text variant="small" tone="faint">
                   {status ?? "Thinking…"}
                 </Text>
