@@ -3239,8 +3239,19 @@ pub async fn tutor_talk_about(
 
 /// A reply that was running when the app was closed never finished: say so,
 /// so the conversation can be asked again. Called at startup.
+///
+/// Only replies this device was writing (it set `job_started_at`, so it
+/// wrote the conversation's current version: `sync::written_here`). One
+/// another device is writing right now synced here as started; marking it
+/// failed would tell that device its own reply had died.
 pub fn recover_interrupted(conn: &mut Conn) -> Result<()> {
-    diesel::update(tutor_conversations::table.filter(tutor_conversations::job_started_at.is_not_null()))
+    let running: Vec<ConversationId> = tutor_conversations::table
+        .filter(tutor_conversations::job_started_at.is_not_null())
+        .select(tutor_conversations::id)
+        .load(conn)?;
+    let ours: Vec<ConversationId> =
+        running.into_iter().filter(|id| crate::sync::written_here(conn, "tutor_conversations", &id.to_string())).collect();
+    diesel::update(tutor_conversations::table.filter(tutor_conversations::id.eq_any(ours)))
         .set((
             tutor_conversations::job_started_at.eq(None::<i64>),
             tutor_conversations::job_error.eq("The app was closed before the tutor finished. Ask again."),

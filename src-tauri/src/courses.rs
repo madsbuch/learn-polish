@@ -201,7 +201,10 @@ fn insert_course(conn: &mut Conn, slug: Option<&str>, title: &str, title_pl: &st
     let now = db::now_secs();
     // A built-in course (a fixed slug) has the same id on every device.
     let id = slug.map_or_else(CourseId::new, |slug| CourseId::derived("course", slug));
-    let slug = slug.map(str::to_string).unwrap_or_else(|| format!("course-{now}-{ord}"));
+    // A learner's course is named by its id: unique on every device, so two
+    // devices making a course at the same moment never clash (a clash on a
+    // unique column would delete one of them everywhere when they sync).
+    let slug = slug.map_or_else(|| id.to_string(), str::to_string);
     Ok(diesel::insert_into(courses::table)
         .values((
             courses::id.eq(id),

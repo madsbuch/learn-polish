@@ -12,8 +12,10 @@
 //! detail of this module — callers only ever hold a file id.
 //!
 //! Only Android's native player needs a real file, so song audio and art also
-//! have a copy on disk, `path`. That copy is only a cache: it is written from
-//! the bytes when missing, and deleted with the row.
+//! have a copy on disk, its path in `file_paths`. That copy is only a cache:
+//! it is written from the bytes when missing, and deleted with the row. The
+//! path is this device's alone (`file_paths` does not sync): another device
+//! writes its own copy where it keeps them.
 
 use std::path::{Path, PathBuf};
 
@@ -24,7 +26,7 @@ use tauri::{AppHandle, Manager};
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
 use crate::ids::*;
-use crate::schema::files;
+use crate::schema::{file_paths, files};
 
 pub const SPEECH: &str = "speech";
 pub const SONG_AUDIO: &str = "song_audio";
@@ -53,10 +55,11 @@ pub struct FileInfo {
 }
 
 // A file's details are read through the `files_meta` index, never the row:
-// `path` was added after `bytes`, so reading it from the row walks the whole
+// reading a column that comes after `bytes` from the row walks the whole
 // file — a song's audio, megabytes — from disk. Read from the index, the
 // Music tab's 30 songs took a fraction of a millisecond instead of a second.
-const META: &str = "SELECT id, kind, name, mime, size, path FROM files INDEXED BY files_meta";
+const META: &str = "SELECT f.id AS id, f.kind AS kind, f.name AS name, f.mime AS mime, f.size AS size, p.path AS path
+    FROM files f INDEXED BY files_meta LEFT JOIN file_paths p ON p.file_id = f.id";
 
 #[derive(QueryableByName)]
 struct PathRow {
@@ -88,7 +91,7 @@ pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) 
 }
 
 pub fn info(conn: &mut Conn, id: FileId) -> Result<FileInfo> {
-    diesel::sql_query(format!("{META} WHERE id = ?"))
+    diesel::sql_query(format!("{META} WHERE f.id = ?"))
         .bind::<FileIdSql, _>(id)
         .get_result(conn)
         .optional()?
@@ -109,14 +112,12 @@ pub fn read(conn: &mut Conn, id: FileId) -> Result<(String, Vec<u8>)> {
 pub fn paths(conn: &mut Conn, ids: &[FileId]) -> Result<std::collections::HashMap<FileId, String>> {
     let mut found = std::collections::HashMap::new();
     for chunk in ids.chunks(500) {
-        // Ids are checked TypeIDs (letters, digits and an underscore):
-        // quoted into the query, they cannot inject.
-        let list = chunk.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",");
-        let rows: Vec<PathRow> = diesel::sql_query(format!(
-            "SELECT id, path FROM files INDEXED BY files_meta WHERE path IS NOT NULL AND id IN ({list})"
-        ))
-        .load(conn)?;
-        found.extend(rows.into_iter().map(|row| (row.id, row.path)));
+        found.extend(
+            file_paths::table
+                .filter(file_paths::file_id.eq_any(chunk))
+                .select((file_paths::file_id, file_paths::path))
+                .load::<(FileId, String)>(conn)?,
+        );
     }
     Ok(found)
 }
@@ -132,6 +133,7 @@ pub fn delete(conn: &mut Conn, ids: &[FileId]) -> Result<usize> {
         let mut deleted = 0;
         for chunk in ids.chunks(500) {
             deleted += diesel::delete(files::table.filter(files::id.eq_any(chunk))).execute(tx)?;
+            diesel::delete(file_paths::table.filter(file_paths::file_id.eq_any(chunk))).execute(tx)?;
         }
         Ok(deleted)
     })?;
@@ -159,11 +161,31 @@ pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> 
 
 /// Deletes files nothing references (and their copies on disk). Returns how
 /// many went.
+///
+/// Only files this device stored: one from another device may simply have
+/// arrived before the row that uses it, in a sync that was cut off, and
+/// deleting it would delete it on every device. The device that stored it
+/// collects it once the row that used it is gone there too.
 pub fn collect_orphans(conn: &mut Conn) -> Result<usize> {
     let used = referenced(conn)?;
-    let orphans: Vec<FileId> =
-        files::table.select(files::id).load::<FileId>(conn)?.into_iter().filter(|id| !used.contains(id)).collect();
-    delete(conn, &orphans)
+    let orphans: Vec<FileId> = files::table
+        .select(files::id)
+        .load::<FileId>(conn)?
+        .into_iter()
+        .filter(|id| !used.contains(id))
+        .filter(|id| crate::sync::written_here(conn, "files", &id.to_string()))
+        .collect();
+    let removed = delete(conn, &orphans)?;
+    // Copies on disk of files that are gone (deleted by another device).
+    let stale: Vec<PathRow> = diesel::sql_query(
+        "SELECT p.file_id AS id, p.path AS path FROM file_paths p WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.id = p.file_id)",
+    )
+    .load(conn)?;
+    for row in &stale {
+        let _ = std::fs::remove_file(&row.path);
+        diesel::delete(file_paths::table.find(row.id)).execute(conn)?;
+    }
+    Ok(removed)
 }
 
 /// Writes a file's copy into `dir` unless a copy is already there, and
@@ -182,7 +204,12 @@ pub fn materialize(conn: &mut Conn, dir: &Path, id: FileId) -> Result<String> {
     std::fs::write(&partial, &bytes)?;
     std::fs::rename(&partial, &target)?;
     let path = target.to_string_lossy().to_string();
-    diesel::update(files::table.find(id)).set(files::path.eq(&path)).execute(conn)?;
+    diesel::insert_into(file_paths::table)
+        .values((file_paths::file_id.eq(id), file_paths::path.eq(&path)))
+        .on_conflict(file_paths::file_id)
+        .do_update()
+        .set(file_paths::path.eq(&path))
+        .execute(conn)?;
     Ok(path)
 }
 
@@ -318,20 +345,12 @@ pub fn sync_to_disk(app: &AppHandle) {
             if let Ok(data) = app.path().app_data_dir() {
                 let _ = std::fs::remove_dir_all(data.join("pictures"));
             }
-            // Only rows that still have a path: rewriting a row rewrites its
-            // bytes too, and doing that to every clip at every start was slow.
-            // They are found through the index, not by reading every row.
-            let stale: Vec<PathRow> = diesel::sql_query(format!(
-                "SELECT id, path FROM files INDEXED BY files_meta \
-                 WHERE path IS NOT NULL AND kind NOT IN ('{SONG_AUDIO}', '{SONG_IMAGE}')"
+            // Only song files keep a copy: the paths of any others go.
+            diesel::sql_query(format!(
+                "DELETE FROM file_paths WHERE file_id IN \
+                 (SELECT id FROM files INDEXED BY files_meta WHERE kind NOT IN ('{SONG_AUDIO}', '{SONG_IMAGE}'))"
             ))
-            .load(&mut *db.lock())?;
-            if !stale.is_empty() {
-                let ids: Vec<FileId> = stale.iter().map(|row| row.id).collect();
-                diesel::update(files::table.filter(files::id.eq_any(ids)))
-                    .set(files::path.eq(None::<String>))
-                    .execute(&mut *db.lock())?;
-            }
+            .execute(&mut *db.lock())?;
             let ids: Vec<FileId> = files::table
                 .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
                 .select(files::id)

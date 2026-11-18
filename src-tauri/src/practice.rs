@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::lessons;
 use crate::db::{self, Conn, Db};
-use crate::schema::{achievements, day_log};
+use crate::schema::achievements;
 use crate::error::Result;
 use crate::models::*;
 use crate::session;
@@ -123,7 +123,7 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
     if READING_KINDS.contains(&answer.kind.as_str()) {
         crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, 0, "read: no XP")?;
         let total_xp = stats::total_xp(conn)?;
-        let day_xp = day_log::table.find(today).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+        let day_xp = stats::day_xp(conn, today)?;
         return Ok(AnswerResult {
             correct: true,
             expected: answer.expected,
@@ -163,7 +163,7 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
     crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, xp, note)?;
 
     let total_xp = stats::total_xp(conn)?;
-    let day_xp = day_log::table.find(today).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+    let day_xp = stats::day_xp(conn, today)?;
 
     Ok(AnswerResult {
         correct,

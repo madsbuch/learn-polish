@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use diesel::upsert::excluded;
 
 use crate::db::{self, Conn};
-use crate::schema::{achievements, lessons, checkins, course_lessons, course_sentences, course_words, day_log, reviews, sentences, songs, courses, words};
+use crate::schema::{achievements, lessons, checkins, course_lessons, course_sentences, course_words, day_log, day_totals, reviews, sentences, songs, courses, words};
 use crate::error::Result;
 use crate::models::{Achievement, DayStat, Stats, CourseProgress};
 use crate::session;
@@ -72,28 +72,37 @@ pub fn xp_for_checkin(complexity: &str, result: &str, writing_goals: usize) -> i
 /// XP that is not an answer (a check-in's verdict): it counts toward the day
 /// and the level, not toward accuracy.
 pub fn add_xp(conn: &mut Conn, day: i64, xp: i64) -> Result<()> {
+    let device = crate::sync::device_id(conn)?;
     diesel::insert_into(day_log::table)
-        .values((day_log::day.eq(day), day_log::xp.eq(xp)))
-        .on_conflict(day_log::day)
+        .values((day_log::day.eq(day), day_log::device.eq(device), day_log::xp.eq(xp)))
+        .on_conflict((day_log::day, day_log::device))
         .do_update()
         .set(day_log::xp.eq(day_log::xp + excluded(day_log::xp)))
         .execute(conn)?;
     Ok(())
 }
 
+/// Every device's XP, every day.
 pub fn total_xp(conn: &mut Conn) -> Result<i64> {
     Ok(day_log::table.select(day_log::xp).load::<i64>(conn)?.into_iter().sum())
 }
 
+/// A day's XP, over every device that practised it.
+pub fn day_xp(conn: &mut Conn, day: i64) -> Result<i64> {
+    Ok(day_totals::table.find(day).select(day_totals::xp).first(conn).optional()?.unwrap_or(0))
+}
+
 pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Result<()> {
+    let device = crate::sync::device_id(conn)?;
     diesel::insert_into(day_log::table)
         .values((
             day_log::day.eq(day),
+            day_log::device.eq(device),
             day_log::xp.eq(xp),
             day_log::answered.eq(1),
             day_log::correct.eq(i64::from(correct)),
         ))
-        .on_conflict(day_log::day)
+        .on_conflict((day_log::day, day_log::device))
         .do_update()
         .set((
             day_log::xp.eq(day_log::xp + excluded(day_log::xp)),
@@ -108,7 +117,7 @@ pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Resul
 /// day with none to give, having practised at all. One definition for the
 /// ring, the streak and the reminder.
 pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
-    let practised: i64 = day_log::table.find(day).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+    let practised = day_xp(conn, day)?;
     Ok(practised > 0 && crate::plan::remaining(conn, day)? == 0)
 }
 
@@ -116,13 +125,14 @@ pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
 /// day becomes done — and then a seven-day run earns a streak freeze.
 pub fn mark_practised(conn: &mut Conn, day: i64) -> Result<bool> {
     let already: Option<i64> =
-        day_log::table.find(day).select(day_log::completed).first(conn).optional()?;
+        day_totals::table.find(day).select(day_totals::completed).first(conn).optional()?;
     if already == Some(1) || !day_is_done(conn, day)? {
         return Ok(false);
     }
+    let device = crate::sync::device_id(conn)?;
     diesel::insert_into(day_log::table)
-        .values((day_log::day.eq(day), day_log::completed.eq(1)))
-        .on_conflict(day_log::day)
+        .values((day_log::day.eq(day), day_log::device.eq(device), day_log::completed.eq(1)))
+        .on_conflict((day_log::day, day_log::device))
         .do_update()
         .set(day_log::completed.eq(1))
         .execute(conn)?;
@@ -139,10 +149,10 @@ pub fn mark_practised(conn: &mut Conn, day: i64) -> Result<bool> {
 /// not counted — it is not over) are no more than the freezes kept, each is
 /// marked frozen. Frozen days keep a run going but do not add to it.
 pub fn apply_freezes(conn: &mut Conn, today: i64) -> Result<()> {
-    let last: Option<i64> = day_log::table
-        .filter(day_log::completed.eq(1).or(day_log::frozen.eq(1)))
-        .filter(day_log::day.lt(today))
-        .select(diesel::dsl::max(day_log::day))
+    let last: Option<i64> = day_totals::table
+        .filter(day_totals::completed.eq(1).or(day_totals::frozen.eq(1)))
+        .filter(day_totals::day.lt(today))
+        .select(diesel::dsl::max(day_totals::day))
         .first(conn)?;
     let Some(last) = last else { return Ok(()) };
     let missed = today - 1 - last;
@@ -150,10 +160,11 @@ pub fn apply_freezes(conn: &mut Conn, today: i64) -> Result<()> {
     if missed < 1 || missed > freezes {
         return Ok(());
     }
+    let device = crate::sync::device_id(conn)?;
     for day in last + 1..today {
         diesel::insert_into(day_log::table)
-            .values((day_log::day.eq(day), day_log::frozen.eq(1)))
-            .on_conflict(day_log::day)
+            .values((day_log::day.eq(day), day_log::device.eq(device), day_log::frozen.eq(1)))
+            .on_conflict((day_log::day, day_log::device))
             .do_update()
             .set(day_log::frozen.eq(1))
             .execute(conn)?;
@@ -165,10 +176,10 @@ pub fn apply_freezes(conn: &mut Conn, today: i64) -> Result<()> {
 /// The current and longest streak, in done days. A frozen day keeps a run
 /// going without adding to it.
 pub fn streaks(conn: &mut Conn, today: i64) -> Result<(i64, i64)> {
-    let rows: Vec<(i64, i64, i64)> = day_log::table
-        .filter(day_log::completed.eq(1).or(day_log::frozen.eq(1)))
-        .order(day_log::day)
-        .select((day_log::day, day_log::completed, day_log::frozen))
+    let rows: Vec<(i64, i64, i64)> = day_totals::table
+        .filter(day_totals::completed.eq(1).or(day_totals::frozen.eq(1)))
+        .order(day_totals::day)
+        .select((day_totals::day, day_totals::completed, day_totals::frozen))
         .load(conn)?;
 
     let mut longest = 0;
@@ -239,7 +250,7 @@ fn counts(conn: &mut Conn, today: i64) -> Result<Counts> {
         dialogues_seen: dialogues.filter(lessons::reps.gt(0)).count().get_result(conn)?,
         // What is due is counted in lessons, not single words.
         due_today: crate::plan::remaining(conn, today)?,
-        days_done: day_log::table.filter(day_log::completed.eq(1)).count().get_result(conn)?,
+        days_done: day_totals::table.filter(day_totals::completed.eq(1)).count().get_result(conn)?,
         checkins_passed: passed(conn, None)?,
         writing_passed: passed(conn, Some("writing"))?,
         listening_passed: passed(conn, Some("listening"))?,
@@ -279,9 +290,16 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
     let level = level_from_xp(total);
     let (current_streak, longest_streak) = streaks(conn, today)?;
 
-    let days: Vec<(i64, i64, i64, i64, i64, i64)> = day_log::table
-        .order(day_log::day)
-        .select((day_log::day, day_log::xp, day_log::answered, day_log::correct, day_log::completed, day_log::frozen))
+    let days: Vec<(i64, i64, i64, i64, i64, i64)> = day_totals::table
+        .order(day_totals::day)
+        .select((
+            day_totals::day,
+            day_totals::xp,
+            day_totals::answered,
+            day_totals::correct,
+            day_totals::completed,
+            day_totals::frozen,
+        ))
         .load(conn)?;
     let (day_xp, completed_today) = days
         .iter()

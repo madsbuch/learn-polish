@@ -5,6 +5,8 @@ mod convert;
 mod ids;
 mod resolve;
 mod upgrade_v7;
+mod upgrade_v8;
+mod sync;
 mod wire;
 mod lessons;
 mod levels;
@@ -1380,8 +1382,9 @@ mod integration {
         db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
         db::set_setting(&mut conn, "daily_ids", "[]").unwrap();
         let done = |conn: &mut db::Conn, day: i64| {
+            let device = crate::sync::device_id(conn).unwrap();
             diesel::insert_into(t::day_log::table)
-                .values((t::day_log::day.eq(day), t::day_log::xp.eq(50), t::day_log::completed.eq(1)))
+                .values((t::day_log::day.eq(day), t::day_log::device.eq(device), t::day_log::xp.eq(50), t::day_log::completed.eq(1)))
                 .execute(conn)
                 .unwrap();
         };

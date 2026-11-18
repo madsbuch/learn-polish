@@ -42,6 +42,7 @@ pub const KINDS: &[(&str, &str)] = &[
     ("xp", "XP entry"),
     ("cost", "AI cost"),
     ("bench", "benchmark run"),
+    ("dev", "device"),
 ];
 
 /// What an id names, by its prefix ("a lesson"), if it is a known kind.
@@ -282,6 +283,8 @@ typed_id!(/// What one AI request cost.
     CostId, CostIdSql, "cost");
 typed_id!(/// A model benchmark run.
     BenchRunId, BenchRunIdSql, "bench");
+typed_id!(/// One of the learner's devices, for sync (sync_state, day_log).
+    DeviceId, DeviceIdSql, "dev");
 
 #[cfg(test)]
 mod tests {

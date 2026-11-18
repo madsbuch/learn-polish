@@ -262,16 +262,20 @@ pub fn draw_words_in_background(app: &tauri::AppHandle, lesson_id: LessonId, wor
 
 /// Draws whatever picture lessons still lack — after the tutor made one, and
 /// at startup for drawings an earlier run did not finish.
+///
+/// Only lessons whose current version this device wrote
+/// (`sync::written_here`): a lesson synced from another device that is
+/// still drawing its pictures would otherwise get every picture twice, one
+/// from each device, and pay for both.
 pub fn draw_missing_in_background(app: &tauri::AppHandle) {
     use tauri::Manager;
     let db = app.state::<Db>();
     let lessons: Vec<LessonId> = {
         let mut guard = db.lock();
-        lessons::table
-            .filter(lessons::lesson_type.eq("pictures"))
-            .select(lessons::id)
-            .load(&mut *guard)
-            .unwrap_or_default()
+        let conn = &mut *guard;
+        let all: Vec<LessonId> =
+            lessons::table.filter(lessons::lesson_type.eq("pictures")).select(lessons::id).load(conn).unwrap_or_default();
+        all.into_iter().filter(|id| crate::sync::written_here(conn, "lessons", &id.to_string())).collect()
     };
     for lesson_id in lessons {
         let missing = missing(&mut db.lock(), lesson_id).unwrap_or_default();

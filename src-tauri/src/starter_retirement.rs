@@ -13,7 +13,7 @@ use crate::schema::{lessons, conversation_lines, course_lessons, sentences, song
 #[allow(unused_imports)]
 use crate::ids::*;
 
-const RETIRED: &str = "bundled_courses_retired_v1";
+pub(crate) const RETIRED: &str = "bundled_courses_retired_v1";
 
 // SHA-256 of the definitions shipped before default courses were removed.
 // These hashes contain no vocabulary or lesson content and cannot seed courses.
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(lessons::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(db::get_setting(&mut conn, "daily_goal").unwrap().as_deref(), Some("250"));
-        assert_eq!(schema::day_log::table.find(today).select(schema::day_log::xp).first::<i64>(&mut conn).unwrap(), 42);
+        assert_eq!(schema::day_totals::table.find(today).select(schema::day_totals::xp).first::<i64>(&mut conn).unwrap(), 42);
         drop(conn);
         let mut conn = db::open(&path("released")).unwrap();
         assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 1);

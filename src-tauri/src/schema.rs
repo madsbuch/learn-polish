@@ -104,12 +104,28 @@ diesel::table! {
     use diesel::sql_types::*;
     use crate::ids::*;
 
-    day_log (day) {
+    day_log (day, device) {
         day -> BigInt,
+        device -> DeviceIdSql,
         xp -> BigInt,
         answered -> BigInt,
         correct -> BigInt,
         course_id -> Nullable<CourseIdSql>,
+        completed -> BigInt,
+        frozen -> BigInt,
+        minutes -> BigInt,
+        early_minutes -> BigInt,
+    }
+}
+
+diesel::table! {
+    /// A day's numbers summed over the devices that practised it (a view
+    /// over day_log).
+    day_totals (day) {
+        day -> BigInt,
+        xp -> BigInt,
+        answered -> BigInt,
+        correct -> BigInt,
         completed -> BigInt,
         frozen -> BigInt,
         minutes -> BigInt,
@@ -145,8 +161,100 @@ diesel::table! {
         size -> BigInt,
         sha256 -> Text,
         bytes -> Binary,
-        path -> Nullable<Text>,
         created_at -> BigInt,
+    }
+}
+
+diesel::table! {
+    /// Where this device wrote a file out (local, files.rs).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    file_paths (file_id) {
+        file_id -> FileIdSql,
+        path -> Text,
+    }
+}
+
+diesel::table! {
+    /// Settings about this device, not the learner (local, db.rs).
+    device_settings (key) {
+        key -> Text,
+        value -> Text,
+    }
+}
+
+diesel::table! {
+    /// This device, for sync (local, sync/).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    sync_state (id) {
+        id -> BigInt,
+        device_id -> DeviceIdSql,
+        hlc_ms -> BigInt,
+        hlc_counter -> BigInt,
+        seq -> BigInt,
+        applying -> BigInt,
+        vault_id -> Nullable<Text>,
+        secret_key -> Nullable<Binary>,
+        public_key -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    /// Every synced row's current version (local, sync/).
+    sync_rows (tbl, pk) {
+        tbl -> Text,
+        pk -> Text,
+        hlc -> Text,
+        origin -> Text,
+        deleted -> BigInt,
+        seq -> BigInt,
+        from_peer -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    /// Every synced row's version vector (local, sync/).
+    sync_vv (tbl, pk, device) {
+        tbl -> Text,
+        pk -> Text,
+        device -> Text,
+        counter -> BigInt,
+    }
+}
+
+diesel::table! {
+    /// What this device has pulled from each peer (local, sync/).
+    sync_peers (device_id) {
+        device_id -> Text,
+        last_pulled_seq -> BigInt,
+        last_addr -> Nullable<Text>,
+        last_sync_at -> Nullable<Text>,
+        last_complete_at -> Nullable<Text>,
+        complete -> BigInt,
+        last_epoch -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    /// The devices of the vault (synced).
+    vault_devices (id) {
+        id -> Text,
+        name -> Text,
+        public_key -> Text,
+        platform -> Text,
+        added_at -> Text,
+    }
+}
+
+diesel::table! {
+    /// Keys no longer accepted (synced).
+    vault_revocations (public_key) {
+        public_key -> Text,
+        device_id -> Text,
+        revoked_at -> Text,
     }
 }
 
@@ -507,6 +615,15 @@ diesel::joinable!(playlist_tracks -> song_tracks (track_id));
 diesel::allow_tables_to_appear_in_same_query!(
     bench_runs,
     xp_log,
+    day_totals,
+    file_paths,
+    device_settings,
+    sync_state,
+    sync_rows,
+    sync_vv,
+    sync_peers,
+    vault_devices,
+    vault_revocations,
     courses,
     words,
     sentences,

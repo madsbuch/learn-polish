@@ -15,7 +15,7 @@ use diesel::sql_types::{BigInt, Text};
 #[cfg(test)]
 use crate::content::{self, Conversation};
 use crate::error::{Error, Result};
-use crate::schema::{lessons, course_lessons, settings, courses};
+use crate::schema::{lessons, course_lessons, settings, courses, device_settings};
 #[allow(unused_imports)]
 use crate::ids::*;
 
@@ -133,9 +133,15 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
     crate::files::collect_orphans(&mut conn)?;
     lap("orphan files", &mut steps);
     // History left behind by items deleted before the triggers existed.
+    // Only history this device wrote: another device's may simply have
+    // arrived before its word, in a sync that was cut off.
     conn.batch_execute(
-        "DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words);
-         DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences);",
+        "DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words)
+             AND EXISTS (SELECT 1 FROM sync_rows r, sync_state s WHERE s.id = 1 AND r.tbl = 'reviews'
+                 AND r.pk = reviews.kind || char(31) || reviews.item_id AND r.origin = s.device_id);
+         DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences)
+             AND EXISTS (SELECT 1 FROM sync_rows r, sync_state s WHERE s.id = 1 AND r.tbl = 'reviews'
+                 AND r.pk = reviews.kind || char(31) || reviews.item_id AND r.origin = s.device_id);",
     )?;
     lap("old history", &mut steps);
     match foreign_key_violations(&mut conn) {
@@ -193,7 +199,7 @@ mod legacy {
     }
 }
 
-const SCHEMA_VERSION: i64 = 7;
+pub(crate) const SCHEMA_VERSION: i64 = 8;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -619,8 +625,12 @@ CREATE TABLE IF NOT EXISTS word_examples (
 );
 "#;
 
-/// The schema: version 7, tagged ids (`schema.sql`).
-const SCHEMA: &str = include_str!("schema.sql");
+/// The schema: version 8, tagged ids and sync (`schema.sql`).
+pub(crate) const SCHEMA: &str = include_str!("schema.sql");
+
+/// The schema as it was at version 7: what a database from before tagged
+/// ids is converted to, before it is brought up to version 8.
+const SCHEMA_V7: &str = include_str!("schema_v7.sql");
 
 /// Backups kept before upgrades: the newest ones.
 const BACKUPS_KEPT: usize = 2;
@@ -671,16 +681,23 @@ fn back_up_before_upgrade(conn: &mut Conn, path: &std::path::Path) -> Result<()>
 
 fn migrate(conn: &mut Conn) -> Result<()> {
     // A database from before tagged ids: brought up to version 6 the way it
-    // always was, then converted. A new one is made as version 7 directly.
+    // always was, then converted. A new one is made as the current version
+    // directly.
     if crate::upgrade_v7::needed(conn)? || table_exists(conn, "blocks")? {
         upgrade_to_v6(conn)?;
-        crate::upgrade_v7::run(conn, SCHEMA)?;
+        crate::upgrade_v7::run(conn, SCHEMA_V7)?;
         // The demo course's rows: the derived ids a fresh install gives them.
         conn.transaction::<_, Error, _>(crate::demo_course::rekey)?;
     }
+    // Version 8: sync between devices.
+    if crate::upgrade_v8::needed(conn)? {
+        crate::upgrade_v8::run(conn, SCHEMA)?;
+    }
     conn.batch_execute(SCHEMA)?;
-    // Columns added after version 7 go here, each with an idempotent ALTER
-    // (and a bump of SCHEMA_VERSION).
+    // Every synced table watched by triggers that list its current columns:
+    // a schema change that adds a column (with an idempotent ALTER here, and
+    // a bump of SCHEMA_VERSION) gets its triggers re-made by this.
+    conn.transaction::<_, Error, _>(crate::sync::init)?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }
@@ -1506,11 +1523,47 @@ pub fn unify_courses(conn: &mut Conn) -> Result<()> {
 // Settings
 // ---------------------------------------------------------------------------
 
+/// Settings about this device rather than the learner: they stay on it
+/// (`device_settings`) instead of syncing with the rest (docs/SYNC.md). The
+/// seeding marks say what this install has already set up on its own: a
+/// device that joins another's data must not seed the demo course again
+/// into it.
+pub(crate) const DEVICE_SETTINGS: &[&str] = &[
+    "theme",
+    "tz_offset_minutes",
+    "reminders_enabled",
+    "reminder_hour",
+    "reminder_minute",
+    "tts_prefetch",
+    "player_repeat",
+    "starter_seeded",
+    crate::demo_course::SEEDED,
+    crate::starter_retirement::RETIRED,
+];
+
+/// Whether a setting stays on this device: one of [`DEVICE_SETTINGS`], or
+/// sync's own (`sync_…`).
+fn device_setting(key: &str) -> bool {
+    DEVICE_SETTINGS.contains(&key) || key.starts_with("sync_")
+}
+
 pub fn get_setting(conn: &mut Conn, key: &str) -> Result<Option<String>> {
+    if device_setting(key) {
+        return Ok(device_settings::table.find(key).select(device_settings::value).first(conn).optional()?);
+    }
     Ok(settings::table.find(key).select(settings::value).first(conn).optional()?)
 }
 
 pub fn set_setting(conn: &mut Conn, key: &str, value: &str) -> Result<()> {
+    if device_setting(key) {
+        diesel::insert_into(device_settings::table)
+            .values((device_settings::key.eq(key), device_settings::value.eq(value)))
+            .on_conflict(device_settings::key)
+            .do_update()
+            .set(device_settings::value.eq(value))
+            .execute(conn)?;
+        return Ok(());
+    }
     diesel::insert_into(settings::table)
         .values((settings::key.eq(key), settings::value.eq(value)))
         .on_conflict(settings::key)
@@ -1521,6 +1574,10 @@ pub fn set_setting(conn: &mut Conn, key: &str, value: &str) -> Result<()> {
 }
 
 pub fn delete_setting(conn: &mut Conn, key: &str) -> Result<()> {
+    if device_setting(key) {
+        diesel::delete(device_settings::table.find(key)).execute(conn)?;
+        return Ok(());
+    }
     diesel::delete(settings::table.find(key)).execute(conn)?;
     Ok(())
 }
@@ -1641,8 +1698,9 @@ mod tests {
             })*};
         }
         check!(
-            courses, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
-            files, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
+            courses, words, sentences, conversation_lines, reviews, day_log, day_totals, settings, device_settings,
+            achievements, files, file_paths, sync_state, sync_rows, sync_vv, sync_peers, vault_devices,
+            vault_revocations, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
             playlist_tracks, ai_costs, memories, word_examples, xp_log,
         );

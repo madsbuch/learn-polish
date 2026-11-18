@@ -1,7 +1,12 @@
--- The schema, version 7 (db.rs SCHEMA_VERSION): every id is a tagged
+-- The schema, version 8 (db.rs SCHEMA_VERSION): every id is a tagged
 -- TypeID as text (DATA.md), made by the app (src-tauri/src/ids.rs). A new
 -- database is made from this; an older one is converted to it first
--- (upgrade_v7.rs). Every statement is "IF NOT EXISTS": it runs at every start.
+-- (upgrade_v7.rs, then upgrade_v8.rs). Every statement is "IF NOT EXISTS":
+-- it runs at every start.
+--
+-- Every table syncs between the learner's devices (docs/SYNC.md) except the
+-- ones marked local below; the sync triggers on the others are made from
+-- this schema in Rust (sync/triggers.rs), not written here.
 
 CREATE TABLE IF NOT EXISTS courses (
     id         TEXT PRIMARY KEY NOT NULL,
@@ -77,8 +82,13 @@ CREATE TABLE IF NOT EXISTS xp_log (
     note      TEXT    NOT NULL DEFAULT ''
 );
 
+-- A day's numbers, one row per device that practised that day: two devices
+-- adding to one row would each overwrite the other's totals when they sync.
+-- Every read sums the devices' rows (the day_totals view).
 CREATE TABLE IF NOT EXISTS day_log (
-    day       INTEGER PRIMARY KEY,
+    day       INTEGER NOT NULL,
+    -- The device that practised (sync_state.device_id).
+    device    TEXT    NOT NULL,
     xp        INTEGER NOT NULL DEFAULT 0,
     answered  INTEGER NOT NULL DEFAULT 0,
     correct   INTEGER NOT NULL DEFAULT 0,
@@ -91,7 +101,8 @@ CREATE TABLE IF NOT EXISTS day_log (
     -- many of them were done before their day — the daily budget learns
     -- from the first, the "ahead" balance shows the second.
     minutes   INTEGER NOT NULL DEFAULT 0,
-    early_minutes INTEGER NOT NULL DEFAULT 0
+    early_minutes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, device)
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -113,7 +124,6 @@ CREATE TABLE IF NOT EXISTS files (
     size       INTEGER NOT NULL,          -- bytes
     sha256     TEXT    NOT NULL,          -- hex
     bytes      BLOB    NOT NULL,
-    path       TEXT,
     created_at INTEGER NOT NULL
 );
 
@@ -348,7 +358,7 @@ CREATE INDEX IF NOT EXISTS xp_log_day ON xp_log(day);
 
 CREATE INDEX IF NOT EXISTS files_kind ON files(kind);
 
-CREATE INDEX IF NOT EXISTS files_meta ON files(id, kind, name, mime, size, path);
+CREATE INDEX IF NOT EXISTS files_meta ON files(id, kind, name, mime, size);
 
 CREATE INDEX IF NOT EXISTS lessons_due ON lessons(due_day);
 
@@ -359,6 +369,13 @@ CREATE INDEX IF NOT EXISTS playlist_tracks_order ON playlist_tracks(playlist_id,
 CREATE INDEX IF NOT EXISTS ai_costs_day ON ai_costs(day, feature);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
+
+-- A day's numbers over every device that practised it (day_log).
+CREATE VIEW IF NOT EXISTS day_totals AS
+    SELECT day, sum(xp) AS xp, sum(answered) AS answered, sum(correct) AS correct,
+           max(completed) AS completed, max(frozen) AS frozen,
+           sum(minutes) AS minutes, sum(early_minutes) AS early_minutes
+    FROM day_log GROUP BY day;
 
 CREATE VIEW IF NOT EXISTS course_words AS
     SELECT c.course_id, w.id, w.lesson_id, c.ord * 1000 + w.ord AS ord, w.pl, w.en, w.pos
@@ -385,3 +402,109 @@ BEGIN DELETE FROM reviews WHERE kind = 'word' AND item_id = OLD.id; END;
 
 CREATE TRIGGER IF NOT EXISTS sentences_take_their_reviews AFTER DELETE ON sentences
 BEGIN DELETE FROM reviews WHERE kind = 'sentence' AND item_id = OLD.id; END;
+
+
+-- ---------------------------------------------------------------------------
+-- Local: about this device only, never synced
+-- ---------------------------------------------------------------------------
+
+-- Settings about the device rather than the learner (theme, reminders, time
+-- zone, playback): db.rs DEVICE_SETTINGS routes their keys here.
+CREATE TABLE IF NOT EXISTS device_settings (
+    key   TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+);
+
+-- Where this device wrote a file's bytes out, for the players that need a
+-- real file (files.rs). Only a cache: written from the bytes when missing.
+CREATE TABLE IF NOT EXISTS file_paths (
+    file_id TEXT PRIMARY KEY NOT NULL,
+    path    TEXT NOT NULL
+);
+
+-- ---------------------------------------------------------------------------
+-- Sync (docs/SYNC.md, sync/engine.rs): local bookkeeping
+-- ---------------------------------------------------------------------------
+
+-- This device: its id, its hybrid logical clock (milliseconds and a counter
+-- within one), the last local sequence number given out, and whether a
+-- sync is writing right now (`applying`: the triggers then stand aside).
+CREATE TABLE IF NOT EXISTS sync_state (
+    id          INTEGER PRIMARY KEY NOT NULL,
+    device_id   TEXT    NOT NULL,
+    hlc_ms      INTEGER NOT NULL DEFAULT 0,
+    hlc_counter INTEGER NOT NULL DEFAULT 0,
+    seq         INTEGER NOT NULL DEFAULT 0,
+    applying    INTEGER NOT NULL DEFAULT 0,
+    vault_id    TEXT,
+    secret_key  BLOB,
+    public_key  BLOB
+);
+
+-- Every synced row's current version (tombstones kept): its clock value,
+-- the device that wrote it, and the local sequence number it was recorded
+-- at, which is what peers pull by. `pk` is the row's key as text, its
+-- columns joined by U+001F when there are several.
+CREATE TABLE IF NOT EXISTS sync_rows (
+    tbl       TEXT    NOT NULL,
+    pk        TEXT    NOT NULL,
+    hlc       TEXT    NOT NULL,
+    origin    TEXT    NOT NULL,
+    deleted   INTEGER NOT NULL DEFAULT 0,
+    seq       INTEGER NOT NULL,
+    -- The peer this version came from, so it is not sent back to it.
+    from_peer TEXT,
+    PRIMARY KEY (tbl, pk)
+);
+
+CREATE INDEX IF NOT EXISTS sync_rows_seq ON sync_rows(seq);
+
+-- Each row's version vector: per device, the clock value (as one integer)
+-- of that device's latest change to it.
+CREATE TABLE IF NOT EXISTS sync_vv (
+    tbl     TEXT    NOT NULL,
+    pk      TEXT    NOT NULL,
+    device  TEXT    NOT NULL,
+    counter INTEGER NOT NULL,
+    PRIMARY KEY (tbl, pk, device)
+);
+
+-- What this device has pulled from each peer, and how the last sync went.
+CREATE TABLE IF NOT EXISTS sync_peers (
+    device_id        TEXT    PRIMARY KEY NOT NULL,
+    last_pulled_seq  INTEGER NOT NULL DEFAULT 0,
+    last_addr        TEXT,
+    last_sync_at     TEXT,
+    last_complete_at TEXT,
+    complete         INTEGER NOT NULL DEFAULT 0,
+    last_epoch       TEXT
+);
+
+-- Marks in this device's history that peers remember: a copy of this
+-- database restored from before one never had it, and the first peer to
+-- meet that copy tells it so (it then takes a new device id).
+CREATE TABLE IF NOT EXISTS sync_epochs (
+    epoch      TEXT    PRIMARY KEY NOT NULL,
+    seq        INTEGER NOT NULL,
+    created_at TEXT    NOT NULL
+);
+
+-- ---------------------------------------------------------------------------
+-- Sync: the vault, synced like everything else
+-- ---------------------------------------------------------------------------
+
+-- The devices that hold the learner's data, each with its public key.
+CREATE TABLE IF NOT EXISTS vault_devices (
+    id         TEXT PRIMARY KEY NOT NULL,
+    name       TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    platform   TEXT NOT NULL,
+    added_at   TEXT NOT NULL
+);
+
+-- Keys of devices removed from the vault: never accepted again.
+CREATE TABLE IF NOT EXISTS vault_revocations (
+    public_key TEXT PRIMARY KEY NOT NULL,
+    device_id  TEXT NOT NULL,
+    revoked_at TEXT NOT NULL
+);

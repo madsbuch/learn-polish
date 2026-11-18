@@ -60,9 +60,15 @@ pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: LessonId) -> Res
 /// "ahead" when it was done before its day).
 pub fn log_minutes(conn: &mut Conn, day: i64, minutes: i64, early: bool) -> Result<()> {
     let early = if early { minutes } else { 0 };
+    let device = crate::sync::device_id(conn)?;
     diesel::insert_into(day_log::table)
-        .values((day_log::day.eq(day), day_log::minutes.eq(minutes), day_log::early_minutes.eq(early)))
-        .on_conflict(day_log::day)
+        .values((
+            day_log::day.eq(day),
+            day_log::device.eq(device),
+            day_log::minutes.eq(minutes),
+            day_log::early_minutes.eq(early),
+        ))
+        .on_conflict((day_log::day, day_log::device))
         .do_update()
         .set((
             day_log::minutes.eq(day_log::minutes + excluded(day_log::minutes)),

@@ -1562,17 +1562,22 @@ async fn generate(app: &AppHandle, song_id: SongId) -> Result<()> {
     Ok(())
 }
 
-/// Resumes songs that were still being made when the app last closed.
+/// Resumes songs and podcast episodes that were still being made when the
+/// app last closed — only those this device started (it wrote the row's
+/// current version: `sync::written_here`). One being made on another device
+/// is that device's to finish; resuming it here too would download the same
+/// song twice, or record the episode twice, as two copies.
 pub fn resume_pending(app: &AppHandle) {
     let pending: Vec<(SongId, String)> = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
         let conn = &mut *guard;
-        songs::table
+        let generating: Vec<(SongId, String)> = songs::table
             .filter(songs::status.eq("generating"))
             .select((songs::id, songs::kind))
             .load(conn)
-            .unwrap_or_default()
+            .unwrap_or_default();
+        generating.into_iter().filter(|(id, _)| crate::sync::written_here(conn, "songs", &id.to_string())).collect()
     };
     for (id, kind) in pending {
         if kind == "podcast" {

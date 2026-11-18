@@ -1,7 +1,8 @@
 //! The XP log: what earned each point, so any day can be opened and read —
 //! each lesson run with its answers, each check-in with its verdict. It is
 //! written where XP is awarded (practice.rs for answers, examiner.rs for
-//! check-ins), next to the day's total in day_log, so the two always agree.
+//! check-ins), next to the day's total in day_log (summed over devices), so
+//! the two always agree.
 //! Days from before the log have their total only.
 
 use std::collections::HashMap;
@@ -12,7 +13,7 @@ use tauri::State;
 
 use crate::db::{self, Conn, Db};
 use crate::error::Result;
-use crate::schema::{courses, course_lessons, day_log, lessons, xp_log};
+use crate::schema::{courses, course_lessons, day_totals, lessons, xp_log};
 #[allow(unused_imports)]
 use crate::ids::*;
 
@@ -98,7 +99,7 @@ pub struct XpDay {
 
 /// A day's XP: its total, and what earned it, run by run in order.
 pub fn day(conn: &mut Conn, day: i64) -> Result<XpDay> {
-    let total = day_log::table.find(day).select(day_log::xp).first(conn).optional()?.unwrap_or(0);
+    let total = crate::stats::day_xp(conn, day)?;
     let rows: Vec<(i64, String, Option<LessonId>, String, i64, String)> = xp_log::table
         .filter(xp_log::day.eq(day))
         .order(xp_log::id)
@@ -150,10 +151,10 @@ pub struct HistoryDay {
 /// Every day with XP, or done or frozen, in the last `days` days.
 pub fn history(conn: &mut Conn, days: i64) -> Result<Vec<HistoryDay>> {
     let today = db::today(conn);
-    Ok(day_log::table
-        .filter(day_log::day.gt(today - days.clamp(1, 3660)))
-        .order(day_log::day)
-        .select((day_log::day, day_log::xp, day_log::completed, day_log::frozen))
+    Ok(day_totals::table
+        .filter(day_totals::day.gt(today - days.clamp(1, 3660)))
+        .order(day_totals::day)
+        .select((day_totals::day, day_totals::xp, day_totals::completed, day_totals::frozen))
         .load::<(i64, i64, i64, i64)>(conn)?
         .into_iter()
         .map(|(day, xp, completed, frozen)| HistoryDay { day, xp, completed: completed == 1, frozen: frozen == 1 })

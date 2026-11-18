@@ -595,14 +595,21 @@ pub struct FactCheck {
 }
 
 /// Lessons whose sources have not been compared with Wikipedia for three months.
+///
+/// Only sources whose current version this device wrote
+/// (`sync::written_here`): it fetched them, or checked them last. With the
+/// learner's data on two devices, one checks each lesson — both would pay
+/// for the same AI read and could correct the lesson twice.
 pub fn lessons_due(conn: &mut Conn, now: i64) -> Result<Vec<LessonId>> {
     // Only lessons are checked: an episode is recorded once, as it was written.
-    let mut ids: Vec<LessonId> = wiki_sources::table
+    let due: Vec<(SourceId, Option<LessonId>)> = wiki_sources::table
         .filter(wiki_sources::checked_at.lt(now - CHECK_EVERY_DAYS * 86_400))
-        .select(wiki_sources::lesson_id)
-        .load::<Option<LessonId>>(conn)?
+        .select((wiki_sources::id, wiki_sources::lesson_id))
+        .load(conn)?;
+    let mut ids: Vec<LessonId> = due
         .into_iter()
-        .flatten()
+        .filter(|(source, _)| crate::sync::written_here(conn, "wiki_sources", &source.to_string()))
+        .filter_map(|(_, lesson)| lesson)
         .collect();
     ids.sort_unstable();
     ids.dedup();
