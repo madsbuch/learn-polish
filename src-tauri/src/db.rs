@@ -116,9 +116,15 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
          PRAGMA journal_size_limit = 67108864;",
     )?;
     lap("open", &mut steps);
-    back_up_before_upgrade(&mut conn, path)?;
-    lap("backup", &mut steps);
-    migrate(&mut conn)?;
+    // An upgrade can take a while on a phone (a backup, then every row);
+    // the loading screen asks [`upgrading`] and says so meanwhile.
+    UPGRADING.store(true, std::sync::atomic::Ordering::Relaxed);
+    let upgraded = back_up_before_upgrade(&mut conn, path).and_then(|()| {
+        lap("backup", &mut steps);
+        migrate(&mut conn)
+    });
+    UPGRADING.store(false, std::sync::atomic::Ordering::Relaxed);
+    upgraded?;
     lap("upgrade", &mut steps);
     initialize_courses(&mut conn)?;
     lap("courses", &mut steps);
@@ -624,9 +630,21 @@ const BACKUPS_KEPT: usize = 2;
 /// upgrade loses nothing. The newest [`BACKUPS_KEPT`] are kept. A new
 /// database, or one already current, is not copied. Every change to the
 /// schema bumps `SCHEMA_VERSION`, so every upgrade is backed up.
+/// Whether the database is being upgraded right now (set only while one
+/// is due: a backup and a new schema version).
+static UPGRADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the database is being upgraded right now: asked by the loading
+/// screen, so it needs no database itself.
+#[tauri::command]
+pub fn db_upgrading() -> bool {
+    UPGRADING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn back_up_before_upgrade(conn: &mut Conn, path: &std::path::Path) -> Result<()> {
     let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;
     if version == 0 || version >= SCHEMA_VERSION {
+        UPGRADING.store(false, std::sync::atomic::Ordering::Relaxed);
         return Ok(());
     }
     let Some(dir) = path.parent().map(|p| p.join("backups")) else { return Ok(()) };

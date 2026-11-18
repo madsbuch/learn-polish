@@ -80,6 +80,32 @@ fn uuid_v7(ms: u64, random: u128) -> u128 {
     time | (0x7u128 << 76) | (rand_a << 64) | (0b10u128 << 62) | rand_b
 }
 
+/// The last id made here, so the next is always greater (RFC 9562's
+/// monotonic method): rows made in the same millisecond keep the order they
+/// were made in, which lists ordered by id rely on (the XP log, messages).
+static LAST: std::sync::Mutex<u128> = std::sync::Mutex::new(0);
+
+/// A new time-ordered id, greater than every id made before it here.
+fn fresh_v7() -> u128 {
+    let candidate = uuid_v7(now_ms(), rand::random());
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let next = if candidate > *last { candidate } else { successor(*last) };
+    *last = next;
+    next
+}
+
+/// The next id after `id`: one more in its random part, or the next
+/// millisecond when that part is used up.
+fn successor(id: u128) -> u128 {
+    const RAND_B: u128 = (1 << 62) - 1;
+    if id & RAND_B < RAND_B {
+        id + 1
+    } else {
+        let ms = u64::try_from(id >> 80).unwrap_or(0);
+        uuid_v7(ms + 1, 0)
+    }
+}
+
 /// A name-based UUID (version 8) from SHA-256: the same input, the same id.
 fn uuid_derived(namespace: &str, key: &str) -> u128 {
     let digest = Sha256::digest(format!("{namespace}\u{0}{key}").as_bytes());
@@ -145,7 +171,7 @@ macro_rules! typed_id {
             /// A new id, made now.
             #[allow(clippy::new_without_default)]
             pub fn new() -> Self {
-                Self::at(now_ms(), rand::random())
+                Self(fresh_v7())
             }
 
             /// An id for something made at `ms` (milliseconds since 1970),
@@ -260,6 +286,17 @@ typed_id!(/// A model benchmark run.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_ids_keep_the_order_they_were_made_in() {
+        let ids: Vec<LessonId> = (0..10_000).map(|_| LessonId::new()).collect();
+        assert!(ids.windows(2).all(|w| w[0] < w[1]));
+        let text: Vec<String> = ids.iter().map(ToString::to_string).collect();
+        assert!(text.windows(2).all(|w| w[0] < w[1]), "and so does their text");
+        assert!(text.iter().all(|t| LessonId::parse(t).is_ok()));
+        let full = uuid_v7(5, u128::MAX);
+        assert_eq!(successor(full) >> 80, 6, "a used-up millisecond moves to the next");
+    }
 
     #[test]
     fn ids_round_trip_sort_by_time_and_know_their_kind() {

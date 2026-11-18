@@ -162,6 +162,7 @@ pub fn run() {
             lesson_types::lesson_types,
             diagnostics::diagnostics_list,
             resolve::ids_resolve,
+            db::db_upgrading,
             diagnostics::diagnostics_note,
             xplog::xp_day,
             xplog::xp_history,

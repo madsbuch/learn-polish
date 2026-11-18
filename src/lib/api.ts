@@ -167,6 +167,8 @@ export const api = {
     call(LessonDetailSchema, "lesson_detail", { lessonId }),
   lessonTypes: () => call(z.array(LessonTypeInfoSchema), "lesson_types"),
   /** What each TypeID names, for showing titles in place of ids. */
+  /** Whether the database is being upgraded (asked while starting up). */
+  dbUpgrading: () => call(z.boolean(), "db_upgrading"),
   idsResolve: (ids: string[]) =>
     call(z.array(ResolvedIdSchema), "ids_resolve", { ids }),
   diagnostics: () => call(z.array(DiagnosticEntrySchema), "diagnostics_list"),
