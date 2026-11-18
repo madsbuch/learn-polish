@@ -59,7 +59,8 @@ pub enum Value {
     Int(i64),
     Real(f64),
     Text(String),
-    Blob(Vec<u8>),
+    /// Bytes on the wire as bytes (MessagePack bin), not a list of numbers.
+    Blob(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
 /// A row's version as one device holds it.
@@ -1176,7 +1177,9 @@ pub fn reset_for_join(
             for t in synced_tables(conn)?.keys() {
                 conn.batch_execute(&format!("DELETE FROM {}", quote(t)))?;
             }
-            conn.batch_execute("DELETE FROM sync_rows; DELETE FROM sync_vv; DELETE FROM sync_peers;")?;
+            // The epochs too: they mark this device's old history, which a
+            // new id in a new vault never had.
+            conn.batch_execute("DELETE FROM sync_rows; DELETE FROM sync_vv; DELETE FROM sync_peers; DELETE FROM sync_epochs;")?;
             diesel::update(sync_state::table.find(1))
                 .set((
                     sync_state::device_id.eq(new_id),

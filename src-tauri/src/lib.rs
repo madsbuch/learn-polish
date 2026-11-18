@@ -85,6 +85,7 @@ pub fn run() {
         // Registered before the webview can call anything; filled in by setup.
         .manage(Db::default())
         .manage(cast::CastSessions::default())
+        .manage(std::sync::Arc::new(sync::service::SyncService::default()))
         .setup(|app| {
             let data = app.path().app_data_dir().map_err(|e| format!("no writable app data directory: {e}"))?;
             // First, so even opening the database can note what it finds.
@@ -98,6 +99,16 @@ pub fn run() {
             // to Mastered now.
             let _ = courses::milestones(&mut connection);
             app.state::<Db>().fill(connection);
+            // Sync with the learner's other devices (docs/SYNC.md): listening,
+            // discovery and the loop, on the async runtime.
+            let sync = app.state::<std::sync::Arc<sync::service::SyncService>>().inner().clone();
+            let handle = app.handle().clone();
+            let db_path = path.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = sync.start(handle, db_path).await {
+                    diagnostics::note("sync", format!("Sync could not start: {error}"));
+                }
+            });
             // Work for the background starts a moment after the first screen
             // has its data: it all takes the same database, and the first
             // screen should not wait behind it.
@@ -237,6 +248,14 @@ pub fn run() {
             cast::cast_set_repeat,
             cast::cast_state,
             cast::cast_control_info,
+            sync::service::sync_status,
+            sync::service::sync_set_name,
+            sync::service::sync_offer,
+            sync::service::sync_cancel_offer,
+            sync::service::sync_join,
+            sync::service::sync_now,
+            sync::service::sync_remove_device,
+            sync::service::sync_held_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
@@ -2393,6 +2412,34 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("AudioCacheStats", &speech::audio_cache_stats_in(&mut conn).unwrap());
         write("Conversation.list", &tutor::list_conversations(&mut conn).unwrap());
         write("DiagnosticEntry.list", &crate::diagnostics::entries());
+
+        // Sync (the Devices screen): this device in a vault of its own.
+        use crate::sync::{service, session as sync_session};
+        sync_session::ensure_vault(&mut conn).unwrap();
+        let activity = service::Activity { syncing: false, last_error: Some("no answer".into()), last_round_at: Some(crate::sync::now_iso()) };
+        write("SyncActivity", &activity);
+        write("SyncStatus", &service::status(&mut conn, true, activity).unwrap());
+        write("SyncHeld.list", &service::held(&mut conn).unwrap());
+        let received = sync_session::Received { applied: 3, conflicts: 1, unique_merges: 0, removed: 0 };
+        write("SyncReceived", &received);
+        write(
+            "JoinResult",
+            &service::JoinResult {
+                outcome: sync_session::Outcome {
+                    peer_id: crate::ids::DeviceId::new().to_string(),
+                    peer_name: "Phone".into(),
+                    received,
+                    complete: false,
+                    differences: vec!["memories".into()],
+                    digest_skipped: false,
+                },
+                backup: Some("/data/backups/before-join-learn-polish-1.sqlite".into()),
+            },
+        );
+        write(
+            "SyncOffer",
+            &service::SyncOffer { code: "polski-pair:1:abc".into(), svg: "<svg/>".into(), expires_at: crate::sync::now_iso() },
+        );
     }
 
     #[test]

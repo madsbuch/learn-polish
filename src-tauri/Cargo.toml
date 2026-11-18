@@ -36,6 +36,14 @@ base64 = "0.22"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 # Content hashes for the files table.
 sha2 = "0.10"
+# Sync between the learner's devices (sync/): Noise over TCP, messages in
+# MessagePack (blobs as bytes, not arrays of numbers), keys written as hex,
+# and this device's addresses on the local network for the pairing code.
+snow = "0.9"
+rmp-serde = "1"
+serde_bytes = "0.11"
+hex = "0.4"
+if-addrs = "0.13"
 
 # SQLite is compiled in (`bundled`) so Android/macOS do not depend on a system libsqlite3.
 # Typed SQL: queries are checked against src/schema.rs at compile time.

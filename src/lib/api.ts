@@ -8,6 +8,7 @@ import type {
   CheckinId,
   ConversationId,
   CourseId,
+  DeviceId,
   EntryId,
   LessonId,
   MemoryId,
@@ -27,7 +28,11 @@ import type {
 } from "./types";
 import {
   FileIdSchema,
+  JoinResultSchema,
   ResolvedIdSchema,
+  SyncHeldSchema,
+  SyncOfferSchema,
+  SyncStatusSchema,
   AiModelSchema,
   AnswerResultSchema,
   ArticleViewSchema,
@@ -422,6 +427,25 @@ export const api = {
       z.object({ port: z.number(), token: z.string() }),
       "cast_control_info",
     ),
+
+  // Sync between the learner's devices (docs/SYNC.md).
+  syncStatus: () => call(SyncStatusSchema, "sync_status"),
+  syncSetName: (name: string) => run("sync_set_name", { name }),
+  /** A pairing code and its QR, good for one device for ten minutes. */
+  syncOffer: () => call(SyncOfferSchema, "sync_offer"),
+  syncCancelOffer: () => run("sync_cancel_offer"),
+  /**
+   * Joins the vault behind a scanned code. A device holding data of its
+   * own joins only with `replace` (a copy is saved first).
+   */
+  syncJoin: (code: string, replace: boolean) =>
+    call(JoinResultSchema, "sync_join", { code, replace }),
+  /** Syncs with the vault's devices now rather than in a few seconds. */
+  syncNow: () => run("sync_now"),
+  /** Removes a device from the vault: its key is never accepted again. */
+  syncRemoveDevice: (id: DeviceId) => run("sync_remove_device", { id }),
+  /** What of the learner's this device holds, table by table. */
+  syncHeldData: () => call(z.array(SyncHeldSchema), "sync_held_data"),
 };
 
 /** Tauri rejects with a plain string built from our Error::Display impl. */

@@ -32,7 +32,14 @@ const patched = manifest.replace(/<activity\b[^>]*>/g, (tag) => {
   return tag.replace(/>$/, ' android:windowSoftInputMode="adjustResize">');
 });
 if (!matched) throw new Error("MainActivity was not found in the Android manifest.");
+// Sync between the learner's devices talks to the local network: TCP and
+// UDP broadcast (INTERNET), and whether Wi-Fi is up (ACCESS_NETWORK_STATE).
+let permitted = patched;
+for (const permission of ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"]) {
+  if (permitted.includes(`android:name="${permission}"`)) continue;
+  permitted = permitted.replace(/<application\b/, `<uses-permission android:name="${permission}" />\n    <application`);
+}
 writeFileSync(activities[0], activity);
-writeFileSync(manifestPath, patched);
+writeFileSync(manifestPath, permitted);
 cpSync(join(root, "src-tauri/icons/android"), join(main, "res"), { recursive: true });
 console.log("Prepared Polski's Android package, keyboard handling and launcher icons.");

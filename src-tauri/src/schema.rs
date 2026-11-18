@@ -239,6 +239,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    /// Marks in this device's history that peers remember (local, sync/).
+    sync_epochs (epoch) {
+        epoch -> Text,
+        seq -> BigInt,
+        created_at -> Text,
+    }
+}
+
+diesel::table! {
     /// The devices of the vault (synced).
     vault_devices (id) {
         id -> Text,
@@ -622,6 +631,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     sync_rows,
     sync_vv,
     sync_peers,
+    sync_epochs,
     vault_devices,
     vault_revocations,
     courses,

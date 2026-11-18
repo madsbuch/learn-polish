@@ -2,6 +2,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { z } from "zod";
 
 import { logError } from "./log";
+import { SyncActivitySchema, SyncReceivedSchema } from "./types";
+import type { SyncActivity, SyncReceived } from "./types";
 
 /**
  * Listens to an event from the Rust core, checking each payload against
@@ -30,4 +32,14 @@ export function onEvent<S extends z.ZodTypeAny>(
 /** Listens to an event whose payload is not read: a signal that something changed. */
 export function onSignal(name: string, handler: () => void): Promise<UnlistenFn> {
   return listen<unknown>(name, () => handler());
+}
+
+/** Another device's data arrived here: the screens reload what they show. */
+export function onSyncChanged(handler: (received: SyncReceived) => void): Promise<UnlistenFn> {
+  return onEvent(SyncReceivedSchema, "sync-changed", (event) => handler(event.payload));
+}
+
+/** Sync's status moved (a round started or ended). */
+export function onSyncStatus(handler: (activity: SyncActivity) => void): Promise<UnlistenFn> {
+  return onEvent(SyncActivitySchema, "sync-status", (event) => handler(event.payload));
 }

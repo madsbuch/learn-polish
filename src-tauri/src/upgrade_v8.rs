@@ -190,7 +190,16 @@ mod tests {
         let device: Vec<String> = device_settings::table.order(device_settings::key).select(device_settings::key).load(conn).unwrap();
         assert_eq!(
             device,
-            ["bundled_courses_retired_v1", "demo_first_steps_seeded_v1", "reminder_hour", "starter_seeded", "theme", "tz_offset_minutes"]
+            [
+                "bundled_courses_retired_v1",
+                "demo_first_steps_seeded_v1",
+                "reminder_hour",
+                "starter_seeded",
+                // Where this copy of the database lives (sync/instance.rs).
+                "sync_instance",
+                "theme",
+                "tz_offset_minutes",
+            ]
         );
         assert_eq!(db::get_setting(conn, "theme").unwrap().as_deref(), Some("dark"));
         assert_eq!(db::get_setting_i64(conn, "tz_offset_minutes", 0), 60);

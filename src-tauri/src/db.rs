@@ -126,6 +126,17 @@ pub fn open(path: &std::path::Path) -> Result<Conn> {
     UPGRADING.store(false, std::sync::atomic::Ordering::Relaxed);
     upgraded?;
     lap("upgrade", &mut steps);
+    // Before anything is written: a copy of the database from elsewhere
+    // (restored, carried over) takes a new device id for sync.
+    match crate::sync::instance::check(&mut conn, path) {
+        Ok(crate::sync::instance::Check::Rotated { old_id, new_id }) => crate::diagnostics::note(
+            "sync",
+            format!("This database was copied from elsewhere: the device {old_id} is now {new_id}."),
+        ),
+        Ok(_) => {}
+        Err(error) => crate::diagnostics::note("sync", format!("Could not check where this database was written: {error}")),
+    }
+    lap("instance", &mut steps);
     initialize_courses(&mut conn)?;
     lap("courses", &mut steps);
     // Files whose owner is gone (a crash between deleting a row and its
@@ -657,26 +668,38 @@ fn back_up_before_upgrade(conn: &mut Conn, path: &std::path::Path) -> Result<()>
         UPGRADING.store(false, std::sync::atomic::Ordering::Relaxed);
         return Ok(());
     }
-    let Some(dir) = path.parent().map(|p| p.join("backups")) else { return Ok(()) };
+    let target = back_up(conn, path, &format!("before-v{SCHEMA_VERSION}"), "before-v")?;
+    crate::diagnostics::note("database", format!("Backed up before upgrading from version {version}: {}", target.display()));
+    Ok(())
+}
+
+/// Saves a full copy of the database in `backups/` beside it, named
+/// `<label>-<file>-<seconds>.sqlite`, and returns where it went. Of the
+/// copies whose names start with `family` (`before-v` for every upgrade,
+/// `before-join` before joining a vault), the newest [`BACKUPS_KEPT`] are
+/// kept. The copy is marked as a copy (sync/instance.rs): put back in place
+/// later, it takes a new device id rather than posing as this one.
+pub fn back_up(conn: &mut Conn, path: &std::path::Path, label: &str, family: &str) -> Result<std::path::PathBuf> {
+    let dir = path.parent().map(|p| p.join("backups")).ok_or_else(|| Error::msg("The database has no folder to back up into."))?;
     std::fs::create_dir_all(&dir)?;
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("db");
-    let target = dir.join(format!("before-v{SCHEMA_VERSION}-{stem}-{}.sqlite", now_secs()));
-    // The same upgrade tried twice in one second (a failed start, retried).
+    let target = dir.join(format!("{label}-{stem}-{}.sqlite", now_secs()));
+    // The same backup tried twice in one second (a failed start, retried).
     let _ = std::fs::remove_file(&target);
     diesel::sql_query("VACUUM INTO ?")
         .bind::<diesel::sql_types::Text, _>(target.to_string_lossy().to_string())
         .execute(conn)?;
-    crate::diagnostics::note("database", format!("Backed up before upgrading from version {version}: {}", target.display()));
+    crate::sync::instance::mark_copy(&target)?;
     let mut kept: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("before-v") && n.ends_with(".sqlite")))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(family) && n.ends_with(".sqlite")))
         .collect();
     kept.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
     let excess = kept.len().saturating_sub(BACKUPS_KEPT);
     for old in kept.into_iter().take(excess) {
         let _ = std::fs::remove_file(old);
     }
-    Ok(())
+    Ok(target)
 }
 
 fn migrate(conn: &mut Conn) -> Result<()> {
@@ -1699,7 +1722,7 @@ mod tests {
         }
         check!(
             courses, words, sentences, conversation_lines, reviews, day_log, day_totals, settings, device_settings,
-            achievements, files, file_paths, sync_state, sync_rows, sync_vv, sync_peers, vault_devices,
+            achievements, files, file_paths, sync_state, sync_rows, sync_vv, sync_peers, sync_epochs, vault_devices,
             vault_revocations, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
             playlist_tracks, ai_costs, memories, word_examples, xp_log,

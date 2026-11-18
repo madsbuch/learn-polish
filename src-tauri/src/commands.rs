@@ -477,7 +477,12 @@ pub async fn export_database( app: tauri::AppHandle, db: State<'_, Db>, include_
         copy.batch_execute("PRAGMA secure_delete = ON")?;
         db::delete_setting(&mut copy, "openrouter_api_key")?;
         db::delete_setting(&mut copy, "kie_api_key")?;
+        // This device's sync key too: whoever holds the file must not be
+        // able to pose as this device to the others.
+        copy.batch_execute("UPDATE sync_state SET secret_key = NULL, public_key = NULL")?;
     }
+    // Put back one day, the copy takes a new device id (sync/instance.rs).
+    crate::sync::instance::mark_copy(&snapshot)?;
 
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()

@@ -59,6 +59,8 @@ export const CostIdSchema = typeId<"CostId">("cost");
 export type CostId = z.infer<typeof CostIdSchema>;
 export const BenchRunIdSchema = typeId<"BenchRunId">("bench");
 export type BenchRunId = z.infer<typeof BenchRunIdSchema>;
+export const DeviceIdSchema = typeId<"DeviceId">("dev");
+export type DeviceId = z.infer<typeof DeviceIdSchema>;
 
 // Mirrors the serde structs in src-tauri/src/models.rs.
 export const CourseSchema = z.object({
@@ -1244,3 +1246,85 @@ export const WordExampleSchema = z.object({
   en: z.string(),
 });
 export type WordExample = z.infer<typeof WordExampleSchema>;
+
+// Sync between the learner's devices (src-tauri/src/sync/service.rs,
+// session.rs; docs/SYNC.md).
+
+/** What sync is doing: the payload of the `sync-status` event. */
+export const SyncActivitySchema = z.object({
+  syncing: z.boolean(),
+  lastError: z.string().nullable(),
+  /** When the last round ended (ISO 8601, UTC). */
+  lastRoundAt: z.string().nullable(),
+});
+export type SyncActivity = z.infer<typeof SyncActivitySchema>;
+
+/** One of the vault's devices, as this device knows it. */
+export const SyncDeviceSchema = z.object({
+  id: DeviceIdSchema,
+  name: z.string(),
+  /** "android" | "ios" | "macos" | "windows" | "linux" */
+  platform: z.string(),
+  isSelf: z.boolean(),
+  /** When the two last synced, and last ended holding the same data (ISO 8601). */
+  lastSyncAt: z.string().nullable(),
+  lastCompleteAt: z.string().nullable(),
+  complete: z.boolean(),
+});
+export type SyncDevice = z.infer<typeof SyncDeviceSchema>;
+
+export const SyncStatusSchema = SyncActivitySchema.extend({
+  deviceId: DeviceIdSchema,
+  name: z.string(),
+  platform: z.string(),
+  inVault: z.boolean(),
+  devices: z.array(SyncDeviceSchema),
+  /** A pairing code is showing and still good. */
+  offerActive: z.boolean(),
+});
+export type SyncStatus = z.infer<typeof SyncStatusSchema>;
+
+/** What a sync changed here: the payload of the `sync-changed` event. */
+export const SyncReceivedSchema = z.object({
+  applied: z.number(),
+  conflicts: z.number(),
+  uniqueMerges: z.number(),
+  removed: z.number(),
+});
+export type SyncReceived = z.infer<typeof SyncReceivedSchema>;
+
+export const SyncOutcomeSchema = z.object({
+  peerId: z.string(),
+  peerName: z.string(),
+  received: SyncReceivedSchema,
+  /** Both devices ended holding exactly the same data. */
+  complete: z.boolean(),
+  /** The tables that differed, when not. */
+  differences: z.array(z.string()),
+  digestSkipped: z.boolean(),
+});
+export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
+
+export const JoinResultSchema = z.object({
+  outcome: SyncOutcomeSchema,
+  /** Where the copy of this device's own data went, when it held any. */
+  backup: z.string().nullable(),
+});
+export type JoinResult = z.infer<typeof JoinResultSchema>;
+
+/** A pairing code for another device to scan, good for ten minutes, once. */
+export const SyncOfferSchema = z.object({
+  code: z.string(),
+  /** The code as a QR code (SVG markup). */
+  svg: z.string(),
+  /** ISO 8601, UTC. */
+  expiresAt: z.string(),
+});
+export type SyncOffer = z.infer<typeof SyncOfferSchema>;
+
+/** One table's worth of the learner's data: what joining would replace. */
+export const SyncHeldSchema = z.object({
+  table: z.string(),
+  rows: z.number(),
+});
+export type SyncHeld = z.infer<typeof SyncHeldSchema>;
