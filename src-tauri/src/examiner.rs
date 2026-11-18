@@ -91,6 +91,8 @@ How to run the check-in:
 - Write in English; ask for answers in Polish where the objective is about Polish.
 - After each answer, give one short line of feedback (right, or the correction and why), \
   then ask the next question in the same message.
+- The last answer gets its feedback too: write that line in your message, then call \
+  finish_assessment in the same message (and put the same line in its last_feedback).
 - Accept Polish written without diacritics (\"czesc\" for \"cześć\"); mention the correct \
   spelling but don't count it as wrong.
 - Cover every objective. Vary the questions: fill in a form, translate a short sentence, \
@@ -268,6 +270,7 @@ fn tools() -> Vec<Tool> {
             "type": "object",
             "properties": {
                 "result": { "type": "string", "enum": ["pass", "partial", "fail"] },
+                "last_feedback": { "type": "string", "description": "Your one line of feedback on the learner's last answer (right, or the correction and why), as after every other answer." },
                 "summary": { "type": "string", "description": "Two or three sentences to the learner: how it went." },
                 "strengths": { "type": "array", "items": { "type": "string" } },
                 "aced": { "type": "boolean", "description": "A pass with nothing worth going over again: the lesson comes back later and earns more mastery. False when to_review has anything that matters." },
@@ -290,6 +293,11 @@ pub struct Assessment {
     /// A pass with nothing worth going over again (the examiner says so).
     #[serde(default)]
     pub aced: bool,
+    /// The feedback on the learner's last answer, shown as the examiner's
+    /// message when it gave the verdict without one — the last answer is
+    /// never left without a reply. Not part of the verdict the screens show.
+    #[serde(default, alias = "last_feedback", skip_serializing)]
+    pub last_feedback: Option<String>,
     /// Filled in when recorded.
     #[serde(default)]
     pub next_due_day: i64,
@@ -484,9 +492,14 @@ async fn turn(
     if let Some(error) = outcome.failed {
         return Err(error);
     }
-    let reply = outcome.text;
     let remembered = outcome.remembered;
     let verdict = outcome.extras.into_iter().next();
+    // A verdict given without a word: its feedback on the last answer is the
+    // message, so the learner hears how that answer went too.
+    let reply = match verdict.as_ref().and_then(|v| v.last_feedback.as_deref()).map(str::trim) {
+        Some(feedback) if outcome.text.trim().is_empty() && !feedback.is_empty() => feedback.to_string(),
+        _ => outcome.text,
+    };
 
     let mut guard = db.lock();
 
@@ -828,5 +841,11 @@ mod tests {
         assert_eq!(a.to_review, vec!["sa vs jest"]);
         let b: Assessment = serde_json::from_str(r#"{"result":"fail","summary":"x","toReview":[]}"#).unwrap();
         assert_eq!(b.result, "fail");
+        // The last answer's feedback comes in, and stays out of what the
+        // screens are sent.
+        let c: Assessment =
+            serde_json::from_str(r#"{"result":"pass","summary":"x","last_feedback":"Right: mam."}"#).unwrap();
+        assert_eq!(c.last_feedback.as_deref(), Some("Right: mam."));
+        assert!(!serde_json::to_string(&c).unwrap().contains("Right: mam."));
     }
 }

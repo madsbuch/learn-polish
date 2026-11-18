@@ -1158,12 +1158,16 @@ button.badge:active {
 .md-say strong {
   margin-right: 2px;
 }
-/* A whole sentence wraps like the text around it, with 🔊 🐢 after it. */
+/* A whole sentence wraps like the text around it, with 🔊 🐢 after it —
+   in the same box as a word, carried onto each line it takes. */
 .md-say[data-sentence] {
   display: inline;
-  padding: 0;
-  background: none;
+  padding: 1px 2px 1px var(--space-2);
+  border-radius: var(--radius-md);
   white-space: normal;
+  line-height: 1.9;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .md-say[data-sentence] .icon-button {
   vertical-align: middle;
