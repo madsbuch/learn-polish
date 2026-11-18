@@ -1568,7 +1568,7 @@ button.badge:active {
     background: var(--tint);
     box-shadow: none;
   }
-  .icon-button:not(:disabled):hover {
+  .icon-button:not([data-variant]):not(:disabled):hover {
     background: var(--tint);
   }
   .nav button:hover:not([aria-current="page"]) {

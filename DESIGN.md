@@ -10,6 +10,7 @@ src/design/tokens.css      every raw value: spacing, type, radii, controls, colo
 src/design/base.css        reset, the type scale as classes, layout helpers
 src/design/components.css  the components' styles
 src/design/index.tsx       the components — import everything from "../design"
+src/design/motion.tsx      motion that needs JavaScript (screen direction, count-ups, stagger, confetti)
 src/styles.css             feature styles (practice cards, chat, player, lyrics), on tokens only
 scripts/check-design.mjs   enforces the mechanical rules; runs in `bun run build`
 ```
@@ -49,6 +50,7 @@ Use the variables, never the numbers.
 | Surfaces | `--bg`, `--surface`, `--surface-raised`, `--surface-sunken`, `--line`, `--line-soft` |
 | Text | `--text`, `--text-dim`, `--text-faint`, `--brand-ink`, `--crimson-ink` (Polish) |
 | State | `--ok`/`--ok-bg`/`--ok-line`, `--bad`/`--bad-bg`/`--bad-line`, `--info-*` |
+| Motion | `--duration-fast` 120ms · `--duration` 200 · `--duration-slow` 320 · `--duration-count` 700 · `--duration-celebrate` 900; `--ease-out`, `--ease-spring`, `--ease-in`; `--stagger-step`, `--enter-shift`, `--rise-shift`; `--hover-shadow`, `--glow-ok`/`-gold`/`-brand` |
 
 Both themes define the same names; a component that uses tokens is correct in
 light and dark mode without trying.
@@ -105,9 +107,9 @@ Every screen is a `Screen`:
 | `Section` | A labelled group. `action` takes one plain button ("Select"). |
 | `Card` | A block of content or a form. `onClick` makes it a button. |
 | `Hero` | The brand gradient. At most one per screen, at the top. |
-| `List`, `ListItem` | Any collection. `leading` (cover, avatar, icon), `title`, `subtitle`, `trailing` controls, `onClick` (adds a chevron), `selected`. |
+| `List`, `ListItem` | Any collection. `leading` (cover, avatar, icon), `title`, `subtitle`, `trailing` controls, `onClick` (adds a chevron), `selected`. `stagger` on a list's main collection makes its rows rise in as the screen opens. |
 | `Button` | Text actions. `primary` (one per screen/card) · `secondary` (default) · `plain` (low emphasis) · `danger` (deletes) · `inverse` (on the hero) · `success` (continue after a right answer). Sizes `sm`, `md`, `lg`. |
-| `IconButton` | Icon-only actions. Always has a `label`. Variants `tinted`, `primary`, `inverse`, `inverse-solid`. |
+| `IconButton` | Icon-only actions. Always has a `label`. Variants `tinted`, `primary`, `inverse`, `inverse-solid`. `pulse` while what it started goes on (play). |
 | `ActionBar`, `Action` | A row of icon-over-label actions (the player). |
 | `ConfirmButton` | Anything that deletes. |
 | `Switch`, `SettingRow` | Settings: label and description left, control right (`stacked` for sliders and selects). |
@@ -117,11 +119,61 @@ Every screen is a `Screen`:
 | `Badge` | A small status: streak, level, "Failed". |
 | `Banner` | A message: `info`, `ok` or `error`. |
 | `EmptyState` | What an empty list shows. |
-| `Progress`, `StatGrid`, `Stat`, `Spinner`, `Loading` | Feedback. |
+| `Progress`, `StatGrid`, `Stat`, `Spinner`, `Loading` | Feedback. `Progress` fills in as it appears; `memory` makes it move on from where it was last seen. |
+| `Typing` | The other side of a chat is writing (three dots). |
+| `CountUp`, `Confetti` | A number that counts to its new value (`memory`, `from`); confetti for a day done, a level, a course closed. |
 | `Text`, `Stack`, `Inline`, `Avatar` | Type on the scale; layout without margins. |
 
 Icons come from `src/components/icons.tsx` (stroke icons on a 24px grid).
 Never a text glyph like `‹`, `✕` or `⌄` in a button.
+
+## Motion
+
+The app moves in one language: things settle in quickly and land softly
+(`--ease-out`); what pops — a sheet on a big screen, a right answer, a
+switch's knob, a pressed button springing back — overshoots a little
+(`--ease-spring`); what leaves accelerates away (`--ease-in`). Durations come
+from the tokens: 120–320ms for anything you wait on, longer only for
+counting and celebrating.
+
+- **Screens.** `Screen` decides how it comes in: a tab's root rises, a
+  pushed screen slides in from the right, a slid-up one (`onClose`) rises
+  from below, and whatever is *returned to* comes back from the left. Its own
+  back/close buttons mark the way back; anything else that goes back (a
+  summary's Done, leaving practice) calls `markBack()` first.
+- **Lists.** A screen's main collection rises in row by row (`List stagger`,
+  `useStagger`) — only as the screen first shows it, never when it is
+  returned to, and never again after: rows a sync adds simply appear.
+- **Numbers and bars.** Counters use `CountUp`; bars (`Progress`) and the
+  Today ring fill from where they were last seen (`memory`) to the new
+  value. Nothing moves on a reload that changed nothing.
+- **Practice.** The next card slides in; a right answer swells and glows, a
+  wrong one shakes; the XP badge bumps (`useBump`). A day done or a new level
+  gets `Confetti`.
+- **Touch and mouse.** Pressed things scale down a touch and spring back.
+  Hover (mouse only, under `(hover: hover) and (pointer: fine)`) changes
+  shadow, border or tint — never a transform (see below).
+- **Sheets** slide up (a dialog on a big screen springs open) and slide away
+  when closed from inside the sheet.
+
+Rules:
+
+1. **Reduced motion.** `base.css` has the one guard for CSS; JavaScript
+   motion checks `prefersReducedMotion()` and shows the end state at once.
+2. **Compositor only for moves.** Animate `transform` and `opacity`; bars
+   slide a full-width fill (`translateX`), never `width`/`height`.
+3. **WebKit and scrolling.** An element animating `opacity` or `transform`
+   inside a scrolling box gets its own layer in WebKit, which then scrolls a
+   moment apart from the rest ("half the box moves, then the other half").
+   So: entrances run once, on mount, with `backwards` fill (nothing stays
+   transformed); anything continuous or repeated inside a scroller animates
+   colours, shadows or a registered custom property (the typing dots, the
+   play button's halo, the lyrics' highlight, the Today ring); hover never
+   transforms; and never `scroll-behavior: smooth` with per-item transitions.
+4. **Cheap.** No animation on a sync's reload, short durations, and one-off
+   keyframes rather than running loops (a loop only while something is
+   actually happening: thinking, playing).
+5. **Tokens.** Durations, easings, shifts and glows come from `tokens.css`.
 
 ## Writing
 

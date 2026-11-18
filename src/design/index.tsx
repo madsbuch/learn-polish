@@ -187,7 +187,8 @@ export function Screen({
   const enter = useEnterDirection(onClose && !onBack ? "up" : pushed ? "push" : "tab");
   const back = onBack ? backward(onBack) : undefined;
   const close = onClose ? backward(onClose) : undefined;
-  const bodyStagger = useStagger();
+  // (Only a screen that asks for it starts the stagger's clock.)
+  const bodyStagger = useStagger(Boolean(stagger));
   const bodyClass = cx("screen-body", stagger && bodyStagger);
   // The system back button does what the screen's own ← or ⌄ does.
   useBackHandler(pushed, back ?? close);
@@ -388,7 +389,7 @@ export function Hero({ className, children }: { className?: string; children: Re
 
 export function List({ stagger, children }: { stagger?: boolean; children: ReactNode }) {
   // `stagger`: its rows rise in one after another as the screen first shows them.
-  const rise = useStagger();
+  const rise = useStagger(Boolean(stagger));
   return <div className={cx("list", stagger && rise)}>{children}</div>;
 }
 
