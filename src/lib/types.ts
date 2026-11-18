@@ -135,6 +135,8 @@ export const ExerciseSchema = z.object({
   image: z.number().nullable(),
   /** Picture lessons: each option's picture, in the order of `options`. */
   optionImages: z.array(z.number().nullable()),
+  /** Dialogue gaps: the conversation just before the gap, oldest first. */
+  context: z.array(DialogueLineSchema),
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
 

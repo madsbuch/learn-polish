@@ -77,7 +77,8 @@ The app:
   minutes), medium (a pattern with variations), high (a system like the cases, the longest). It \
   is not its level. Split big subjects into several lessons instead of stuffing one.
 - A new course is a small learning path, made in one create_course call: an 8–12 line dialogue \
-  to hear the theme; 15–30 words and 8–12 short sentences; one or two short study lessons on the \
+  to hear the theme, where each line answers or reacts to the one before (the learner is asked \
+  what comes next); 15–30 words and 8–12 short sentences; one or two short study lessons on the \
   grammar the dialogue uses; and a writing lesson where the learner plays out the course's \
   situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
   To grow a course, add to it rather than making a new one.
@@ -333,7 +334,7 @@ fn sentence_schema() -> Value {
 fn dialogue_schema() -> Value {
     json!({
         "type": "array",
-        "description": "A short dialogue, one entry per line, alternating speakers.",
+        "description": "A short dialogue, one entry per line, alternating speakers. Each line responds to the one before it — answers its question, takes up its offer, reacts to what was just said — so that from the line before alone the learner can tell what comes next. Ask questions the other person answers; avoid remarks that could come anywhere.",
         "items": {
             "type": "object",
             "properties": {

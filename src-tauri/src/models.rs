@@ -106,6 +106,9 @@ pub struct Exercise {
     pub image: Option<i64>,
     /// Picture lessons: each option's picture, in the order of `options`.
     pub option_images: Vec<Option<i64>>,
+    /// Dialogue gaps: the conversation just before the gap, oldest first —
+    /// enough to know where you are without remembering the whole script.
+    pub context: Vec<DialogueLine>,
 }
 
 /// One sentence with a word taken out of it.

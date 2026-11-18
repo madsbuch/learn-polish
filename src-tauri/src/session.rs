@@ -98,6 +98,7 @@ pub(crate) fn word_intro(w: &WordRow) -> Exercise {
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -119,6 +120,7 @@ pub(crate) fn typing(w: &WordRow) -> Exercise {
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -140,6 +142,7 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
     }
@@ -265,6 +268,7 @@ pub(crate) fn dialogue_read(lesson_id: i64, course: &Course) -> Exercise {
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
         pl: course.title_pl.clone(),
         meaning: course.summary.clone(),
     }
@@ -370,6 +374,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: i64, rng:
         pairs,
         image: None,
         option_images: vec![],
+        context: vec![],
     })
 }
 
@@ -424,6 +429,7 @@ pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rn
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -445,6 +451,7 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -470,10 +477,20 @@ pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
     }
 }
 
-/// Blanks out a few lines of the conversation and asks which one belongs.
+/// How many lines of the conversation a gap shows before it.
+const DIALOGUE_CONTEXT: usize = 3;
+
+/// "What comes next?" for a few lines of a dialogue. It asks what you can
+/// tell from understanding the conversation, not from remembering the
+/// script:
+/// - gaps after a question come first: the right line answers it;
+/// - the lines just before the gap are shown, so you know where you are;
+/// - the wrong options are lines from far away in the dialogue — never the
+///   ones around the gap, which could follow just as well.
 pub(crate) fn dialogue_gaps(
     dialogue: &[DialogueLine],
     lesson_id: i64,
@@ -482,12 +499,13 @@ pub(crate) fn dialogue_gaps(
     if dialogue.len() < 5 {
         return vec![];
     }
-    let mut indices: Vec<usize> = (1..dialogue.len()).collect();
-    indices.shuffle(rng);
-    indices.truncate(DIALOGUE_GAPS);
+    let asks = |line: &DialogueLine| line.pl.trim_end().ends_with('?');
+    let mut answers: Vec<usize> = (1..dialogue.len()).filter(|&i| asks(&dialogue[i - 1])).collect();
+    let mut others: Vec<usize> = (1..dialogue.len()).filter(|&i| !asks(&dialogue[i - 1])).collect();
+    answers.shuffle(rng);
+    others.shuffle(rng);
+    let mut indices: Vec<usize> = answers.into_iter().chain(others).take(DIALOGUE_GAPS).collect();
     indices.sort_unstable();
-
-    let all_polish: Vec<String> = dialogue.iter().map(|l| l.pl.clone()).collect();
 
     indices
         .into_iter()
@@ -503,17 +521,46 @@ pub(crate) fn dialogue_gaps(
                 prompt: previous.pl.clone(),
                 hint: format!("{} — {}", previous.speaker, line.speaker),
                 answer: line.pl.clone(),
-                options: options(&line.pl, &all_polish, rng),
+                options: gap_options(dialogue, i, rng),
                 tokens: vec![],
                 gaps: vec![],
                 pairs: vec![],
                 image: None,
                 option_images: vec![],
+                context: dialogue[i.saturating_sub(DIALOGUE_CONTEXT)..i].to_vec(),
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
         })
         .collect()
+}
+
+/// The right line and three wrong ones for the gap at `at`: the farthest
+/// lines from the gap first (they belong to another part of the
+/// conversation), never the two on either side of it while others are left.
+fn gap_options(dialogue: &[DialogueLine], at: usize, rng: &mut impl rand::Rng) -> Vec<String> {
+    let answer = &dialogue[at].pl;
+    let mut candidates: Vec<(usize, &str)> = dialogue
+        .iter()
+        .enumerate()
+        .filter(|(j, line)| *j != at && line.pl != *answer)
+        .map(|(j, line)| (j.abs_diff(at), line.pl.as_str()))
+        .collect();
+    candidates.shuffle(rng);
+    // Far ones first; within the near ones (two lines either side), the
+    // farther first too.
+    candidates.sort_by_key(|(distance, _)| std::cmp::Reverse((*distance > 2, *distance)));
+    let mut options: Vec<String> = vec![answer.clone()];
+    for (_, text) in candidates {
+        if options.len() == 4 {
+            break;
+        }
+        if !options.iter().any(|o| o == text) {
+            options.push(text.to_string());
+        }
+    }
+    options.shuffle(rng);
+    options
 }
 
 /// The first of a gloss's alternatives: "hi, bye" becomes "hi", so a card stays short.
@@ -557,6 +604,7 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: i64, rng: &m
         pairs,
         image: None,
         option_images: vec![],
+        context: vec![],
     })
 }
 
@@ -683,6 +731,7 @@ pub(crate) fn gap_fill(
         pairs: vec![],
         image: None,
         option_images: vec![],
+        context: vec![],
     }))
 }
 
@@ -731,5 +780,46 @@ mod tests {
         assert_eq!(gap.answer, "pochodzi");
         assert_eq!(gap.after, "?");
         assert!(make_gap("Dzień dobry", "Hello", &Default::default()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod dialogue_gap_tests {
+    use super::*;
+    use rand::SeedableRng;
+
+    fn line(ord: i64, speaker: &str, pl: &str) -> DialogueLine {
+        DialogueLine { ord, speaker: speaker.into(), gender: "f".into(), pl: pl.into(), meaning: String::new() }
+    }
+
+    #[test]
+    fn gaps_answer_questions_show_context_and_keep_neighbours_out() {
+        let dialogue = vec![
+            line(0, "Ola", "Dzień dobry!"),
+            line(1, "Jan", "Dzień dobry. Co podać?"),
+            line(2, "Ola", "Poproszę kawę."),
+            line(3, "Jan", "Z mlekiem?"),
+            line(4, "Ola", "Tak, z mlekiem."),
+            line(5, "Jan", "Proszę bardzo."),
+            line(6, "Ola", "Ile płacę?"),
+            line(7, "Jan", "Dziesięć złotych."),
+            line(8, "Ola", "Dziękuję, do widzenia."),
+        ];
+        for seed in 0..20 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let gaps = dialogue_gaps(&dialogue, 1, &mut rng);
+            assert_eq!(gaps.len(), DIALOGUE_GAPS);
+            for gap in &gaps {
+                assert!(gap.prompt.ends_with('?'), "after a question: {}", gap.prompt);
+                assert_eq!(gap.context.last().map(|l| l.pl.as_str()), Some(gap.prompt.as_str()));
+                assert!(gap.context.len() <= DIALOGUE_CONTEXT);
+                let at = dialogue.iter().position(|l| l.pl == gap.answer).unwrap();
+                assert_eq!(gap.options.len(), 4);
+                for option in gap.options.iter().filter(|o| **o != gap.answer) {
+                    let j = dialogue.iter().position(|l| l.pl == *option).unwrap();
+                    assert!(j.abs_diff(at) > 2, "{option} is right next to the gap");
+                }
+            }
+        }
     }
 }

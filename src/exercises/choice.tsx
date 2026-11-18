@@ -39,13 +39,36 @@ export const dialogueGap = defineExercise({
     <>
       <Text variant="eyebrow">What comes next?</Text>
       <Card>
-        <Stack gap={1}>
-          <Text variant="caption" tone="faint">
-            {props.exercise.hint}
-          </Text>
-          <Text variant="lead" weight="medium" selectable>
-            {props.exercise.prompt}
-          </Text>
+        <Stack gap={2}>
+          {props.exercise.context.length > 0 ? (
+            props.exercise.context.map((line, i) => {
+              const last = i === props.exercise.context.length - 1;
+              return (
+                <Stack key={`${line.ord}-${i}`} gap={0}>
+                  <Text variant="caption" tone="faint">
+                    {line.speaker}
+                  </Text>
+                  <Text
+                    variant={last ? "lead" : "body"}
+                    weight={last ? "medium" : undefined}
+                    tone={last ? undefined : "dim"}
+                    selectable
+                  >
+                    {line.pl}
+                  </Text>
+                </Stack>
+              );
+            })
+          ) : (
+            <>
+              <Text variant="caption" tone="faint">
+                {props.exercise.hint}
+              </Text>
+              <Text variant="lead" weight="medium" selectable>
+                {props.exercise.prompt}
+              </Text>
+            </>
+          )}
         </Stack>
       </Card>
       <Options {...props} />
