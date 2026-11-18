@@ -139,6 +139,10 @@ pub fn trigger_sql(shape: &Shape) -> Vec<(String, String)> {
         )
     };
     let when = "WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0";
+    // A row without a whole key can't be named to another device: it isn't
+    // recorded (rather than fail the write). The app never makes one; a
+    // key column declared without NOT NULL could only hold one by mistake.
+    let keyed = |row: &str| format!("({}) IS NOT NULL", key_sql(&shape.key, row));
     // An update that changes nothing (the same values written again) is not
     // a new version: it would otherwise win over a real edit made
     // concurrently elsewhere.
@@ -152,10 +156,10 @@ pub fn trigger_sql(shape: &Shape) -> Vec<(String, String)> {
     let t = quote(&shape.table);
     let [ai, au, ak, ad] = trigger_names(&shape.table);
     vec![
-        (ai.clone(), format!("CREATE TRIGGER {} AFTER INSERT ON {t} {when}\nBEGIN{}\nEND", quote(&ai), record("NEW", 0))),
-        (au.clone(), format!("CREATE TRIGGER {} AFTER UPDATE ON {t} {when} AND ({changed})\nBEGIN{}\nEND", quote(&au), record("NEW", 0))),
-        (ak.clone(), format!("CREATE TRIGGER {} AFTER UPDATE ON {t} {when} AND ({rekeyed})\nBEGIN{}\nEND", quote(&ak), record("OLD", 1))),
-        (ad.clone(), format!("CREATE TRIGGER {} AFTER DELETE ON {t} {when}\nBEGIN{}\nEND", quote(&ad), record("OLD", 1))),
+        (ai.clone(), format!("CREATE TRIGGER {} AFTER INSERT ON {t} {when} AND {}\nBEGIN{}\nEND", quote(&ai), keyed("NEW"), record("NEW", 0))),
+        (au.clone(), format!("CREATE TRIGGER {} AFTER UPDATE ON {t} {when} AND {} AND ({changed})\nBEGIN{}\nEND", quote(&au), keyed("NEW"), record("NEW", 0))),
+        (ak.clone(), format!("CREATE TRIGGER {} AFTER UPDATE ON {t} {when} AND {} AND ({rekeyed})\nBEGIN{}\nEND", quote(&ak), keyed("OLD"), record("OLD", 1))),
+        (ad.clone(), format!("CREATE TRIGGER {} AFTER DELETE ON {t} {when} AND {}\nBEGIN{}\nEND", quote(&ad), keyed("OLD"), record("OLD", 1))),
     ]
 }
 
@@ -164,14 +168,30 @@ pub fn trigger_sql(shape: &Shape) -> Vec<(String, String)> {
 pub fn backfill(conn: &mut Conn, shape: &Shape) -> Result<()> {
     let table = literal(&shape.table);
     let key = key_sql(&shape.key, "t");
+    // Rows without a whole key can't be synced (see `trigger_sql`); they stay
+    // here, untracked, and Diagnostics says how many.
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        n: i64,
+    }
+    let unkeyed = diesel::sql_query(format!("SELECT count(*) AS n FROM {} t WHERE ({key}) IS NULL", quote(&shape.table)))
+        .get_result::<Count>(conn)?
+        .n;
+    if unkeyed > 0 {
+        crate::diagnostics::note(
+            "sync",
+            format!("{unkeyed} rows of {} have no key and won't sync to other devices.", shape.table),
+        );
+    }
     conn.batch_execute(&format!(
         "INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
            SELECT {table}, {key}, printf('%013d.%06d', max(s.hlc_ms, {NOW_MS}), 0), s.device_id, 0,
              max(s.seq, (SELECT coalesce(max(seq), 0) FROM sync_rows)) + row_number() OVER (ORDER BY {key}), NULL
-           FROM {t} t, sync_state s WHERE s.id = 1
+           FROM {t} t, sync_state s WHERE s.id = 1 AND ({key}) IS NOT NULL
            ON CONFLICT (tbl, pk) DO NOTHING;
          INSERT INTO sync_vv (tbl, pk, device, counter)
-           SELECT {table}, {key}, s.device_id, 1 FROM {t} t, sync_state s WHERE s.id = 1
+           SELECT {table}, {key}, s.device_id, 1 FROM {t} t, sync_state s WHERE s.id = 1 AND ({key}) IS NOT NULL
            ON CONFLICT (tbl, pk, device) DO NOTHING;
          UPDATE sync_state SET seq = max(seq, (SELECT coalesce(max(seq), 0) FROM sync_rows)),
            hlc_ms = max(hlc_ms, {NOW_MS}) WHERE id = 1;",
