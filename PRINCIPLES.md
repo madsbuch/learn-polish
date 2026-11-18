@@ -19,13 +19,15 @@ app's owner; change them only on their word.
 3. **No approvals.** Keeping something is approving it; deleting it is
    rejecting it. Nothing the tutor makes waits for a yes.
 
-4. **Nothing happens behind the learner's back.** The app does no implicit
-   checks or upserts — no background job that judges, fills in or rewrites
-   the learner's things (like checking every course's level on its own).
-   When something is missing, the app shows a highlighted button that asks
-   the tutor ("Add levels to 4 courses"), and the tutor does it in a
-   conversation the learner can read. New features of this kind are built
-   on the tutor.
+4. **No one-time backfills behind the learner's back.** When a new feature
+   needs something the learner's existing things don't have yet — a level
+   for every course, levels moved out of titles — the app does not fill it
+   in by itself at startup (no migration-style upserts or checks of the
+   learner's content). It shows a highlighted button that asks the tutor
+   ("Add levels to 4 courses"), and the tutor does it in a conversation the
+   learner can read; once done, the button goes. New features of this kind
+   are built on the tutor. Ongoing work the app already does for the learner
+   (finishing a song they asked for, keeping files in place) is fine.
 
 ## Progress
 

@@ -4,8 +4,7 @@
 //! offers "Add levels" then, which asks the tutor. Nothing levels courses
 //! behind the learner's back (PRINCIPLES.md). A lesson can carry its own
 //! level — a challenge above its course — and otherwise has its course's. A
-//! level is shown as a badge, never written into a title (see
-//! [`split_title`]).
+//! level is shown as a badge, never written into a title.
 //!
 //! Levels describe material; they never limit what can be made or done.
 
@@ -22,73 +21,6 @@ pub const LEVELS: &[&str] = &["A1", "A2", "B1", "B2", "C1", "C2"];
 pub fn normalize(level: &str) -> Option<&'static str> {
     let upper = level.trim().to_uppercase();
     LEVELS.iter().copied().find(|l| upper.starts_with(l))
-}
-
-/// One word that is exactly a level ("A2", "b1", "B2+"), with what may wrap
-/// it in a title ("(A2)", "[B1]", "Level A2" is two words — see below).
-fn level_word(word: &str) -> Option<&'static str> {
-    let word = word.trim_matches(|c: char| "()[]{}:,;|·-–—".contains(c)).trim_end_matches('+');
-    LEVELS.iter().copied().find(|l| word.eq_ignore_ascii_case(l))
-}
-
-/// A title with a level written into it — "Mad og drikke (A2)", "Food – B1",
-/// "[A1] Greetings", "B2: News", "Food, level A2" — as the title without it
-/// and the level. None when the title has no level in it.
-pub fn split_title(title: &str) -> Option<(String, &'static str)> {
-    let words: Vec<&str> = title.split_whitespace().collect();
-    if words.len() < 2 {
-        return None;
-    }
-    let tidy = |rest: &[&str]| {
-        let text = rest.join(" ");
-        let text = text.trim_matches(|c: char| c.is_whitespace() || "-–—:|·,;".contains(c)).to_string();
-        // A dangling "level"/"niveau"/"CEFR" goes too.
-        let cut = ["level", "niveau", "poziom", "cefr"].iter().find_map(|w| {
-            let at = text.len().checked_sub(w.len())?;
-            (text.is_char_boundary(at) && text[at..].eq_ignore_ascii_case(w)).then_some(at)
-        });
-        let text = cut.map_or(text.clone(), |at| text[..at].to_string());
-        text.trim_matches(|c: char| c.is_whitespace() || "-–—:|·,;(".contains(c)).to_string()
-    };
-    if let Some(level) = level_word(words[words.len() - 1]) {
-        let rest = tidy(&words[..words.len() - 1]);
-        return (!rest.is_empty()).then_some((rest, level));
-    }
-    if let Some(level) = level_word(words[0]) {
-        let rest = tidy(&words[1..]);
-        return (!rest.is_empty()).then_some((rest, level));
-    }
-    None
-}
-
-/// Levels the tutor once wrote into course titles move to where they belong:
-/// the level (shown as a badge), the title trimmed. A course that already
-/// has a level keeps it. Runs at every start, and is cheap when there is
-/// nothing to move.
-pub fn move_levels_out_of_titles(conn: &mut Conn) -> Result<usize> {
-    let all: Vec<(i64, String, String, Option<String>)> = courses::table
-        .select((courses::id, courses::title_en, courses::title_pl, courses::level))
-        .load(conn)?;
-    let mut moved = 0;
-    for (id, title, title_native, level) in all {
-        let english = split_title(&title);
-        let native = split_title(&title_native);
-        let Some(found) = english.as_ref().or(native.as_ref()).map(|(_, l)| *l) else { continue };
-        let title = english.map_or(title, |(t, _)| t);
-        let title_native = native.map_or(title_native, |(t, _)| t);
-        diesel::update(courses::table.find(id))
-            .set((
-                courses::title_en.eq(&title),
-                courses::title_pl.eq(&title_native),
-                courses::level.eq(level.as_deref().and_then(normalize).unwrap_or(found)),
-            ))
-            .execute(conn)?;
-        moved += 1;
-    }
-    if moved > 0 {
-        crate::diagnostics::note("levels", &format!("Moved the level out of {moved} course title(s)."));
-    }
-    Ok(moved)
 }
 
 /// Sets a course's level, as the tutor (or the learner) says it is.
@@ -121,18 +53,4 @@ mod tests {
     }
 
 
-    #[test]
-    fn levels_come_out_of_titles() {
-        let split = |t: &str| split_title(t).map(|(t, l)| (t, l.to_string()));
-        assert_eq!(split("Mad og drikke (A2)"), Some(("Mad og drikke".into(), "A2".into())));
-        assert_eq!(split("Food – B1"), Some(("Food".into(), "B1".into())));
-        assert_eq!(split("Food - b2+"), Some(("Food".into(), "B2".into())));
-        assert_eq!(split("[A1] Greetings"), Some(("Greetings".into(), "A1".into())));
-        assert_eq!(split("B2: The news"), Some(("The news".into(), "B2".into())));
-        assert_eq!(split("Food, level A2"), Some(("Food".into(), "A2".into())));
-        assert_eq!(split("Rejse (niveau B1)"), Some(("Rejse".into(), "B1".into())));
-        assert_eq!(split("Ordering food"), None);
-        assert_eq!(split("A2"), None, "a title that is only a level stays");
-        assert_eq!(split("Vitamin B12"), None);
-    }
 }
