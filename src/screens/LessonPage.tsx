@@ -283,214 +283,224 @@ export function LessonPage({
     <Screen title={lesson.title} subtitle={lesson.courseTitle ?? undefined} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
 
-      <Stack gap={3}>
-        <Inline gap={2} wrap>
-          <Badge tone="brand">
-            <Inline gap={1}>
-              <LessonIcon lesson={lesson} />
-              {kindName(lesson)}
+      {/* On a wide window: about the lesson on the left, what it teaches on
+          the right. On a phone the wrappers vanish (display: contents). */}
+      <div className="page-split">
+        <div className="page-split__info">
+          <Stack gap={3}>
+            <Inline gap={2} wrap>
+              <Badge tone="brand">
+                <Inline gap={1}>
+                  <LessonIcon lesson={lesson} />
+                  {kindName(lesson)}
+                </Inline>
+              </Badge>
+              <Badge tone={complexityTone(lesson.complexity)}>
+                {complexityName(lesson.complexity)} · {minutes(lesson)}
+              </Badge>
+              {lesson.mastered ? (
+                <Badge tone="gold">🏆 Mastered</Badge>
+              ) : started ? (
+                <Badge>{dueLabel(lesson, today)}</Badge>
+              ) : null}
+              {lesson.challenge ? <Badge tone="gold">Challenge</Badge> : null}
+              {lesson.level ? (
+                <Badge tone="brand" label={`${lesson.level}: what it means`} onClick={() => setLevelInfo(true)}>
+                  {`${lesson.level} ⓘ`}
+                </Badge>
+              ) : null}
+              {levelInfo && lesson.level ? (
+                <LevelInfo level={lesson.level} what="lesson" onClose={() => setLevelInfo(false)} />
+              ) : null}
             </Inline>
-          </Badge>
-          <Badge tone={complexityTone(lesson.complexity)}>
-            {complexityName(lesson.complexity)} · {minutes(lesson)}
-          </Badge>
-          {lesson.mastered ? (
-            <Badge tone="gold">🏆 Mastered</Badge>
-          ) : started ? (
-            <Badge>{dueLabel(lesson, today)}</Badge>
-          ) : null}
-          {lesson.challenge ? <Badge tone="gold">Challenge</Badge> : null}
-          {lesson.level ? (
-            <Badge tone="brand" label={`${lesson.level}: what it means`} onClick={() => setLevelInfo(true)}>
-              {`${lesson.level} ⓘ`}
-            </Badge>
-          ) : null}
-          {levelInfo && lesson.level ? (
-            <LevelInfo level={lesson.level} what="lesson" onClose={() => setLevelInfo(false)} />
-          ) : null}
-        </Inline>
-        {lesson.summary ? (
-          <Text tone="dim" as="p">
-            {lesson.summary}
-          </Text>
-        ) : null}
-        <Button
-          variant="primary"
-          size="lg"
-          wide
-          icon={<PlayerIcon.play size={18} />}
-          onClick={() => (type.engine === "conversation" ? onCheckIn(lesson.id) : onStartDrill(lesson.id))}
-        >
-          {started ? type.againLabel : type.startLabel}
-        </Button>
-      </Stack>
+            {lesson.summary ? (
+              <Text tone="dim" as="p">
+                {lesson.summary}
+              </Text>
+            ) : null}
+            <Button
+              variant="primary"
+              size="lg"
+              wide
+              icon={<PlayerIcon.play size={18} />}
+              onClick={() => (type.engine === "conversation" ? onCheckIn(lesson.id) : onStartDrill(lesson.id))}
+            >
+              {started ? type.againLabel : type.startLabel}
+            </Button>
+          </Stack>
+        </div>
 
-      {type.sections.map((name) => (
-        <Fragment key={name}>{section(name)}</Fragment>
-      ))}
+        <div className="page-split__main">
+          {type.sections.map((name) => (
+            <Fragment key={name}>{section(name)}</Fragment>
+          ))}
+        </div>
 
-      <Section title="Check-ins">
-        <List>
-          {lesson.lastResult ? (
-            <SettingRow
-              label={`Last time: ${RESULT_TEXT[lesson.lastResult]}`}
-              description={lesson.lastFeedback ?? undefined}
-            />
+        <div className="page-split__side">
+          <Section title="Check-ins">
+            <List>
+              {lesson.lastResult ? (
+                <SettingRow
+                  label={`Last time: ${RESULT_TEXT[lesson.lastResult]}`}
+                  description={lesson.lastFeedback ?? undefined}
+                />
+              ) : null}
+              <SettingRow
+                label={
+                  lesson.mastered
+                    ? "Mastered — it no longer comes back"
+                    : lesson.dueDay === null
+                      ? "Starts the first time you do it"
+                      : lesson.dueDay <= today
+                        ? "Due now"
+                        : `Next check-in ${dayToDate(lesson.dueDay)}`
+                }
+                description={
+                  lesson.mastered
+                    ? "Mastery is for good. Practise it whenever you like; it won't be scheduled again."
+                    : started
+                      ? "Each pass pushes the next one further out; struggling brings it back sooner."
+                      : `Then it comes back about every ${lesson.periodDays} days, further apart as you pass.`
+                }
+              />
+              <SettingRow
+                label="Check in"
+                stacked
+                control={
+                  <ChoiceRow>
+                    {periodOptions.map((option) => (
+                      <Choice
+                        key={option.value}
+                        selected={option.value === period}
+                        onClick={async () => {
+                          try {
+                            await api.lessonSetPeriod(lesson.id, Number(option.value));
+                            setLesson({
+                              ...lesson,
+                              periodDays: Number(option.value),
+                            });
+                          } catch (cause) {
+                            setError(errorMessage(cause));
+                          }
+                        }}
+                      >
+                        {option.label}
+                      </Choice>
+                    ))}
+                  </ChoiceRow>
+                }
+              />
+            </List>
+          </Section>
+
+          <Section
+            title={lesson.courses.length === 1 ? "Course" : "Courses"}
+            info={
+              <p>
+                A lesson can be in several courses: it stays one lesson, with one schedule, shown in each. Its words and
+                sentences belong to the lesson and go wherever it goes. Taking it out of its last course deletes it —
+                use Delete lesson for that.
+              </p>
+            }
+          >
+            <Stack gap={2}>
+              <List>
+                {lesson.courses.map(([id, title, titlePl]) => (
+                  <ListItem
+                    key={id}
+                    title={titlePl}
+                    subtitle={title}
+                    trailing={
+                      lesson.courses.length > 1 ? (
+                        <IconButton
+                          icon={<CloseIcon />}
+                          label={`Take it out of ${title}`}
+                          onClick={() => changeCourses(() => api.lessonRemoveFromCourse(lesson.id, id))}
+                        />
+                      ) : undefined
+                    }
+                  />
+                ))}
+              </List>
+              <Inline gap={2}>
+                <div className="grow">
+                  <Button wide icon={<PlusIcon />} onClick={() => openPicker("add")}>
+                    Also in…
+                  </Button>
+                </div>
+                {lesson.courses.length === 1 ? (
+                  <div className="grow">
+                    <Button wide onClick={() => openPicker("move")}>
+                      Move to…
+                    </Button>
+                  </div>
+                ) : null}
+              </Inline>
+            </Stack>
+          </Section>
+
+          {picking ? (
+            <Sheet title={picking.mode === "add" ? "Also show it in" : "Move it to"} onClose={() => setPicking(null)}>
+              <List>
+                {picking.courses
+                  .filter((entry) => !lesson.courses.some(([id]) => id === entry.course.id))
+                  .map((entry) => (
+                    <ListItem
+                      key={entry.course.id}
+                      title={entry.course.titlePl}
+                      subtitle={entry.course.title}
+                      onClick={() =>
+                        changeCourses(async () => {
+                          await api.lessonAddToCourse(lesson.id, entry.course.id);
+                          if (picking.mode === "move") {
+                            await api.lessonRemoveFromCourse(lesson.id, lesson.courses[0][0]);
+                          }
+                        })
+                      }
+                    />
+                  ))}
+              </List>
+            </Sheet>
           ) : null}
-          <SettingRow
-            label={
-              lesson.mastered
-                ? "Mastered — it no longer comes back"
-                : lesson.dueDay === null
-                  ? "Starts the first time you do it"
-                  : lesson.dueDay <= today
-                    ? "Due now"
-                    : `Next check-in ${dayToDate(lesson.dueDay)}`
-            }
-            description={
-              lesson.mastered
-                ? "Mastery is for good. Practise it whenever you like; it won't be scheduled again."
-                : started
-                  ? "Each pass pushes the next one further out; struggling brings it back sooner."
-                  : `Then it comes back about every ${lesson.periodDays} days, further apart as you pass.`
-            }
-          />
-          <SettingRow
-            label="Check in"
-            stacked
-            control={
-              <ChoiceRow>
-                {periodOptions.map((option) => (
-                  <Choice
-                    key={option.value}
-                    selected={option.value === period}
-                    onClick={async () => {
+
+          <Section title="Manage">
+            <List>
+              <SettingRow
+                label="Challenge"
+                description="Beyond the course's level: not needed to complete it, only to master it"
+                control={
+                  <Switch
+                    label="Challenge"
+                    checked={lesson.challenge}
+                    onChange={async (challenge) => {
                       try {
-                        await api.lessonSetPeriod(lesson.id, Number(option.value));
-                        setLesson({
-                          ...lesson,
-                          periodDays: Number(option.value),
-                        });
+                        await api.lessonSetChallenge(lesson.id, challenge);
+                        await reload();
                       } catch (cause) {
                         setError(errorMessage(cause));
                       }
                     }}
-                  >
-                    {option.label}
-                  </Choice>
-                ))}
-              </ChoiceRow>
-            }
-          />
-        </List>
-      </Section>
-
-      <Section
-        title={lesson.courses.length === 1 ? "Course" : "Courses"}
-        info={
-          <p>
-            A lesson can be in several courses: it stays one lesson, with one schedule, shown in each. Its words and
-            sentences belong to the lesson and go wherever it goes. Taking it out of its last course deletes it — use
-            Delete lesson for that.
-          </p>
-        }
-      >
-        <Stack gap={2}>
-          <List>
-            {lesson.courses.map(([id, title, titlePl]) => (
-              <ListItem
-                key={id}
-                title={titlePl}
-                subtitle={title}
-                trailing={
-                  lesson.courses.length > 1 ? (
-                    <IconButton
-                      icon={<CloseIcon />}
-                      label={`Take it out of ${title}`}
-                      onClick={() => changeCourses(() => api.lessonRemoveFromCourse(lesson.id, id))}
-                    />
-                  ) : undefined
+                  />
                 }
               />
-            ))}
-          </List>
-          <Inline gap={2}>
-            <div className="grow">
-              <Button wide icon={<PlusIcon />} onClick={() => openPicker("add")}>
-                Also in…
-              </Button>
-            </div>
-            {lesson.courses.length === 1 ? (
-              <div className="grow">
-                <Button wide onClick={() => openPicker("move")}>
-                  Move to…
-                </Button>
-              </div>
-            ) : null}
-          </Inline>
-        </Stack>
-      </Section>
-
-      {picking ? (
-        <Sheet title={picking.mode === "add" ? "Also show it in" : "Move it to"} onClose={() => setPicking(null)}>
-          <List>
-            {picking.courses
-              .filter((entry) => !lesson.courses.some(([id]) => id === entry.course.id))
-              .map((entry) => (
-                <ListItem
-                  key={entry.course.id}
-                  title={entry.course.titlePl}
-                  subtitle={entry.course.title}
-                  onClick={() =>
-                    changeCourses(async () => {
-                      await api.lessonAddToCourse(lesson.id, entry.course.id);
-                      if (picking.mode === "move") {
-                        await api.lessonRemoveFromCourse(lesson.id, lesson.courses[0][0]);
-                      }
-                    })
-                  }
-                />
-              ))}
-          </List>
-        </Sheet>
-      ) : null}
-
-      <Section title="Manage">
-        <List>
-          <SettingRow
-            label="Challenge"
-            description="Beyond the course's level: not needed to complete it, only to master it"
-            control={
-              <Switch
-                label="Challenge"
-                checked={lesson.challenge}
-                onChange={async (challenge) => {
-                  try {
-                    await api.lessonSetChallenge(lesson.id, challenge);
-                    await reload();
-                  } catch (cause) {
-                    setError(errorMessage(cause));
-                  }
-                }}
-              />
-            }
-          />
-        </List>
-        <ConfirmButton
-          label="Delete lesson"
-          confirmLabel="Delete"
-          question="Delete this lesson, its words and its check-in history, from every course it is in?"
-          wide
-          onConfirm={async () => {
-            try {
-              await api.lessonDelete(lesson.id);
-              onDeleted();
-            } catch (cause) {
-              setError(errorMessage(cause));
-            }
-          }}
-        />
-      </Section>
+            </List>
+            <ConfirmButton
+              label="Delete lesson"
+              confirmLabel="Delete"
+              question="Delete this lesson, its words and its check-in history, from every course it is in?"
+              wide
+              onConfirm={async () => {
+                try {
+                  await api.lessonDelete(lesson.id);
+                  onDeleted();
+                } catch (cause) {
+                  setError(errorMessage(cause));
+                }
+              }}
+            />
+          </Section>
+        </div>
+      </div>
     </Screen>
   );
 }

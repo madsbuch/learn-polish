@@ -75,10 +75,18 @@
   /* The left inset for the navigation rail, which zeroes --safe-left for
      the screens beside it. */
   --rail-inset: env(safe-area-inset-left, 0px);
-  --max-width: 1440px;
+  /* The widest a dashboard's content gets on a big window (the window itself
+     is filled: the navigation rail keeps to its left edge). */
+  --max-width: 1600px;
   --reading-width: 760px;
+  /* A page in two columns on a wide window (a course: about it | lessons). */
+  --split-page-width: 1240px;
   --sheet-width: 560px;
+  /* A dialog on a big window stops growing here, so it reads as a dialog. */
+  --sheet-max-height: 820px;
   --course-card-width: 280px;
+  /* A course card's picture, above its text, from tablet width up. */
+  --course-cover-height: 132px;
 
   /* ---- Colours that read the same in both themes (they sit on the brand
      gradient, or are the brand itself). */

@@ -155,137 +155,147 @@ export function CourseDetail({
       backdrop={picture !== null ? fileUrl(picture) : null}
     >
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {picture !== null || progress.openEnded ? null : (
-        <Button wide icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
-          {drawing ? "Drawing a picture…" : "Make a picture for this course"}
-        </Button>
-      )}
-      <Inline gap={2} wrap>
-        {progress.course.level ? (
-          <Badge tone="brand" label={`${progress.course.level}: what it means`} onClick={() => setLevelInfo(true)}>
-            {`${progress.course.level} ⓘ`}
-          </Badge>
-        ) : null}
-        {closedAt === null && progress.minutesToMaster > 0 ? (
-          <Badge>{`${roughDuration(progress.minutesToMaster)} to master`}</Badge>
-        ) : null}
-      </Inline>
-      {names.summary ? (
-        <Text variant="small" tone="dim" as="p">
-          {names.summary}
-        </Text>
-      ) : null}
-      {levelInfo && progress.course.level ? (
-        <LevelInfo level={progress.course.level} what="course" onClose={() => setLevelInfo(false)} />
-      ) : null}
-
-      {lessons && lessons.length > 0 ? (
-        <CourseStanding
-          lessons={lessons}
-          openEnded={progress.openEnded}
-          closedAt={closedAt}
-          onClose={() =>
-            act(async () => {
-              setCelebrating(await api.courseClose(courseId));
-              setClosedAt(Math.floor(Date.now() / 1000));
-              onChanged();
-            })
-          }
-          onShowLeft={() => {
-            setTab("lessons");
-            window.requestAnimationFrame(() =>
-              document.getElementById("to-pass")?.scrollIntoView({ behavior: "smooth", block: "start" }),
-            );
-          }}
-        />
-      ) : null}
-
-      {tabs.length > 1 ? <Segmented value={shown} onChange={setTab} options={tabs} /> : null}
-
-      {shown === "lessons" ? (
-        lessons ? (
-          lessons.length === 0 ? (
-            <List>
-              <ListEmpty>No lessons yet. Ask the tutor to add some.</ListEmpty>
-            </List>
-          ) : (
-            <CourseLessons lessons={lessons} today={today} closed={closedAt !== null} onOpen={onOpenLesson} />
-          )
-        ) : (
-          <Spinner />
-        )
-      ) : null}
-
-      {shown === "words" && words ? (
-        <Stack gap={3}>
-          <input
-            type="search"
-            value={query}
-            placeholder="Search these words"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <List>
-            {filtered.map((word) => (
-              <ListItem
-                key={word.id}
-                selectable
-                title={word.pl}
-                subtitle={`${word.meaning} · ${word.lesson}`}
-                label={`${word.pl}: open ${word.lesson}`}
-                onClick={() => onOpenLesson(word.lessonId)}
-                trailing={<SpeakButton text={word.pl} />}
-              />
-            ))}
-            {filtered.length === 0 ? <ListEmpty>No match.</ListEmpty> : null}
-          </List>
-        </Stack>
-      ) : null}
-
-      {shown === "sentences" && sentences ? (
-        <List>
-          {sentences.map((sentence) => (
-            <ListItem
-              key={sentence.id}
-              selectable
-              title={sentence.pl}
-              subtitle={`${sentence.meaning} · ${sentence.lesson}`}
-              label={`${sentence.pl}: open ${sentence.lesson}`}
-              onClick={() => onOpenLesson(sentence.lessonId)}
-              trailing={
-                <Inline gap={1}>
-                  <SpeakButton text={sentence.pl} />
-                  <SlowButton text={sentence.pl} />
-                </Inline>
-              }
-            />
-          ))}
-        </List>
-      ) : null}
-
-      <Section title="Manage">
-        <Stack gap={2}>
-          <Button wide onClick={() => setRenaming(names)}>
-            Rename
-          </Button>
-          {picture !== null ? (
+      {/* On a wide window: what the course is beside its lessons. On a
+          phone the wrappers vanish (display: contents) and all is one column. */}
+      <div className="page-split">
+        <div className="page-split__info">
+          {picture !== null || progress.openEnded ? null : (
             <Button wide icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
-              {drawing ? "Drawing…" : "Draw a new picture"}
+              {drawing ? "Drawing a picture…" : "Make a picture for this course"}
             </Button>
+          )}
+          <Inline gap={2} wrap>
+            {progress.course.level ? (
+              <Badge tone="brand" label={`${progress.course.level}: what it means`} onClick={() => setLevelInfo(true)}>
+                {`${progress.course.level} ⓘ`}
+              </Badge>
+            ) : null}
+            {closedAt === null && progress.minutesToMaster > 0 ? (
+              <Badge>{`${roughDuration(progress.minutesToMaster)} to master`}</Badge>
+            ) : null}
+          </Inline>
+          {names.summary ? (
+            <Text variant="small" tone="dim" as="p">
+              {names.summary}
+            </Text>
           ) : null}
-          <ConfirmButton
-            label="Delete course"
-            confirmLabel="Delete"
-            question="Delete this course? Lessons only in this course go with it, with their words and your progress on them."
-            wide
-            onConfirm={() =>
-              act(async () => {
-                await api.courseDelete(courseId);
-                onDeleted();
-              })
-            }
-          />
-        </Stack>
-      </Section>
+          {levelInfo && progress.course.level ? (
+            <LevelInfo level={progress.course.level} what="course" onClose={() => setLevelInfo(false)} />
+          ) : null}
+
+          {lessons && lessons.length > 0 ? (
+            <CourseStanding
+              lessons={lessons}
+              openEnded={progress.openEnded}
+              closedAt={closedAt}
+              onClose={() =>
+                act(async () => {
+                  setCelebrating(await api.courseClose(courseId));
+                  setClosedAt(Math.floor(Date.now() / 1000));
+                  onChanged();
+                })
+              }
+              onShowLeft={() => {
+                setTab("lessons");
+                window.requestAnimationFrame(() =>
+                  document.getElementById("to-pass")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                );
+              }}
+            />
+          ) : null}
+        </div>
+
+        <div className="page-split__main">
+          {tabs.length > 1 ? <Segmented value={shown} onChange={setTab} options={tabs} /> : null}
+
+          {shown === "lessons" ? (
+            lessons ? (
+              lessons.length === 0 ? (
+                <List>
+                  <ListEmpty>No lessons yet. Ask the tutor to add some.</ListEmpty>
+                </List>
+              ) : (
+                <CourseLessons lessons={lessons} today={today} closed={closedAt !== null} onOpen={onOpenLesson} />
+              )
+            ) : (
+              <Spinner />
+            )
+          ) : null}
+
+          {shown === "words" && words ? (
+            <Stack gap={3}>
+              <input
+                type="search"
+                value={query}
+                placeholder="Search these words"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <List>
+                {filtered.map((word) => (
+                  <ListItem
+                    key={word.id}
+                    selectable
+                    title={word.pl}
+                    subtitle={`${word.meaning} · ${word.lesson}`}
+                    label={`${word.pl}: open ${word.lesson}`}
+                    onClick={() => onOpenLesson(word.lessonId)}
+                    trailing={<SpeakButton text={word.pl} />}
+                  />
+                ))}
+                {filtered.length === 0 ? <ListEmpty>No match.</ListEmpty> : null}
+              </List>
+            </Stack>
+          ) : null}
+
+          {shown === "sentences" && sentences ? (
+            <List>
+              {sentences.map((sentence) => (
+                <ListItem
+                  key={sentence.id}
+                  selectable
+                  title={sentence.pl}
+                  subtitle={`${sentence.meaning} · ${sentence.lesson}`}
+                  label={`${sentence.pl}: open ${sentence.lesson}`}
+                  onClick={() => onOpenLesson(sentence.lessonId)}
+                  trailing={
+                    <Inline gap={1}>
+                      <SpeakButton text={sentence.pl} />
+                      <SlowButton text={sentence.pl} />
+                    </Inline>
+                  }
+                />
+              ))}
+            </List>
+          ) : null}
+        </div>
+
+        <div className="page-split__side">
+          <Section title="Manage">
+            <Stack gap={2}>
+              <Button wide onClick={() => setRenaming(names)}>
+                Rename
+              </Button>
+              {picture !== null ? (
+                <Button wide icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
+                  {drawing ? "Drawing…" : "Draw a new picture"}
+                </Button>
+              ) : null}
+              <ConfirmButton
+                label="Delete course"
+                confirmLabel="Delete"
+                question="Delete this course? Lessons only in this course go with it, with their words and your progress on them."
+                wide
+                onConfirm={() =>
+                  act(async () => {
+                    await api.courseDelete(courseId);
+                    onDeleted();
+                  })
+                }
+              />
+            </Stack>
+          </Section>
+        </div>
+      </div>
 
       {renaming ? (
         <Sheet title="Rename course" onClose={() => setRenaming(null)}>

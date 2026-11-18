@@ -884,7 +884,12 @@ body:has(.conversation-control) .line {
   background: var(--surface);
   border: 1px solid var(--line-soft);
   box-shadow: var(--card-shadow);
-  scroll-behavior: smooth;
+  /* One layer with its own paint: when the box scrolls to the next line
+     (FollowLyrics, one smooth scroll per line), it moves as one piece
+     instead of repainting in halves (seen in WKWebView). */
+  transform: translateZ(0);
+  will-change: scroll-position;
+  contain: paint;
 }
 .follow-eyebrow {
   margin: var(--space-3) 0 var(--space-1);
@@ -896,7 +901,6 @@ body:has(.conversation-control) .line {
   padding: var(--space-1) var(--space-2);
   margin: 0 calc(var(--space-2) * -1);
   border-radius: var(--radius-md);
-  transition: background 0.25s, opacity 0.25s;
 }
 /* Who speaks, in a podcast with a cast: shown when it changes. */
 .follow-speaker,
@@ -929,12 +933,13 @@ body:has(.conversation-control) .line {
   line-height: var(--leading-caption);
   color: var(--text-faint);
 }
-.follow-line[data-state="past"],
-.follow-line[data-state="next"] {
-  opacity: 0.55;
+/* Lines around the sung one stay readable, a step quieter; the highlight
+   switches at once (no transition), so nothing lags behind the scroll. */
+.follow-line[data-state="past"] .pl,
+.follow-line[data-state="next"] .pl {
+  color: var(--text-dim);
 }
 .follow-line[data-state="current"] {
-  opacity: 1;
   background: var(--brand-tint);
 }
 .follow-line[data-state="current"] .pl {
@@ -1262,11 +1267,118 @@ body:has(.session-foot) .conversation-control {
 .course-grid .list-item {
   height: 100%;
 }
+/* The wrappers that place today's pieces on a wide window are not there on
+   a phone: their contents lay out exactly as direct children. */
+.practice-today__lessons,
+.practice-today__stats,
+.practice-courses__levels,
+.practice-courses__new {
+  display: contents;
+}
+
+/* From tablet width up a course card is a tile: its picture on top, its text
+   below on the card colour — never over the picture, so it reads on any
+   picture. A course without one gets a quiet band with its letter, so tiles
+   side by side line up. */
+@media (min-width: 768px) {
+  .course-grid .list-item {
+    position: relative;
+    isolation: isolate;
+    min-height: 0;
+  }
+  .course-grid .list-item[data-interactive="true"] > .list-item__main {
+    align-items: flex-start;
+    padding-top: calc(var(--course-cover-height) + var(--space-4));
+    padding-bottom: var(--space-4);
+  }
+  .course-grid .list-item__backdrop {
+    bottom: auto;
+    height: var(--course-cover-height);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .course-grid .list-item__backdrop img {
+    width: 100%;
+    opacity: 1;
+    filter: none;
+  }
+  .course-grid .list-item__backdrop::after {
+    display: none;
+  }
+  .course-grid .list-item:not([data-backdrop="true"])::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--course-cover-height);
+    z-index: -1;
+    background: var(--brand-tint);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .course-grid .list-item:not([data-backdrop="true"]) .list-item__leading {
+    position: absolute;
+    top: calc(var(--course-cover-height) / 2);
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .course-grid .list-item:not([data-backdrop="true"]) .avatar {
+    width: var(--control-lg);
+    height: var(--control-lg);
+    font-size: var(--font-title);
+  }
+  /* The chevron sits beside the title, on the card colour. */
+  .course-grid .list-item[data-backdrop="true"] .list-item__chevron {
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* A wide window: today's work in a band across the top, the course library
+   below it across the whole width — no tall column beside a short one. */
 @media (min-width: 1000px) {
-  .practice-layout:has(.practice-today) {
+  .practice-today {
     display: grid;
-    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "hero stats";
     align-items: start;
+    gap: var(--space-5) var(--space-6);
+  }
+  .practice-today:has(.practice-today__lessons) {
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "hero lessons"
+      "stats lessons";
+  }
+  .practice-today__hero {
+    grid-area: hero;
+  }
+  .practice-today__lessons,
+  .practice-today__stats {
+    display: block;
+    min-width: 0;
+  }
+  .practice-today__lessons {
+    grid-area: lessons;
+  }
+  .practice-today__stats {
+    grid-area: stats;
+  }
+  .practice-courses__levels,
+  .practice-courses__new {
+    display: block;
+    max-width: var(--sheet-width);
+  }
+}
+/* Room for all three side by side. */
+@media (min-width: 1400px) {
+  .practice-today {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  .practice-today:has(.practice-today__lessons) {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-rows: auto;
+    grid-template-areas: "hero lessons stats";
   }
 }
 
@@ -1518,4 +1630,93 @@ button.id-chip {
   object-fit: cover;
   border-radius: var(--radius-lg);
   background: var(--surface-sunken);
+}
+
+/* A page in two columns on a wide window (PageSplit wrappers): what the
+   thing is, with its settings and Manage, on the left; its content — a
+   course's lessons, a lesson's words or text — on the right. On narrower
+   windows the wrappers vanish and the page is one column, as before. */
+.page-split,
+.page-split__info,
+.page-split__main,
+.page-split__side {
+  display: contents;
+}
+@media (min-width: 1000px) {
+  .screen:has(.page-split) > .screen-header,
+  .screen-body:has(> .page-split) {
+    max-width: var(--split-page-width);
+  }
+  .page-split {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.4fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "info main"
+      "side main";
+    gap: var(--space-6) var(--space-7);
+    align-items: start;
+  }
+  .page-split__info,
+  .page-split__main,
+  .page-split__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    min-width: 0;
+  }
+  .page-split__info {
+    grid-area: info;
+  }
+  .page-split__main {
+    grid-area: main;
+  }
+  .page-split__side {
+    grid-area: side;
+  }
+}
+
+/* Settings on a big window: its groups flow into two columns, each the
+   width of a comfortable form, instead of one long narrow strip. */
+.settings-columns {
+  display: contents;
+}
+@media (min-width: 1400px) {
+  .screen:has(.settings-columns) > .screen-header,
+  .screen-body:has(> .settings-columns) {
+    max-width: var(--split-page-width);
+  }
+  .settings-columns {
+    display: block;
+    columns: 2;
+    column-gap: var(--space-7);
+  }
+  .settings-columns > * {
+    break-inside: avoid;
+    margin-bottom: var(--space-6);
+  }
+}
+
+/* The player on a big window: controls and lyrics side by side, kept to a
+   width where the lyrics stay near the controls. */
+@media (min-width: 1000px) {
+  .screen:has(.player-layout[data-landscape="true"]) > .screen-header,
+  .screen-body:has(> .player-layout[data-landscape="true"]) {
+    max-width: var(--split-page-width);
+  }
+}
+
+/* A practice session on a wider window: its bars run the full width (no box
+   floating in the middle) while what is in them keeps the reading width,
+   and the scroll bar sits at the window's edge. */
+@media (min-width: 768px) {
+  .session {
+    max-width: none;
+  }
+  .session-top,
+  .session-body,
+  .session-foot {
+    padding-left: max(calc(var(--gutter) + var(--safe-left)), calc((100% - var(--reading-width)) / 2));
+    padding-right: max(calc(var(--gutter) + var(--safe-right)), calc((100% - var(--reading-width)) / 2));
+  }
 }

@@ -62,8 +62,10 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
     const container = box.current;
     const line = currentRef.current;
     if (!container || !line) return;
-    const target = line.offsetTop - container.clientHeight * 0.35;
-    container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+    const target = Math.max(0, Math.round(line.offsetTop - container.clientHeight * 0.35));
+    // One smooth scroll per line change, and none when it is already there.
+    if (Math.abs(container.scrollTop - target) < 2) return;
+    container.scrollTo({ top: target, behavior: "smooth" });
   }, [current, trackId]);
 
   if (!lines || lines.length === 0) {

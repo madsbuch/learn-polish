@@ -125,7 +125,7 @@ export function Exercises({
         {courses.length > 0 || stats.totalXp > 0 ? (
           <div className="practice-today">
             {courses.length > 0 ? (
-              <Hero>
+              <Hero className="practice-today__hero">
                 <Stack gap={4}>
                   <Inline gap={4}>
                     <div
@@ -183,57 +183,62 @@ export function Exercises({
             ) : null}
 
             {overview.due.length > 0 ? (
-              <Section
-                title="Today's lessons"
-                info={
-                  <>
-                    <p>
-                      The most important lessons for today: one that slipped last time comes first, then the ones whose
-                      time has come, then — while there is room — up to two new ones. Do these and the day is done.
-                    </p>
-                    <p>
-                      Want more? Open a course: its lessons are listed by what matters most. A mastered lesson never
-                      comes back, and a mastered course moves to Mastered.
-                    </p>
-                  </>
-                }
-              >
-                <List>
-                  {overview.due.map((lesson) => (
-                    <LessonRow
-                      key={lesson.id}
-                      lesson={lesson}
-                      today={overview.today}
-                      showCourse
-                      onOpen={onOpenLesson}
-                    />
-                  ))}
-                </List>
-              </Section>
+              <div className="practice-today__lessons">
+                <Section
+                  title="Today's lessons"
+                  info={
+                    <>
+                      <p>
+                        The most important lessons for today: one that slipped last time comes first, then the ones
+                        whose time has come, then — while there is room — up to two new ones. Do these and the day is
+                        done.
+                      </p>
+                      <p>
+                        Want more? Open a course: its lessons are listed by what matters most. A mastered lesson never
+                        comes back, and a mastered course moves to Mastered.
+                      </p>
+                    </>
+                  }
+                >
+                  <List>
+                    {overview.due.map((lesson) => (
+                      <LessonRow
+                        key={lesson.id}
+                        lesson={lesson}
+                        today={overview.today}
+                        showCourse
+                        onOpen={onOpenLesson}
+                      />
+                    ))}
+                  </List>
+                </Section>
+              </div>
             ) : null}
 
             {courses.length > 0 || stats.totalXp > 0 ? (
-              <List>
-                <ListItem
-                  leading={<Avatar>📈</Avatar>}
-                  title="Your progress"
-                  subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
-                  trailing={
-                    <Inline gap={1}>
-                      <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
-                    </Inline>
-                  }
-                  chevron
-                  onClick={onOpenProgress}
-                />
-                <ListItem
-                  leading={<Avatar>⭐</Avatar>}
-                  title={`${stats.dayXp} XP today`}
-                  subtitle="See exactly what earned it"
-                  chevron
-                  onClick={() => onOpenXpDay(overview.today)}
-                />
-              </List>
+              <div className="practice-today__stats">
+                <List>
+                  <ListItem
+                    leading={<Avatar>📈</Avatar>}
+                    title="Your progress"
+                    subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
+                    trailing={
+                      <Inline gap={1}>
+                        <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
+                      </Inline>
+                    }
+                    chevron
+                    onClick={onOpenProgress}
+                  />
+                  <ListItem
+                    leading={<Avatar>⭐</Avatar>}
+                    title={`${stats.dayXp} XP today`}
+                    subtitle="See exactly what earned it"
+                    chevron
+                    onClick={() => onOpenXpDay(overview.today)}
+                  />
+                </List>
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -266,19 +271,23 @@ export function Exercises({
             ) : (
               <Stack gap={3}>
                 {unlevelled > 0 ? (
-                  <Button variant="primary" wide onClick={() => onOpenTutor(LEVEL_ASK)}>
-                    {`✨ Add levels to ${unlevelled === 1 ? "1 course" : `${unlevelled} courses`}`}
-                  </Button>
+                  <div className="practice-courses__levels">
+                    <Button variant="primary" wide onClick={() => onOpenTutor(LEVEL_ASK)}>
+                      {`✨ Add levels to ${unlevelled === 1 ? "1 course" : `${unlevelled} courses`}`}
+                    </Button>
+                  </div>
                 ) : null}
                 <CourseList entries={active} onOpen={onOpenCourse} />
-                <List>
-                  <ListItem
-                    leading={<Avatar>✨</Avatar>}
-                    title="New course or lesson"
-                    subtitle="Ask the tutor for anything — a theme, a conjugation, a grammar point"
-                    onClick={() => onOpenTutor()}
-                  />
-                </List>
+                <div className="practice-courses__new">
+                  <List>
+                    <ListItem
+                      leading={<Avatar>✨</Avatar>}
+                      title="New course or lesson"
+                      subtitle="Ask the tutor for anything — a theme, a conjugation, a grammar point"
+                      onClick={() => onOpenTutor()}
+                    />
+                  </List>
+                </div>
               </Stack>
             )}
           </Section>
