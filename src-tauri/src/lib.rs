@@ -466,19 +466,45 @@ mod integration {
         }
 
         let mut conn = db::open(&path).expect("upgrade");
-        // Ids are tagged now (version 7): rows are found by what they hold.
-        let word = |conn: &mut Conn, pl: &str| -> WordId {
-            t::words::table.filter(t::words::pl.eq(pl)).select(t::words::id).first(conn).unwrap()
+        // Ids are tagged now (version 7), and the old slugs were cleared long
+        // ago: rows are found by what they hold, and where. (The demo course,
+        // added since, has a "cześć" and a "Words 1" of its own.)
+        let course = |conn: &mut Conn, slug: &str| -> CourseId {
+            t::courses::table.filter(t::courses::slug.eq(slug)).select(t::courses::id).first(conn).unwrap()
+        };
+        let basics = course(&mut conn, "basics");
+        let colours = course(&mut conn, "programme-1-1");
+        let in_course = |conn: &mut Conn, course: CourseId, title: &str| -> LessonId {
+            t::course_lessons::table
+                .inner_join(t::lessons::table)
+                .filter(t::course_lessons::course_id.eq(course))
+                .filter(t::lessons::title.eq(title))
+                .select(t::lessons::id)
+                .first(conn)
+                .unwrap()
         };
         let lesson = |conn: &mut Conn, slug: &str| -> LessonId {
-            t::lessons::table.filter(t::lessons::slug.eq(slug)).select(t::lessons::id).first(conn).unwrap()
+            match slug {
+                "topic/1/words-1" => in_course(conn, basics, "Words 1"),
+                "topic/1/dialogue" => in_course(conn, basics, "Conversation"),
+                "topic/2/words-1" => in_course(conn, colours, "Words 1"),
+                "topic/2/sentences-1" => in_course(conn, colours, "Sentences 1"),
+                other => panic!("no lesson {other} in this test"),
+            }
         };
         let titled = |conn: &mut Conn, title: &str| -> LessonId {
             t::lessons::table.filter(t::lessons::title.eq(title)).select(t::lessons::id).first(conn).unwrap()
         };
-        let word_owner = |conn: &mut Conn, pl: &str| -> LessonId {
-            t::words::table.filter(t::words::pl.eq(pl)).select(t::words::lesson_id).first(conn).unwrap()
+        let course_word = |conn: &mut Conn, pl: &str| -> (WordId, LessonId) {
+            t::course_words::table
+                .filter(t::course_words::course_id.eq_any([basics, colours]))
+                .filter(t::course_words::pl.eq(pl))
+                .select((t::course_words::id, t::course_words::lesson_id))
+                .first(conn)
+                .unwrap()
         };
+        let word = |conn: &mut Conn, pl: &str| -> WordId { course_word(conn, pl).0 };
+        let word_owner = |conn: &mut Conn, pl: &str| -> LessonId { course_word(conn, pl).1 };
         // Review history follows each word to its new id.
         assert_eq!(word_owner(&mut conn, "cześć"), lesson(&mut conn, "topic/1/words-1"));
         let czesc_id = word(&mut conn, "cześć").to_string();
@@ -503,10 +529,14 @@ mod integration {
             .unwrap();
         assert_eq!(line, lesson(&mut conn, "topic/1/dialogue"));
         // An automatic drill left with nothing goes.
-        assert_eq!(
-            t::lessons::table.filter(t::lessons::slug.eq("topic/2/words-2")).count().get_result::<i64>(&mut conn).unwrap(),
-            0
-        );
+        let words_2: i64 = t::course_lessons::table
+            .inner_join(t::lessons::table)
+            .filter(t::course_lessons::course_id.eq(colours))
+            .filter(t::lessons::title.eq("Words 2"))
+            .count()
+            .get_result(&mut conn)
+            .unwrap();
+        assert_eq!(words_2, 0);
         let words_1 = lesson(&mut conn, "topic/1/words-1");
         assert_eq!(lessons::load(&mut conn, words_1).unwrap().due_day, Some(105), "schedules survive");
 
@@ -537,8 +567,6 @@ mod integration {
         assert_eq!(t::courses::table.filter(t::courses::slug.eq("grammar-essentials")).count().get_result::<i64>(&mut conn).unwrap(), 0);
 
         // A word taken out goes with its history.
-        let colours: CourseId =
-            t::courses::table.filter(t::courses::slug.eq("programme-1-1")).select(t::courses::id).first(&mut conn).unwrap();
         crate::courses::remove_items(&mut conn, colours, &["czerwony".into()], &[]).unwrap();
         assert!(srs::load(&mut conn, "word", &red_id).unwrap().is_none());
         drop(conn);
@@ -625,7 +653,8 @@ mod integration {
         let today = db::today(&mut conn);
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|l| l.lesson_type == "words").unwrap();
-        let word: WordId = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
+        let word: WordId =
+            t::words::table.filter(t::words::lesson_id.eq(drill.id)).filter(t::words::pl.eq("cześć")).select(t::words::id).first(&mut conn).unwrap();
         let answer = |kind: &str, given: &str| practice::SubmitAnswer {
             kind: kind.into(),
             item_kind: "word".into(),
@@ -642,10 +671,10 @@ mod integration {
 
         // A check-in is its own run.
         let starter = starter_lesson(&mut conn);
-        let checkin: CheckinId = diesel::insert_into(t::checkins::table)
-            .values((t::checkins::lesson_id.eq(starter.id), t::checkins::started_at.eq(0)))
-            .returning(t::checkins::id)
-            .get_result(&mut conn)
+        let checkin = CheckinId::new();
+        diesel::insert_into(t::checkins::table)
+            .values((t::checkins::id.eq(checkin), t::checkins::lesson_id.eq(starter.id), t::checkins::started_at.eq(0)))
+            .execute(&mut conn)
             .unwrap();
         examiner::record(&mut conn, checkin, serde_json::from_str(r#"{"result":"pass","summary":"Good.","to_review":[]}"#).unwrap()).unwrap();
 
@@ -690,11 +719,11 @@ mod integration {
         // Today asks for this lesson alone: its check-in finishes the day.
         let today = db::today(&mut conn);
         db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
-        db::set_setting(&mut conn, "daily_ids", &format!("[{}]", starter.id)).unwrap();
-        let checkin: CheckinId = diesel::insert_into(t::checkins::table)
-            .values((t::checkins::lesson_id.eq(starter.id), t::checkins::started_at.eq(0)))
-            .returning(t::checkins::id)
-            .get_result(&mut conn)
+        db::set_setting(&mut conn, "daily_ids", &serde_json::to_string(&[starter.id]).unwrap()).unwrap();
+        let checkin = CheckinId::new();
+        diesel::insert_into(t::checkins::table)
+            .values((t::checkins::id.eq(checkin), t::checkins::lesson_id.eq(starter.id), t::checkins::started_at.eq(0)))
+            .execute(&mut conn)
             .unwrap();
         let (assessment, first) = examiner::record(
             &mut conn,
@@ -772,7 +801,8 @@ mod integration {
         {
             // A version-4 database: takes carry their bytes or only a path,
             // and speech sits in audio_cache.
-            let mut conn = db::open(&path).unwrap();
+            let mut conn = Conn::establish(&path.to_string_lossy()).unwrap();
+            conn.batch_execute(include_str!("../test-fixtures/schema-v5.sql")).unwrap();
             conn.batch_execute(&format!(
                 "DROP TABLE playlist_tracks; DROP TABLE song_tracks; DROP TABLE speech_clips; DROP TABLE files;
                  CREATE TABLE song_tracks (
@@ -967,7 +997,7 @@ mod integration {
             .unwrap();
         let now = db::now_secs();
         diesel::insert_into(t::checkins::table)
-            .values((t::checkins::id.eq(77), t::checkins::lesson_id.eq(study.id), t::checkins::started_at.eq(now - 10)))
+            .values((t::checkins::id.eq(CheckinId::derived("test", "77")), t::checkins::lesson_id.eq(study.id), t::checkins::started_at.eq(now - 10)))
             .execute(&mut conn)
             .unwrap();
         diesel::insert_into(t::achievements::table)
@@ -983,7 +1013,7 @@ mod integration {
             .set(t::achievements::unlocked_at.eq(now - 100))
             .execute(&mut conn)
             .unwrap();
-        let summary = practice::checkin_summary_in(&mut conn, 77, false).unwrap();
+        let summary = practice::checkin_summary_in(&mut conn, CheckinId::derived("test", "77"), false).unwrap();
         let new: Vec<&str> = summary.newly_unlocked.iter().map(|a| a.code.as_str()).collect();
         assert!(new.contains(&"streak_3") && !new.contains(&"first_day"), "{new:?}");
     }
@@ -1398,7 +1428,7 @@ mod integration {
         let review = |interval: i64, reps: i64| {
             (
                 t::reviews::kind.eq("word"),
-                t::reviews::item_id.eq(word),
+                t::reviews::item_id.eq(word.to_string()),
                 t::reviews::due_day.eq(0),
                 t::reviews::interval.eq(interval),
                 t::reviews::ease.eq(2.5),
@@ -1429,6 +1459,7 @@ mod integration {
         .unwrap();
         diesel::insert_into(t::checkins::table)
             .values((
+                t::checkins::id.eq(CheckinId::new()),
                 t::checkins::lesson_id.eq(writing.id),
                 t::checkins::started_at.eq(0),
                 t::checkins::finished_at.eq(Some(1)),
@@ -1726,7 +1757,7 @@ mod integration {
                 let (lesson, _) = lessons::create_drill(&mut conn, course, kind.name, "", kind.id, "low", &items, None, "tutor").unwrap();
                 if kind.id == "pictures" {
                     for id in t::words::table.filter(t::words::lesson_id.eq(lesson.id)).select(t::words::id).load::<WordId>(&mut conn).unwrap() {
-                        let file = files::store(&mut conn, files::WORD_IMAGE, &format!("p{id}.jpg"), "image/jpeg", &id.to_le_bytes()).unwrap();
+                        let file = files::store(&mut conn, files::WORD_IMAGE, &format!("p{id}.jpg"), "image/jpeg", id.to_string().as_bytes()).unwrap();
                         diesel::update(t::words::table.find(id)).set(t::words::image_file_id.eq(file)).execute(&mut conn).unwrap();
                     }
                 }
@@ -1788,7 +1819,7 @@ mod integration {
         // Known words come back the other way round: the word, pick its picture.
         for id in &ids[..4] {
             for _ in 0..1 {
-                practice::submit_answer_in(&mut conn, practice::SubmitAnswer { kind: "picturePick".into(), item_kind: "word".into(), item_id: *id, expected: "x".into(), given: "x".into(), ..Default::default() }).unwrap();
+                practice::submit_answer_in(&mut conn, practice::SubmitAnswer { kind: "picturePick".into(), item_kind: "word".into(), item_id: id.to_string(), expected: "x".into(), given: "x".into(), ..Default::default() }).unwrap();
             }
         }
         let again = session::build_lesson(&mut conn, lesson.id).unwrap();
@@ -1805,7 +1836,7 @@ mod integration {
         let met = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
             kind: "pictureIntro".into(),
             item_kind: "word".into(),
-            item_id: ids[0],
+            item_id: ids[0].to_string(),
             is_new: true,
             expected: "stół".into(),
             given: "stół".into(),
@@ -1923,6 +1954,7 @@ mod integration {
         let audio = files::store(&mut conn, files::SONG_AUDIO, "song-1-0.mp3", "audio/mpeg", b"mp3").unwrap();
         diesel::insert_into(t::song_tracks::table)
             .values((
+                t::song_tracks::id.eq(TrackId::new()),
                 t::song_tracks::song_id.eq(id),
                 t::song_tracks::ord.eq(0),
                 t::song_tracks::remote_id.eq("r1"),
@@ -2216,7 +2248,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
                 "goals": ["Say which city you live in", "Say who you live with"]
             }),
         );
-        let id = serde_json::from_value(made["created"]["lesson_id"].clone()).unwrap_or_else(|| panic!("{made}"));
+        let id: LessonId = serde_json::from_value(made["created"]["lesson_id"].clone()).unwrap_or_else(|e| panic!("{e}: {made}"));
         let detail = lessons::detail(&mut conn, id).unwrap();
         assert_eq!((detail.lesson.lesson_type.as_str(), detail.lesson.engine), ("writing", "conversation"));
         assert_eq!(detail.objectives.len(), 2);
@@ -2418,17 +2450,23 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
 
     #[test]
     fn tutor_conversations_keep_their_own_history() {
-        let mut conn = scratch_db("conversations");
         // A message from before conversations existed is adopted, not lost.
-        diesel::insert_into(t::tutor_messages::table)
-            .values((
-                t::tutor_messages::role.eq("user"),
-                t::tutor_messages::content.eq("old question"),
-                t::tutor_messages::created_at.eq(5),
-            ))
-            .execute(&mut conn)
+        // Only an older database can hold one (version 7 is made with
+        // conversations), so it is made with the version-5 schema.
+        let path = std::env::temp_dir()
+            .join("learn-polish-tests")
+            .join(format!("conversations-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        {
+            let mut old = Conn::establish(&path.to_string_lossy()).unwrap();
+            old.batch_execute(include_str!("../test-fixtures/schema-v5.sql")).unwrap();
+            old.batch_execute(
+                "INSERT INTO tutor_messages (role, content, created_at) VALUES ('user', 'old question', 5);
+                 PRAGMA user_version = 5;",
+            )
             .unwrap();
-        drop(conn);
+        }
         let mut conn = scratch_db_keep("conversations");
         let listed = tutor::list_conversations(&mut conn).unwrap();
         assert_eq!(listed.len(), 1);
@@ -2495,10 +2533,10 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         .unwrap();
         let lesson = lessons::create_listening(&mut conn, song(4), None, None, None, "you").unwrap();
         assert_eq!(lesson.course_title.as_deref(), Some("Other lessons"));
-        let song = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": song(4) }));
-        assert_eq!(song["lyrics"][0]["lines"][0]["pl"], "Gdzie jest dworzec?");
-        assert_eq!(song["filed"]["listening_lesson_in"][0]["title"], "Other lessons");
-        assert!(song["filed"]["written_from_course"].is_null());
+        let got = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": song(4) }));
+        assert_eq!(got["lyrics"][0]["lines"][0]["pl"], "Gdzie jest dworzec?");
+        assert_eq!(got["filed"]["listening_lesson_in"][0]["title"], "Other lessons");
+        assert!(got["filed"]["written_from_course"].is_null());
         let travel = db::require_course_id(&mut conn, 5).unwrap();
         let listening = lesson.course_id.unwrap();
         tutor::run_tool_for_test(
@@ -2506,8 +2544,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             "move_lesson",
             serde_json::json!({ "lesson_id": lesson.id, "from_course_id": listening, "to_course_id": travel }),
         );
-        let song = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": song(4) }));
-        assert_eq!(song["filed"]["written_from_course"]["course_id"], serde_json::json!(travel), "the song now knows its course");
+        let got = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": song(4) }));
+        assert_eq!(got["filed"]["written_from_course"]["course_id"], serde_json::json!(travel), "the song now knows its course");
         songs::delete_song(&mut conn, song(1)).unwrap();
         assert!(lessons::load(&mut conn, id).is_err());
     }
@@ -2555,6 +2593,114 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             .join(format!("v5-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        // The demo course as a fresh install makes it: the old database below
+        // holds the same course with integer ids, as an older install would.
+        let fresh_path = path.with_file_name(format!("v5-fresh-demo-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&fresh_path);
+        let mut fresh = db::open(&fresh_path).unwrap();
+        let demo_course: CourseId =
+            t::courses::table.filter(t::courses::slug.eq(crate::demo_course::SLUG)).select(t::courses::id).first(&mut fresh).unwrap();
+        let demo_lessons: Vec<(LessonId, String, String)> = t::course_lessons::table
+            .inner_join(t::lessons::table)
+            .filter(t::course_lessons::course_id.eq(demo_course))
+            .order(t::course_lessons::ord)
+            .select((t::lessons::id, t::lessons::lesson_type, t::lessons::title))
+            .load(&mut fresh)
+            .unwrap();
+        assert!(!demo_lessons.is_empty());
+        let demo_ids = |conn: &mut Conn| -> (Vec<LessonId>, Vec<WordId>, Vec<SentenceId>, Vec<LineId>) {
+            let course: CourseId =
+                t::courses::table.filter(t::courses::slug.eq(crate::demo_course::SLUG)).select(t::courses::id).first(conn).unwrap();
+            let lessons: Vec<LessonId> = t::course_lessons::table
+                .filter(t::course_lessons::course_id.eq(course))
+                .order(t::course_lessons::ord)
+                .select(t::course_lessons::lesson_id)
+                .load(conn)
+                .unwrap();
+            let mut words: Vec<WordId> =
+                t::words::table.filter(t::words::lesson_id.eq_any(&lessons)).select(t::words::id).load(conn).unwrap();
+            let mut sentences: Vec<SentenceId> =
+                t::sentences::table.filter(t::sentences::lesson_id.eq_any(&lessons)).select(t::sentences::id).load(conn).unwrap();
+            let mut lines: Vec<LineId> = t::conversation_lines::table
+                .filter(t::conversation_lines::lesson_id.eq_any(&lessons))
+                .select(t::conversation_lines::id)
+                .load(conn)
+                .unwrap();
+            words.sort();
+            sentences.sort();
+            lines.sort();
+            (lessons, words, sentences, lines)
+        };
+        let fresh_demo = demo_ids(&mut fresh);
+        // The old rows of the demo, as SQL: blocks 200…, words 1000…,
+        // sentences 2000…, lines 3000….
+        let mut demo_sql = String::from(
+            "INSERT INTO topics (id, slug, ord, kind, title_pl, title_en, summary_en, created_at)
+                 VALUES (3, 'demo-first-steps', 3, 'course', 'Pierwsze kroki', 'First steps', '', 0);",
+        );
+        let (mut word_no, mut sentence_no, mut line_no) = (1000, 2000, 3000);
+        let mut first_demo_word = None;
+        let q = |text: &str| text.replace('\'', "''");
+        for (place, (lesson, kind, title)) in demo_lessons.iter().enumerate() {
+            let block = 200 + place;
+            demo_sql.push_str(&format!(
+                "INSERT INTO blocks (id, kind, format, ord, title, complexity, period_days, origin, created_at)
+                     VALUES ({block}, 'drill', '{kind}', {place}, '{}', 'low', 3, 'starter', 0);
+                 INSERT INTO course_blocks (topic_id, block_id, ord) VALUES (3, {block}, {place});",
+                q(title)
+            ));
+            let words: Vec<(i64, String, String, String)> = t::words::table
+                .filter(t::words::lesson_id.eq(lesson))
+                .order((t::words::ord, t::words::id))
+                .select((t::words::ord, t::words::pl, t::words::en, t::words::pos))
+                .load(&mut fresh)
+                .unwrap();
+            for (ord, pl, en, pos) in words {
+                first_demo_word.get_or_insert((word_no, pl.clone()));
+                demo_sql.push_str(&format!(
+                    "INSERT INTO words (id, block_id, ord, pl, en, pos) VALUES ({word_no}, {block}, {ord}, '{}', '{}', '{}');",
+                    q(&pl), q(&en), q(&pos)
+                ));
+                word_no += 1;
+            }
+            let sentences: Vec<(i64, String, String)> = t::sentences::table
+                .filter(t::sentences::lesson_id.eq(lesson))
+                .order((t::sentences::ord, t::sentences::id))
+                .select((t::sentences::ord, t::sentences::pl, t::sentences::en))
+                .load(&mut fresh)
+                .unwrap();
+            for (ord, pl, en) in sentences {
+                demo_sql.push_str(&format!(
+                    "INSERT INTO sentences (id, block_id, ord, pl, en) VALUES ({sentence_no}, {block}, {ord}, '{}', '{}');",
+                    q(&pl), q(&en)
+                ));
+                sentence_no += 1;
+            }
+            let lines: Vec<(i64, String, String, String, String)> = t::conversation_lines::table
+                .filter(t::conversation_lines::lesson_id.eq(lesson))
+                .order((t::conversation_lines::ord, t::conversation_lines::id))
+                .select((
+                    t::conversation_lines::ord,
+                    t::conversation_lines::speaker,
+                    t::conversation_lines::gender,
+                    t::conversation_lines::pl,
+                    t::conversation_lines::en,
+                ))
+                .load(&mut fresh)
+                .unwrap();
+            for (ord, speaker, gender, pl, en) in lines {
+                demo_sql.push_str(&format!(
+                    "INSERT INTO conversation_lines (id, block_id, ord, speaker, gender, pl, en)
+                         VALUES ({line_no}, {block}, {ord}, '{}', '{gender}', '{}', '{}');",
+                    q(&speaker), q(&pl), q(&en)
+                ));
+                line_no += 1;
+            }
+        }
+        drop(fresh);
+        let (old_demo_word, demo_word_pl) = first_demo_word.expect("the demo has words");
+
         {
             // The schema before the rename, so raw SQL.
             let mut old = Conn::establish(&path.to_string_lossy()).unwrap();
@@ -2572,8 +2718,27 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
                  INSERT INTO checkins (id, block_id, started_at, result) VALUES (3, 10, 0, 'pass');
                  INSERT INTO wiki_sources (block_id, lang, title, url, pageid, revid, summary, content, fetched_at, checked_at)
                      VALUES (10, 'en', 'Polish grammar', 'https://en.wikipedia.org/wiki/Polish_grammar', 1, 1, 'x', 'x', 0, 0);
+                 INSERT INTO reviews (kind, item_id, due_day, interval, ease, reps, lapses, last_day)
+                     VALUES ('word', 5, 100, 3, 2.5, 3, 0, 97);
+                 INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, topic_id)
+                     VALUES (1, 'Chleb', 'Chleb', 'Bread', 'pop', '[]', '', 'V5', 'ready', 0, 2);
+                 INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at, origin)
+                     VALUES (2, 'Chleb again', 'Chleb', 'Bread', 'pop', '[]', '', 'V5', 'ready', 1, '{\"basedOn\":1,\"brief\":\"the same\"}');
+                 INSERT INTO tutor_conversations (id, title, created_at, updated_at) VALUES (4, 'Bread', 0, 0);
+                 INSERT INTO tutor_messages (id, role, content, actions, created_at, conversation_id)
+                     VALUES (6, 'assistant', 'Made it.',
+                             '[{\"kind\":\"lessonCreated\",\"lessonId\":11,\"courseId\":2},{\"kind\":\"songMade\",\"songId\":1,\"title\":\"Chleb\"}]',
+                             0, 4);
+                 INSERT INTO settings (key, value) VALUES ('daily_ids', '[11, 10]'), ('daily_day', '100'),
+                     ('demo_first_steps_seeded_v1', '1');
                  PRAGMA user_version = 5;",
             )
+            .unwrap();
+            old.batch_execute(&demo_sql).unwrap();
+            old.batch_execute(&format!(
+                "INSERT INTO reviews (kind, item_id, due_day, interval, ease, reps, lapses, last_day)
+                     VALUES ('word', {old_demo_word}, 100, 3, 2.5, 5, 0, 97);"
+            ))
             .unwrap();
         }
 
@@ -2586,7 +2751,15 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             .filter(|e| e.file_name().to_string_lossy().contains(&stem))
             .collect();
         assert!(!backups.is_empty(), "backed up before the upgrade");
-        let study = lessons::detail(&mut conn, 10).unwrap();
+        // Ids are tagged now (version 7): rows are found by what they hold.
+        let titled = |conn: &mut Conn, title: &str| -> LessonId {
+            t::lessons::table.filter(t::lessons::title.eq(title)).select(t::lessons::id).first(conn).unwrap()
+        };
+        let mieć = titled(&mut conn, "Mieć");
+        let words_1 = titled(&mut conn, "Words 1");
+        let bakery: CourseId = t::courses::table.filter(t::courses::slug.eq("bakery")).select(t::courses::id).first(&mut conn).unwrap();
+        assert_eq!(mieć.to_string().split('_').next(), Some("ls"), "a lesson's id is tagged");
+        let study = lessons::detail(&mut conn, mieć).unwrap();
         assert_eq!(study.content, "**Mam** — I have", "a study lesson keeps its text");
         assert!(study.lesson.passed);
         // The old built-in folder (course 1, Grammar & culture) is merged
@@ -2594,29 +2767,75 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let other: CourseId = t::courses::table.filter(t::courses::slug.eq(courses::OTHER)).select(t::courses::id).first(&mut conn).unwrap();
         let mut shared = study.lesson.course_ids.clone();
         shared.sort();
-        assert_eq!(shared, vec![2, other], "a lesson stays in every course that listed it");
+        let mut expected = vec![bakery, other];
+        expected.sort();
+        assert_eq!(shared, expected, "a lesson stays in every course that listed it");
         let bread: i64 = t::course_words::table
-            .filter(t::course_words::course_id.eq(2))
+            .filter(t::course_words::course_id.eq(bakery))
             .filter(t::course_words::pl.eq("chleb"))
             .count()
             .get_result(&mut conn)
             .unwrap();
         assert_eq!(bread, 1, "the views are made again under the new names");
-        let checkin: i64 = t::checkins::table.find(3).select(t::checkins::lesson_id).first(&mut conn).unwrap();
-        assert_eq!(checkin, 10);
+        let checkin: LessonId = t::checkins::table.select(t::checkins::lesson_id).first(&mut conn).unwrap();
+        assert_eq!(checkin, mieć);
         let source: Option<LessonId> = t::wiki_sources::table.select(t::wiki_sources::lesson_id).first(&mut conn).unwrap();
-        assert_eq!(source, Some(10));
+        assert_eq!(source, Some(mieć));
         let title: String = t::courses::table.find(other).select(t::courses::title_en).first(&mut conn).unwrap();
         assert_eq!(title, "Other lessons");
-        assert!(t::courses::table.find(1).select(t::courses::id).first::<CourseId>(&mut conn).optional().unwrap().is_none(), "the old folder is gone");
+        assert_eq!(
+            t::courses::table.filter(t::courses::slug.eq("lessons")).count().get_result::<i64>(&mut conn).unwrap(),
+            0,
+            "the old folder is gone"
+        );
+        assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
+
+        // Version 7: links survive under the new ids — review history, a
+        // song's course, the ids inside stored JSON, and the day's list.
+        let chleb: WordId = t::words::table.filter(t::words::pl.eq("chleb")).select(t::words::id).first(&mut conn).unwrap();
+        assert_eq!(srs::load(&mut conn, "word", &chleb.to_string()).unwrap().unwrap().reps, 3, "review history follows the word");
+        let first: SongId = t::songs::table.filter(t::songs::title.eq("Chleb")).select(t::songs::id).first(&mut conn).unwrap();
+        let song_course: Option<CourseId> =
+            t::songs::table.find(first).select(t::songs::course_id).first(&mut conn).unwrap();
+        assert_eq!(song_course, Some(bakery));
+        let origin: String = t::songs::table.filter(t::songs::title.eq("Chleb again")).select(t::songs::origin).first(&mut conn).unwrap();
+        let origin: serde_json::Value = serde_json::from_str(&origin).unwrap();
+        assert_eq!(origin["basedOn"], serde_json::json!(first), "a variant points at its song's new id");
+        assert_eq!(origin["brief"], "the same");
+        let conversation: ConversationId =
+            t::tutor_conversations::table.filter(t::tutor_conversations::title.eq("Bread")).select(t::tutor_conversations::id).first(&mut conn).unwrap();
+        let history = tutor::load_history(&mut conn, conversation).unwrap();
+        assert_eq!(history.len(), 1, "a message stays in its conversation");
+        let actions: Option<String> = t::tutor_messages::table.select(t::tutor_messages::actions).first(&mut conn).unwrap();
+        let actions: serde_json::Value = serde_json::from_str(&actions.unwrap()).unwrap();
+        assert_eq!(actions[0]["lessonId"], serde_json::json!(words_1), "{actions}");
+        assert_eq!(actions[0]["courseId"], serde_json::json!(bakery), "{actions}");
+        assert_eq!(actions[1]["songId"], serde_json::json!(first), "{actions}");
+        assert_eq!(actions[1]["title"], "Chleb", "other fields stay");
+        let daily: Vec<LessonId> = serde_json::from_str(&db::get_setting(&mut conn, "daily_ids").unwrap().unwrap()).unwrap();
+        assert_eq!(daily, vec![words_1, mieć], "the day's list keeps its lessons, in order");
+
+        // The demo course gets the ids a fresh install gives it, and its
+        // review history follows.
+        assert_eq!(demo_ids(&mut conn), fresh_demo, "the demo's ids are derived, as on a fresh install");
+        let demo_course_now: CourseId =
+            t::courses::table.filter(t::courses::slug.eq(crate::demo_course::SLUG)).select(t::courses::id).first(&mut conn).unwrap();
+        assert_eq!(demo_course_now, demo_course);
+        let demo_word: WordId = t::words::table
+            .filter(t::words::pl.eq(&demo_word_pl))
+            .filter(t::words::lesson_id.eq_any(&fresh_demo.0))
+            .select(t::words::id)
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(srs::load(&mut conn, "word", &demo_word.to_string()).unwrap().unwrap().reps, 5);
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
 
         // References follow the renamed tables: deleting a lesson still
         // takes its words and course listings with it.
-        diesel::delete(t::lessons::table.find(11)).execute(&mut conn).unwrap();
-        assert_eq!(t::words::table.find(5).count().get_result::<i64>(&mut conn).unwrap(), 0);
+        diesel::delete(t::lessons::table.find(words_1)).execute(&mut conn).unwrap();
+        assert_eq!(t::words::table.find(chleb).count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(
-            t::course_lessons::table.filter(t::course_lessons::course_id.eq(2)).count().get_result::<i64>(&mut conn).unwrap(),
+            t::course_lessons::table.filter(t::course_lessons::course_id.eq(bakery)).count().get_result::<i64>(&mut conn).unwrap(),
             1
         );
         #[derive(QueryableByName)]
@@ -2626,7 +2845,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         }
         let old_names = diesel::sql_query(
             "SELECT name FROM sqlite_master WHERE name IN ('blocks', 'topics', 'course_blocks')
-                 OR sql LIKE '%block_id%' OR sql LIKE '%topic_id%'",
+                 OR sql LIKE '%block_id%' OR sql LIKE '%topic_id%' OR name GLOB '*__old'",
         )
         .load::<Name>(&mut conn)
         .unwrap();
@@ -2635,7 +2854,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         // Opening again changes nothing.
         drop(conn);
         let mut conn = db::open(&path).expect("reopen");
-        assert_eq!(lessons::detail(&mut conn, 10).unwrap().content, "**Mam** — I have");
+        assert_eq!(lessons::detail(&mut conn, mieć).unwrap().content, "**Mam** — I have");
+        assert_eq!(demo_ids(&mut conn), fresh_demo);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -2674,14 +2894,15 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         }
 
         let mut conn = db::open(&path).expect("upgrade");
-        let (id, en): (i64, String) = t::words::table
-            .filter(t::words::pl.eq("cześć"))
-            .select((t::words::id, t::words::en))
+        let basics: CourseId = t::courses::table.filter(t::courses::slug.eq("basics")).select(t::courses::id).first(&mut conn).unwrap();
+        let (id, en): (WordId, String) = t::course_words::table
+            .filter(t::course_words::course_id.eq(basics))
+            .filter(t::course_words::pl.eq("cześć"))
+            .select((t::course_words::id, t::course_words::en))
             .first(&mut conn)
             .unwrap();
-        assert_eq!(id, 7, "row ids survive, so review history does too");
         assert_eq!(en, "hi, bye");
-        assert_eq!(srs::load(&mut conn, "word", 7).unwrap().unwrap().reps, 2);
+        assert_eq!(srs::load(&mut conn, "word", &id.to_string()).unwrap().unwrap().reps, 2, "review history follows the word to its new id");
         #[derive(QueryableByName)]
         struct Column {
             #[diesel(sql_type = diesel::sql_types::Text)]
@@ -2696,7 +2917,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let courses: i64 = t::courses::table.count().get_result(&mut conn).unwrap();
         assert_eq!(courses, 2);
         let basics_words: i64 =
-            t::course_words::table.filter(t::course_words::course_id.eq(1)).filter(t::course_words::pl.eq("cześć")).count().get_result(&mut conn).unwrap();
+            t::course_words::table.filter(t::course_words::course_id.eq(basics)).filter(t::course_words::pl.eq("cześć")).count().get_result(&mut conn).unwrap();
         assert_eq!(basics_words, 1);
 
         // Opening again is a no-op.
