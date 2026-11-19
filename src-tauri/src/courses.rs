@@ -26,12 +26,24 @@ const MAX_WORDS: usize = 120;
 const MAX_SENTENCES: usize = 60;
 const MAX_DIALOGUE_LINES: usize = 40;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct NewWord {
     pub pl: String,
     pub en: String,
     #[serde(default)]
     pub pos: String,
+    /// A real word an English ear hears it as, for a sound-pair card
+    /// (sounds.rs). Optional: most words have none.
+    #[serde(default)]
+    pub near: Option<NearWord>,
+}
+
+/// A word's near neighbour by sound: "prosię" (piglet) for "proszę".
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct NearWord {
+    pub pl: String,
+    #[serde(default)]
+    pub en: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -613,6 +625,14 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
         if pl.is_empty() || en.is_empty() {
             continue;
         }
+        // A neighbour by sound is kept only with its meaning: the card says
+        // what each word of the pair is.
+        let near = word
+            .near
+            .as_ref()
+            .and_then(|n| Some((crate::sounds::clean_near(&pl, &n.pl)?, clean(&n.en))))
+            .filter(|(_, en)| !en.is_empty())
+            .unwrap_or_default();
         let added = diesel::insert_or_ignore_into(words::table)
             .values((
                 words::id.eq(WordId::new()),
@@ -621,6 +641,8 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
                 words::pl.eq(pl),
                 words::en.eq(en),
                 words::pos.eq(normalize_pos(&word.pos)),
+                words::near_pl.eq(near.0),
+                words::near_en.eq(near.1),
             ))
             .execute(conn)?;
         if added == 0 {

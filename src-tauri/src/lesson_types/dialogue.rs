@@ -1,4 +1,5 @@
-//! Conversation: read a short dialogue, then fill its lines.
+//! Conversation: read a short dialogue, say what comes next, and write one
+//! line down as it is said.
 
 use super::{LessonType, PathGroup, Run};
 use crate::db::Conn;
@@ -9,7 +10,7 @@ pub const TYPE: LessonType = LessonType {
     id: "dialogue",
     name: "Dialogue",
     icon: "drill",
-    description: "A short everyday dialogue: read and hear it, then say what comes next, line by line.",
+    description: "A short everyday dialogue: read and hear it, say what comes next, and write down a line as it is said.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Dialogue,
@@ -28,6 +29,9 @@ fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
     if !dialogue.is_empty() {
         exercises.push(session::dialogue_read(id, drill.course));
     }
-    exercises.extend(session::dialogue_gaps(&dialogue, id, rng));
+    let gaps = session::dialogue_gaps(&dialogue, id, rng);
+    let asked: Vec<String> = gaps.iter().map(|g| g.answer.clone()).collect();
+    exercises.extend(gaps);
+    exercises.extend(session::dialogue_dictation(&dialogue, id, &asked, rng));
     Ok(Built { exercises, dialogue })
 }

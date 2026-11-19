@@ -29,6 +29,8 @@ import type {
 } from "./types";
 import {
   GameFinishedSchema,
+  DictationCheckedSchema,
+  GlossWordSchema,
   QuickGameSchema,
   QuickGamesSchema,
   FileIdSchema,
@@ -168,6 +170,8 @@ export const api = {
   quickGameDeal: (game: QuickGameKind) => call(QuickGameSchema, "quick_game_deal", { game }),
   quickGameFinish: (game: QuickGameKind, pairs: number, ms: number, moves: number) =>
     call(GameFinishedSchema, "quick_game_finish", { game, pairs, ms, moves }),
+  dictationCheck: (expected: string, given: string) =>
+    call(DictationCheckedSchema, "dictation_check", { expected, given }),
   xpHistory: (days: number) =>
     call(z.array(XpHistoryDaySchema), "xp_history", { days }),
   lessonsOverview: () => call(LessonOverviewSchema, "lessons_overview"),
@@ -398,6 +402,7 @@ export const api = {
     call(SongSchema, "podcast_rerender", { songId, audio: audio ?? null }),
   songTrackLyrics: (trackId: TrackId) =>
     call(z.array(TimedLineSchema).nullable(), "song_track_lyrics", { trackId }),
+  songGlossary: (songId: SongId) => call(z.array(GlossWordSchema), "song_glossary", { songId }),
 
   playlistsList: () => call(z.array(PlaylistSchema), "playlists_list"),
   playlistCreate: (name: string, trackIds: TrackId[] = []) =>

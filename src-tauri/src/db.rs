@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 9;
+pub(crate) const SCHEMA_VERSION: i64 = 10;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -732,6 +732,10 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     // Version 9: a sentence's endings for word-order tiles (tiles.rs). Older
     // sentences get none: they keep being built by plain ordering.
     add_column(conn, "sentences", "endings", "TEXT NOT NULL DEFAULT '[]'")?;
+    // Version 10: a word's near neighbour by sound, for sound-pair cards
+    // (sounds.rs). Older words get none: their lessons use the built-in pairs.
+    add_column(conn, "words", "near_pl", "TEXT NOT NULL DEFAULT ''")?;
+    add_column(conn, "words", "near_en", "TEXT NOT NULL DEFAULT ''")?;
     // Every synced table watched by triggers that list its current columns:
     // a schema change that adds a column (with an idempotent ALTER here, and
     // a bump of SCHEMA_VERSION) gets its triggers re-made by this.
@@ -1459,7 +1463,7 @@ pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
             .execute(conn)?;
         let words: Vec<crate::courses::NewWord> = content::parse_words(course.words)
             .into_iter()
-            .map(|w| crate::courses::NewWord { pl: w.pl.to_string(), en: w.en.to_string(), pos: w.pos.to_string() })
+            .map(|w| crate::courses::NewWord { pl: w.pl.to_string(), en: w.en.to_string(), pos: w.pos.to_string(), ..Default::default() })
             .collect();
         let sentences: Vec<crate::courses::NewSentence> = content::parse_sentences(course.sentences)
             .into_iter()

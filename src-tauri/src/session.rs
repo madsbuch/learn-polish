@@ -13,7 +13,9 @@ use crate::models::{DialogueLine, Exercise, Gap, Pair, SessionPlan, Course};
 #[allow(unused_imports)]
 use crate::ids::*;
 
-const DIALOGUE_GAPS: usize = 3;
+/// "What comes next?" cards in a dialogue lesson; a dictation of one more
+/// line follows them.
+pub(crate) const DIALOGUE_GAPS: usize = 2;
 /// Cards in the memory game: this many Polish/English pairs.
 pub(crate) const MEMORY_PAIRS: usize = 6;
 /// Sentences in a fill-the-gaps exercise.
@@ -30,6 +32,14 @@ pub struct WordRow {
     pub reps: i64,
     /// Its picture, when it has one.
     pub image: Option<FileId>,
+    /// A real word it is easily heard as (sounds.rs), when the tutor gave one.
+    pub near: Option<Near>,
+}
+
+/// A word's near neighbour by sound: "prosię" for "proszę".
+pub struct Near {
+    pub pl: String,
+    pub en: String,
 }
 
 pub struct SentenceRow {
@@ -38,6 +48,8 @@ pub struct SentenceRow {
     pub meaning: String,
     /// Its words in another form than their dictionary one (tiles.rs).
     pub endings: Vec<crate::tiles::Ending>,
+    /// Times answered right in a row (its review), 0 when new.
+    pub reps: i64,
 }
 
 pub fn load_course(conn: &mut Conn, course_id: CourseId) -> Result<Course> {
@@ -168,17 +180,19 @@ pub(crate) fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand
 }
 
 pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(WordRow, bool)>> {
-    let rows: Vec<(WordId, String, String, String, Option<FileId>)> = words::table
+    type Row = (WordId, String, String, String, Option<FileId>, String, String);
+    let rows: Vec<Row> = words::table
         .filter(words::lesson_id.eq(lesson_id))
         .order((words::ord, words::id))
-        .select((words::id, words::pl, words::en, words::pos, words::image_file_id))
+        .select((words::id, words::pl, words::en, words::pos, words::image_file_id, words::near_pl, words::near_en))
         .load(conn)?;
     let reps = met(conn, "word", &rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>())?;
     Ok(rows
         .into_iter()
-        .map(|(id, pl, meaning, pos, image)| {
+        .map(|(id, pl, meaning, pos, image, near_pl, near_en)| {
             let seen = reps.get(&id.to_string()).copied();
-            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image }, seen.is_none())
+            let near = (!near_pl.is_empty()).then(|| Near { pl: near_pl, en: near_en });
+            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image, near }, seen.is_none())
         })
         .collect())
 }
@@ -193,8 +207,8 @@ pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: LessonId) -> Result<V
     Ok(rows
         .into_iter()
         .map(|(id, pl, meaning, endings)| {
-            let new = !seen.contains_key(&id.to_string());
-            (SentenceRow { id, pl, meaning, endings: crate::tiles::parse(&endings) }, new)
+            let reps = seen.get(&id.to_string()).copied();
+            (SentenceRow { id, pl, meaning, endings: crate::tiles::parse(&endings), reps: reps.unwrap_or(0) }, reps.is_none())
         })
         .collect())
 }
@@ -496,6 +510,65 @@ pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
         option_images: vec![],
         context: vec![],
     }
+}
+
+/// Write what you hear: the sentence is said (normally, slowly, again), and
+/// the learner types it; checked word by word (dictation.rs). Nothing of it
+/// is shown until it is checked.
+pub(crate) fn dictation(s: &SentenceRow) -> Exercise {
+    Exercise {
+        key: format!("s{}-dictation", s.id),
+        kind: "dictation".into(),
+        item_kind: "sentence".into(),
+        item_id: s.id.to_string(),
+        is_new: false,
+        prompt: String::new(),
+        hint: String::new(),
+        answer: s.pl.clone(),
+        options: vec![],
+        tokens: vec![],
+        pl: s.pl.clone(),
+        meaning: s.meaning.clone(),
+        gaps: vec![],
+        pairs: vec![],
+        image: None,
+        option_images: vec![],
+        context: vec![],
+        endings: vec![],
+    }
+}
+
+/// Dictation of one line of a lesson's dialogue, said in its speaker's
+/// voice: the line itself is the card's `context`, for the voice and the
+/// name. Lines the gaps ask for are left out, and a line of a few words is
+/// preferred (not "Tak." and not a speech).
+pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], lesson_id: LessonId, skip: &[String], rng: &mut impl rand::Rng) -> Option<Exercise> {
+    let words = |l: &DialogueLine| l.pl.split_whitespace().count();
+    let mut lines: Vec<(usize, &DialogueLine)> =
+        dialogue.iter().enumerate().filter(|(_, l)| !skip.contains(&l.pl) && words(l) >= 2).collect();
+    lines.shuffle(rng);
+    lines.sort_by_key(|(_, l)| !(3..=10).contains(&words(l)));
+    let (i, line) = lines.first()?;
+    Some(Exercise {
+        key: format!("d{lesson_id}-dictation{i}"),
+        kind: "dictation".into(),
+        item_kind: "dialogue".into(),
+        item_id: lesson_id.to_string(),
+        is_new: false,
+        prompt: String::new(),
+        hint: line.speaker.clone(),
+        answer: line.pl.clone(),
+        options: vec![],
+        tokens: vec![],
+        pl: line.pl.clone(),
+        meaning: line.meaning.clone(),
+        gaps: vec![],
+        pairs: vec![],
+        image: None,
+        option_images: vec![],
+        context: vec![(*line).clone()],
+        endings: vec![],
+    })
 }
 
 /// How many lines of the conversation a gap shows before it.

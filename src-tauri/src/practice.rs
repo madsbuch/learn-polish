@@ -23,7 +23,7 @@ use crate::ids::*;
 /// Folds away everything a learner should not be penalised for: case,
 /// punctuation, doubled spaces and missing Polish diacritics. Typing "czesc"
 /// counts as "cześć" — the correct spelling is shown in the feedback anyway.
-fn normalize(text: &str) -> String {
+pub(crate) fn normalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut last_was_space = true;
     for ch in text.trim().chars() {
@@ -106,6 +106,9 @@ pub struct AnswerResult {
     pub total_xp: i64,
     pub day_xp: i64,
     pub level: i64,
+    /// A dictation: what was written, word by word against the sentence
+    /// (dictation.rs). Empty for every other kind.
+    pub diff: Vec<crate::dictation::DiffWord>,
 }
 
 #[tauri::command]
@@ -131,16 +134,26 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
             total_xp,
             day_xp,
             level: stats::level_from_xp(total_xp),
+            diff: vec![],
         });
     }
 
     // Tiles are given, not typed: their Polish letters are the point (the
     // ending picked on a tile: "kawę", not "kawą"), so nothing is forgiven
     // there but case and punctuation.
-    let correct = if answer.kind == "wordOrder" {
-        crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given)
-    } else {
-        answers_match(&answer.expected, &answer.given)
+    // A dictation is compared word by word, missing Polish letters
+    // forgiven but shown. A sound pair is the one word or the other: they
+    // differ in just the letters that folding would forgive ("tę", "te").
+    let mut diff = vec![];
+    let correct = match answer.kind.as_str() {
+        "wordOrder" => crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given),
+        "dictation" => {
+            let checked = crate::dictation::check(&answer.expected, &answer.given);
+            diff = checked.words;
+            checked.correct
+        }
+        "soundPair" => answer.expected.trim().to_lowercase() == answer.given.trim().to_lowercase(),
+        _ => answers_match(&answer.expected, &answer.given),
     };
     let grade = answer
         .grade
@@ -179,6 +192,7 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
         total_xp,
         day_xp,
         level: stats::level_from_xp(total_xp),
+        diff,
     })
 }
 

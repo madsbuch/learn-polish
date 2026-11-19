@@ -179,7 +179,7 @@ mod tests {
         let renamed = course(&mut conn, "basics");
         diesel::update(courses::table.find(renamed)).set(courses::title_en.eq("My Polish basics")).execute(&mut conn).unwrap();
         let extended = course(&mut conn, "family");
-        crate::courses::extend(&mut conn, extended, &[crate::courses::NewWord { pl: "moje własne słowo".into(), en: "my own word".into(), pos: "phr".into() }], &[], &[], "you").unwrap();
+        crate::courses::extend(&mut conn, extended, &[crate::courses::NewWord { pl: "moje własne słowo".into(), en: "my own word".into(), pos: "phr".into(), ..Default::default() }], &[], &[], "you").unwrap();
         let edited = course(&mut conn, "food");
         let edited_lesson = practice_lessons::for_course(&mut conn, edited).unwrap()[0].id;
         practice_lessons::update(&mut conn, edited_lesson, practice_lessons::LessonChanges { title: Some("My dialogue".into()), ..Default::default() }).unwrap();

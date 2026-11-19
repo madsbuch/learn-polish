@@ -48,6 +48,9 @@ mod wiki;
 mod work;
 mod xplog;
 mod games;
+mod dictation;
+mod sounds;
+mod singalong;
 
 
 use tauri::{Emitter, Manager};
@@ -234,6 +237,8 @@ pub fn run() {
             games::quick_games,
             games::quick_game_deal,
             games::quick_game_finish,
+            dictation::dictation_check,
+            singalong::song_glossary,
             xplog::xp_history,
             diagnostics::diagnostics_clear,
             pictures::word_picture_draw,
@@ -427,12 +432,14 @@ mod integration {
         assert_eq!(count("sentences"), 4, "twenty sentences in fives");
         assert!(list.iter().all(|b| b.due_day.is_none()), "nothing is scheduled before it is done");
 
-        // A word drill is small: eight new words, met then recognised, and a memory round.
+        // A word drill is small: eight new words, met then recognised, a
+        // couple of sound pairs when the words have the sounds, and a memory round.
         let words = list.iter().find(|b| b.lesson_type == "words").unwrap();
         assert_eq!(words.complexity, "low");
         let plan = session::build_lesson(&mut conn, words.id).unwrap();
         assert_eq!(plan.new_words, 8);
-        assert!(plan.exercises.len() <= 17, "{} exercises", plan.exercises.len());
+        assert!(plan.exercises.len() <= 17 + crate::sounds::ROUND, "{} exercises", plan.exercises.len());
+        assert!(plan.exercises.iter().filter(|e| e.kind == "soundPair").count() <= crate::sounds::ROUND);
         assert_eq!(plan.exercises[0].kind, "intro");
         assert!(plan.exercises.iter().any(|e| e.kind == "memory"));
 
@@ -1985,7 +1992,7 @@ mod integration {
     fn every_lesson_type_can_be_made_and_practised() {
         let mut conn = scratch_db("lesson-types");
         let course = db::require_course_id(&mut conn, 1).unwrap();
-        let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into() };
+        let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into(), ..Default::default() };
         let sentence = |pl: &str, en: &str| courses::NewSentence { pl: pl.into(), en: en.into(), ..Default::default() };
         let line = |speaker: &str, pl: &str, en: &str| courses::NewLine { speaker: speaker.into(), gender: "f".into(), pl: pl.into(), en: en.into() };
         let screens = include_str!("../../src/lib/types.ts");
@@ -2050,7 +2057,7 @@ mod integration {
     fn picture_lessons_link_each_word_with_its_picture() {
         let mut conn = scratch_db("pictures");
         let course = db::require_course_id(&mut conn, 1).unwrap();
-        let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into() };
+        let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into(), ..Default::default() };
         let items = courses::Items {
             words: vec![word("stół", "table"), word("krzesło", "chair"), word("kubek", "mug"), word("talerz", "plate"), word("widelec", "fork")],
             sentences: vec![],
@@ -2102,7 +2109,7 @@ mod integration {
 
         // Word drills are as they were: no pictures to draw, no picture exercises.
         let drill_items = courses::Items {
-            words: vec![word("chleb", "bread"), courses::NewWord { pl: "jeść".into(), en: "to eat".into(), pos: "v".into() }],
+            words: vec![word("chleb", "bread"), courses::NewWord { pl: "jeść".into(), en: "to eat".into(), pos: "v".into(), ..Default::default() }],
             sentences: vec![],
             dialogue: vec![],
         };

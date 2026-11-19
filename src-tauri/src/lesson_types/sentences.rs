@@ -1,4 +1,5 @@
-//! Sentences: build each from its words, then fill gaps in them.
+//! Sentences: build each from its words, or write it down as it is said,
+//! then fill gaps in them.
 
 use super::{LessonType, PathGroup, Run};
 use crate::db::Conn;
@@ -9,7 +10,7 @@ pub const TYPE: LessonType = LessonType {
     id: "sentences",
     name: "Sentences",
     icon: "drill",
-    description: "Build sentences from their words as tiles (picking the ending where a word changes form), then fill the gaps in them.",
+    description: "Build sentences from their words as tiles (picking the ending where a word changes form) or write them down as they are said, then fill the gaps in them.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Sentences,
@@ -23,11 +24,21 @@ pub const TYPE: LessonType = LessonType {
 fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
     let rng = &mut rand::rng();
     let mut exercises = Vec::new();
-    for (s, is_new) in &drill.sentences {
+    for (n, (s, is_new)) in drill.sentences.iter().enumerate() {
         if *is_new {
+            // A new sentence is read, then built: its words are given.
             exercises.push(session::sentence_intro(s));
+            exercises.push(session::word_order(s));
+        } else {
+            // A known one is built or written from hearing it, in turn — by
+            // the time it comes back and by its place, so a lesson has some
+            // of each and a sentence alternates between them.
+            exercises.push(if (s.reps + crate::convert::count(n)) % 2 == 1 {
+                session::dictation(s)
+            } else {
+                session::word_order(s)
+            });
         }
-        exercises.push(session::word_order(s));
     }
     exercises.extend(gaps(conn, drill, rng)?);
     Ok(Built { exercises, ..Default::default() })

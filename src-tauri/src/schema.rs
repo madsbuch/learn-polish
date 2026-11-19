@@ -56,6 +56,8 @@ diesel::table! {
         en -> Text,
         pos -> Text,
         image_file_id -> Nullable<FileIdSql>,
+        near_pl -> Text,
+        near_en -> Text,
     }
 }
 

@@ -1,7 +1,10 @@
 //! Quick games: a minute's play over words the learner has already met, from
 //! Home, outside the daily five. *Match pairs* (eight Polish–English pairs,
-//! against the clock) and *Flip and match* (memory cards: a word and its
-//! picture where it has one, else its English; counted in moves).
+//! against the clock), *Flip and match* (memory cards: a word and its
+//! picture where it has one, else its English; counted in moves),
+//! *Dictation* (five sentences the learner has met, said aloud, written
+//! down) and *Sound pairs* (the built-in pairs of sounds.rs: which word was
+//! said?). The last two are for the ear and are scored in right answers.
 //!
 //! They pay a little XP — a set amount per game finished, up to a cap a day,
 //! so they never stand in for lessons — written to the XP log under a run of
@@ -24,13 +27,20 @@ use tauri::State;
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
 use crate::models::Pair;
-use crate::schema::{reviews, words, xp_log};
+use crate::schema::{reviews, sentences, words, xp_log};
 use crate::session::{pick_pairs, WordRow};
+use crate::sounds::SoundPair;
 #[allow(unused_imports)]
 use crate::ids::*;
 
 /// The games, by the name the screens use.
-const GAMES: &[&str] = &["match", "flip"];
+const GAMES: &[&str] = &["match", "flip", "dictation", "sounds"];
+/// Sentences in a game of Dictation…
+const DICTATION_SENTENCES: usize = 5;
+/// …and at least this many met to play it.
+pub const MIN_SENTENCES: usize = 3;
+/// Pairs in a game of Sound pairs.
+const SOUND_ROUNDS: usize = 8;
 /// Pairs in a game of Match pairs.
 const MATCH_PAIRS: usize = 8;
 /// Pairs in a game of Flip and match (twelve cards).
@@ -47,7 +57,17 @@ pub const RUN_PREFIX: &str = "game:";
 const MIN_MS: i64 = 1500;
 
 fn title(game: &str) -> &'static str {
-    if game == "match" { "Match pairs" } else { "Flip and match" }
+    match game {
+        "match" => "Match pairs",
+        "dictation" => "Dictation",
+        "sounds" => "Sound pairs",
+        _ => "Flip and match",
+    }
+}
+
+/// Games scored in right answers (out of the rounds), with no best kept.
+fn scored(game: &str) -> bool {
+    matches!(game, "dictation" | "sounds")
 }
 
 fn check(game: &str) -> Result<()> {
@@ -76,8 +96,49 @@ fn met_words(conn: &mut Conn) -> Result<Vec<WordRow>> {
     Ok(rows
         .into_iter()
         .filter(|(_, pl, ..)| seen.insert(pl.to_lowercase()))
-        .map(|(id, pl, meaning, pos, image)| WordRow { id, pl, meaning, pos, reps: 0, image })
+        .map(|(id, pl, meaning, pos, image)| WordRow { id, pl, meaning, pos, reps: 0, image, near: None })
         .collect())
+}
+
+/// A sentence to write down in Dictation.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationItem {
+    pub id: SentenceId,
+    pub pl: String,
+    pub meaning: String,
+}
+
+/// The sentences the learner has met, each once.
+fn met_sentences(conn: &mut Conn) -> Result<Vec<DictationItem>> {
+    let ids: Vec<SentenceId> = reviews::table
+        .filter(reviews::kind.eq("sentence"))
+        .select(reviews::item_id)
+        .load::<String>(conn)?
+        .iter()
+        .filter_map(|id| SentenceId::parse(id).ok())
+        .collect();
+    let rows: Vec<(SentenceId, String, String)> = sentences::table
+        .filter(sentences::id.eq_any(ids))
+        .order(sentences::id)
+        .select((sentences::id, sentences::pl, sentences::en))
+        .load(conn)?;
+    let mut seen = std::collections::HashSet::new();
+    Ok(rows
+        .into_iter()
+        .filter(|(_, pl, _)| seen.insert(pl.to_lowercase()))
+        .map(|(id, pl, meaning)| DictationItem { id, pl, meaning })
+        .collect())
+}
+
+/// A round of Sound pairs: the pair, and which of it is said.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRound {
+    #[serde(flatten)]
+    pub pair: SoundPair,
+    /// The word said: `a` or `b`.
+    pub said: String,
 }
 
 /// XP the quick games earned on a day.
@@ -103,6 +164,9 @@ pub struct QuickGames {
     /// Words met so far: the games need at least `minWords`.
     pub words_met: i64,
     pub min_words: i64,
+    /// Sentences met so far: Dictation needs at least `minSentences`.
+    pub sentences_met: i64,
+    pub min_sentences: i64,
     /// Match pairs: the fastest game, in milliseconds.
     pub match_best_ms: Option<i64>,
     /// Flip and match: the fewest moves, and that game's time.
@@ -119,6 +183,8 @@ pub fn overview(conn: &mut Conn) -> Result<QuickGames> {
     Ok(QuickGames {
         words_met,
         min_words: crate::convert::count(MIN_PAIRS),
+        sentences_met: crate::convert::count(met_sentences(conn)?.len()),
+        min_sentences: crate::convert::count(MIN_SENTENCES),
         match_best_ms: best(conn, "game_best_match_ms"),
         flip_best_moves: best(conn, "game_best_flip_moves"),
         flip_best_ms: best(conn, "game_best_flip_ms"),
@@ -133,13 +199,46 @@ pub fn overview(conn: &mut Conn) -> Result<QuickGames> {
 #[serde(rename_all = "camelCase")]
 pub struct QuickGame {
     pub game: String,
+    /// Match pairs, Flip and match: the cards.
     pub pairs: Vec<Pair>,
+    /// Dictation: the sentences to write down.
+    pub sentences: Vec<DictationItem>,
+    /// Sound pairs: the rounds.
+    pub sounds: Vec<SoundRound>,
 }
 
 /// Deals a game from the words met: random ones for Match pairs; for Flip
 /// and match, pictured words first (their card is the picture), then others.
+/// Dictation deals sentences met; Sound pairs, built-in pairs, one of each
+/// contrast before any comes twice.
 pub fn deal(conn: &mut Conn, game: &str, rng: &mut impl rand::Rng) -> Result<QuickGame> {
     check(game)?;
+    if game == "dictation" {
+        let mut met = met_sentences(conn)?;
+        if met.len() < MIN_SENTENCES {
+            return Err(Error::msg("Meet a few sentences in your lessons first: Dictation uses sentences you know."));
+        }
+        met.shuffle(rng);
+        met.truncate(DICTATION_SENTENCES);
+        return Ok(QuickGame { game: game.into(), pairs: vec![], sentences: met, sounds: vec![] });
+    }
+    if game == "sounds" {
+        let mut pairs = crate::sounds::built_in();
+        pairs.shuffle(rng);
+        // One of each contrast first, then the rest.
+        let mut seen = std::collections::HashSet::new();
+        let (mut first, rest): (Vec<SoundPair>, Vec<SoundPair>) = pairs.into_iter().partition(|p| seen.insert(p.label.clone()));
+        first.extend(rest);
+        first.truncate(SOUND_ROUNDS);
+        let sounds = first
+            .into_iter()
+            .map(|pair| {
+                let said = if rng.random_bool(0.5) { pair.a.clone() } else { pair.b.clone() };
+                SoundRound { pair, said }
+            })
+            .collect();
+        return Ok(QuickGame { game: game.into(), pairs: vec![], sentences: vec![], sounds });
+    }
     let mut met = met_words(conn)?;
     met.shuffle(rng);
     let pairs = if game == "match" {
@@ -155,7 +254,7 @@ pub fn deal(conn: &mut Conn, game: &str, rng: &mut impl rand::Rng) -> Result<Qui
     if pairs.len() < MIN_PAIRS {
         return Err(Error::msg("Meet a few more words in your lessons first: the games use words you know."));
     }
-    Ok(QuickGame { game: game.into(), pairs })
+    Ok(QuickGame { game: game.into(), pairs, sentences: vec![], sounds: vec![] })
 }
 
 /// What finishing a game brought.
@@ -183,8 +282,10 @@ fn clock(ms: i64) -> String {
 }
 
 /// Records a finished game: its XP (within the day's cap) and, if it beat
-/// the best, the new best. `moves`: turns in Flip and match, wrong taps in
-/// Match pairs.
+/// the best, the new best. `pairs`: the pairs, sentences or rounds played;
+/// `moves`: turns in Flip and match, wrong taps in Match pairs, misses in
+/// Dictation and Sound pairs (which keep no best: a score out of a handful
+/// is no record to chase).
 pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> Result<GameFinished> {
     check(game)?;
     let ms = ms.max(MIN_MS);
@@ -193,7 +294,9 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
     conn.transaction::<_, Error, _>(|conn| {
         let earned = xp_on(conn, today)?;
         let xp = GAME_XP.min(GAME_XP_PER_DAY - earned).max(0);
-        let (previous_ms, previous_moves, record) = if game == "match" {
+        let (previous_ms, previous_moves, record) = if scored(game) {
+            (None, None, false)
+        } else if game == "match" {
             let before = best(conn, "game_best_match_ms");
             let better = before.map_or(true, |b| ms < b);
             if better {
@@ -213,7 +316,10 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
             }
             (before_ms, before_moves, better && before_moves.is_some())
         };
-        let label = if game == "match" {
+        let label = if scored(game) {
+            let what = if game == "dictation" { "sentences" } else { "pairs" };
+            format!("{}: {} of {pairs} {what} right", title(game), (pairs - moves).max(0))
+        } else if game == "match" {
             format!("{}: {pairs} pairs in {}", title(game), clock(ms))
         } else {
             format!("{}: {pairs} pairs in {moves} moves", title(game))
@@ -234,8 +340,12 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
         Ok(GameFinished {
             xp_gained: xp,
             record,
-            best_ms: best(conn, if game == "match" { "game_best_match_ms" } else { "game_best_flip_ms" }),
-            best_moves: if game == "match" { None } else { best(conn, "game_best_flip_moves") },
+            best_ms: match game {
+                "match" => best(conn, "game_best_match_ms"),
+                "flip" => best(conn, "game_best_flip_ms"),
+                _ => None,
+            },
+            best_moves: if game == "flip" { best(conn, "game_best_flip_moves") } else { None },
             previous_ms,
             previous_moves,
             xp_today: earned + xp,

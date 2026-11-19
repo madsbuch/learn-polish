@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS words (
     pos      TEXT    NOT NULL,
     -- A picture of it (picture lessons, or added to a word drill).
     image_file_id TEXT REFERENCES files(id) ON DELETE SET NULL,
+    -- A real word an English ear hears it as ("prosię" for "proszę"), with
+    -- its gloss, from the tutor: a sound-pair card (sounds.rs). Empty for
+    -- words made without (schema 10): their lessons use the built-in pairs.
+    near_pl  TEXT    NOT NULL DEFAULT '',
+    near_en  TEXT    NOT NULL DEFAULT '',
     UNIQUE (lesson_id, pl)
 );
 

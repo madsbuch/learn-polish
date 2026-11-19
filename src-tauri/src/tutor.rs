@@ -117,7 +117,9 @@ The app:
   gloss; sentences short and natural. With each sentence, list in `endings` its words that \
   stand in another form than their dictionary one (\"kawę\" for \"kawa\"), each with two \
   other real forms of the same word that do not fit there: the learner picks the ending when \
-  building the sentence from its words.
+  building the sentence from its words. Where a word has a real Polish neighbour that differs \
+  by one sound English ears mix up (\"proszę\" and \"prosię\", \"być\" and \"bić\"), give \
+  it as the word's `near`: words lessons play the two for the learner to tell apart.
 - Songs cost the learner credits: one per request. Give a new song or podcast the course it \
   fits (course_id): it is filed there, with its listening lesson. Put the course's level and the \
   words it should use in requirements — the songwriter writes at the level it is given (a \
@@ -315,6 +317,15 @@ fn word_schema() -> Value {
                     "type": "string",
                     "enum": ["n-m", "n-f", "n-n", "n-pl", "v", "adj", "adv", "num", "pron", "prep", "conj", "part", "interj", "phr"],
                     "description": "Part of speech. Nouns carry their gender: n-m masculine, n-f feminine, n-n neuter, n-pl plural-only."
+                },
+                "near": {
+                    "type": "object",
+                    "description": "Only when there is one: a real Polish word that differs from this one by a sound English ears mix up (sz/ś, cz/ć, ż/sz, rz/r, ą/o, ę/e, y/i, ł/l), e.g. for \"proszę\": {\"pl\": \"prosię\", \"en\": \"piglet\"}. The learner hears one and picks which. Leave it out otherwise; never a made-up word.",
+                    "properties": {
+                        "pl": { "type": "string" },
+                        "en": { "type": "string" }
+                    },
+                    "required": ["pl", "en"]
                 }
             },
             "required": ["pl", "en", "pos"]
@@ -3219,7 +3230,9 @@ pub async fn tutor_talk_about(
                 .find(SentenceId::parse(&item_id).map_err(|e| Error::msg(e.to_string()))?)
                 .select((crate::schema::sentences::pl, crate::schema::sentences::en))
                 .first(conn)?,
-            "line" => match (polish, meaning) {
+            // A line of a conversation, or a word of a song (its line as the
+            // meaning: the word itself is what is not known).
+            "line" | "lyric" => match (polish, meaning) {
                 (Some(pl), Some(en)) if !pl.trim().is_empty() => (pl.trim().to_string(), en.trim().to_string()),
                 _ => return Err(Error::msg("A line needs its Polish and meaning.")),
             },
@@ -3243,6 +3256,8 @@ pub async fn tutor_talk_about(
             format!(
                 "Let's talk about this line from a conversation I practised: “{polish}” ({meaning}). Why is it said like this?"
             )
+        } else if item_kind == "lyric" {
+            format!("What does “{polish}” mean in this line of a song: {meaning}?")
         } else {
             format!("Let's talk about “{polish}”.")
         };

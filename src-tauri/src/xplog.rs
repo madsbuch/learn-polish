@@ -60,6 +60,8 @@ pub fn answer_label(kind: &str, expected: &str) -> String {
         "memory" => "Memory round".into(),
         "wordPick" => format!("Picked the picture of “{what}”"),
         "picturePick" => format!("Named the picture: “{what}”"),
+        "dictation" => format!("Wrote down “{what}”"),
+        "soundPair" => format!("Heard “{what}”"),
         other => format!("{other}: “{what}”"),
     }
 }

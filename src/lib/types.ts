@@ -61,6 +61,9 @@ export const BenchRunIdSchema = typeId<"BenchRunId">("bench");
 export type BenchRunId = z.infer<typeof BenchRunIdSchema>;
 export const DeviceIdSchema = typeId<"DeviceId">("dev");
 export type DeviceId = z.infer<typeof DeviceIdSchema>;
+/** A built-in sound pair (sounds.rs): derived from its words, not a row. */
+export const SoundPairIdSchema = typeId<"SoundPairId">("sp");
+export type SoundPairId = z.infer<typeof SoundPairIdSchema>;
 
 // Mirrors the serde structs in src-tauri/src/models.rs.
 export const CourseSchema = z.object({
@@ -151,6 +154,8 @@ export const ExerciseKindSchema = z.enum([
   "pictureIntro",
   "wordPick",
   "picturePick",
+  "dictation",
+  "soundPair",
 ]);
 export type ExerciseKind = z.infer<typeof ExerciseKindSchema>;
 
@@ -213,6 +218,9 @@ export type Exercise = z.infer<typeof ExerciseSchema>;
 export const QuickGamesSchema = z.object({
   wordsMet: z.number(),
   minWords: z.number(),
+  /** Dictation needs a few sentences met. */
+  sentencesMet: z.number(),
+  minSentences: z.number(),
   matchBestMs: z.number().nullable(),
   flipBestMoves: z.number().nullable(),
   flipBestMs: z.number().nullable(),
@@ -222,13 +230,40 @@ export const QuickGamesSchema = z.object({
 });
 export type QuickGames = z.infer<typeof QuickGamesSchema>;
 
-export const QuickGameKindSchema = z.enum(["match", "flip"]);
+export const QuickGameKindSchema = z.enum(["match", "flip", "dictation", "sounds"]);
 export type QuickGameKind = z.infer<typeof QuickGameKindSchema>;
 
-/** One game's cards. */
+/** A sentence to write down in the Dictation game. */
+export const DictationItemSchema = z.object({
+  id: SentenceIdSchema,
+  pl: z.string(),
+  meaning: z.string(),
+});
+export type DictationItem = z.infer<typeof DictationItemSchema>;
+
+/** A pair of words that differ by one sound English ears mix up. */
+export const SoundPairSchema = z.object({
+  /** A built-in pair's id; null for a word's own neighbour. */
+  id: SoundPairIdSchema.nullable(),
+  /** What to listen for: "sz or ś". */
+  label: z.string(),
+  a: z.string(),
+  aEn: z.string(),
+  b: z.string(),
+  bEn: z.string(),
+});
+export type SoundPair = z.infer<typeof SoundPairSchema>;
+
+/** A round of the Sound pairs game: the pair, and which of it is said. */
+export const SoundRoundSchema = SoundPairSchema.extend({ said: z.string() });
+export type SoundRound = z.infer<typeof SoundRoundSchema>;
+
+/** One game's cards, sentences or rounds. */
 export const QuickGameSchema = z.object({
   game: QuickGameKindSchema,
   pairs: z.array(PairSchema),
+  sentences: z.array(DictationItemSchema),
+  sounds: z.array(SoundRoundSchema),
 });
 export type QuickGame = z.infer<typeof QuickGameSchema>;
 
@@ -452,6 +487,24 @@ export const CheckinTurnSchema = z.object({
 });
 export type CheckinTurn = z.infer<typeof CheckinTurnSchema>;
 
+/** One word of a dictation, compared with the sentence (dictation.rs). */
+export const DiffWordSchema = z.object({
+  /** The word as said; empty for one typed that was not said. */
+  expected: z.string(),
+  /** What was typed in its place; empty for a word left out. */
+  given: z.string(),
+  /** "accents": right, but its Polish letters were left off — accepted, and shown. */
+  status: z.enum(["right", "accents", "wrong", "missing", "extra"]),
+});
+export type DiffWord = z.infer<typeof DiffWordSchema>;
+
+/** A dictation checked: right when every word was heard. */
+export const DictationCheckedSchema = z.object({
+  correct: z.boolean(),
+  words: z.array(DiffWordSchema),
+});
+export type DictationChecked = z.infer<typeof DictationCheckedSchema>;
+
 export const AnswerResultSchema = z.object({
   correct: z.boolean(),
   expected: z.string(),
@@ -459,6 +512,8 @@ export const AnswerResultSchema = z.object({
   totalXp: z.number(),
   dayXp: z.number(),
   level: z.number(),
+  /** A dictation, word by word; empty for every other kind. */
+  diff: z.array(DiffWordSchema),
 });
 export type AnswerResult = z.infer<typeof AnswerResultSchema>;
 
@@ -1107,6 +1162,19 @@ export const TimedLineSchema = z.object({
   speaker: z.string().nullable().optional(),
 });
 export type TimedLine = z.infer<typeof TimedLineSchema>;
+
+/** What a sung word means (singalong.rs), looked up by its sung form. */
+export const GlossWordSchema = z.object({
+  /** As sung: lowercase, no punctuation. */
+  form: z.string(),
+  /** Its dictionary form. */
+  pl: z.string(),
+  en: z.string(),
+  wordId: WordIdSchema.nullable(),
+  /** One of the words of the song's course: Sing along asks these first. */
+  lesson: z.boolean(),
+});
+export type GlossWord = z.infer<typeof GlossWordSchema>;
 
 export const SongTrackSchema = z.object({
   id: TrackIdSchema,

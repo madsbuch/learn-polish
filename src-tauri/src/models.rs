@@ -81,7 +81,8 @@ pub struct CataloguePage {
 pub struct Exercise {
     pub key: String,
     /// intro | recognise | produce | type | sentenceIntro | wordOrder |
-    /// dialogueGap | gapFill | memory
+    /// dialogueGap | gapFill | memory | pictureIntro | wordPick |
+    /// picturePick | dictation | soundPair
     pub kind: String,
     /// word | sentence | dialogue | set (several items at once, not scheduled)
     pub item_kind: String,

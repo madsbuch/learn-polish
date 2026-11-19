@@ -35,7 +35,7 @@ pub fn seed_once(conn: &mut Conn) -> Result<()> {
                 ("po angielsku", "in English", "phr"),
                 ("nazywać się", "to be called", "v"),
                 ("rozumieć", "to understand", "v"),
-            ].into_iter().map(|(pl, en, pos)| NewWord { pl: pl.into(), en: en.into(), pos: pos.into() }).collect::<Vec<_>>();
+            ].into_iter().map(|(pl, en, pos)| NewWord { pl: pl.into(), en: en.into(), pos: pos.into(), ..Default::default() }).collect::<Vec<_>>();
             let sentences = [
                 ("Cześć, nazywam się Anna.", "Hello, my name is Anna."),
                 ("Jak się nazywasz?", "What is your name?"),
