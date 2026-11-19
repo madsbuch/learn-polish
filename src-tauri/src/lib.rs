@@ -2044,7 +2044,7 @@ mod integration {
             course_id: Some(basics),
             sections: vec![songs::SongSection {
                 kind: "chorus".into(),
-                lines: vec![songs::SongLine { en: "A coffee with milk, please".into(), pl: "Poproszę kawę z mlekiem!".into(), ..Default::default() }],
+                lines: vec![songs::SongLine { en: "A coffee with milk, please".into(), pl: "Poproszę kawę z mlekiem, tralala!".into(), ..Default::default() }],
             }],
             ..Default::default()
         };
@@ -2056,7 +2056,7 @@ mod integration {
         assert_eq!((coffee.pl.as_str(), coffee.en.as_str(), coffee.lesson), ("kawa", "coffee", true));
         assert!(coffee.word_id.is_some());
         assert_eq!(find("mlekiem").map(|g| g.en.as_str()), Some("milk"));
-        assert!(find("z").is_none(), "no meaning, no entry: the tutor is offered instead");
+        assert!(find("tralala").is_none(), "no meaning, no entry: the tutor is offered instead");
     }
 
     #[test]
