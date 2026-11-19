@@ -8,6 +8,7 @@ import type { GlossWord, LessonId, StoryPanel } from "../lib/types";
 import { PencilIcon } from "./icons";
 import { SlowButton, SpeakButton } from "./ui";
 import { WordChat } from "./WordChat";
+import { logEvent } from "../lib/learnLog";
 import { placeUnder, useDismiss, WordPopover, type Tapped } from "./WordPopover";
 
 /*
@@ -109,6 +110,7 @@ export function StoryLines({
       return;
     }
     hapticTick();
+    logEvent({ kind: "meaning_tapped", details: { word: form.slice(0, 80), source: "story" } });
     setTapped({
       key,
       word,

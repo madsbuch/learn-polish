@@ -18,7 +18,9 @@ change to the schema follows these.
   memory, `src_` Wikipedia source, `xp_` XP entry, `cost_` AI cost, `bench_`
   benchmark run, `dev_` device (sync), `sp_` built-in sound pair
   (`sounds.rs`: derived ids, kept in the code, not a table), `spot_` where a
-  thing is in a scene lesson's picture, `pnl_` a story lesson's panel. A new table gets a new prefix, added
+  thing is in a scene lesson's picture, `pnl_` a story lesson's panel, `att_` an answer in the learning log, `ev_` a
+  learning event, `gr_` a grammar tag (`grammar.rs`: derived from its key, kept
+  in the code, not a table). A new table gets a new prefix, added
   to `ids.rs` and here.
 - **Each kind has its own type**: `LessonId`, `CourseId`, … in Rust; branded
   strings (`LessonIdSchema`) in `src/lib/types.ts`. Only a correctly tagged id
@@ -32,6 +34,14 @@ change to the schema follows these.
   clip by its cache key, achievements by code, links (a course's lessons) by
   their pair of ids, a scene lesson's picture (`scenes`) and a story lesson's story (`stories`)
   by its lesson.
+- **The learning log** (`attempts`, `learning_events`, schema 14) is
+  append-only and per device: each row is written once, on the device that
+  graded the answer or saw the event, in the same transaction as the grade.
+  It keeps no foreign keys: an answer stays history after its word or lesson
+  goes. Its `details` column is a small serde struct with a version (`v`),
+  strict about its fields (`learnlog.rs`). Grammar tags link items to the
+  built-in list: `word_grammar(word_id, tag_id)` and
+  `sentence_grammar(sentence_id, tag_id)`, keyed by their pair.
 - **No ids inside stored text** unless they are TypeIDs: JSON in a column
   (a tutor message's actions, a song's origin, the day's list) holds TypeIDs
   only, never positions or integers.

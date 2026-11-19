@@ -18,6 +18,7 @@ import {
   Text,
   markBack,
 } from "../design";
+import { logEvent } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playComplete, playMatch, playWrong } from "../lib/sounds";
@@ -211,6 +212,7 @@ function GameScreen({
   }, [kind, round]);
 
   function start() {
+    if (startedAt === null) logEvent({ kind: "game_started", details: { game: kind } });
     setStartedAt((at) => at ?? performance.now());
   }
 

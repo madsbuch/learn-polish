@@ -27,8 +27,22 @@ import type {
   SpeechLine,
   SettingsPatch,
   QuickGameKind,
+  Filter,
+  HardKind,
 } from "./types";
 import {
+  ActivitySchema,
+  ComparisonSchema,
+  GameAnsweredSchema,
+  HardItemSchema,
+  ItemHistorySchema,
+  MetWordDetailSchema,
+  MetWordSchema,
+  MistakePageSchema,
+  OverviewSchema,
+  SoundRowSchema,
+  StructureDetailSchema,
+  StructuresSchema,
   GameFinishedSchema,
   DictationCheckedSchema,
   HeardSchema,
@@ -138,6 +152,59 @@ async function invokeLogged(
   }
 }
 
+/** How an answer was given (learnlog::Signals). */
+export interface AnswerSignals {
+  msFirst?: number;
+  msAnswer?: number;
+  tries?: number;
+  hints?: number;
+  plays?: number;
+  slowPlays?: number;
+  reveals?: number;
+  changed?: boolean;
+  firstPick?: string;
+}
+
+/** An event for the learning log (learnlog::EventIn). */
+export interface LearningEventIn {
+  kind: LearningEventKind;
+  itemKind?: string;
+  itemId?: string;
+  lessonId?: LessonId;
+  run?: string;
+  at?: number;
+  details?: {
+    atCard?: number;
+    ofCards?: number;
+    answered?: number;
+    correct?: number;
+    reason?: string;
+    word?: string;
+    slow?: boolean;
+    game?: string;
+    ms?: number;
+    source?: string;
+    exercise?: string;
+  };
+}
+
+/** Every kind of event (learnlog::EVENT_KINDS). */
+export type LearningEventKind =
+  | "lesson_opened"
+  | "lesson_started"
+  | "lesson_left"
+  | "lesson_finished"
+  | "item_viewed"
+  | "spot_explored"
+  | "meaning_tapped"
+  | "talk_opened"
+  | "audio_played"
+  | "card_skipped"
+  | "game_started"
+  | "game_finished"
+  | "checkin_started"
+  | "report_asked";
+
 /** Runs a command whose result is nothing (Rust's `()`); nothing is read back. */
 async function run(command: string, args?: InvokeArgs): Promise<void> {
   await invokeLogged(command, args);
@@ -168,8 +235,38 @@ export const api = {
     /** The lesson, and this go at it: for the XP log. */
     lessonId?: LessonId;
     run?: string;
+    /** For the learning log: the options shown, what the card showed, its Polish. */
+    options?: string[];
+    prompt?: string;
+    pl?: string;
+    signals?: AnswerSignals;
   }) => call(AnswerResultSchema, "submit_answer", { answer }),
   xpDay: (day: number) => call(XpDaySchema, "xp_day", { day }),
+  /** Events for the learning log, in one batch (learnLog.ts sends them). */
+  learningLog: (events: LearningEventIn[]) => run("learning_log", { events }),
+  /** A graded quick-game answer (Dictation, Sound pairs, Say it), logged. */
+  quickGameAnswer: (answer: {
+    game: "dictation" | "sounds" | "say";
+    itemId?: string;
+    expected: string;
+    given: string;
+    options?: string[];
+    run?: string;
+    signals?: AnswerSignals;
+  }) => call(GameAnsweredSchema, "quick_game_answer", { answer }),
+  analyticsOverview: (filter: Filter) => call(OverviewSchema, "analytics_overview", { filter }),
+  analyticsHard: (kind: HardKind, filter: Filter, limit = 50) =>
+    call(z.array(HardItemSchema), "analytics_hard", { kind, filter, limit }),
+  analyticsMistakes: (cls: string, filter: Filter) =>
+    call(MistakePageSchema, "analytics_mistakes", { class: cls, filter }),
+  analyticsCompare: (a: Filter, b: Filter) => call(ComparisonSchema, "analytics_compare", { a, b }),
+  analyticsActivity: (filter: Filter) => call(ActivitySchema, "analytics_activity", { filter }),
+  analyticsItem: (itemId: string) => call(ItemHistorySchema, "analytics_item", { itemId }),
+  metWords: () => call(z.array(MetWordSchema), "met_words_list"),
+  metWord: (wordId: WordId) => call(MetWordDetailSchema, "met_word_detail", { wordId }),
+  metStructures: (filter: Filter) => call(StructuresSchema, "met_structures", { filter }),
+  metStructure: (key: string, filter: Filter) => call(StructureDetailSchema, "met_structure", { key, filter }),
+  metSounds: (filter: Filter) => call(z.array(SoundRowSchema), "met_sounds", { filter }),
   quickGames: () => call(QuickGamesSchema, "quick_games"),
   quickGameDeal: (game: QuickGameKind) => call(QuickGameSchema, "quick_game_deal", { game }),
   quickGameFinish: (game: QuickGameKind, pairs: number, ms: number, moves: number) =>

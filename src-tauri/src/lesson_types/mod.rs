@@ -24,7 +24,7 @@ mod gaps;
 mod listening;
 mod memory;
 mod pictures;
-mod scene;
+pub(crate) mod scene;
 mod sentences;
 mod story;
 mod study;

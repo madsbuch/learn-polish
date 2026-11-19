@@ -445,6 +445,99 @@ CREATE TABLE IF NOT EXISTS story_panels (
 
 CREATE INDEX IF NOT EXISTS story_panels_lesson ON story_panels(lesson_id, ord);
 
+-- The learning log (learnlog.rs, schema 14): every graded answer, anywhere
+-- in the app, written in the same transaction as its grade. Append-only and
+-- per device (the device that graded it), so two devices never write the
+-- same row: nothing to conflict when it syncs. Kept after the word or lesson
+-- it was about goes (no foreign keys): it is history. Screens and the tutor
+-- read it through analytics.rs.
+CREATE TABLE IF NOT EXISTS attempts (
+    id         TEXT PRIMARY KEY NOT NULL,
+    -- When it was answered (milliseconds since 1970) and the learner's day.
+    at         INTEGER NOT NULL,
+    day        INTEGER NOT NULL,
+    device     TEXT    NOT NULL,
+    -- What was asked about: word | sentence | line | lesson | set, and its
+    -- TypeID (a lesson's for a card about the whole lesson).
+    item_kind  TEXT    NOT NULL,
+    item_id    TEXT    NOT NULL,
+    lesson_id  TEXT,
+    -- The exercise kind ("type", "wordOrder"), a quick game ("game:sounds")
+    -- or a check-in ("checkin", "checkinMistake").
+    exercise   TEXT    NOT NULL,
+    -- This go at it (a drill's run key, a game's, a check-in's id).
+    run        TEXT    NOT NULL DEFAULT '',
+    correct    INTEGER NOT NULL,
+    -- What was given and what was expected, cut short (a transcript for
+    -- speech).
+    given      TEXT    NOT NULL,
+    expected   TEXT    NOT NULL,
+    -- The mistake's class (mistakes.rs; '' when right), what exactly
+    -- ("kawę→kawą", "pod→na", per word "rrwm"), and a sound contrast
+    -- ("sz or ś") for sound pairs and speech.
+    mistake    TEXT    NOT NULL DEFAULT '',
+    detail     TEXT    NOT NULL DEFAULT '',
+    contrast   TEXT    NOT NULL DEFAULT '',
+    -- How it was answered (the screen's signals): time to the first input
+    -- and to the answer, tries before checking, hints, plays of the audio
+    -- (slow ones too), translations shown, and whether the first pick was
+    -- changed.
+    ms_first   INTEGER,
+    ms_answer  INTEGER,
+    tries      INTEGER NOT NULL DEFAULT 0,
+    hints      INTEGER NOT NULL DEFAULT 0,
+    plays      INTEGER NOT NULL DEFAULT 0,
+    slow_plays INTEGER NOT NULL DEFAULT 0,
+    reveals    INTEGER NOT NULL DEFAULT 0,
+    changed    INTEGER NOT NULL DEFAULT 0,
+    -- Everything else, small and typed (learnlog::AttemptDetails, versioned
+    -- by its "v"): word-by-word results, the options shown, the first pick.
+    details    TEXT    NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS attempts_item ON attempts(item_id, at);
+CREATE INDEX IF NOT EXISTS attempts_day ON attempts(day);
+CREATE INDEX IF NOT EXISTS attempts_mistake ON attempts(mistake, day);
+
+-- What the learner did that is not an answer: a lesson opened, started,
+-- left early; a word viewed or its meaning tapped; "Talk about it"; a card
+-- skipped and why (learnlog::EVENT_KINDS). Append-only, per device, like
+-- attempts.
+CREATE TABLE IF NOT EXISTS learning_events (
+    id         TEXT PRIMARY KEY NOT NULL,
+    at         INTEGER NOT NULL,
+    day        INTEGER NOT NULL,
+    device     TEXT    NOT NULL,
+    kind       TEXT    NOT NULL,
+    item_kind  TEXT    NOT NULL DEFAULT '',
+    item_id    TEXT    NOT NULL DEFAULT '',
+    lesson_id  TEXT,
+    run        TEXT    NOT NULL DEFAULT '',
+    -- learnlog::EventDetails, versioned by its "v".
+    details    TEXT    NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS learning_events_day ON learning_events(day, kind);
+CREATE INDEX IF NOT EXISTS learning_events_item ON learning_events(item_id);
+
+-- The grammar a word or sentence shows (grammar.rs: a curated list kept in
+-- the code, its ids derived from their keys). The tutor tags what it makes;
+-- older items are tagged only when the learner asks it to (no backfill).
+CREATE TABLE IF NOT EXISTS word_grammar (
+    word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+    tag_id  TEXT NOT NULL,
+    PRIMARY KEY (word_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS sentence_grammar (
+    sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+    tag_id      TEXT NOT NULL,
+    PRIMARY KEY (sentence_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS word_grammar_tag ON word_grammar(tag_id);
+CREATE INDEX IF NOT EXISTS sentence_grammar_tag ON sentence_grammar(tag_id);
+
 CREATE INDEX IF NOT EXISTS words_lesson ON words(lesson_id, ord);
 
 CREATE INDEX IF NOT EXISTS sentences_lesson ON sentences(lesson_id, ord);

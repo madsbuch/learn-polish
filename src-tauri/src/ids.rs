@@ -46,6 +46,9 @@ pub const KINDS: &[(&str, &str)] = &[
     ("sp", "sound pair"),
     ("spot", "scene spot"),
     ("pnl", "story panel"),
+    ("att", "answer"),
+    ("ev", "learning event"),
+    ("gr", "grammar tag"),
 ];
 
 /// What an id names, by its prefix ("a lesson"), if it is a known kind.
@@ -296,6 +299,15 @@ typed_id!(/// Where one thing is in a scene lesson's picture (scenes.rs).
     SpotId, SpotIdSql, "spot");
 typed_id!(/// One panel of a story lesson: its picture and its sentences (stories.rs).
     PanelId, PanelIdSql, "pnl");
+typed_id!(/// One graded answer in the learning log (learnlog.rs): append-only,
+    /// written on the device that graded it.
+    AttemptId, AttemptIdSql, "att");
+typed_id!(/// One thing the learner did that is not an answer (a lesson opened,
+    /// a word's meaning tapped): the learning log's events (learnlog.rs).
+    LearningEventId, LearningEventIdSql, "ev");
+typed_id!(/// A grammar structure from the built-in vocabulary (grammar.rs):
+    /// derived from its key, the same on every device. Not a table.
+    GrammarTagId, GrammarTagIdSql, "gr");
 
 #[cfg(test)]
 mod tests {

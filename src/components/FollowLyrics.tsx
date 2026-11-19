@@ -8,6 +8,7 @@ import { livePosition, seek, usePlayer, type QueueItem } from "../lib/player";
 import { chooseBlanks, fold, LEAD_S, tokens, type Blank } from "../lib/singAlong";
 import type { GlossWord, SongId, TimedLine, TrackId } from "../lib/types";
 import { WordChat } from "./WordChat";
+import { logEvent } from "../lib/learnLog";
 import { placeUnder, useDismiss, WordPopover, type Tapped } from "./WordPopover";
 
 /**
@@ -195,6 +196,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
       return;
     }
     hapticTick();
+    logEvent({ kind: "meaning_tapped", details: { word: form.slice(0, 80), source: "lyrics" } });
     setTapped({
       key,
       word,

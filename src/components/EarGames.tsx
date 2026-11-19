@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Banner, Button, Field, Stack, Text } from "../design";
+import { beginCard, endCard, takeSignals } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { hapticRight, hapticWrong } from "../lib/haptics";
 import { playCorrect, playWrong } from "../lib/sounds";
@@ -57,7 +58,12 @@ export function DictationGame({
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const item = sentences[index];
+  const run = useRef(`game:dictation:${Date.now()}`);
   useSayOnce(item.pl, "", `${index}`);
+  useEffect(() => {
+    beginCard(`${run.current}:${index}`);
+    return () => endCard();
+  }, [index]);
 
   useEffect(() => {
     onStart();
@@ -73,7 +79,8 @@ export function DictationGame({
     setBusy(true);
     setError(null);
     try {
-      const result = await api.dictationCheck(item.pl, typed);
+      // Graded in Rust and written to the learning log with its mistake.
+      const result = await api.quickGameAnswer({ game: "dictation", itemId: item.id, expected: item.pl, given: typed, run: run.current, signals: takeSignals() });
       setChecked(result);
       if (result.correct) {
         playCorrect();
@@ -172,7 +179,12 @@ export function SoundsGame({
   const [picked, setPicked] = useState<string | null>(null);
   const [misses, setMisses] = useState(0);
   const round = rounds[index];
+  const run = useRef(`game:sounds:${Date.now()}`);
   useSayOnce(round.said, "", `${index}`);
+  useEffect(() => {
+    beginCard(`${run.current}:${index}`);
+    return () => endCard();
+  }, [index]);
   const other = round.said === round.a ? round.b : round.a;
 
   useEffect(() => {
@@ -188,6 +200,10 @@ export function SoundsGame({
   function pick(word: string) {
     if (picked !== null) return;
     setPicked(word);
+    // Graded here for the moment; logged (and classified) in Rust.
+    void api
+      .quickGameAnswer({ game: "sounds", itemId: round.id ?? undefined, expected: round.said, given: word, options: [round.a, round.b], run: run.current, signals: takeSignals() })
+      .catch(() => undefined);
     if (word === round.said) {
       playCorrect();
       hapticRight();
@@ -282,6 +298,11 @@ export function SayGame({
   const [misses, setMisses] = useState(0);
   const [skipped, setSkipped] = useState(0);
   const item = sentences[index];
+  const run = useRef(`game:say:${Date.now()}`);
+  useEffect(() => {
+    beginCard(`${run.current}:${index}`);
+    return () => endCard();
+  }, [index]);
 
   useEffect(() => {
     onStart();
@@ -291,6 +312,9 @@ export function SayGame({
   function settle(attempt: Attempt | null) {
     if (done || !attempt) return;
     setDone(true);
+    void api
+      .quickGameAnswer({ game: "say", itemId: item.id, expected: item.pl, given: attempt.heard, run: run.current, signals: takeSignals() })
+      .catch(() => undefined);
     if (attempt.spoken.correct) {
       playCorrect();
       hapticRight();

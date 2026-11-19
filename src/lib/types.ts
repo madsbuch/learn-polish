@@ -67,6 +67,12 @@ export type SoundPairId = z.infer<typeof SoundPairIdSchema>;
 /** One panel of a story lesson. */
 export const PanelIdSchema = typeId<"PanelId">("pnl");
 export type PanelId = z.infer<typeof PanelIdSchema>;
+/** One graded answer in the learning log. */
+export const AttemptIdSchema = typeId<"AttemptId">("att");
+export type AttemptId = z.infer<typeof AttemptIdSchema>;
+/** A grammar structure from the built-in list (grammar.rs): derived, not a row. */
+export const GrammarTagIdSchema = typeId<"GrammarTagId">("gr");
+export type GrammarTagId = z.infer<typeof GrammarTagIdSchema>;
 
 // Mirrors the serde structs in src-tauri/src/models.rs.
 export const CourseSchema = z.object({
@@ -1656,3 +1662,291 @@ export const SyncHeldSchema = z.object({
   rows: z.number(),
 });
 export type SyncHeld = z.infer<typeof SyncHeldSchema>;
+
+// ---------------------------------------------------------------------------
+// Learning analytics (analytics.rs): the same queries the tutor's tools use.
+// ---------------------------------------------------------------------------
+
+/** Which answers: a span of days (inclusive) and one course. */
+export const FilterSchema = z.object({
+  fromDay: z.number().nullable(),
+  toDay: z.number().nullable(),
+  courseId: CourseIdSchema.nullable(),
+});
+export type Filter = z.infer<typeof FilterSchema>;
+
+export const ClassCountSchema = z.object({ class: z.string(), label: z.string(), count: z.number() });
+export type ClassCount = z.infer<typeof ClassCountSchema>;
+
+export const DayPointSchema = z.object({ day: z.number(), attempts: z.number(), correct: z.number() });
+export type DayPoint = z.infer<typeof DayPointSchema>;
+
+/** One word of a sentence, compared: r right, a letters, w wrong, e ending, m missing, x extra, o out of order. */
+export const WordResultSchema = z.object({ e: z.string(), g: z.string(), s: z.string() });
+export type WordResult = z.infer<typeof WordResultSchema>;
+
+export const AttemptViewSchema = z.object({
+  id: AttemptIdSchema,
+  at: z.number(),
+  day: z.number(),
+  exercise: z.string(),
+  exerciseLabel: z.string(),
+  itemKind: z.string(),
+  itemId: z.string(),
+  item: z.string(),
+  lessonId: LessonIdSchema.nullable(),
+  correct: z.boolean(),
+  given: z.string(),
+  expected: z.string(),
+  mistake: z.string(),
+  mistakeLabel: z.string(),
+  detail: z.string(),
+  contrast: z.string(),
+  msAnswer: z.number().nullable(),
+  words: z.array(WordResultSchema).optional(),
+});
+export type AttemptView = z.infer<typeof AttemptViewSchema>;
+
+export const AreaSchema = z.object({
+  kind: z.enum(["structure", "sound", "exercise"]),
+  key: z.string(),
+  name: z.string(),
+  attempts: z.number(),
+  accuracy: z.number(),
+});
+export type Area = z.infer<typeof AreaSchema>;
+
+export const OverviewSchema = z.object({
+  filter: FilterSchema,
+  attempts: z.number(),
+  correct: z.number(),
+  accuracy: z.number(),
+  items: z.number(),
+  daysActive: z.number(),
+  minutes: z.number(),
+  mistakes: z.array(ClassCountSchema),
+  lettersForgiven: z.number(),
+  daily: z.array(DayPointSchema),
+  accuracyBefore: z.number().nullable(),
+  trend: z.enum(["improving", "slipping", "steady", "new"]),
+  strongest: z.array(AreaSchema),
+  weakest: z.array(AreaSchema),
+  wordsMet: z.number(),
+  structuresMet: z.number(),
+  soundsMet: z.number(),
+  untagged: z.number(),
+});
+export type Overview = z.infer<typeof OverviewSchema>;
+
+export const HardKindSchema = z.enum(["word", "sentence", "structure", "sound"]);
+export type HardKind = z.infer<typeof HardKindSchema>;
+
+export const HardItemSchema = z.object({
+  kind: HardKindSchema,
+  key: z.string(),
+  title: z.string(),
+  subtitle: z.string(),
+  attempts: z.number(),
+  wrong: z.number(),
+  accuracy: z.number(),
+  score: z.number(),
+  mistakes: z.array(ClassCountSchema),
+  last: z.array(AttemptViewSchema),
+});
+export type HardItem = z.infer<typeof HardItemSchema>;
+
+export const StrengthSchema = z.enum(["new", "learning", "solid", "tricky"]);
+export type Strength = z.infer<typeof StrengthSchema>;
+
+export const TagInfoSchema = z.object({
+  id: GrammarTagIdSchema,
+  key: z.string(),
+  name: z.string(),
+  group: z.string(),
+  explain: z.string(),
+});
+export type TagInfo = z.infer<typeof TagInfoSchema>;
+
+/** Optional on the wire: a few fields, only when set. */
+export const EventDetailsSchema = z.object({
+  v: z.number(),
+  atCard: z.number().optional(),
+  ofCards: z.number().optional(),
+  answered: z.number().optional(),
+  correct: z.number().optional(),
+  reason: z.string().optional(),
+  word: z.string().optional(),
+  slow: z.boolean().optional(),
+  game: z.string().optional(),
+  ms: z.number().optional(),
+  source: z.string().optional(),
+  exercise: z.string().optional(),
+});
+export type EventDetails = z.infer<typeof EventDetailsSchema>;
+
+export const EventViewSchema = z.object({
+  at: z.number(),
+  kind: z.string(),
+  label: z.string(),
+  details: EventDetailsSchema,
+});
+export type EventView = z.infer<typeof EventViewSchema>;
+
+export const ItemHistorySchema = z.object({
+  itemKind: z.string(),
+  itemId: z.string(),
+  pl: z.string(),
+  en: z.string(),
+  lessonId: LessonIdSchema.nullable(),
+  strength: StrengthSchema,
+  attempts: z.number(),
+  wrong: z.number(),
+  mistakes: z.array(ClassCountSchema),
+  history: z.array(AttemptViewSchema),
+  events: z.array(EventViewSchema),
+  grammar: z.array(TagInfoSchema),
+});
+export type ItemHistory = z.infer<typeof ItemHistorySchema>;
+
+export const MetWordSchema = z.object({
+  id: WordIdSchema,
+  pl: z.string(),
+  en: z.string(),
+  pos: z.string(),
+  courses: z.array(z.object({ id: CourseIdSchema, title: z.string() })),
+  strength: StrengthSchema,
+  attempts: z.number(),
+  wrong: z.number(),
+  score: z.number(),
+  lastAt: z.number().nullable(),
+  image: FileIdSchema.nullable(),
+});
+export type MetWord = z.infer<typeof MetWordSchema>;
+
+export const MetWordDetailSchema = z.object({
+  word: MetWordSchema,
+  lessons: z.array(z.object({ id: LessonIdSchema, title: z.string() })),
+  examples: z.array(z.object({ pl: z.string(), en: z.string() })),
+  near: z.object({ pl: z.string(), en: z.string() }).nullable(),
+  history: ItemHistorySchema,
+});
+export type MetWordDetail = z.infer<typeof MetWordDetailSchema>;
+
+export const StructureRowSchema = z.object({
+  tag: TagInfoSchema,
+  items: z.number(),
+  attempts: z.number(),
+  correct: z.number(),
+  accuracy: z.number().nullable(),
+  score: z.number(),
+  weeks: z.array(DayPointSchema),
+});
+export type StructureRow = z.infer<typeof StructureRowSchema>;
+
+export const StructuresSchema = z.object({
+  tags: z.array(StructureRowSchema),
+  untagged: z.number(),
+});
+export type Structures = z.infer<typeof StructuresSchema>;
+
+export const StructureDetailSchema = z.object({
+  row: StructureRowSchema,
+  examples: z.array(
+    z.object({
+      itemKind: z.string(),
+      itemId: z.string(),
+      pl: z.string(),
+      en: z.string(),
+      attempts: z.number(),
+      wrong: z.number(),
+    }),
+  ),
+  classes: z.array(ClassCountSchema),
+  mistakes: z.array(AttemptViewSchema),
+});
+export type StructureDetail = z.infer<typeof StructureDetailSchema>;
+
+export const SoundRowSchema = z.object({
+  label: z.string(),
+  attempts: z.number(),
+  hits: z.number(),
+  accuracy: z.number(),
+  sides: z.array(z.object({ said: z.string(), attempts: z.number(), missed: z.number(), heardAs: z.string() })),
+  examples: z.array(AttemptViewSchema),
+});
+export type SoundRow = z.infer<typeof SoundRowSchema>;
+
+export const MistakePageSchema = z.object({
+  class: z.string(),
+  label: z.string(),
+  count: z.number(),
+  share: z.number(),
+  items: z.array(z.object({ itemKind: z.string(), itemId: z.string(), title: z.string(), count: z.number() })),
+  examples: z.array(AttemptViewSchema),
+});
+export type MistakePage = z.infer<typeof MistakePageSchema>;
+
+const SummarySchema = z.object({
+  filter: FilterSchema,
+  attempts: z.number(),
+  correct: z.number(),
+  accuracy: z.number(),
+  daysActive: z.number(),
+});
+
+export const ChangeSchema = z.object({
+  kind: HardKindSchema,
+  key: z.string(),
+  title: z.string(),
+  attemptsA: z.number(),
+  accuracyA: z.number(),
+  attemptsB: z.number(),
+  accuracyB: z.number(),
+});
+export type Change = z.infer<typeof ChangeSchema>;
+
+export const ComparisonSchema = z.object({
+  a: SummarySchema,
+  b: SummarySchema,
+  improved: z.array(ChangeSchema),
+  slipped: z.array(ChangeSchema),
+  mistakes: z.array(z.object({ class: z.string(), label: z.string(), a: z.number(), b: z.number() })),
+});
+export type Comparison = z.infer<typeof ComparisonSchema>;
+
+export const ActivitySchema = z.object({
+  filter: FilterSchema,
+  daysActive: z.number(),
+  minutes: z.number(),
+  attempts: z.number(),
+  sessions: z.number(),
+  finished: z.number(),
+  leftEarly: z.number(),
+  games: z.number(),
+  checkins: z.number(),
+  byHour: z.array(z.number()),
+  byWeekday: z.array(z.number()),
+  medianMs: z.number().nullable(),
+  audioPlays: z.number(),
+  reveals: z.number(),
+  exits: z.array(
+    z.object({
+      lessonId: LessonIdSchema.nullable(),
+      title: z.string(),
+      at: z.number(),
+      atCard: z.number().nullable(),
+      ofCards: z.number().nullable(),
+    }),
+  ),
+  lessons: z.array(z.object({ lessonId: LessonIdSchema, title: z.string(), attempts: z.number(), accuracy: z.number() })),
+  events: z.array(ClassCountSchema),
+});
+export type Activity = z.infer<typeof ActivitySchema>;
+
+/** A quick game's answer, graded and logged (games.rs). */
+export const GameAnsweredSchema = z.object({
+  correct: z.boolean(),
+  words: z.array(DiffWordSchema),
+  tips: z.array(SoundTipSchema),
+});
+export type GameAnswered = z.infer<typeof GameAnsweredSchema>;

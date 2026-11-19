@@ -274,7 +274,21 @@ fn tools() -> Vec<Tool> {
                 "summary": { "type": "string", "description": "Two or three sentences to the learner: how it went." },
                 "strengths": { "type": "array", "items": { "type": "string" } },
                 "aced": { "type": "boolean", "description": "A pass with nothing worth going over again: the lesson comes back later and earns more mastery. False when to_review has anything that matters." },
-                "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely (shown to the learner)." }
+                "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely (shown to the learner)." },
+                "mistakes": {
+                    "type": "array",
+                    "description": "Each slip in the learner's Polish during this check-in, as said and corrected, for their learning log (not shown as a list). Leave out when there were none.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "said": { "type": "string", "description": "What the learner wrote, the words around the slip" },
+                            "correct": { "type": "string", "description": "The same words, corrected" },
+                            "grammar": { "type": "array", "items": { "type": "string", "enum": crate::grammar::keys() }, "description": "The structures the slip is about" },
+                            "note": { "type": "string", "description": "A few words on what went wrong" }
+                        },
+                        "required": ["said", "correct"]
+                    }
+                }
             },
             "required": ["result", "summary"]
         }),
@@ -298,11 +312,25 @@ pub struct Assessment {
     /// never left without a reply. Not part of the verdict the screens show.
     #[serde(default, alias = "last_feedback", skip_serializing)]
     pub last_feedback: Option<String>,
+    /// The slips the examiner noted, for the learning log (not shown).
+    #[serde(default, skip_serializing)]
+    pub mistakes: Vec<Slip>,
     /// Filled in when recorded.
     #[serde(default)]
     pub next_due_day: i64,
     #[serde(default)]
     pub xp: i64,
+}
+
+/// A slip in the learner's Polish, as the examiner noted it.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Slip {
+    pub said: String,
+    pub correct: String,
+    #[serde(default)]
+    pub grammar: Vec<String>,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -342,6 +370,66 @@ fn append(conn: &mut Conn, checkin_id: CheckinId, role: &str, content: &str) -> 
             checkin_messages::created_at.eq(db::now_secs()),
         ))
         .execute(conn)?;
+    Ok(())
+}
+
+/// The verdict in the learning log, in the verdict's transaction: one
+/// answer for the check-in, and one for each slip the examiner noted, with
+/// its mistake class and the structures it named (unknown ones dropped:
+/// the verdict matters more than a tag).
+fn log_verdict(conn: &mut Conn, checkin_id: CheckinId, lesson_id: LessonId, assessment: &Assessment) -> Result<()> {
+    let run = checkin_id.to_string();
+    let lesson = lesson_id.to_string();
+    let none = crate::mistakes::Mistake::default();
+    let signals = crate::learnlog::Signals::default();
+    crate::learnlog::write_attempt(
+        conn,
+        &crate::learnlog::NewAttempt {
+            item_kind: "lesson",
+            item_id: &lesson,
+            lesson_id: Some(lesson_id),
+            exercise: "checkin",
+            run: &run,
+            correct: assessment.result == "pass",
+            given: &assessment.result,
+            expected: "pass",
+            mistake: &none,
+            signals: &signals,
+            options: &[],
+            grammar: vec![],
+            note: assessment.to_review.join("; "),
+        },
+    )?;
+    for slip in assessment.mistakes.iter().take(20) {
+        if slip.said.trim().is_empty() || slip.correct.trim().is_empty() {
+            continue;
+        }
+        let mistake = crate::mistakes::classify(&crate::mistakes::Graded {
+            exercise: "checkinMistake",
+            expected: &slip.correct,
+            given: &slip.said,
+            ..Default::default()
+        });
+        let grammar: Vec<String> = slip.grammar.iter().filter_map(|k| crate::grammar::by_key(k)).map(|t| t.key.to_string()).collect();
+        crate::learnlog::write_attempt(
+            conn,
+            &crate::learnlog::NewAttempt {
+                item_kind: "lesson",
+                item_id: &lesson,
+                lesson_id: Some(lesson_id),
+                exercise: "checkinMistake",
+                run: &run,
+                correct: false,
+                given: &slip.said,
+                expected: &slip.correct,
+                mistake: &mistake,
+                signals: &signals,
+                options: &[],
+                grammar,
+                note: slip.note.clone(),
+            },
+        )?;
+    }
     Ok(())
 }
 
@@ -411,6 +499,7 @@ fn record_steps(conn: &mut Conn, checkin_id: CheckinId, mut assessment: Assessme
         &note.join(", "),
     )?;
     let first = stats::mark_practised(conn, today)?;
+    log_verdict(conn, checkin_id, lesson_id, &assessment)?;
     let mut feedback = assessment.summary.clone();
     if !assessment.to_review.is_empty() {
         feedback.push_str(&format!(" To review: {}.", assessment.to_review.join("; ")));
@@ -535,10 +624,12 @@ pub async fn checkin_start(
         if crate::lesson_types::get(&lesson.lesson_type)?.is_drill() {
             return Err(Error::msg("Only study lessons have an interview."));
         }
-        diesel::insert_into(checkins::table)
+        let id = diesel::insert_into(checkins::table)
             .values((checkins::id.eq(CheckinId::new()), checkins::lesson_id.eq(lesson_id), checkins::started_at.eq(db::now_secs())))
             .returning(checkins::id)
-            .get_result::<CheckinId>(conn)?
+            .get_result::<CheckinId>(conn)?;
+        crate::learnlog::note(conn, "checkin_started", "lesson", &lesson_id.to_string(), Some(lesson_id), &id.to_string(), Default::default())?;
+        id
     };
     turn(&app, &db, checkin_id, None, &stream_id).await
 }

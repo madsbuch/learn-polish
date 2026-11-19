@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Banner, Inline, Sheet, Text, Typing } from "../design";
+import { logEvent } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { useTutorJob } from "../lib/tutorJob";
 import type { ChatMessage, ConversationId } from "../lib/types";
@@ -43,6 +44,7 @@ export function WordChat({
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
+    logEvent({ kind: "talk_opened", itemKind, itemId: itemId.startsWith("wd_") || itemId.startsWith("sn_") ? itemId : undefined, details: { word: title.slice(0, 80) } });
     api
       .tutorTalkAbout(itemKind, itemId, itemKind === "line" || itemKind === "lyric" || itemKind === "story" ? title : undefined, meaning)
       .then((talk) => {

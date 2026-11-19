@@ -338,6 +338,39 @@ pub fn misheard(word: &str, heard: &str) -> Option<SoundTip> {
     })
 }
 
+/// Which known contrast tells `word` from `heard`, and which way: the
+/// contrast's label, the spelling in the word and the one heard in its
+/// place ("sz or ś", "ś", "sz" for "prosię" heard as "proszę"). For the
+/// learning log (mistakes.rs): a sound pair missed, a word misheard.
+pub fn swap(word: &str, heard: &str) -> Option<Swap> {
+    let (w, h) = (word.to_lowercase(), heard.to_lowercase());
+    if w == h || w.is_empty() || h.is_empty() {
+        return None;
+    }
+    let find = |want: &Sound, got: &Sound| -> Option<(String, String)> {
+        want.spellings.iter().find_map(|ws| {
+            w.match_indices(ws).find_map(|(at, _)| {
+                got.spellings.iter().find_map(|gs| {
+                    let candidate = format!("{}{gs}{}", &w[..at], &w[at + ws.len()..]);
+                    (candidate == h).then(|| ((*ws).to_string(), (*gs).to_string()))
+                })
+            })
+        })
+    };
+    CONFUSIONS.iter().find_map(|c| {
+        let (said, got) = find(&c.a, &c.b).or_else(|| find(&c.b, &c.a))?;
+        Some(Swap { label: c.label.into(), said, heard: got })
+    })
+}
+
+/// A contrast and which way it went (see [`swap`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Swap {
+    pub label: String,
+    pub said: String,
+    pub heard: String,
+}
+
 /// Whether two spellings sound the same: rz and ż, ch and h, ó and u are
 /// one sound each, so a word heard with the other spelling was said right.
 pub fn sound_alike(a: &str, b: &str) -> bool {

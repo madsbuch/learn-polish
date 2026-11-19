@@ -6,6 +6,7 @@ import { CloseIcon } from "../components/icons";
 import { Badge, Banner, Button, CountUp, EmptyState, IconButton, Progress, Text, useBump } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
+import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, takeSignals } from "../lib/learnLog";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
 import { hapticRight, hapticWrong } from "../lib/haptics";
@@ -32,7 +33,6 @@ export function Session({
   onFinished: (result: LessonFinished, sessionXp: number) => void;
   onQuit: () => void;
 }) {
-  useBackHandler(true, onQuit);
   const [index, setIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("answering");
   const [result, setResult] = useState<AnswerResult | null>(null);
@@ -66,6 +66,12 @@ export function Session({
   const xpRef = useBump<HTMLSpanElement>(sessionXp);
   // This go at the lesson, so the XP log keeps its answers together.
   const runKey = useRef(`${plan.lessonId}-${Date.now()}`);
+  // The learning log: this go started, and where it was left if it ends early.
+  useEffect(() => {
+    logEvent({ kind: "lesson_started", lessonId: plan.lessonId, run: runKey.current, details: { ofCards: plan.exercises.length } });
+    return () => endCard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const exercises = plan.exercises.filter((e) => !skipped.has(e.key));
@@ -76,6 +82,19 @@ export function Session({
     [card, speakingOff],
   );
   const total = exercises.length;
+  /** Leaving before the end: where, for the learning log. */
+  function quit() {
+    logEvent({
+      kind: "lesson_left",
+      lessonId: plan.lessonId,
+      run: runKey.current,
+      details: { atCard: index + 1, ofCards: total, answered: Object.keys(results).length, correct: correctCount },
+    });
+    endCard();
+    flushLog();
+    onQuit();
+  }
+  useBackHandler(true, quit);
   // The module that draws and scores this kind of exercise.
   const module = exercise ? exerciseModule(exercise.kind) : undefined;
 
@@ -100,6 +119,12 @@ export function Session({
     }
     return undefined;
   }, [index, exercise?.key, exercise?.kind]);
+
+  // The learning log's clock for this card (time to first input, to answer).
+  const cardKey = exercise?.key;
+  useEffect(() => {
+    if (cardKey) beginCard(cardKey);
+  }, [cardKey, index]);
 
   // Pronounce new material as it appears — hearing it first anchors the
   // spelling. Failures stay silent here; the 🔊 button is where they surface.
@@ -136,6 +161,10 @@ export function Session({
         extra: plan.extra,
         lessonId: plan.lessonId,
         run: runKey.current,
+        options: exercise.options,
+        prompt: exercise.prompt,
+        pl: exercise.pl,
+        signals: takeSignals(),
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);
@@ -177,6 +206,8 @@ export function Session({
 
   async function finish(played: Exercise[]) {
     setBusy(true);
+    endCard();
+    flushLog();
     try {
       const scored = played.filter((e) => !exerciseModule(e.kind).reading).length;
       onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored), sessionXp);
@@ -190,7 +221,18 @@ export function Session({
    *  (unscored), and spoken turns become choices. */
   function skipSpeaking() {
     setSpeakingOff(true);
-    const later = exercises.slice(index).filter((e) => e.kind === "sayIt").map((e) => e.key);
+    const laterCards = exercises.slice(index).filter((e) => e.kind === "sayIt");
+    for (const card of laterCards) {
+      logEvent({
+        kind: "card_skipped",
+        itemKind: card.itemKind,
+        itemId: card.itemId,
+        lessonId: plan.lessonId,
+        run: runKey.current,
+        details: { reason: "speaking_off", exercise: card.kind },
+      });
+    }
+    const later = laterCards.map((e) => e.key);
     if (later.length === 0) return;
     const left = exercises.filter((e) => !later.includes(e.key));
     // Nothing after it but Say it cards: the lesson is done.
@@ -232,16 +274,35 @@ export function Session({
     plan,
     isChecked,
     diff: result?.diff ?? [],
-    setPicked,
-    setTyped,
-    setBuilt,
-    setForms,
-    setGapsFilled,
+    // Every input is noted for the learning log: the first touch, picks changed.
+    setPicked: (option) => {
+      noteInput(option);
+      setPicked(option);
+    },
+    setTyped: (text) => {
+      noteInput();
+      setTyped(text);
+    },
+    setBuilt: (next) => {
+      noteInput();
+      setBuilt(next);
+    },
+    setForms: (next) => {
+      noteInput();
+      setForms(next);
+    },
+    setGapsFilled: (next) => {
+      noteInput();
+      setGapsFilled(next);
+    },
     onMemoryComplete: setMemoryTurns,
     onDone: () => setDone((n) => n + 1),
     onSkipSpeaking: skipSpeaking,
     revealAll,
-    onToggleReveal: () => setRevealAll((v) => !v),
+    onToggleReveal: () => {
+      if (!revealAll) noteReveal();
+      setRevealAll((v) => !v);
+    },
     inputRef,
     onEnter: () => {
       if (isChecked) void advance();
@@ -255,7 +316,7 @@ export function Session({
   return (
     <div className={module.wide ? "session session--wide" : "session"}>
       <div className="session-top">
-        <IconButton icon={<CloseIcon />} label="Leave practice" onClick={onQuit} />
+        <IconButton icon={<CloseIcon />} label="Leave practice" onClick={quit} />
         <div className="grow">
           <Progress value={index} max={total} />
         </div>

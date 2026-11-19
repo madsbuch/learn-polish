@@ -36,6 +36,9 @@ pub struct NewWord {
     /// (sounds.rs). Optional: most words have none.
     #[serde(default)]
     pub near: Option<NearWord>,
+    /// The grammar it shows (grammar.rs keys). Optional; checked.
+    #[serde(default)]
+    pub grammar: Vec<String>,
 }
 
 /// A word's near neighbour by sound: "prosię" (piglet) for "proszę".
@@ -55,6 +58,9 @@ pub struct NewSentence {
     /// them the sentence is built by plain ordering.
     #[serde(default)]
     pub endings: Vec<crate::tiles::Ending>,
+    /// The grammar it shows (grammar.rs keys). Optional; checked.
+    #[serde(default)]
+    pub grammar: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -633,9 +639,11 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
             .and_then(|n| Some((crate::sounds::clean_near(&pl, &n.pl)?, clean(&n.en))))
             .filter(|(_, en)| !en.is_empty())
             .unwrap_or_default();
+        let tags = crate::grammar::validate(&word.grammar)?;
+        let id = WordId::new();
         let added = diesel::insert_or_ignore_into(words::table)
             .values((
-                words::id.eq(WordId::new()),
+                words::id.eq(id),
                 words::lesson_id.eq(lesson_id),
                 words::ord.eq(ord),
                 words::pl.eq(pl),
@@ -648,6 +656,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
         if added == 0 {
             skipped += 1;
         } else {
+            crate::grammar::set_word(conn, id, &tags)?;
             ord += 1;
         }
     }
@@ -663,9 +672,11 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
             continue;
         }
         let endings = crate::tiles::clean_endings(&pl, &sentence.endings);
+        let tags = crate::grammar::validate(&sentence.grammar)?;
+        let id = SentenceId::new();
         let added = diesel::insert_or_ignore_into(sentences::table)
             .values((
-                sentences::id.eq(SentenceId::new()),
+                sentences::id.eq(id),
                 sentences::lesson_id.eq(lesson_id),
                 sentences::ord.eq(ord),
                 sentences::pl.eq(pl),
@@ -676,6 +687,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
         if added == 0 {
             skipped += 1;
         } else {
+            crate::grammar::set_sentence(conn, id, &tags)?;
             ord += 1;
         }
     }

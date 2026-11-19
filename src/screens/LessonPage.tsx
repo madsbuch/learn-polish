@@ -32,6 +32,7 @@ import {
   Stack,
   Text,
 } from "../design";
+import { logEvent } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { lessonType } from "../lib/lessonTypes";
 import { useSyncReload } from "../lib/sync";
@@ -90,6 +91,7 @@ export function LessonPage({
       .catch((cause) => setError(errorMessage(cause)));
   useEffect(() => {
     void reload();
+    logEvent({ kind: "lesson_opened", lessonId, itemKind: "lesson", itemId: lessonId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
   // The lesson as another device changed it (sync).

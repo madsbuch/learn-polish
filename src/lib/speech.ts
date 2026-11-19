@@ -10,6 +10,7 @@
  * is guaranteed to work on the phone.
  */
 import { api } from "./api";
+import { noteAudio } from "./learnLog";
 
 let hasKey = false;
 let hasVoice = false;
@@ -138,6 +139,8 @@ export class SpeechError extends Error {}
 export async function speak(text: string, gender = "", rate = 0.85): Promise<void> {
   // A line asked for on its own ends a conversation that is playing.
   if (conversation?.playing) stopConversation();
+  // Asked for (a 🔊 tapped): the learning log counts it.
+  noteAudio(text, false);
   return speakLine(text, gender, rate);
 }
 
@@ -147,6 +150,7 @@ export async function speak(text: string, gender = "", rate = 0.85): Promise<voi
  */
 export async function speakSlowly(text: string, gender = ""): Promise<void> {
   if (conversation?.playing) stopConversation();
+  noteAudio(text, true);
   return speakLine(text, gender, 0.6, true);
 }
 

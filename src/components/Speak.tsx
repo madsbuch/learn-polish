@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
+import { logEvent, noteInput } from "../lib/learnLog";
 import { Banner, Button, IconButton, Spinner, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { canScan, openAppSettings } from "../lib/keyshare";
@@ -198,6 +199,8 @@ export function SpeakPanel({
       const heard = await api.speechHear(take.audio, take.format, expected);
       const spoken = heard.spoken ?? { correct: false, words: [], tips: [] };
       const attempt: Attempt = { heard: heard.text, spoken, take };
+      // Each go is a try, for the learning log.
+      noteInput(heard.text);
       const all = [...attempts, attempt];
       setAttempts(all);
       const best = bestOf(all);
@@ -227,7 +230,14 @@ export function SpeakPanel({
           <Button size="sm" onClick={() => void mic.toggle()}>
             Try again
           </Button>
-          <Button size="sm" variant="primary" onClick={onSkip}>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              logEvent({ kind: "card_skipped", details: { reason: `mic_${mic.problem?.problem ?? "failed"}`, word: expected.slice(0, 80) } });
+              onSkip();
+            }}
+          >
             Continue without speaking
           </Button>
         </div>

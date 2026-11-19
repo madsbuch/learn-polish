@@ -91,6 +91,19 @@ pub struct SubmitAnswer {
     pub lesson_id: Option<LessonId>,
     #[serde(default)]
     pub run: String,
+    /// The options shown (a choice, a sound pair): for the learning log.
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// What the card showed and the Polish it is about (a scene's
+    /// true-or-false card: the statement and the true sentence), so the
+    /// mistake can be told (mistakes.rs).
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
+    pub pl: String,
+    /// How it was answered (time, tries, audio, translations shown).
+    #[serde(default)]
+    pub signals: Option<crate::learnlog::Signals>,
 }
 
 /// Cards that are only read (a new word, a new sentence, a dialogue to read
@@ -121,7 +134,13 @@ pub async fn submit_answer(db: State<'_, Db>, answer: SubmitAnswer) -> Result<An
 }
 
 /// The work behind [`submit_answer`], callable without Tauri (tests).
+/// The grade, the schedule, the XP and the learning log's row are one
+/// transaction: all or nothing.
 pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
+    conn.transaction(|tx| submit_steps(tx, answer))
+}
+
+fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     let today = db::today(conn);
 
     // Reading a card is not answering it: no XP, no review, not counted in
@@ -129,6 +148,17 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
     let label = crate::xplog::answer_label(&answer.kind, &answer.expected);
     if READING_KINDS.contains(&answer.kind.as_str()) {
         crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, 0, "read: no XP")?;
+        // Read, not answered: an event in the log, not an attempt.
+        let item_id = if crate::ids::kind_of(&answer.item_id).is_some() { answer.item_id.as_str() } else { "" };
+        crate::learnlog::note(
+            conn,
+            "item_viewed",
+            &answer.item_kind,
+            item_id,
+            answer.lesson_id,
+            &answer.run,
+            crate::learnlog::EventDetails { exercise: Some(answer.kind.clone()), source: Some("session".into()), ..Default::default() },
+        )?;
         let total_xp = stats::total_xp(conn)?;
         let day_xp = stats::day_xp(conn, today)?;
         return Ok(AnswerResult {
@@ -199,6 +229,47 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
         _ => "",
     };
     crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, xp, note)?;
+
+    // The learning log: what kind of mistake it was, and how it was answered.
+    let endings = if answer.kind == "wordOrder" && answer.item_kind == "sentence" {
+        SentenceId::parse(&answer.item_id)
+            .ok()
+            .and_then(|id| crate::schema::sentences::table.find(id).select(crate::schema::sentences::endings).first::<String>(conn).ok())
+            .map(|json| crate::tiles::parse(&json))
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+    let mistake = crate::mistakes::classify(&crate::mistakes::Graded {
+        exercise: &answer.kind,
+        expected: &answer.expected,
+        given: &answer.given,
+        correct,
+        diff: &diff,
+        options: &answer.options,
+        prompt: &answer.prompt,
+        pl: &answer.pl,
+        endings: &endings,
+    });
+    let signals = answer.signals.clone().unwrap_or_default();
+    crate::learnlog::write_attempt(
+        conn,
+        &crate::learnlog::NewAttempt {
+            item_kind: &answer.item_kind,
+            item_id: &answer.item_id,
+            lesson_id: answer.lesson_id,
+            exercise: &answer.kind,
+            run: &answer.run,
+            correct,
+            given: &answer.given,
+            expected: &answer.expected,
+            mistake: &mistake,
+            signals: &signals,
+            options: &answer.options,
+            grammar: vec![],
+            note: String::new(),
+        },
+    )?;
 
     let total_xp = stats::total_xp(conn)?;
     let day_xp = stats::day_xp(conn, today)?;
@@ -280,6 +351,15 @@ pub fn lesson_finish_in(conn: &mut Conn, lesson_id: LessonId, correct: i64, tota
 
 fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
     let before = unlocked_codes(conn)?;
+    crate::learnlog::note(
+        conn,
+        "lesson_finished",
+        "lesson",
+        &lesson_id.to_string(),
+        Some(lesson_id),
+        "",
+        crate::learnlog::EventDetails { answered: Some(total), correct: Some(correct), ..Default::default() },
+    )?;
     let result = lessons::result_from_score(correct, total);
     let today = db::today(conn);
     // Only a lesson that is due (or new) moves its schedule. Practising one

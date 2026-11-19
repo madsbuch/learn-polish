@@ -106,7 +106,7 @@ fn messages(item: &Item) -> Vec<Wire> {
         Check::Exactly(_) => vec![Wire::system(FILL), Wire::user(item.prompt)],
         Check::Contains(_) if item.name.starts_with("Fix") => vec![Wire::system(FIX), Wire::user(item.prompt)],
         Check::Contains(_) => vec![Wire::user(item.prompt)],
-        Check::Tool(_) => vec![Wire::system(crate::tutor::RULES), Wire::user(item.prompt)],
+        Check::Tool(_) => vec![Wire::system(crate::tutor::rules()), Wire::user(item.prompt)],
         Check::Rule(RuleTask::PartnerStaysPolish) => vec![
             Wire::system(PARTNER),
             Wire::assistant("Dzień dobry! Jestem Ewa, mieszkam pod trójką. Pan tu nowy?"),
@@ -115,12 +115,12 @@ fn messages(item: &Item) -> Vec<Wire> {
         Check::Rule(RuleTask::WordChatOpening) => vec![
             Wire::system(ai::with_say_player(format!(
                 "{}\n\n{}",
-                crate::tutor::RULES,
+                crate::tutor::rules(),
                 crate::tutor::word_chat_rules("kot — cat")
             ))),
             Wire::user(item.prompt),
         ],
-        Check::Rule(_) => vec![Wire::system(ai::with_say_player(crate::tutor::RULES.to_string())), Wire::user(item.prompt)],
+        Check::Rule(_) => vec![Wire::system(ai::with_say_player(crate::tutor::rules())), Wire::user(item.prompt)],
     }
 }
 

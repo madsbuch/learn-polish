@@ -79,9 +79,16 @@ this file says why.
    device whose sync record of the row has itself as origin resumes or polls
    it (`sync::written_here`). Otherwise both devices would download the same
    song and make two copies.
-6. **The day's five** (`daily_ids`, `daily_day`) sync: both devices show the
+6. **The learning log** (`attempts`, `learning_events`) syncs like
+   everything else. Rows are append-only and per device — written once, by
+   the device that graded the answer or saw the event, never updated — so two
+   devices never write the same row and nothing conflicts. The analytics
+   pages and the tutor read every device's rows. Grammar tags
+   (`word_grammar`, `sentence_grammar`) are links keyed by their pair and go
+   with their word or sentence (`ON DELETE CASCADE`).
+7. **The day's five** (`daily_ids`, `daily_day`) sync: both devices show the
    same lessons; if both chose a list while apart, the later wins.
-7. **No backfill of the learner's content.** Schema 8 records the rows already
+8. **No backfill of the learner's content.** Schema 8 records the rows already
    there as this device's first version of them (bookkeeping, not content).
 
 ## Transport (as Tally)

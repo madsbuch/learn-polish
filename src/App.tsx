@@ -28,6 +28,7 @@ import type {
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
+import { Insights, type InsightPage } from "./screens/Insights";
 import { AchievementScreen } from "./screens/AchievementScreen";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
@@ -91,6 +92,7 @@ type Overlay =
       back: Overlay;
     }
   | { kind: "progress" }
+  | { kind: "insights"; start: InsightPage }
   /** Quick games, from Home (screens/QuickGames.tsx). */
   | { kind: "games" }
   | { kind: "achievement"; code: string }
@@ -709,6 +711,30 @@ export default function App() {
           onOpenDay={(day) =>
             setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })
           }
+          onOpenInsights={(start) => setOverlay({ kind: "insights", start })}
+          onAskTutor={(ask) => {
+            setOverlay({ kind: "none" });
+            setTutorAsk(ask);
+            setTab("tutor");
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (overlay.kind === "insights") {
+    return (
+      <div className="app">
+        <Insights
+          start={overlay.start}
+          today={stats.day}
+          courses={courses}
+          onDone={() => setOverlay({ kind: "progress" })}
+          onAskTutor={(ask) => {
+            setOverlay({ kind: "none" });
+            setTutorAsk(ask);
+            setTab("tutor");
+          }}
         />
       </div>
     );

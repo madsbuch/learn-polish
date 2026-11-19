@@ -698,6 +698,79 @@ diesel::joinable!(songs -> courses (course_id));
 diesel::joinable!(playlist_tracks -> playlists (playlist_id));
 diesel::joinable!(playlist_tracks -> song_tracks (track_id));
 
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    attempts (id) {
+        id -> AttemptIdSql,
+        at -> BigInt,
+        day -> BigInt,
+        device -> DeviceIdSql,
+        item_kind -> Text,
+        item_id -> Text,
+        lesson_id -> Nullable<LessonIdSql>,
+        exercise -> Text,
+        run -> Text,
+        correct -> BigInt,
+        given -> Text,
+        expected -> Text,
+        mistake -> Text,
+        detail -> Text,
+        contrast -> Text,
+        ms_first -> Nullable<BigInt>,
+        ms_answer -> Nullable<BigInt>,
+        tries -> BigInt,
+        hints -> BigInt,
+        plays -> BigInt,
+        slow_plays -> BigInt,
+        reveals -> BigInt,
+        changed -> BigInt,
+        details -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    learning_events (id) {
+        id -> LearningEventIdSql,
+        at -> BigInt,
+        day -> BigInt,
+        device -> DeviceIdSql,
+        kind -> Text,
+        item_kind -> Text,
+        item_id -> Text,
+        lesson_id -> Nullable<LessonIdSql>,
+        run -> Text,
+        details -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    word_grammar (word_id, tag_id) {
+        word_id -> WordIdSql,
+        tag_id -> GrammarTagIdSql,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    sentence_grammar (sentence_id, tag_id) {
+        sentence_id -> SentenceIdSql,
+        tag_id -> GrammarTagIdSql,
+    }
+}
+
+diesel::joinable!(word_grammar -> words (word_id));
+diesel::joinable!(sentence_grammar -> sentences (sentence_id));
+
 diesel::allow_tables_to_appear_in_same_query!(
     bench_runs,
     xp_log,
@@ -742,4 +815,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     scene_spots,
     stories,
     story_panels,
+    attempts,
+    learning_events,
+    word_grammar,
+    sentence_grammar,
 );

@@ -1023,6 +1023,7 @@ body:has(.conversation-control) .line {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       "stats stats"
+      "met met"
       "achievements achievements"
       "xp xp"
       "heat vocab";
@@ -1031,6 +1032,9 @@ body:has(.conversation-control) .line {
   }
   .progress-board__stats {
     grid-area: stats;
+  }
+  .progress-board__met {
+    grid-area: met;
   }
   .progress-board__achievements {
     grid-area: achievements;
@@ -1053,9 +1057,10 @@ body:has(.conversation-control) .line {
 @media (min-width: 1000px) {
   .progress-board {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-    grid-template-rows: auto auto auto 1fr;
+    grid-template-rows: auto auto auto auto 1fr;
     grid-template-areas:
       "stats stats"
+      "met met"
       "achievements achievements"
       "xp heat"
       "xp vocab";
@@ -3332,4 +3337,214 @@ button.id-chip {
   justify-content: space-between;
   padding: var(--space-3) var(--gutter) calc(var(--safe-bottom) + var(--space-4));
   border-top: 1px solid var(--line-soft);
+}
+
+/* ============================================================== insights */
+
+/* Progress → What you've met / Insights: small one-series bar charts in the
+   XP chart's language. Each bar grows once from the baseline as it appears
+   (scaleY with backwards fill: an entrance, nothing left transformed). */
+.mini-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mini-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 120px;
+  border-bottom: 1px solid var(--line);
+}
+.mini-chart[data-small] .mini-bars {
+  height: 36px;
+}
+.mini-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+button.mini-bar {
+  cursor: pointer;
+}
+.mini-bar i {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  height: calc(var(--share, 0) * 100%);
+  border-radius: 4px 4px 0 0;
+  background: var(--brand);
+  transform-origin: bottom;
+  animation: mini-bar-rise var(--duration-count) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 12ms);
+}
+.mini-bar i[data-faint] {
+  background: var(--brand-ink);
+  opacity: 0.45;
+}
+.mini-bar i[data-empty] {
+  background: var(--line-soft);
+}
+@keyframes mini-bar-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .mini-bar:hover i {
+    background: var(--brand-ink);
+  }
+}
+.mini-chart-ends {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* A measure: a name, a count and a thin bar; a button when it opens more. */
+.measure-row {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+}
+button.measure-row {
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.measure-row:hover .t-small:first-child {
+    color: var(--brand-ink);
+  }
+}
+
+/* Progress → What you've met: three cards, side by side from a tablet. */
+.met-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.met-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+}
+.met-card b {
+  font-size: var(--font-headline);
+  line-height: var(--leading-headline);
+  font-weight: var(--weight-heavy);
+}
+/* Narrow phones: the number and the name; the note is for wider cards. */
+@media (max-width: 599px) {
+  .met-card .t-caption {
+    display: none;
+  }
+}
+
+/* An answer in a history: what was given against what was expected. */
+.attempt-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.attempt-row__vs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.attempt-given[data-correct="false"] {
+  color: var(--bad);
+  text-decoration: line-through;
+  text-decoration-color: var(--bad-line);
+}
+.attempt-given[data-correct="true"] {
+  color: var(--ok);
+}
+.attempt-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.attempt-words span {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+}
+.attempt-words span[data-s="w"],
+.attempt-words span[data-s="e"],
+.attempt-words span[data-s="m"],
+.attempt-words span[data-s="o"] {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.attempt-words span[data-s="a"] {
+  background: var(--info-bg);
+}
+.attempt-words span[data-s="x"] {
+  text-decoration: line-through;
+}
+
+/* A wide window: the insights pages in two columns. */
+.insight-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+@media (min-width: 1000px) {
+  .insight-board {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  }
+}
+.insight-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+.insight-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.insight-filters select {
+  max-width: 320px;
+}
+
+/* Progress → What you've met beside Insights on a wide window. */
+.met-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+@media (min-width: 1000px) {
+  .met-board {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+}
+.met-thumb {
+  width: var(--control-md);
+  height: var(--control-md);
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+.met-picture {
+  width: 100%;
+  max-height: 260px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+.insight-segmented {
+  max-width: 520px;
 }

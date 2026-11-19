@@ -54,6 +54,11 @@ mod speaking;
 mod singalong;
 mod scenes;
 mod stories;
+mod grammar;
+mod mistakes;
+mod learnlog;
+mod analytics;
+mod tutor_analytics;
 
 
 use tauri::{Emitter, Manager};
@@ -197,6 +202,19 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             practice::submit_answer,
+            learnlog::learning_log,
+            games::quick_game_answer,
+            analytics::analytics_overview,
+            analytics::analytics_hard,
+            analytics::analytics_mistakes,
+            analytics::analytics_compare,
+            analytics::analytics_activity,
+            analytics::analytics_item,
+            analytics::met_words_list,
+            analytics::met_word_detail,
+            analytics::met_structures,
+            analytics::met_structure,
+            analytics::met_sounds,
             lessons::commands::lessons_overview,
             lessons::commands::lessons_for_course,
             lessons::commands::lessons_by_importance,
@@ -3453,7 +3471,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             serde_json::json!({
                 "title": "Tiles", "format": "sentences", "complexity": "low", "course_id": basics,
                 "sentences": [{ "pl": "Poproszę kawę.", "en": "A coffee, please.",
-                                "endings": [{ "form": "kawę", "base": "kawa", "wrong": ["kawy", "kawą"] }] }]
+                                "endings": [{ "form": "kawę", "base": "kawa", "wrong": ["kawy", "kawą"] }],
+                                "grammar": ["accusative", "politeness", "person-1sg"] }]
             }),
         );
         let tiles = serde_json::from_value(tiles["_action"]["lessonId"].clone()).unwrap();
@@ -3471,7 +3490,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             &mut conn,
             "create_drill_lesson",
             serde_json::json!({ "title": "Pairs", "format": "words", "complexity": "low", "course_id": basics,
-                "words": [{ "pl": "być", "en": "to be", "pos": "v", "near": { "pl": "bić", "en": "to beat" } }] }),
+                "words": [{ "pl": "być", "en": "to be", "pos": "v", "near": { "pl": "bić", "en": "to beat" }, "grammar": ["byc", "infinitive"] }] }),
         );
         let pairs = serde_json::from_value(pairs["_action"]["lessonId"].clone()).unwrap();
         exercises.extend(session::build_lesson(&mut conn, pairs).unwrap().exercises);
@@ -3507,6 +3526,42 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             assert!(exercises.iter().any(|e| e.kind == kind), "a {kind} card");
         }
         write("Exercise.list", &exercises);
+        // Every card that grades writes its answer to the learning log with
+        // its grade (one transaction), mistake and all; a card only read
+        // writes an event instead.
+        let attempts_before: i64 = t::attempts::table.count().get_result(&mut conn).unwrap();
+        let events_before: i64 = t::learning_events::table.count().get_result(&mut conn).unwrap();
+        let (mut graded, mut read) = (0i64, 0i64);
+        let mut kinds_logged = std::collections::HashSet::new();
+        for e in &exercises {
+            let reading = practice::READING_KINDS.contains(&e.kind.as_str());
+            let given = e.options.iter().find(|o| **o != e.answer).cloned().unwrap_or_else(|| "nie wiem".into());
+            practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+                kind: e.kind.clone(), item_kind: e.item_kind.clone(), item_id: e.item_id.clone(), expected: e.answer.clone(), given,
+                options: e.options.clone(), prompt: e.prompt.clone(), pl: e.pl.clone(), run: "shapes".into(),
+                signals: Some(crate::learnlog::Signals { ms_first: Some(900), ms_answer: Some(4200), plays: 2, slow_plays: 1, tries: 1, ..Default::default() }),
+                ..Default::default()
+            }).unwrap();
+            if reading {
+                read += 1;
+            } else {
+                graded += 1;
+                let (exercise, correct, mistake, plays): (String, i64, String, i64) = t::attempts::table
+                    .order(t::attempts::id.desc())
+                    .select((t::attempts::exercise, t::attempts::correct, t::attempts::mistake, t::attempts::plays))
+                    .first(&mut conn).unwrap();
+                assert_eq!((exercise.as_str(), plays), (e.kind.as_str(), 2), "{} logs its answer and signals", e.kind);
+                if correct == 0 && e.kind != "memory" {
+                    assert!(!mistake.is_empty(), "{}: a miss has a class", e.kind);
+                }
+                kinds_logged.insert(e.kind.clone());
+            }
+        }
+        assert_eq!(t::attempts::table.count().get_result::<i64>(&mut conn).unwrap() - attempts_before, graded);
+        assert!(t::learning_events::table.count().get_result::<i64>(&mut conn).unwrap() - events_before >= read);
+        for kind in ["dictation", "soundPair", "sayIt", "dialogueSay", "wordOrder", "sceneFind", "sceneName", "sceneWhere", "storyQuestion"] {
+            assert!(kinds_logged.contains(kind), "{kind} logged");
+        }
         let dictated = exercises.iter().find(|e| e.kind == "dictation").unwrap();
         write(
             "AnswerResult",
@@ -3546,6 +3601,34 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             &["dictation", "sounds", "say"].map(|game| crate::games::deal(&mut conn, game, &mut rand::rng()).unwrap()),
         );
         write("GameFinished", &crate::games::finish(&mut conn, "match", 8, 42_000, 1).unwrap());
+        write("GameAnswered", &crate::games::answer(&mut conn, crate::games::GameAnswer {
+            game: "dictation".into(), item_id: Some(sentences[0].to_string()), expected: "Poproszę kawę.".into(), given: "poprosze kawy".into(), ..Default::default()
+        }).unwrap());
+        // The learning log's pages, on what this test answered.
+        let all_time = crate::analytics::Filter::default();
+        write("Overview", &crate::analytics::overview(&mut conn, &all_time).unwrap());
+        for kind in crate::analytics::HARD_KINDS {
+            let hard = crate::analytics::hard_items(&mut conn, kind, &all_time, 10).unwrap();
+            assert!(!hard.is_empty(), "something {kind} is hard");
+            if *kind == "word" {
+                write("HardItem.list", &hard);
+            }
+        }
+        let met_words = crate::analytics::met_words(&mut conn).unwrap();
+        write("MetWord.list", &met_words);
+        write("MetWordDetail", &crate::analytics::met_word(&mut conn, met_words[0].id).unwrap());
+        write("ItemHistory", &crate::analytics::item_history(&mut conn, &sentence.id.to_string()).unwrap());
+        let structures = crate::analytics::structures(&mut conn, &all_time).unwrap();
+        assert!(structures.tags.iter().any(|t| t.tag.key == "accusative" && t.attempts > 0), "the tagged sentence's answers count");
+        write("Structures", &structures);
+        write("StructureDetail", &crate::analytics::structure(&mut conn, "accusative", &all_time).unwrap());
+        let sounds = crate::analytics::sounds(&mut conn, &all_time).unwrap();
+        assert!(!sounds.is_empty());
+        write("SoundRow.list", &sounds);
+        let page = crate::analytics::mistakes_of(&mut conn, "unknown_word", &all_time, 20).unwrap();
+        write("MistakePage", &page);
+        write("Comparison", &crate::analytics::compare(&mut conn, &crate::analytics::Filter { to_day: Some(today - 1), ..all_time }, &crate::analytics::Filter { from_day: Some(today), ..all_time }).unwrap());
+        write("Activity", &crate::analytics::activity(&mut conn, &all_time).unwrap());
         write("QuickGames", &crate::games::overview(&mut conn).unwrap());
         write("LessonTypeInfo.list", &crate::lesson_types::lesson_types());
         write("Song.list", &songs::list_songs(&mut conn, false).unwrap());
@@ -4129,6 +4212,449 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         assert_eq!(ai::unsay("[[say:m: Dzień dobry]]!"), "Dzień dobry!");
         assert_eq!(ai::unsay("broken [[say: x"), "broken [[say: x");
         assert!(ai::with_say_player("p".into()).contains("[[say:"));
+    }
+
+
+    /// One answer, put in the learning log on a chosen day.
+    #[allow(clippy::too_many_arguments)]
+    fn logged(conn: &mut Conn, day: i64, item_kind: &str, item_id: &str, lesson: LessonId, exercise: &str, correct: bool, given: &str, expected: &str, mistake: &str, detail: &str, contrast: &str) {
+        diesel::insert_into(t::attempts::table)
+            .values((
+                t::attempts::id.eq(AttemptId::new()),
+                t::attempts::at.eq(day * 86_400_000 + 10 * 3_600_000),
+                t::attempts::day.eq(day),
+                t::attempts::device.eq(crate::sync::device_id(conn).unwrap()),
+                t::attempts::item_kind.eq(item_kind),
+                t::attempts::item_id.eq(item_id),
+                t::attempts::lesson_id.eq(Some(lesson)),
+                t::attempts::exercise.eq(exercise),
+                t::attempts::correct.eq(i64::from(correct)),
+                t::attempts::given.eq(given),
+                t::attempts::expected.eq(expected),
+                t::attempts::mistake.eq(mistake),
+                t::attempts::detail.eq(detail),
+                t::attempts::contrast.eq(contrast),
+            ))
+            .execute(conn)
+            .unwrap();
+    }
+
+    #[test]
+    fn grammar_tags_come_with_new_content_and_are_checked() {
+        let mut conn = scratch_db("grammar-tags");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let made = tutor::run_tool_for_test(&mut conn, "create_drill_lesson", serde_json::json!({
+            "title": "Gdzie", "format": "sentences", "complexity": "low", "course_id": basics,
+            "sentences": [{ "pl": "Mieszkam w Krakowie.", "en": "I live in Kraków.", "grammar": ["w-locative", "person-1sg", "w-locative"] }]
+        }));
+        let lesson: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let sentence = session::lesson_sentences(&mut conn, lesson).unwrap().remove(0).0;
+        let links = crate::grammar::all_links(&mut conn).unwrap();
+        assert_eq!(links[&sentence.id.to_string()].len(), 2, "duplicates dropped");
+        // A made-up tag fails the call, by name, and nothing is made.
+        let refused = tutor::run_tool_for_test(&mut conn, "create_drill_lesson", serde_json::json!({
+            "title": "Zle", "format": "words", "complexity": "low", "course_id": basics,
+            "words": [{ "pl": "kot", "en": "cat", "pos": "n-m", "grammar": ["ablative"] }]
+        }));
+        assert!(refused["error"].as_str().unwrap().contains("ablative"), "{refused}");
+        // Existing words: tagged when asked, through the tutor.
+        let before = crate::grammar::untagged_count(&mut conn).unwrap();
+        let listed = tutor::run_tool_for_test(&mut conn, "list_untagged", serde_json::json!({ "course_id": basics, "limit": 3 }));
+        assert_eq!(listed["items"].as_array().unwrap().len(), 3);
+        assert_eq!(listed["total"], before);
+        let id = listed["items"][0]["id"].as_str().unwrap().to_string();
+        let tagged = tutor::run_tool_for_test(&mut conn, "tag_grammar", serde_json::json!({ "items": [{ "id": id, "grammar": ["gender"] }] }));
+        assert_eq!(tagged["still_untagged"], before - 1, "{tagged}");
+        assert!(tagged["_action"]["label"].as_str().unwrap().starts_with("Tagged the grammar"));
+        let wrong = tutor::run_tool_for_test(&mut conn, "tag_grammar", serde_json::json!({ "items": [{ "id": lesson.to_string(), "grammar": ["gender"] }] }));
+        assert!(wrong["error"].is_string(), "a lesson id is not a word or sentence: {wrong}");
+        // The course as the tutor reads it carries ids and tags.
+        let course = tutor::run_tool_for_test(&mut conn, "get_course", serde_json::json!({ "course_id": basics }));
+        assert!(course["sentences"].as_array().unwrap().iter().any(|s| s["grammar"] == serde_json::json!(["w-locative", "person-1sg"]) || s["grammar"] == serde_json::json!(["person-1sg", "w-locative"])));
+        // Deleting the lesson takes its tags (cascade).
+        lessons::delete(&mut conn, lesson).unwrap();
+        assert!(!crate::grammar::all_links(&mut conn).unwrap().contains_key(&sentence.id.to_string()));
+    }
+
+    #[test]
+    fn analytics_on_a_fixed_history() {
+        let mut conn = scratch_db("analytics");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let made = tutor::run_tool_for_test(&mut conn, "create_drill_lesson", serde_json::json!({
+            "title": "Fixed", "format": "words", "complexity": "low", "course_id": basics,
+            "words": [{ "pl": "kot", "en": "cat", "pos": "n-m", "grammar": ["gender"] }, { "pl": "pies", "en": "dog", "pos": "n-m" }],
+            "sentences": [{ "pl": "Mieszkam w Krakowie.", "en": "I live in Kraków.", "grammar": ["w-locative", "person-1sg"] }]
+        }));
+        let lesson: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let words = session::lesson_words(&mut conn, lesson).unwrap();
+        let id = |pl: &str| words.iter().find(|w| w.0.pl == pl).unwrap().0.id.to_string();
+        let (kot, pies) = (id("kot"), id("pies"));
+        let sentence = session::lesson_sentences(&mut conn, lesson).unwrap().remove(0).0.id.to_string();
+        let today = db::today(&mut conn);
+        let set = lesson.to_string();
+        logged(&mut conn, today - 20, "word", &kot, lesson, "type", false, "kto", "kot", "typo", "kot→kto", "");
+        logged(&mut conn, today - 19, "word", &kot, lesson, "type", false, "kota", "kot", "ending", "kot→kota", "");
+        logged(&mut conn, today - 2, "word", &kot, lesson, "type", true, "kot", "kot", "", "", "");
+        logged(&mut conn, today - 1, "word", &kot, lesson, "recognise", true, "cat", "cat", "", "", "");
+        logged(&mut conn, today - 3, "word", &pies, lesson, "type", false, "kot", "pies", "unknown_word", "pies→kot", "");
+        logged(&mut conn, today - 1, "word", &pies, lesson, "type", false, "dom", "pies", "unknown_word", "pies→dom", "");
+        logged(&mut conn, today - 15, "sentence", &sentence, lesson, "wordOrder", false, "Mieszkam w Kraków.", "Mieszkam w Krakowie.", "ending", "Krakowie→Kraków", "");
+        logged(&mut conn, today - 1, "sentence", &sentence, lesson, "wordOrder", true, "Mieszkam w Krakowie.", "Mieszkam w Krakowie.", "", "", "");
+        logged(&mut conn, today - 5, "set", &set, lesson, "soundPair", false, "kasza", "Kasia", "sound_contrast", "si→sz", "sz or ś");
+        logged(&mut conn, today - 4, "set", &set, lesson, "soundPair", true, "kasza", "kasza", "", "sz", "sz or ś");
+        use crate::analytics::{self as a, Filter};
+        let all = Filter::default();
+
+        let o = a::overview(&mut conn, &all).unwrap();
+        assert_eq!((o.attempts, o.correct, o.items, o.days_active), (10, 4, 4, 8));
+        assert!((o.accuracy - 0.4).abs() < 1e-9);
+        let classes: Vec<(&str, i64)> = o.mistakes.iter().map(|c| (c.class.as_str(), c.count)).collect();
+        assert_eq!(classes, [("ending", 2), ("unknown_word", 2), ("sound_contrast", 1), ("typo", 1)]);
+        assert_eq!(o.daily.iter().map(|d| d.attempts).sum::<i64>(), 10);
+        assert_eq!(o.words_met, 2);
+
+        let week = Filter::period(&mut conn, "week", None).unwrap();
+        let w = a::overview(&mut conn, &week).unwrap();
+        assert_eq!((w.attempts, w.correct, w.accuracy_before, w.trend.as_str()), (7, 4, None, "new"), "nothing the week before");
+        let fortnight = a::overview(&mut conn, &Filter { from_day: Some(today - 13), to_day: None, course_id: None }).unwrap();
+        assert_eq!((fortnight.attempts, fortnight.correct), (7, 4));
+        assert_eq!(fortnight.accuracy_before, Some(0.0), "the two weeks before: three misses");
+        assert_eq!(fortnight.trend, "improving");
+
+        let hard = a::hard_items(&mut conn, "word", &all, 10).unwrap();
+        assert_eq!(hard.iter().map(|h| h.title.as_str()).collect::<Vec<_>>(), ["pies", "kot"], "the latest misses weigh most");
+        assert_eq!((hard[0].attempts, hard[0].wrong), (2, 2));
+        assert_eq!(hard[0].last[0].given, "dom", "newest first");
+        let structures = a::hard_items(&mut conn, "structure", &all, 10).unwrap();
+        assert!(structures.iter().any(|s| s.key == "w-locative" && s.attempts == 2 && s.wrong == 1));
+
+        let words = a::met_words(&mut conn).unwrap();
+        let strength = |pl: &str| words.iter().find(|w| w.pl == pl).unwrap().strength;
+        assert_eq!(strength("pies"), a::Strength::Tricky);
+
+        let history = a::item_history(&mut conn, &kot).unwrap();
+        assert_eq!((history.attempts, history.wrong, history.history[0].given.as_str()), (4, 2, "cat"));
+        assert_eq!(history.grammar[0].key, "gender");
+
+        let st = a::structure(&mut conn, "w-locative", &all).unwrap();
+        assert_eq!((st.row.items, st.row.attempts, st.row.correct), (1, 2, 1));
+        assert_eq!(st.mistakes[0].given, "Mieszkam w Kraków.");
+
+        let sounds = a::sounds(&mut conn, &all).unwrap();
+        assert_eq!((sounds[0].label.as_str(), sounds[0].attempts, sounds[0].hits), ("sz or ś", 2, 1));
+        let si = sounds[0].sides.iter().find(|s| s.said == "si").unwrap();
+        assert_eq!((si.attempts, si.missed, si.heard_as.as_str()), (1, 1, "sz"));
+
+        let endings = a::mistakes_of(&mut conn, "ending", &all, 10).unwrap();
+        assert_eq!(endings.count, 2);
+        assert!((endings.share - 2.0 / 6.0).abs() < 1e-9);
+        assert!(a::mistakes_of(&mut conn, "grumpy", &all, 10).is_err());
+
+        let earlier = Filter { from_day: Some(today - 27), to_day: Some(today - 14), course_id: None };
+        let later = Filter { from_day: Some(today - 13), to_day: Some(today), course_id: None };
+        let c = a::compare(&mut conn, &earlier, &later).unwrap();
+        assert_eq!((c.a.attempts, c.b.attempts), (3, 7));
+        assert!(c.improved.iter().any(|x| x.title == "kot" && x.accuracy_a == 0.0 && x.accuracy_b == 1.0), "{:?}", c.improved);
+
+        let act = a::activity(&mut conn, &all).unwrap();
+        assert_eq!(act.by_hour.iter().sum::<i64>(), 10);
+        assert_eq!(act.by_hour[10], 10, "all at ten in the morning (UTC offset 0)");
+        assert_eq!(act.by_weekday.iter().sum::<i64>(), 10);
+
+        // The course filter: another course's answers are left out.
+        let other = db::require_course_id(&mut conn, 2).unwrap();
+        assert_eq!(a::overview(&mut conn, &Filter { course_id: Some(other), ..all }).unwrap().attempts, 0);
+
+        // The tutor's tools, on the same history.
+        let run = |conn: &mut Conn, name: &str, args: serde_json::Value| tutor::run_tool_for_test(conn, name, args);
+        let ov = run(&mut conn, "get_learning_overview", serde_json::json!({ "period": "all" }));
+        assert_eq!((ov["answers"].as_i64(), ov["accuracy_pct"].as_i64()), (Some(10), Some(40)), "{ov}");
+        let hard = run(&mut conn, "find_hard_items", serde_json::json!({ "kind": "word", "limit": 1 }));
+        assert_eq!(hard["items"].as_array().unwrap().len(), 1);
+        assert_eq!(hard["items"][0]["title"], "pies");
+        assert_eq!(hard["items"][0]["latest_misses"][0]["given"], "dom");
+        let item = run(&mut conn, "get_item_history", serde_json::json!({ "item_id": kot }));
+        assert_eq!(item["answers"], 4);
+        let st = run(&mut conn, "get_structure_stats", serde_json::json!({ "tag": "w-locative", "period": "all" }));
+        assert_eq!((st["answers"].as_i64(), st["accuracy_pct"].as_i64()), (Some(2), Some(50)));
+        let m = run(&mut conn, "get_mistakes", serde_json::json!({ "class": "ending", "period": "all" }));
+        assert_eq!((m["count"].as_i64(), m["examples"].as_array().unwrap().len()), (Some(2), 2));
+        let date = |day: i64| { let (y, mo, d) = crate::commands::civil_date(day); format!("{y}-{mo:02}-{d:02}") };
+        let cmp = run(&mut conn, "compare_periods", serde_json::json!({ "a_from": date(today - 27), "a_to": date(today - 14), "b_from": date(today - 13), "b_to": date(today) }));
+        assert_eq!((cmp["a"]["answers"].as_i64(), cmp["b"]["answers"].as_i64()), (Some(3), Some(7)), "{cmp}");
+        let defaulted = run(&mut conn, "compare_periods", serde_json::json!({}));
+        assert_eq!(defaulted["b"]["answers"], 7, "the last 14 days by default");
+        let act = run(&mut conn, "get_activity", serde_json::json!({ "period": "all" }));
+        assert_eq!(act["answers"], 10);
+        let bad = run(&mut conn, "find_hard_items", serde_json::json!({ "kind": "verb" }));
+        assert!(bad["error"].is_string());
+        let bad = run(&mut conn, "get_learning_overview", serde_json::json!({ "period": "decade" }));
+        assert!(bad["error"].as_str().unwrap().contains("decade"));
+    }
+
+    #[test]
+    fn games_and_check_ins_write_to_the_log() {
+        let mut conn = scratch_db("log-games");
+        let sentence: SentenceId = t::sentences::table.select(t::sentences::id).first(&mut conn).unwrap();
+        let heard = crate::games::answer(&mut conn, crate::games::GameAnswer {
+            game: "say".into(), item_id: Some(sentence.to_string()), expected: "Chcę żyć.".into(), given: "chcę szyć".into(), ..Default::default()
+        }).unwrap();
+        assert!(!heard.correct);
+        let pair = crate::sounds::built_in().remove(0);
+        crate::games::answer(&mut conn, crate::games::GameAnswer {
+            game: "sounds".into(), item_id: pair.id.map(|i| i.to_string()), expected: pair.b.clone(), given: pair.a.clone(),
+            options: vec![pair.a.clone(), pair.b.clone()], ..Default::default()
+        }).unwrap();
+        assert!(crate::games::answer(&mut conn, crate::games::GameAnswer { game: "flip".into(), ..Default::default() }).is_err());
+        let rows: Vec<(String, String, String, String)> = t::attempts::table.order(t::attempts::id)
+            .select((t::attempts::exercise, t::attempts::item_kind, t::attempts::mistake, t::attempts::contrast)).load(&mut conn).unwrap();
+        assert_eq!(rows[0], ("game:say".into(), "sentence".into(), "sound_contrast".into(), "ż or sz".into()));
+        assert_eq!((rows[1].0.as_str(), rows[1].1.as_str(), rows[1].2.as_str(), rows[1].3.as_str()), ("game:sounds", "sound", "sound_contrast", "sz or ś"));
+
+        // A check-in's verdict: one answer for it, one per slip the examiner noted.
+        let lesson = starter_lesson(&mut conn);
+        let checkin = CheckinId::new();
+        diesel::insert_into(t::checkins::table)
+            .values((t::checkins::id.eq(checkin), t::checkins::lesson_id.eq(lesson.id), t::checkins::started_at.eq(0)))
+            .execute(&mut conn).unwrap();
+        let verdict: crate::examiner::Assessment = serde_json::from_value(serde_json::json!({
+            "result": "partial", "summary": "Close.",
+            "mistakes": [{ "said": "Idę do sklep", "correct": "Idę do sklepu", "grammar": ["do-genitive", "made-up"], "note": "do takes the genitive" }]
+        })).unwrap();
+        crate::examiner::record(&mut conn, checkin, verdict).unwrap();
+        let logged: Vec<(String, i64, String, String)> = t::attempts::table.filter(t::attempts::run.eq(checkin.to_string())).order(t::attempts::id)
+            .select((t::attempts::exercise, t::attempts::correct, t::attempts::mistake, t::attempts::details)).load(&mut conn).unwrap();
+        assert_eq!(logged.len(), 2);
+        assert_eq!((logged[0].0.as_str(), logged[0].1), ("checkin", 0));
+        assert_eq!((logged[1].0.as_str(), logged[1].2.as_str()), ("checkinMistake", "ending"));
+        assert_eq!(crate::learnlog::read_details(&logged[1].3).grammar, ["do-genitive"], "an unknown tag dropped");
+        // The structure counts the slip.
+        let st = crate::analytics::structure(&mut conn, "do-genitive", &crate::analytics::Filter::default()).unwrap();
+        assert_eq!((st.row.attempts, st.mistakes.len()), (1, 1));
+    }
+
+    #[test]
+    fn logging_a_long_session_stays_fast() {
+        let mut conn = scratch_db("log-speed");
+        let ids: Vec<WordId> = t::words::table.select(t::words::id).limit(50).load(&mut conn).unwrap();
+        let started = std::time::Instant::now();
+        for i in 0..400 {
+            let id = ids[i % ids.len()];
+            practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+                kind: "type".into(), item_kind: "word".into(), item_id: id.to_string(), expected: "kawę".into(),
+                given: if i % 3 == 0 { "kawy".into() } else { "kawę".into() }, run: "long".into(),
+                signals: Some(crate::learnlog::Signals { ms_answer: Some(3000), ..Default::default() }), ..Default::default()
+            }).unwrap();
+        }
+        let answers = started.elapsed();
+        let events: Vec<crate::learnlog::EventIn> = (0..200)
+            .map(|i| crate::learnlog::EventIn { kind: "audio_played".into(), item_id: ids[i % ids.len()].to_string(), item_kind: "word".into(), ..Default::default() })
+            .collect();
+        let started = std::time::Instant::now();
+        assert_eq!(crate::learnlog::log_events(&mut conn, events).unwrap(), 200);
+        let batch = started.elapsed();
+        assert_eq!(t::attempts::table.count().get_result::<i64>(&mut conn).unwrap(), 400);
+        // Generous bounds for a debug build on a slow machine: each answer
+        // (grade, schedule, XP and its log row) in one short transaction,
+        // and a batch of events in one.
+        assert!(answers < std::time::Duration::from_secs(20), "400 answers took {answers:?}");
+        assert!(batch < std::time::Duration::from_secs(2), "200 events took {batch:?}");
+        // The pages read the long history quickly too.
+        let started = std::time::Instant::now();
+        crate::analytics::overview(&mut conn, &crate::analytics::Filter::default()).unwrap();
+        crate::analytics::met_words(&mut conn).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(3), "{:?}", started.elapsed());
+    }
+
+
+    /// Not a test: a realistic learning history (a few hundred answers over
+    /// eleven weeks, with every kind of mistake, classified as the app
+    /// classifies them), and what the insights pages read from it, written
+    /// as JSON for the preview harness. `PREVIEW_OUT=dir cargo test preview_history -- --ignored`.
+    #[test]
+    #[ignore]
+    fn preview_history() {
+        use rand::{Rng, SeedableRng};
+        use crate::analytics::{self as a, Filter};
+        let out = std::path::PathBuf::from(std::env::var("PREVIEW_OUT").expect("PREVIEW_OUT"));
+        std::fs::create_dir_all(&out).unwrap();
+        let write = |name: &str, value: &dyn erased_preview::Shape| std::fs::write(out.join(format!("{name}.json")), value.json()).unwrap();
+        mod erased_preview {
+            pub trait Shape { fn json(&self) -> String; }
+            impl<T: serde::Serialize> Shape for T { fn json(&self) -> String { serde_json::to_string(self).unwrap() } }
+        }
+        let mut conn = scratch_db("preview-history");
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let today = db::today(&mut conn);
+        let device = crate::sync::device_id(&mut conn).unwrap();
+        let courses: Vec<CourseId> = (1..=4).map(|o| db::require_course_id(&mut conn, o).unwrap()).collect();
+        let mut words: Vec<(WordId, String, String, String, LessonId)> = Vec::new();
+        for c in &courses {
+            let mut some: Vec<(WordId, String, String, String, LessonId)> = t::course_words::table.filter(t::course_words::course_id.eq(*c))
+                .select((t::course_words::id, t::course_words::pl, t::course_words::en, t::course_words::pos, t::course_words::lesson_id))
+                .limit(18).load(&mut conn).unwrap();
+            words.append(&mut some);
+        }
+        let sentences: Vec<(SentenceId, String, String, LessonId)> = t::course_sentences::table.filter(t::course_sentences::course_id.eq_any(&courses))
+            .select((t::course_sentences::id, t::course_sentences::pl, t::course_sentences::en, t::course_sentences::lesson_id))
+            .limit(30).load(&mut conn).unwrap();
+        // Grammar tags, as the tutor would give them.
+        let tag = |keys: &[&str]| crate::grammar::validate(&keys.iter().map(|k| k.to_string()).collect::<Vec<_>>()).unwrap();
+        for (i, (id, pl, _, pos, _)) in words.iter().enumerate() {
+            let keys: Vec<&str> = match pos.as_str() {
+                p if p.starts_with("n-") => if i % 3 == 0 { vec!["gender", "plural"] } else { vec!["gender"] },
+                "v" => if pl.ends_with("ć") { vec!["infinitive", "aspect-pair"] } else { vec!["present", "person-1sg"] },
+                "adj" => vec!["adjective-agreement"],
+                "num" => vec!["numbers"],
+                "prep" => vec!["w-locative"],
+                _ => if pl.contains("się") { vec!["reflexive"] } else { vec!["politeness"] },
+            };
+            crate::grammar::set_word(&mut conn, *id, &tag(&keys)).unwrap();
+        }
+        for (id, pl, _, _) in &sentences {
+            let low = format!(" {} ", pl.to_lowercase());
+            let mut keys = vec![];
+            if low.contains(" w ") { keys.push("w-locative"); }
+            if low.contains(" do ") { keys.push("do-genitive"); }
+            if low.contains(" z ") { keys.push("z-instrumental"); }
+            if low.contains(" nie ") { keys.push("negation"); keys.push("negation-genitive"); }
+            if low.contains("?") { keys.push("question-words"); }
+            if low.contains("ę ") { keys.push("accusative"); }
+            if low.contains("się") { keys.push("reflexive"); }
+            if keys.is_empty() { keys.push("present"); }
+            crate::grammar::set_sentence(&mut conn, *id, &tag(&keys)).unwrap();
+        }
+        // How hard each thing is, and how much better it gets over the weeks.
+        let hardness: Vec<f64> = words.iter().map(|_| rng.random_range(0.04..0.55)).collect();
+        let fold = |w: &str| w.chars().map(|c| match c { 'ą' => 'a', 'ę' => 'e', 'ł' => 'l', 'ś' => 's', 'ć' => 'c', 'ż' | 'ź' => 'z', 'ó' => 'o', 'ń' => 'n', x => x }).collect::<String>();
+        let ending = |w: &str, r: u32| { let mut c: Vec<char> = w.chars().collect(); if let Some(l) = c.last_mut() { *l = ['ę', 'y', 'ą', 'e', 'u'][usize::try_from(r % 5).unwrap()]; } c.into_iter().collect::<String>() };
+        let typo = |w: &str| { let mut c: Vec<char> = w.chars().collect(); if c.len() > 3 { c.swap(1, 2); } c.into_iter().collect::<String>() };
+        let sound = |w: &str| { for (a, b) in [("sz", "ś"), ("ż", "sz"), ("ę", "e"), ("y", "i"), ("ł", "l"), ("cz", "ć"), ("rz", "r")] { if w.contains(a) { return Some(w.replacen(a, b, 1)); } } None };
+        let put = |conn: &mut Conn, day: i64, ms: i64, kind: &str, id: &str, lesson: LessonId, exercise: &str, run: &str, given: &str, expected: &str, correct: bool, diff: &[crate::dictation::DiffWord], options: &[String], prompt: &str, pl: &str| {
+            let mistake = crate::mistakes::classify(&crate::mistakes::Graded { exercise, expected, given, correct, diff, options, prompt, pl, endings: &[] });
+            let signals = crate::learnlog::Signals { ms_first: Some(ms / 3), ms_answer: Some(ms), plays: i64::from(ms > 6000), ..Default::default() };
+            let at_id = crate::learnlog::write_attempt(conn, &crate::learnlog::NewAttempt {
+                item_kind: kind, item_id: id, lesson_id: Some(lesson), exercise, run, correct, given, expected, mistake: &mistake, signals: &signals, options, grammar: vec![], note: String::new(),
+            }).unwrap();
+            let hour = [8, 8, 12, 13, 19, 20, 21, 21, 22][usize::try_from(day.unsigned_abs() % 9).unwrap()];
+            diesel::update(t::attempts::table.find(at_id)).set((t::attempts::day.eq(day), t::attempts::at.eq(day * 86_400_000 + hour * 3_600_000 + ms))).execute(conn).unwrap();
+        };
+        let pairs = crate::sounds::built_in();
+        for back in (0..77).rev() {
+            let day = today - back;
+            if rng.random_bool(0.28) { continue; }
+            let progress = 1.0 - crate::convert::real(back) / 110.0;
+            let lesson = words[rng.random_range(0..words.len())].4;
+            let run = format!("{lesson}-{day}");
+            let cards = rng.random_range(8..16);
+            let mut answered = 0;
+            let mut right = 0;
+            for _ in 0..cards {
+                let n = rng.random_range(0..words.len());
+                let (id, pl, en, _, lesson) = &words[n];
+                let wrong = rng.random_bool((hardness[n] * (1.3 - progress)).clamp(0.02, 0.9));
+                let ms = rng.random_range(1800..9000);
+                let roll: u32 = rng.random_range(0..10);
+                let (exercise, expected, given) = if roll < 3 {
+                    let other = &words[rng.random_range(0..words.len())].2;
+                    ("recognise", en.clone(), if wrong { other.clone() } else { en.clone() })
+                } else {
+                    let kind = if roll < 7 { "type" } else { "produce" };
+                    let given = if !wrong {
+                        if kind == "type" && rng.random_bool(0.25) { fold(pl) } else { pl.clone() }
+                    } else {
+                        match rng.random_range(0..6) {
+                            0 | 1 => ending(pl, rng.random()),
+                            2 => typo(pl),
+                            3 => sound(pl).unwrap_or_else(|| typo(pl)),
+                            4 if kind == "type" => format!("{}x", fold(pl)),
+                            _ => words[rng.random_range(0..words.len())].1.clone(),
+                        }
+                    };
+                    (kind, pl.clone(), given)
+                };
+                let correct = if exercise == "recognise" { given == expected } else { crate::practice::normalize(&given) == crate::practice::normalize(&expected) };
+                put(&mut conn, day, ms, "word", &id.to_string(), *lesson, exercise, &run, &given, &expected, correct, &[], &[], "", "");
+                answered += 1;
+                right += i64::from(correct);
+            }
+            for _ in 0..rng.random_range(1..4) {
+                let (id, pl, _, lesson) = &sentences[rng.random_range(0..sentences.len())];
+                let ws: Vec<&str> = pl.split_whitespace().collect();
+                let wrong = rng.random_bool((0.45 * (1.25 - progress)).clamp(0.05, 0.8));
+                let given = if !wrong { pl.clone() } else if ws.len() > 2 && rng.random_bool(0.5) {
+                    let mut v = ws.clone(); v.swap(0, 1); v.join(" ")
+                } else {
+                    let mut v: Vec<String> = ws.iter().map(|w| w.to_string()).collect();
+                    let k = v.len() / 2; v[k] = ending(&v[k], rng.random()); v.join(" ")
+                };
+                if rng.random_bool(0.5) {
+                    let checked = crate::dictation::check(pl, &given);
+                    put(&mut conn, day, 9000, "sentence", &id.to_string(), *lesson, "dictation", &run, &given, pl, checked.correct, &checked.words, &[], "", "");
+                    right += i64::from(checked.correct);
+                } else {
+                    let correct = crate::tiles::fold(pl) == crate::tiles::fold(&given);
+                    put(&mut conn, day, 7000, "sentence", &id.to_string(), *lesson, "wordOrder", &run, &given, pl, correct, &[], &[], "", "");
+                    right += i64::from(correct);
+                }
+                answered += 1;
+            }
+            for _ in 0..rng.random_range(0..3) {
+                let pair = &pairs[rng.random_range(0..pairs.len())];
+                let hard = pair.label.contains('ś') || pair.label.contains('ę');
+                let said = if rng.random_bool(0.5) { &pair.a } else { &pair.b };
+                let other = if said == &pair.a { &pair.b } else { &pair.a };
+                let wrong = rng.random_bool(if hard { 0.45 } else { 0.15 });
+                let given = if wrong { other } else { said };
+                put(&mut conn, day, 2500, "set", &lesson.to_string(), lesson, "soundPair", &run, given, said, !wrong, &[], &[pair.a.clone(), pair.b.clone()], "", "");
+                answered += 1;
+            }
+            if back % 5 == 0 {
+                let (right_p, wrong_p) = [("pod stołem", "na stole"), ("za domem", "przed domem"), ("w szafie", "na szafie")][usize::try_from(back % 3).unwrap()];
+                let wrong = rng.random_bool(0.4);
+                put(&mut conn, day, 5000, "set", &lesson.to_string(), lesson, "sceneWhere", &run, if wrong { wrong_p } else { right_p }, right_p, !wrong, &[], &[right_p.into(), wrong_p.into()], "", "");
+                let (id, pl, _, lesson) = &sentences[usize::try_from(back).unwrap() % sentences.len()];
+                let heard = if rng.random_bool(0.5) { sound(pl).unwrap_or_else(|| pl.clone()) } else { pl.clone() };
+                let spoken = crate::speaking::check(pl, &heard);
+                put(&mut conn, day, 6500, "sentence", &id.to_string(), *lesson, "sayIt", &run, &heard, pl, spoken.correct, &spoken.words, &[], "", "");
+            }
+            let ev = |conn: &mut Conn, kind: &str, details: crate::learnlog::EventDetails| {
+                crate::learnlog::write_event(conn, crate::learnlog::EventIn { kind: kind.into(), lesson_id: Some(lesson), run: run.clone(), at: None, details, ..Default::default() }).unwrap();
+            };
+            ev(&mut conn, "lesson_started", crate::learnlog::EventDetails { of_cards: Some(cards), ..Default::default() });
+            if back % 6 == 2 {
+                ev(&mut conn, "lesson_left", crate::learnlog::EventDetails { at_card: Some(cards / 2), of_cards: Some(cards), ..Default::default() });
+            } else {
+                ev(&mut conn, "lesson_finished", crate::learnlog::EventDetails { answered: Some(answered), correct: Some(right), ..Default::default() });
+            }
+            // Events are written "now": moved to the day they belong to.
+            conn.batch_execute(&format!("UPDATE learning_events SET day = {day}, at = {} WHERE run = '{run}'", day * 86_400_000 + 20 * 3_600_000)).unwrap();
+            diesel::insert_into(t::day_log::table)
+                .values((t::day_log::day.eq(day), t::day_log::device.eq(device), t::day_log::xp.eq(answered * 6), t::day_log::answered.eq(answered), t::day_log::correct.eq(right), t::day_log::minutes.eq(answered / 2 + 3)))
+                .on_conflict((t::day_log::day, t::day_log::device)).do_nothing().execute(&mut conn).unwrap();
+        }
+        let all = Filter::default();
+        let month = Filter { from_day: Some(today - 29), to_day: None, course_id: None };
+        let n: i64 = t::attempts::table.count().get_result(&mut conn).unwrap();
+        println!("{n} attempts");
+        write("analytics_overview", &a::overview(&mut conn, &month).unwrap());
+        write("analytics_overview_all", &a::overview(&mut conn, &all).unwrap());
+        for kind in a::HARD_KINDS {
+            write(&format!("analytics_hard_{kind}"), &a::hard_items(&mut conn, kind, &month, 40).unwrap());
+        }
+        let met = a::met_words(&mut conn).unwrap();
+        write("met_words_list", &met);
+        write("met_word_detail", &a::met_word(&mut conn, met[0].id).unwrap());
+        let structures = a::structures(&mut conn, &month).unwrap();
+        write("met_structures", &structures);
+        write("met_structure", &a::structure(&mut conn, &structures.tags[0].tag.key, &month).unwrap());
+        write("met_sounds", &a::sounds(&mut conn, &month).unwrap());
+        let overview = a::overview(&mut conn, &month).unwrap();
+        write("analytics_mistakes", &a::mistakes_of(&mut conn, &overview.mistakes[0].class, &month, 40).unwrap());
+        write("analytics_compare", &a::compare(&mut conn, &Filter { from_day: Some(today - 13), to_day: Some(today - 7), course_id: None }, &Filter { from_day: Some(today - 6), to_day: Some(today), course_id: None }).unwrap());
+        write("analytics_activity", &a::activity(&mut conn, &month).unwrap());
+        write("analytics_item", &a::item_history(&mut conn, &met[0].id.to_string()).unwrap());
+        write("today", &today);
     }
 
 }

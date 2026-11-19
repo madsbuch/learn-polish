@@ -294,6 +294,15 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
     let moves = moves.max(0);
     let today = db::today(conn);
     conn.transaction::<_, Error, _>(|conn| {
+        crate::learnlog::note(
+            conn,
+            "game_finished",
+            "",
+            "",
+            None,
+            "",
+            crate::learnlog::EventDetails { game: Some(game.into()), ms: Some(ms), answered: Some(pairs), ..Default::default() },
+        )?;
         let earned = xp_on(conn, today)?;
         let xp = GAME_XP.min(GAME_XP_PER_DAY - earned).max(0);
         let (previous_ms, previous_moves, record) = if scored(game) {
@@ -356,6 +365,94 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
             level: crate::stats::level_from_xp(total_xp),
         })
     })
+}
+
+/// One answer in a quick game that grades its answers (Dictation, Sound
+/// pairs, Say it): graded here, like a lesson's, and written to the
+/// learning log with its mistake (no XP or schedule: the game's XP comes
+/// when it ends).
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameAnswer {
+    pub game: String,
+    /// The sentence (Dictation, Say it) or the built-in sound pair.
+    #[serde(default)]
+    pub item_id: Option<String>,
+    pub expected: String,
+    /// What was typed, picked or heard (a transcript).
+    pub given: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub run: String,
+    #[serde(default)]
+    pub signals: Option<crate::learnlog::Signals>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameAnswered {
+    pub correct: bool,
+    pub words: Vec<crate::dictation::DiffWord>,
+    pub tips: Vec<crate::sounds::SoundTip>,
+}
+
+pub fn answer(conn: &mut Conn, a: GameAnswer) -> Result<GameAnswered> {
+    let (correct, words, tips) = match a.game.as_str() {
+        "dictation" => {
+            let checked = crate::dictation::check(&a.expected, &a.given);
+            (checked.correct, checked.words, vec![])
+        }
+        "sounds" => (a.expected.trim().to_lowercase() == a.given.trim().to_lowercase(), vec![], vec![]),
+        "say" => {
+            let spoken = crate::speaking::check(&a.expected, &a.given);
+            (spoken.correct, spoken.words, spoken.tips)
+        }
+        other => return Err(Error::msg(format!("The game '{other}' does not grade answers."))),
+    };
+    let exercise = format!("{RUN_PREFIX}{}", a.game);
+    let item_id = a.item_id.unwrap_or_default();
+    let item_kind = match crate::ids::kind_of(&item_id) {
+        Some("sentence") => "sentence",
+        Some("sound pair") => "sound",
+        _ => "set",
+    };
+    let mistake = crate::mistakes::classify(&crate::mistakes::Graded {
+        exercise: &exercise,
+        expected: &a.expected,
+        given: &a.given,
+        correct,
+        diff: &words,
+        options: &a.options,
+        ..Default::default()
+    });
+    let signals = a.signals.unwrap_or_default();
+    conn.transaction::<_, Error, _>(|conn| {
+        crate::learnlog::write_attempt(
+            conn,
+            &crate::learnlog::NewAttempt {
+                item_kind,
+                item_id: if item_kind == "set" { "" } else { &item_id },
+                lesson_id: None,
+                exercise: &exercise,
+                run: &a.run,
+                correct,
+                given: &a.given,
+                expected: &a.expected,
+                mistake: &mistake,
+                signals: &signals,
+                options: &a.options,
+                grammar: vec![],
+                note: String::new(),
+            },
+        )
+    })?;
+    Ok(GameAnswered { correct, words, tips })
+}
+
+#[tauri::command]
+pub async fn quick_game_answer(db: State<'_, Db>, answer: GameAnswer) -> Result<GameAnswered> {
+    self::answer(&mut db.lock(), answer)
 }
 
 #[tauri::command]
