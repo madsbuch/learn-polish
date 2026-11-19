@@ -119,6 +119,7 @@ pub(crate) fn word_intro(w: &WordRow) -> Exercise {
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -145,6 +146,7 @@ pub(crate) fn typing(w: &WordRow) -> Exercise {
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -171,6 +173,7 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
     }
@@ -303,6 +306,7 @@ pub(crate) fn dialogue_read(lesson_id: LessonId, course: &Course) -> Exercise {
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
         pl: course.title_pl.clone(),
         meaning: course.summary.clone(),
     }
@@ -413,6 +417,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: LessonId,
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     })
 }
 
@@ -472,6 +477,7 @@ pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rn
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -498,6 +504,7 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -533,6 +540,7 @@ pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     }
 }
 
@@ -562,6 +570,7 @@ pub(crate) fn dictation(s: &SentenceRow) -> Exercise {
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     }
 }
 
@@ -641,6 +650,7 @@ pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], lesson_id: LessonId,
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     })
 }
 
@@ -695,6 +705,7 @@ pub(crate) fn dialogue_gaps(
                 scene: None,
                 story: None,
                 reply: None,
+                explanation: String::new(),
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
@@ -787,6 +798,7 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rn
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     })
 }
 
@@ -918,6 +930,7 @@ pub(crate) fn gap_fill(
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     }))
 }
 

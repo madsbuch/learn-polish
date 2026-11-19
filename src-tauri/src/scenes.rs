@@ -39,6 +39,58 @@ pub const MAX_STATEMENTS: usize = 6;
 /// The prepositions whose sentences can be checked against the boxes (see
 /// [`holds`]): a sentence the picture does not bear out is never asked.
 pub const PREPOSITIONS: &[&str] = &["pod", "na", "nad", "obok", "przy", "w"];
+
+/// What a place preposition means, and the case it takes when it says
+/// where something is (with the endings to look for), for explaining a
+/// "Where is it?" answer. Prepositions the tutor may use only in wrong
+/// phrases ("za", "przed") are here too, so those can be explained as well.
+pub fn preposition_meaning(word: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    Some(match word {
+        "pod" => ("under", "instrumental", "-em, -ą, -ami"),
+        "nad" => ("above", "instrumental", "-em, -ą, -ami"),
+        "za" => ("behind", "instrumental", "-em, -ą, -ami"),
+        "przed" => ("in front of", "instrumental", "-em, -ą, -ami"),
+        "na" => ("on", "locative", "-e, -u, -ach"),
+        "w" | "we" => ("in", "locative", "-e, -u, -ach"),
+        "przy" => ("by", "locative", "-e, -u, -ach"),
+        "obok" => ("next to", "genitive", "-a, -u, -y, -i"),
+        _ => return None,
+    })
+}
+
+/// Why a "Where is it?" answer is what it is, in plain English: what the
+/// preposition said means, what the picture shows instead, and — when the
+/// two take different cases — why the ending changes with it. `shown` is
+/// the place as the card said it (the right phrase, or a wrong one).
+pub fn explain_place(statement: &Statement, shown: &str) -> String {
+    let first = |phrase: &str| phrase.split_whitespace().next().unwrap_or("").to_lowercase();
+    let last = |phrase: &str| phrase.split_whitespace().last().unwrap_or("").to_string();
+    let right = statement.phrase.as_str();
+    let Some((means, case, endings)) = preposition_meaning(&first(right)) else {
+        return format!("In the picture: “{right}” — {}.", statement.en.trim_end_matches('.'));
+    };
+    let truth = format!("In the picture it's “{right}”: {} means {means}.", first(right));
+    if shown.trim().eq_ignore_ascii_case(right.trim()) {
+        return format!("{truth} {} takes the {case} here ({endings}): {}.", first(right), last(right));
+    }
+    match preposition_meaning(&first(shown)) {
+        Some((wrong_means, wrong_case, wrong_endings)) => {
+            let ending = if wrong_case == case {
+                format!("Both take the {case} ({endings}).")
+            } else {
+                format!(
+                    "The ending changes with it: {} takes the {wrong_case} ({wrong_endings}) — {} — and {} the {case} ({endings}) — {}.",
+                    first(shown),
+                    last(shown),
+                    first(right),
+                    last(right)
+                )
+            };
+            format!("“{shown}” would mean {wrong_means}. {truth} {ending}")
+        }
+        None => format!("“{shown}” doesn't fit the picture. {truth} {} takes the {case} ({endings}).", first(right)),
+    }
+}
 /// The longest side a scene is kept at: sharp on a large screen, a few
 /// hundred kilobytes in the database.
 const SCENE_SIDE: u32 = 1280;
@@ -994,6 +1046,22 @@ mod tests {
         assert!(holds("na", &on, &table) && !holds("na", &under, &table));
         assert!(holds("nad", &lamp, &table) && !holds("nad", &under, &table));
         assert!(holds("obok", &beside, &table) && holds("przy", &beside, &table) && !holds("obok", &on, &table));
+        // A wrong place is explained: what it means, what the picture
+        // shows, and why the ending changes.
+        let statement = Statement {
+            pl: "Statek jest przy nabrzeżu.".into(),
+            en: "The ship is by the waterfront.".into(),
+            subject: WordId::new(),
+            object: WordId::new(),
+            preposition: "przy".into(),
+            phrase: "przy nabrzeżu".into(),
+            wrong: vec!["pod nabrzeżem".into()],
+        };
+        let why = explain_place(&statement, "pod nabrzeżem");
+        assert!(why.contains("would mean under") && why.contains("przy means by"), "{why}");
+        assert!(why.contains("instrumental") && why.contains("nabrzeżem") && why.contains("locative") && why.contains("nabrzeżu"), "{why}");
+        let right = explain_place(&statement, "przy nabrzeżu");
+        assert!(right.contains("przy means by") && right.contains("locative"), "{right}");
         assert!(holds("w", &inside, &table) && !holds("w", &beside, &table));
         assert!(!holds("za", &beside, &table), "a preposition the boxes cannot show is never borne out");
     }

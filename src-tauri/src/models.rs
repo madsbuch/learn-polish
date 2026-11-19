@@ -126,6 +126,10 @@ pub struct Exercise {
     /// A spoken dialogue turn (dialogueSay): the other speaker's answer to
     /// the line, said in their voice once it has been said.
     pub reply: Option<DialogueLine>,
+    /// Why the answer is what it is, shown with the verdict ("Where is it?"
+    /// cards: what the preposition means and why the ending changes); empty
+    /// when there is nothing to explain.
+    pub explanation: String,
 }
 
 /// One sentence with a word taken out of it.

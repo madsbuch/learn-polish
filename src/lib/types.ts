@@ -320,6 +320,8 @@ export const ExerciseSchema = z.object({
   story: StoryCardSchema.nullable(),
   /** A spoken dialogue turn: the other speaker's answer, said once the line is. */
   reply: DialogueLineSchema.nullable(),
+  /** Why the answer is what it is (empty when there is nothing to explain). */
+  explanation: z.string(),
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
 

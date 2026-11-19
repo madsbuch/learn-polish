@@ -278,6 +278,11 @@ export function Session({
               {result.xpGained > 0 ? `  +${result.xpGained} XP` : ""}
             </Text>
             {module.verdictNote?.(exercise, answerState)}
+            {exercise.explanation ? (
+              <Text variant="small" tone="dim" selectable>
+                {exercise.explanation}
+              </Text>
+            ) : null}
             {/* Always show both sides of the pair, whichever direction was asked. */}
             {!result.correct && (exercise.itemKind === "word" || exercise.itemKind === "sentence") ? (
               <WrongAnswerReview

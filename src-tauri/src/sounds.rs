@@ -203,6 +203,7 @@ pub fn exercise(pair: &SoundPair, lesson_id: LessonId, rng: &mut impl rand::Rng)
         scene: None,
         story: None,
         reply: None,
+        explanation: String::new(),
     }
 }
 
