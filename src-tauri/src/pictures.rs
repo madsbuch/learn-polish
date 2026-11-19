@@ -148,8 +148,16 @@ pub fn word_prompt(word: &str, english: &str) -> String {
 /// Shrinks a picture to fit [`WORD_IMAGE_SIDE`] and stores it as JPEG, on
 /// white where it was transparent.
 pub fn shrink(bytes: &[u8]) -> Result<Vec<u8>> {
+    Ok(fit(bytes, WORD_IMAGE_SIDE)?.0)
+}
+
+/// Shrinks a picture to fit a square of `side` pixels (a smaller one is
+/// kept as it is) and returns it as JPEG, on white where it was
+/// transparent, with its width and height.
+pub fn fit(bytes: &[u8], side: u32) -> Result<(Vec<u8>, u32, u32)> {
     let picture = image::load_from_memory(bytes).map_err(|e| Error::msg(format!("Could not read the picture: {e}")))?;
-    let picture = picture.thumbnail(WORD_IMAGE_SIDE, WORD_IMAGE_SIDE).into_rgba8();
+    let picture = if picture.width() > side || picture.height() > side { picture.thumbnail(side, side) } else { picture };
+    let picture = picture.into_rgba8();
     let mut flat = image::RgbImage::new(picture.width(), picture.height());
     for (x, y, pixel) in picture.enumerate_pixels() {
         let [r, g, b, a] = pixel.0;
@@ -160,7 +168,7 @@ pub fn shrink(bytes: &[u8]) -> Result<Vec<u8>> {
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85)
         .encode_image(&flat)
         .map_err(|e| Error::msg(format!("Could not store the picture: {e}")))?;
-    Ok(out)
+    Ok((out, flat.width(), flat.height()))
 }
 
 /// Words being drawn right now, so one is never drawn twice at once.

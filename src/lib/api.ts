@@ -304,6 +304,8 @@ export const api = {
   wordPictureDraw: (wordId: WordId) =>
     call(FileIdSchema, "word_picture_draw", { wordId }),
   wordPictureDelete: (wordId: WordId) => run("word_picture_delete", { wordId }),
+  /** A scene lesson's picture made again: its things found again, or (`redraw`) a new picture. */
+  sceneMake: (lessonId: LessonId, redraw: boolean) => run("scene_make", { lessonId, redraw }),
   coursePictureDelete: (courseId: CourseId) =>
     run("course_picture_delete", { courseId }),
   tutorConversations: () =>

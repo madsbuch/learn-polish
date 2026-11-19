@@ -156,6 +156,11 @@ counting and celebrating.
   slot (FLIP: one-off, ending untransformed). Memory cards turn edge-on to
   their new face. A running clock writes its own digits (no re-render). A
   checked dictation's words land one after another (an entrance, once).
+  A scene (`components/Scene.tsx`) fills the width on a phone and as much
+  of the window as the card leaves on a big screen; its rings settle in
+  (one-off) and change colour and glow only — a right find glows green, a
+  miss shakes softly where it landed, the answer after two misses glows
+  gold.
 - **Sing along** (the lyrics, `FollowLyrics`): a blank is the word in
   transparent ink on a dashed line, so filling it moves nothing; it fills
   by colour with a glow (a shadow), or shows in gold when missed. The

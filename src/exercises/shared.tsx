@@ -29,11 +29,11 @@ function optionState({ exercise, picked, isChecked }: ExerciseProps, option: str
   return "idle";
 }
 
-/** The options of a multiple-choice card, as words. */
-export function Options(props: ExerciseProps) {
-  const { exercise, isChecked, setPicked } = props;
+/** The options of a multiple-choice card, as words (`two`: short ones, two to a row). */
+export function Options(props: ExerciseProps & { two?: boolean }) {
+  const { exercise, isChecked, setPicked, two = false } = props;
   return (
-    <div className="options">
+    <div className={two ? "options options--two" : "options"}>
       {exercise.options.map((option) => (
         <button
           key={option}

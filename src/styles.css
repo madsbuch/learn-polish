@@ -2522,3 +2522,246 @@ button.id-chip {
     pop var(--duration-slow) var(--ease-spring) backwards,
     glow 0.7s var(--ease-out) var(--duration-slow);
 }
+
+/* ------------------------------------------------------------- scenes */
+
+/*
+ * A scene lesson's picture (components/Scene.tsx). It keeps its own shape and
+ * fits its room: the full width on a phone; on a big screen as large as the
+ * window's height allows once the rest of its card (the question, the
+ * answers, the button: --scene-room-…) has its place. Rings sit a little
+ * outside each thing's box and change colour and shadow only; the entrances
+ * and the shake are one-off and end untransformed (DESIGN.md → Motion).
+ */
+.scene {
+  --scene-room: var(--scene-room-find);
+  --scene-width: min(100%, max(240px, calc((var(--app-height, 100dvh) - var(--scene-room)) * var(--scene-aspect, 1.3333))));
+  width: var(--scene-width);
+  margin-inline: auto;
+}
+.scene[data-fit="explore"] {
+  --scene-room: var(--scene-room-explore);
+}
+.scene[data-fit="choose"] {
+  --scene-room: var(--scene-room-choose);
+}
+.scene[data-fit="where"] {
+  --scene-room: var(--scene-room-where);
+}
+.scene[data-fit="page"] {
+  --scene-room: var(--scene-room-page);
+}
+.scene-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--scene-ratio, 4 / 3);
+  border-radius: var(--radius-xl);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--card-shadow);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.scene-frame[data-interactive="true"] {
+  cursor: pointer;
+}
+.scene-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--ease-out);
+}
+.scene-frame[data-loaded="true"] img {
+  opacity: 1;
+}
+.scene-frame--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  text-align: center;
+  background: var(--surface);
+}
+.scene-spot {
+  position: absolute;
+  pointer-events: none;
+}
+.scene-ring {
+  position: absolute;
+  inset: calc(var(--space-1) * -1);
+  padding: 0;
+  border-radius: var(--radius-md);
+  border: 3px solid transparent;
+  background: transparent;
+  pointer-events: none;
+  transition:
+    border-color var(--duration) var(--ease-out),
+    box-shadow var(--duration-slow) var(--ease-out),
+    background-color var(--duration) var(--ease-out);
+}
+.scene-ring:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+/* Tap me: every thing, faintly, while exploring. */
+.scene-ring[data-state="faint"] {
+  border: 2px dashed var(--scene-ring-faint);
+  box-shadow: 0 0 0 1px var(--scene-ring-edge);
+}
+/* This one: the thing to name, the two a sentence is about. */
+.scene-ring[data-state="lit"] {
+  border-color: var(--brand);
+  background-color: var(--scene-ring-fill);
+  box-shadow:
+    0 0 0 1px var(--scene-ring-edge),
+    0 0 0 6px var(--glow-brand);
+  animation: ring-in var(--duration-slow) var(--ease-spring) backwards;
+}
+/* Tapped while exploring: heard, and labelled. */
+.scene-ring[data-state="picked"] {
+  border-color: var(--scene-ring-faint);
+  background-color: var(--scene-ring-fill);
+  box-shadow:
+    0 0 0 1px var(--scene-ring-edge),
+    0 0 0 6px var(--glow-brand);
+}
+.scene-ring[data-state="right"] {
+  --glow-colour: var(--glow-ok);
+  border-color: var(--ok);
+  background-color: var(--scene-ring-fill);
+  box-shadow: 0 0 0 1px var(--scene-ring-edge);
+  animation:
+    ring-in var(--duration-slow) var(--ease-spring) backwards,
+    glow var(--duration-celebrate) var(--ease-out) var(--duration-fast);
+}
+.scene-ring[data-state="wrong"] {
+  border-color: var(--bad);
+  box-shadow: 0 0 0 1px var(--scene-ring-edge);
+  animation: shake var(--duration-slow) var(--ease-out);
+}
+/* The answer, shown after two misses. */
+.scene-ring[data-state="shown"] {
+  --glow-colour: var(--glow-gold);
+  border-color: var(--gold);
+  background-color: var(--scene-ring-fill);
+  box-shadow: 0 0 0 1px var(--scene-ring-edge);
+  animation:
+    ring-in var(--duration-slow) var(--ease-spring) backwards,
+    glow var(--duration-celebrate) var(--ease-out) var(--duration-fast);
+}
+@keyframes ring-in {
+  from {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+.scene-label {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--space-2));
+  translate: -50% 0;
+  z-index: var(--z-raised);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--scene-label-bg);
+  color: var(--scene-label-ink);
+  font-size: var(--font-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.scene-label--below {
+  bottom: auto;
+  top: calc(100% + var(--space-2));
+}
+.scene-label--start {
+  left: 0;
+  translate: none;
+}
+.scene-label--end {
+  left: auto;
+  right: 0;
+  translate: none;
+}
+.scene-label small {
+  font-weight: var(--weight-regular);
+  opacity: 0.8;
+  margin-left: var(--space-1);
+  font-size: var(--font-caption);
+}
+/* A tap that found nothing: a ring where the finger was, that shakes and fades. */
+.scene-miss {
+  position: absolute;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  margin: calc(var(--control-sm) / -2) 0 0 calc(var(--control-sm) / -2);
+  border-radius: var(--radius-full);
+  border: 3px solid var(--bad);
+  box-shadow: 0 0 0 1px var(--scene-ring-edge);
+  pointer-events: none;
+  opacity: 0;
+  animation: scene-miss var(--duration-celebrate) var(--ease-out);
+}
+@keyframes scene-miss {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  35% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(-2px);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.scene-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.options--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* A scene card on a big screen: the picture takes the room it can; the
+   question, answers and button keep to the reading width beneath it. */
+.session--wide {
+  max-width: calc(var(--split-page-width) + var(--gutter) * 2 + var(--safe-left) + var(--safe-right));
+}
+.session--wide .session-body > *,
+.session--wide .session-foot > * {
+  width: 100%;
+  max-width: var(--reading-width);
+  margin-inline: auto;
+}
+.session--wide .session-body > .scene {
+  width: var(--scene-width);
+  max-width: none;
+}
+/* A scene on its lesson's page: the header, across the page. */
+.scene-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}

@@ -116,6 +116,7 @@ pub(crate) fn word_intro(w: &WordRow) -> Exercise {
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -139,6 +140,7 @@ pub(crate) fn typing(w: &WordRow) -> Exercise {
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -162,6 +164,7 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
     }
@@ -291,6 +294,7 @@ pub(crate) fn dialogue_read(lesson_id: LessonId, course: &Course) -> Exercise {
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
         pl: course.title_pl.clone(),
         meaning: course.summary.clone(),
     }
@@ -398,6 +402,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: LessonId,
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
     })
 }
 
@@ -454,6 +459,7 @@ pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rn
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -477,6 +483,7 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -509,6 +516,7 @@ pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
         image: None,
         option_images: vec![],
         context: vec![],
+        scene: None,
     }
 }
 
@@ -535,6 +543,7 @@ pub(crate) fn dictation(s: &SentenceRow) -> Exercise {
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
     }
 }
 
@@ -568,6 +577,7 @@ pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], lesson_id: LessonId,
         option_images: vec![],
         context: vec![(*line).clone()],
         endings: vec![],
+        scene: None,
     })
 }
 
@@ -619,6 +629,7 @@ pub(crate) fn dialogue_gaps(
                 option_images: vec![],
                 context: dialogue[i.saturating_sub(DIALOGUE_CONTEXT)..i].to_vec(),
                 endings: vec![],
+                scene: None,
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
@@ -708,6 +719,7 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rn
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
     })
 }
 
@@ -836,10 +848,11 @@ pub(crate) fn gap_fill(
         option_images: vec![],
         context: vec![],
         endings: vec![],
+        scene: None,
     }))
 }
 
-fn pretty_pos(code: &str) -> String {
+pub(crate) fn pretty_pos(code: &str) -> String {
     match code {
         "n-m" => "noun, masculine",
         "n-f" => "noun, feminine",

@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 10;
+pub(crate) const SCHEMA_VERSION: i64 = 11;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -736,6 +736,8 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     // (sounds.rs). Older words get none: their lessons use the built-in pairs.
     add_column(conn, "words", "near_pl", "TEXT NOT NULL DEFAULT ''")?;
     add_column(conn, "words", "near_en", "TEXT NOT NULL DEFAULT ''")?;
+    // Version 11: scene lessons (scenes.rs) — two new tables, made by the
+    // schema above. Nothing to fill in: only new lessons have scenes.
     // Every synced table watched by triggers that list its current columns:
     // a schema change that adds a column (with an idempotent ALTER here, and
     // a bump of SCHEMA_VERSION) gets its triggers re-made by this.
@@ -1747,7 +1749,7 @@ mod tests {
             achievements, files, file_paths, sync_state, sync_rows, sync_vv, sync_peers, sync_epochs, vault_devices,
             vault_revocations, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
-            playlist_tracks, ai_costs, memories, word_examples, xp_log,
+            playlist_tracks, ai_costs, memories, word_examples, xp_log, scenes, scene_spots,
         );
     }
 }

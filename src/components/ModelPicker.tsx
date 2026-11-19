@@ -59,10 +59,10 @@ function weight(model: AiModel): number {
   return 3 * input + (Number.isFinite(output) && output > 0 ? output : 0);
 }
 
-type Need = "tools" | "images" | "any";
+type Need = "tools" | "images" | "vision" | "any";
 
 /** Which setting a picker is for: what it is estimated from and recommended for. */
-export type Job = "tutor" | "songwriter" | "partner" | "word chat" | "pictures";
+export type Job = "tutor" | "songwriter" | "partner" | "word chat" | "pictures" | "scene spots";
 
 /** The cost-log features each job's model pays for. */
 const JOB_FEATURES: Record<Job, string[]> = {
@@ -72,6 +72,7 @@ const JOB_FEATURES: Record<Job, string[]> = {
   partner: ["writing partner"],
   "word chat": ["word chat"],
   pictures: [],
+  "scene spots": ["scene spots"],
 };
 
 // Recent token use, fetched once per app run like the catalogue.
@@ -150,6 +151,7 @@ const PICKS: Record<Job, { family: keyof typeof FAMILIES; why: string }[]> = {
     { family: "value", why: "A step up — richer explanations" },
   ],
   pictures: [],
+  "scene spots": [{ family: "value", why: "Best value — reads pictures well and boxes things accurately" }],
 };
 
 /**
@@ -288,7 +290,7 @@ function ModelPicker({
     if (!models) return [];
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const list = models.filter((model) => {
-      if (need === "images" ? !model.images : model.voices.length > 0) return false;
+      if (need === "images" ? !model.images : need === "vision" ? !model.vision : model.voices.length > 0) return false;
       if (toolsOnly && !model.tools) return false;
       const haystack = `${model.name} ${model.id}`.toLowerCase();
       return words.every((word) => haystack.includes(word));

@@ -44,6 +44,7 @@ pub const KINDS: &[(&str, &str)] = &[
     ("bench", "benchmark run"),
     ("dev", "device"),
     ("sp", "sound pair"),
+    ("spot", "scene spot"),
 ];
 
 /// What an id names, by its prefix ("a lesson"), if it is a known kind.
@@ -290,6 +291,8 @@ typed_id!(/// A sound pair that ships with the app (sounds.rs): built-in content
     /// so its id is derived from its words, the same on every device. Not a
     /// table: the list lives in the code.
     SoundPairId, SoundPairIdSql, "sp");
+typed_id!(/// Where one thing is in a scene lesson's picture (scenes.rs).
+    SpotId, SpotIdSql, "spot");
 
 #[cfg(test)]
 mod tests {

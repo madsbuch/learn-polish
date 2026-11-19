@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS lessons (
     id            TEXT PRIMARY KEY NOT NULL,
     slug          TEXT    UNIQUE,                -- starter lessons: lesson/<slug>
     -- What it is and how it is practised: one of lesson_types::REGISTRY
-    -- (words | pictures | typing | memory | sentences | gaps | dialogue |
+    -- (words | pictures | scene | typing | memory | sentences | gaps | dialogue |
     -- study | listening | writing).
     lesson_type   TEXT    NOT NULL DEFAULT '',
     ord           INTEGER NOT NULL DEFAULT 0,
@@ -354,6 +354,47 @@ CREATE TABLE IF NOT EXISTS word_examples (
     examples   TEXT    NOT NULL,
     created_at INTEGER NOT NULL
 );
+
+-- A scene lesson's picture (scenes.rs): one illustrated scene holding the
+-- lesson's words as things, made in the background — drawn by an image
+-- model, then each thing found in it by a vision model. Keyed by its lesson.
+CREATE TABLE IF NOT EXISTS scenes (
+    lesson_id     TEXT PRIMARY KEY NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+    -- The scene as the tutor described it, in English: what the picture
+    -- prompt is made from, with the lesson's words (recreatable).
+    description   TEXT    NOT NULL,
+    -- "Where is it?" sentences about the scene (JSON: pl, en, subject and
+    -- object word ids, preposition, phrase, wrong phrases).
+    statements    TEXT    NOT NULL DEFAULT '[]',
+    -- What the image model was last asked, exactly.
+    prompt        TEXT    NOT NULL DEFAULT '',
+    image_file_id TEXT REFERENCES files(id) ON DELETE SET NULL,
+    -- The picture's size in pixels, so the screens lay it out before it loads.
+    width         INTEGER NOT NULL DEFAULT 0,
+    height        INTEGER NOT NULL DEFAULT 0,
+    -- drawing | locating | ready | failed
+    status        TEXT    NOT NULL,
+    -- Why it failed, for the learner (empty otherwise).
+    error         TEXT    NOT NULL DEFAULT '',
+    image_model   TEXT    NOT NULL DEFAULT '',
+    vision_model  TEXT    NOT NULL DEFAULT '',
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
+-- Where each thing is in its scene: a box in fractions of the picture's
+-- width and height (0–1, from the top left), found by a vision model.
+CREATE TABLE IF NOT EXISTS scene_spots (
+    id        TEXT PRIMARY KEY NOT NULL,
+    lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+    word_id   TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+    x         REAL NOT NULL,
+    y         REAL NOT NULL,
+    w         REAL NOT NULL,
+    h         REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS scene_spots_lesson ON scene_spots(lesson_id);
 
 CREATE INDEX IF NOT EXISTS words_lesson ON words(lesson_id, ord);
 

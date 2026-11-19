@@ -51,6 +51,7 @@ pub(crate) fn read_settings(conn: &mut Conn) -> Result<Settings> {
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default(),
         image_model: ai::stored_model(conn, "image_model"),
+        vision_model: ai::stored_model(conn, "vision_model"),
         has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
@@ -122,6 +123,7 @@ pub struct SettingsPatch {
     pub word_chat_model: Option<String>,
     pub favorite_models: Option<Vec<String>>,
     pub image_model: Option<String>,
+    pub vision_model: Option<String>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
     pub theme: Option<String>,
@@ -191,6 +193,9 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.image_model {
         db::set_setting(conn, "image_model", model.trim())?;
+    }
+    if let Some(model) = patch.vision_model {
+        db::set_setting(conn, "vision_model", model.trim())?;
     }
     if let Some(length) = patch.song_length {
         if !songs::SONG_LENGTHS.contains(&length.as_str()) {

@@ -51,6 +51,7 @@ mod games;
 mod dictation;
 mod sounds;
 mod singalong;
+mod scenes;
 
 
 use tauri::{Emitter, Manager};
@@ -160,6 +161,8 @@ pub fn run() {
                 songs::resume_pending(app);
                 // Picture lessons whose drawing an earlier run did not finish.
                 pictures::draw_missing_in_background(app);
+                // Scene lessons whose picture an earlier run did not finish.
+                scenes::resume_pending(app);
                 files::sync_to_disk(app);
                 // Lessons built on Wikipedia, checked against it every three months.
                 wiki::check_due_in_background(app);
@@ -228,6 +231,7 @@ pub fn run() {
             wiki::fact_check_lesson,
             pictures::course_picture_delete,
             pictures::lesson_add_pictures,
+            scenes::scene_make,
             lesson_types::lesson_types,
             diagnostics::diagnostics_list,
             resolve::ids_resolve,
@@ -2257,6 +2261,254 @@ mod integration {
         assert!(plain.exercises.iter().all(|e| !e.kind.starts_with("picture") && e.kind != "wordPick" && e.image.is_none()));
     }
 
+    /// Stand-ins for the image and vision models: one picture, and the
+    /// vision model's replies in turn.
+    struct SceneStub {
+        picture: Vec<u8>,
+        replies: std::sync::Mutex<Vec<String>>,
+        draws: std::sync::atomic::AtomicUsize,
+        looks: std::sync::atomic::AtomicUsize,
+    }
+
+    impl SceneStub {
+        fn new(replies: &[&str]) -> Self {
+            let mut png = Vec::new();
+            image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(800, 600, image::Rgb([240, 230, 200])))
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .unwrap();
+            Self {
+                picture: png,
+                replies: std::sync::Mutex::new(replies.iter().map(|r| r.to_string()).collect()),
+                draws: Default::default(),
+                looks: Default::default(),
+            }
+        }
+    }
+
+    impl scenes::Models for SceneStub {
+        fn draw(&self, prompt: &str) -> impl std::future::Future<Output = error::Result<(String, Vec<u8>, Option<f64>)>> + Send {
+            assert!(prompt.contains("table") && prompt.contains("The cat is under the table."), "{prompt}");
+            self.draws.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let picture = self.picture.clone();
+            async move { Ok(("image/png".to_string(), picture, Some(0.04))) }
+        }
+
+        fn look(&self, prompt: &str, mime: &str, image: &[u8]) -> impl std::future::Future<Output = error::Result<ai::Reply>> + Send {
+            assert!(prompt.contains("1. table (Polish: stół)") && mime == "image/jpeg" && !image.is_empty());
+            self.looks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut replies = self.replies.lock().unwrap();
+            let text = if replies.is_empty() { "no idea".to_string() } else { replies.remove(0) };
+            async move { Ok(ai::Reply { text, truncated: false, cost: Some(0.001), tokens: ai::Tokens { input: 1200, output: 300, cached: 0 } }) }
+        }
+
+        fn image_model(&self) -> &str {
+            "stub/image"
+        }
+
+        fn vision_model(&self) -> &str {
+            "stub/vision"
+        }
+    }
+
+    fn make_scene(db: &Db, lesson_id: LessonId, redraw: bool, stub: &SceneStub) -> error::Result<usize> {
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        runtime.block_on(scenes::make(db, lesson_id, redraw, stub, &|_| {}))
+    }
+
+    #[test]
+    fn scene_lessons_are_drawn_found_and_practised() {
+        let mut conn = scratch_db("scenes");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let thing = |pl: &str, en: &str, pos: &str| serde_json::json!({ "pl": pl, "en": en, "pos": pos });
+        let things = vec![
+            thing("stół", "table", "n-m"),
+            thing("kot", "cat", "n-m"),
+            thing("krzesło", "chair", "n-n"),
+            thing("lampa", "lamp", "n-f"),
+            thing("okno", "window", "n-n"),
+            thing("zegar", "clock", "n-m"),
+            thing("kubek", "mug", "n-m"),
+        ];
+        let under = serde_json::json!({ "pl": "Kot jest pod stołem.", "en": "The cat is under the table.", "subject": "kot",
+            "preposition": "pod", "object": "stół", "phrase": "pod stołem", "wrong": ["na stole", "obok stołu"] });
+        let above = serde_json::json!({ "pl": "Lampa jest nad stołem.", "en": "The lamp is above the table.", "subject": "lampa",
+            "preposition": "nad", "object": "stół", "phrase": "nad stołem", "wrong": ["pod stołem"] });
+        let on = serde_json::json!({ "pl": "Kubek jest na stole.", "en": "The mug is on the table.", "subject": "kubek",
+            "preposition": "na", "object": "stół", "phrase": "na stole", "wrong": ["pod stołem"] });
+        let args = |things: &[serde_json::Value], statements: &[serde_json::Value]| serde_json::json!({
+            "title": "W kuchni", "scene": "A sunny kitchen in the morning", "complexity": "medium",
+            "things": things, "statements": statements, "course_id": course,
+        });
+
+        // The tutor's mistakes come back to it whole, and nothing is made.
+        let lessons_before = t::lessons::table.count().get_result::<i64>(&mut conn).unwrap();
+        let few = tutor::run_tool_for_test(&mut conn, "create_scene_lesson", args(&things[..4], &[]));
+        assert!(few["error"].as_str().unwrap().contains("6–10 things"), "{few}");
+        let mut verb = things.clone();
+        verb[6] = thing("jeść", "to eat", "v");
+        let verb = tutor::run_tool_for_test(&mut conn, "create_scene_lesson", args(&verb, &[]));
+        assert!(verb["error"].as_str().unwrap().contains("not a thing you can point at"), "{verb}");
+        let mut stray = under.clone();
+        stray["object"] = "pies".into();
+        let stray = tutor::run_tool_for_test(&mut conn, "create_scene_lesson", args(&things, &[stray]));
+        assert!(stray["error"].as_str().unwrap().contains("two of the scene's things"), "{stray}");
+        let mut unseen = under.clone();
+        unseen["preposition"] = "za".into();
+        assert!(tutor::run_tool_for_test(&mut conn, "create_scene_lesson", args(&things, &[unseen]))["error"].is_string());
+        let mut misquoted = under.clone();
+        misquoted["phrase"] = "pod stół".into();
+        assert!(tutor::run_tool_for_test(&mut conn, "create_scene_lesson", args(&things, &[misquoted]))["error"].is_string());
+        assert_eq!(t::lessons::table.count().get_result::<i64>(&mut conn).unwrap(), lessons_before);
+
+        let made = tutor::run_tool_for_test(&mut conn, "create_scene_lesson", args(&things, &[under, above, on]));
+        assert!(made["error"].is_null(), "{made}");
+        let lesson_id: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let lesson = lessons::load(&mut conn, lesson_id).unwrap();
+        assert_eq!((lesson.lesson_type.as_str(), lesson.items, lesson.course_id), ("scene", 7, Some(course)));
+        assert_eq!(lesson.period_days, lesson_types::get("scene").unwrap().default_period("medium"));
+        let detail = lessons::detail(&mut conn, lesson_id).unwrap();
+        let scene = detail.scene.expect("a scene lesson has its scene");
+        assert_eq!((scene.status.as_str(), scene.card.is_none()), (scenes::DRAWING, true));
+        let other = drill_of(&mut conn, course);
+        assert!(lessons::detail(&mut conn, other).unwrap().scene.is_none(), "other lessons have none");
+
+        // Until it is drawn, the words are practised as a word drill.
+        let waiting = session::build_lesson(&mut conn, lesson_id).unwrap();
+        assert!(!waiting.exercises.is_empty() && waiting.exercises.iter().all(|e| !e.kind.starts_with("scene") && e.scene.is_none()));
+
+        // Drawn once; the first look finds too few, the second all but the clock.
+        let box_of = |n: usize, b: [f64; 4]| format!(r#"{{"n": {n}, "found": true, "x_min": {}, "y_min": {}, "x_max": {}, "y_max": {}}}"#, b[0], b[1], b[2], b[3]);
+        let table = [0.30, 0.45, 0.70, 0.75];
+        let boxes = [
+            box_of(1, table),
+            box_of(2, [0.42, 0.62, 0.55, 0.78]),
+            box_of(3, [0.75, 0.40, 0.90, 0.80]),
+            box_of(4, [0.05, 0.05, 0.15, 0.30]),
+            box_of(5, [0.05, 0.40, 0.25, 0.60]),
+            r#"{"n": 6, "found": false, "x_min": 0, "y_min": 0, "x_max": 0, "y_max": 0}"#.to_string(),
+            box_of(7, [0.50, 0.38, 0.56, 0.46]),
+        ];
+        let few = format!(r#"{{"things": [{}]}}"#, boxes[..3].join(","));
+        let good = format!(r#"{{"things": [{}]}}"#, boxes.join(","));
+        let db = Db::new(conn);
+        let stub = SceneStub::new(&[&few, &good]);
+        assert_eq!(make_scene(&db, lesson_id, false, &stub).unwrap(), 6);
+        assert_eq!((stub.draws.load(std::sync::atomic::Ordering::SeqCst), stub.looks.load(std::sync::atomic::Ordering::SeqCst)), (1, 2));
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let lesson = lessons::load(conn, lesson_id).unwrap();
+        assert_eq!(lesson.items, 6, "the clock was not found: it left the lesson");
+        let scene = lessons::detail(conn, lesson_id).unwrap().scene.unwrap();
+        assert_eq!((scene.status.as_str(), scene.error.as_str()), (scenes::READY, ""));
+        let card = scene.card.unwrap();
+        assert_eq!((card.width, card.height), (800, 600), "kept at its size, as JPEG");
+        assert_eq!(card.spots.len(), 6);
+        assert!(files::referenced(conn).unwrap().contains(&card.image), "the scene's picture is kept, not swept as an orphan");
+        // The lamp is not above the table in this picture: that sentence goes.
+        assert_eq!(scene.statements.iter().map(|(pl, _)| pl.as_str()).collect::<Vec<_>>(), ["Kot jest pod stołem.", "Kubek jest na stole."]);
+        let costs: Vec<(String, String)> =
+            t::ai_costs::table.select((t::ai_costs::feature, t::ai_costs::model)).load(conn).unwrap();
+        assert!(costs.contains(&(costs::PICTURES.into(), "stub/image".into())));
+        assert_eq!(costs.iter().filter(|(f, m)| f == costs::SCENE_SPOTS && m == "stub/vision").count(), 2, "every look is paid for");
+
+        // Practised: explore it, find each thing, name each, say where.
+        let screens = include_str!("../../src/lib/types.ts");
+        let plan = session::build_lesson(conn, lesson_id).unwrap();
+        let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(kinds[0], "sceneExplore", "{kinds:?}");
+        assert_eq!(kinds.iter().filter(|k| **k == "sceneFind").count(), 6, "{kinds:?}");
+        assert_eq!(kinds.iter().filter(|k| **k == "sceneName").count(), 6, "new words pick their names: {kinds:?}");
+        assert_eq!(kinds.iter().filter(|k| **k == "sceneWhere").count(), 2, "{kinds:?}");
+        for exercise in &plan.exercises {
+            assert!(screens.contains(&format!("\"{}\"", exercise.kind)), "the screens know {}", exercise.kind);
+            assert!(exercise.scene.as_ref().is_some_and(|c| c.image == card.image), "every card shows the scene");
+        }
+        let find = plan.exercises.iter().find(|e| e.kind == "sceneFind" && e.pl == "stół").unwrap();
+        assert_eq!(find.prompt, "Gdzie jest stół?");
+        assert!(find.scene.as_ref().unwrap().spots.iter().all(|s| !s.lit), "nothing is pointed out when finding");
+        let name = plan.exercises.iter().find(|e| e.kind == "sceneName").unwrap();
+        assert_eq!(name.options.len(), 4);
+        assert!(name.options.contains(&name.answer));
+        let lit: Vec<&str> = name.scene.as_ref().unwrap().spots.iter().filter(|s| s.lit).map(|s| s.pl.as_str()).collect();
+        assert_eq!(lit, [name.answer.as_str()], "the thing to name lights up");
+        for card in plan.exercises.iter().filter(|e| e.kind == "sceneWhere") {
+            assert!(card.options.contains(&card.answer), "{card:?}");
+            assert_eq!(card.scene.as_ref().unwrap().spots.iter().filter(|s| s.lit).count(), 2, "both things are pointed out");
+            if card.options == ["Prawda", "Fałsz"] {
+                assert_eq!(card.answer == "Prawda", card.prompt == card.pl, "{card:?}");
+            } else {
+                assert!(card.prompt.contains('…') && card.pl.contains(&card.answer), "{card:?}");
+            }
+        }
+
+        // Scored like its drill siblings: XP for finding, reviews for the
+        // words, none for exploring or the sentences (not scheduled items).
+        let explored = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "sceneExplore".into(), item_kind: "set".into(), item_id: lesson_id.to_string(), is_new: true,
+            expected: String::new(), given: String::new(), ..Default::default()
+        }).unwrap();
+        assert_eq!(explored.xp_gained, 0);
+        let found = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "sceneFind".into(), item_kind: "word".into(), item_id: find.item_id.clone(), is_new: true,
+            expected: "stół".into(), given: "stół".into(), lesson_id: Some(lesson_id), ..Default::default()
+        }).unwrap();
+        assert!(found.correct && found.xp_gained == 8, "{found:?}");
+        let missed = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "sceneFind".into(), item_kind: "word".into(), item_id: find.item_id.clone(),
+            expected: "stół".into(), given: "krzesło".into(), ..Default::default()
+        }).unwrap();
+        assert!(!missed.correct && missed.xp_gained == 0);
+        let said = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "sceneWhere".into(), item_kind: "set".into(), item_id: lesson_id.to_string(),
+            expected: "Prawda".into(), given: "Prawda".into(), ..Default::default()
+        }).unwrap();
+        assert_eq!(said.xp_gained, 8);
+        let reviewed: Vec<String> = t::reviews::table.select(t::reviews::item_id).load(conn).unwrap();
+        assert!(reviewed.contains(&find.item_id) && !reviewed.contains(&lesson_id.to_string()));
+        let scored = plan.exercises.iter().filter(|e| e.kind != "sceneExplore").count();
+        let finished = practice::lesson_finish_in(conn, lesson_id, i64::try_from(scored).unwrap(), i64::try_from(scored).unwrap()).unwrap();
+        assert_eq!(finished.result, "pass");
+        assert!(finished.lesson.due_day.is_some() && finished.lesson.mastery > 0, "scheduled and on its way to mastered");
+
+        // Known now: some things come back to be found, others to be named
+        // — typed, in a medium lesson, once they have come back twice.
+        let words: Vec<WordId> = t::words::table.filter(t::words::lesson_id.eq(lesson_id)).select(t::words::id).load(conn).unwrap();
+        for id in &words {
+            for _ in 0..3 {
+                practice::submit_answer_in(conn, practice::SubmitAnswer { kind: "sceneFind".into(), item_kind: "word".into(), item_id: id.to_string(), ..Default::default() }).unwrap();
+            }
+        }
+        let again = session::build_lesson(conn, lesson_id).unwrap();
+        let kinds: Vec<&str> = again.exercises.iter().map(|e| e.kind.as_str()).collect();
+        assert!(!kinds.contains(&"sceneExplore"), "nothing new to explore: {kinds:?}");
+        assert!(kinds.contains(&"sceneType") && !kinds.contains(&"sceneName"), "{kinds:?}");
+        assert!(again.exercises.iter().filter(|e| e.kind == "sceneType").all(|e| e.options.is_empty()));
+        drop(guard);
+
+        // A picture whose things cannot be found: looked at twice, drawn
+        // twice, then a clear failure, with a reason, to retry.
+        let stub = SceneStub::new(&["nothing", r#"{"things": []}"#, "still nothing", "no"]);
+        let failed = make_scene(&db, lesson_id, true, &stub).unwrap_err();
+        assert!(failed.to_string().contains("could be found"), "{failed}");
+        assert_eq!(stub.draws.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let scene = lessons::detail(&mut db.lock(), lesson_id).unwrap().scene.unwrap();
+        assert_eq!(scene.status, scenes::FAILED);
+        assert!(scene.error.contains("could be found") && scene.card.is_none());
+        assert!(!session::build_lesson(&mut db.lock(), lesson_id).unwrap().exercises.iter().any(|e| e.scene.is_some()), "a word drill meanwhile");
+        // Retried on the same picture: found this time, nothing redrawn. (The
+        // things are numbered afresh: the clock has gone.)
+        let six = format!(r#"{{"things": [{}, {}]}}"#, boxes[..5].join(","), box_of(6, [0.50, 0.38, 0.56, 0.46]));
+        let stub = SceneStub::new(&[&six]);
+        assert_eq!(make_scene(&db, lesson_id, false, &stub).unwrap(), 6);
+        assert_eq!(stub.draws.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(lessons::detail(&mut db.lock(), lesson_id).unwrap().scene.unwrap().status, scenes::READY);
+    }
+
+    /// The first word drill of a course.
+    fn drill_of(conn: &mut Conn, course: CourseId) -> LessonId {
+        lessons::for_course(conn, course).unwrap().into_iter().find(|l| l.lesson_type == "words").unwrap().id
+    }
+
     #[test]
     fn word_pictures_are_shrunk_to_a_small_jpeg() {
         let mut big = image::RgbaImage::new(1024, 768);
@@ -2807,7 +3059,26 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         );
         let pairs = serde_json::from_value(pairs["_action"]["lessonId"].clone()).unwrap();
         exercises.extend(session::build_lesson(&mut conn, pairs).unwrap().exercises);
-        for kind in ["dictation", "soundPair", "wordOrder"] {
+        // A scene, drawn and found: explore, find, name and say where.
+        let things = [("stół", "table"), ("kot", "cat"), ("krzesło", "chair"), ("lampa", "lamp"), ("okno", "window"), ("kubek", "mug")]
+            .map(|(pl, en)| serde_json::json!({ "pl": pl, "en": en, "pos": "n-m" }));
+        let scene = tutor::run_tool_for_test(
+            &mut conn,
+            "create_scene_lesson",
+            serde_json::json!({ "title": "W kuchni", "scene": "A kitchen", "course_id": basics, "complexity": "medium",
+                "things": things,
+                "statements": [{ "pl": "Kot jest pod stołem.", "en": "The cat is under the table.", "subject": "kot", "preposition": "pod",
+                                 "object": "stół", "phrase": "pod stołem", "wrong": ["na stole", "obok stołu"] }] }),
+        );
+        let scene: LessonId = serde_json::from_value(scene["_action"]["lessonId"].clone()).unwrap();
+        crate::scenes::ready_for_test(&mut conn, scene, &[
+            [0.30, 0.45, 0.70, 0.75], [0.42, 0.62, 0.55, 0.78], [0.75, 0.40, 0.90, 0.80],
+            [0.05, 0.05, 0.15, 0.30], [0.05, 0.40, 0.25, 0.60], [0.50, 0.38, 0.56, 0.46],
+        ]).unwrap();
+        write("SceneInfo", &crate::scenes::info(&mut conn, scene).unwrap().unwrap());
+        write("LessonDetail.list", &[lessons::detail(&mut conn, scene).unwrap()]);
+        exercises.extend(session::build_lesson(&mut conn, scene).unwrap().exercises);
+        for kind in ["dictation", "soundPair", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere"] {
             assert!(exercises.iter().any(|e| e.kind == kind), "a {kind} card");
         }
         write("Exercise.list", &exercises);

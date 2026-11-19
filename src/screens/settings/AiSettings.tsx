@@ -113,6 +113,10 @@ export function AiSettings({ settings, onSettings, onBack }: SettingsPageProps) 
               about a word or sentence. Both are short replies, so a small, fast model is enough; pick one marked 🛠
               so it can still make a drill when you ask.
             </p>
+            <p>
+              <b>Course pictures</b> draws course, word and scene pictures. <b>Finding things in scenes</b> looks at
+              a scene lesson's picture and marks where each thing is; it needs a model that reads images.
+            </p>
           </>
         }
       >
@@ -159,6 +163,15 @@ export function AiSettings({ settings, onSettings, onBack }: SettingsPageProps) 
             need="images"
             {...models}
             onChange={(model) => patch({ imageModel: model }, "image-model")}
+          />
+          <ModelSetting
+            label="Finding things in scenes"
+            job="scene spots"
+            value={settings.visionModel}
+            fallback="Default (Gemini 2.5 Flash)"
+            need="vision"
+            {...models}
+            onChange={(model) => patch({ visionModel: model }, "vision-model")}
           />
           <ListItem
             title="Benchmark"

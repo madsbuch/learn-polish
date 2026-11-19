@@ -76,13 +76,14 @@ pub struct CataloguePage {
 
 /// One thing to do in a session. The backend decides the exercise type from the
 /// item's review history, so the UI only has to render six shapes.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Exercise {
     pub key: String,
     /// intro | recognise | produce | type | sentenceIntro | wordOrder |
     /// dialogueGap | gapFill | memory | pictureIntro | wordPick |
-    /// picturePick | dictation | soundPair
+    /// picturePick | dictation | soundPair | sceneExplore | sceneFind |
+    /// sceneName | sceneType | sceneWhere
     pub kind: String,
     /// word | sentence | dialogue | set (several items at once, not scheduled)
     pub item_kind: String,
@@ -116,6 +117,8 @@ pub struct Exercise {
     /// Word order: the tiles whose ending is to be picked (tiles.rs); empty
     /// for a sentence built by plain ordering.
     pub endings: Vec<crate::tiles::TileEnding>,
+    /// Scene lessons: the picture and where each thing is in it (scenes.rs).
+    pub scene: Option<crate::scenes::SceneCard>,
 }
 
 /// One sentence with a word taken out of it.
@@ -277,6 +280,8 @@ pub struct Settings {
     pub favorite_models: Vec<String>,
     /// Draws course pictures; empty means the default image model.
     pub image_model: String,
+    /// Finds the things in a scene lesson's picture; empty means the default.
+    pub vision_model: String,
     pub has_kie_key: bool,
     /// The Suno version songs are sung with.
     pub suno_model: String,
@@ -364,6 +369,8 @@ pub struct AiModel {
     pub tools: bool,
     /// True when the model can make images (course pictures).
     pub images: bool,
+    /// True when the model can read images (finding things in a scene).
+    pub vision: bool,
 }
 
 /// One clip of generated speech, ready to become a `data:` URI.

@@ -37,6 +37,9 @@ export interface ExerciseProps extends AnswerState {
   setGapsFilled: (filled: (number | null)[]) => void;
   /** Memory: called once, with the turns taken, when the last pair is found. */
   onMemoryComplete: (turns: number) => void;
+  /** A card that submits itself (finding a thing in a scene): the answer is
+   *  in, check it — after the state set alongside this call has landed. */
+  onDone: () => void;
   /** Today's conversation: whether every line's English is showing. */
   revealAll: boolean;
   onToggleReveal: () => void;
@@ -62,8 +65,12 @@ export interface ExerciseModule<K extends ExerciseKind = ExerciseKind> {
   /** New material: say `exercise.pl` aloud when the card appears. */
   speakOnShow?: boolean;
   /** The answer is complete the moment the learner finishes (memory's last
-   *  pair), so it submits itself and the foot button stays disabled. */
+   *  pair, a thing found), so it submits itself and the foot button stays
+   *  disabled. */
   submitsItself?: boolean;
+  /** Wants the room: a scene, as large as the window allows (the session
+   *  widens past the reading width on a big screen). */
+  wide?: boolean;
   /** Show "pl — meaning" in the verdict even after a right answer. */
   revealOnRight?: boolean;
   /** The foot button's label in place of "Check". */

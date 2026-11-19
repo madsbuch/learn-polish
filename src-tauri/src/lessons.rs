@@ -2,7 +2,7 @@
 //!
 //! A lesson is small and has one job, and its **type** says which (see
 //! lesson_types): a drill of exercises on a handful of words or sentences
-//! (words, pictures, typing, memory cards, sentences, gaps, a dialogue), or a
+//! (words, pictures, a scene, typing, memory cards, sentences, gaps, a dialogue), or a
 //! conversation with the examiner — a study text, a song to listen to, or a
 //! situation played out in writing with a partner.
 //!
@@ -139,6 +139,9 @@ pub struct LessonDetail {
     pub fact_note: Option<String>,
     /// When the lesson was last checked against its sources.
     pub fact_checked_at: Option<i64>,
+    /// A scene lesson's picture, where its things are, and how far along it
+    /// is (scenes.rs); None for every other lesson.
+    pub scene: Option<crate::scenes::SceneInfo>,
 }
 
 /// What the home screen shows: what is due, and what to start next.
@@ -320,7 +323,9 @@ pub fn detail(conn: &mut Conn, id: LessonId) -> Result<LessonDetail> {
         .into_iter()
         .map(|(word_id, word, meaning, image)| WordPicture { word_id, word, meaning, image })
         .collect();
+    let scene = crate::scenes::info(conn, id)?;
     Ok(LessonDetail {
+        scene,
         word_pictures,
         words,
         sentences,

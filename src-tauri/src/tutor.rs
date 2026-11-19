@@ -639,6 +639,47 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
+            "create_scene_lesson",
+            "Making the scene lesson…",
+            "Make a scene lesson: one illustrated scene (a market stall, a kitchen, a train station, a \
+             doctor's waiting room…) with 6–10 things in it. The learner explores the picture (tap a \
+             thing, hear its name), finds things by their Polish name, names things that light up \
+             (typing them in medium and high lessons), and — if you add sentences — says where things \
+             are. The things become the lesson's words. Use the course's own words where they fit \
+             (same Polish and English). Only nouns you can point at, each unmistakable and drawn once. \
+             The picture is drawn and its things found in the background (about 5 cents); the lesson \
+             works as a word drill until then.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "scene": { "type": "string", "description": "The scene in English, 1–3 sentences: the place and what is going on, so it can be drawn. Every thing below must fit in it naturally." },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "low: pick names from options; medium and high: type the names of things the learner knows. Default low." },
+                    "things": word_schema(),
+                    "statements": {
+                        "type": "array",
+                        "description": "Optional, 0–6 \"Where is it?\" sentences about where two of the things are in the scene, for learners ready for prepositions with cases. The picture is drawn to match, and a sentence it does not bear out is left out.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "pl": { "type": "string", "description": "e.g. \"Kot jest pod stołem.\"" },
+                                "en": { "type": "string", "description": "e.g. \"The cat is under the table.\"" },
+                                "subject": { "type": "string", "description": "The thing that is somewhere: its Polish exactly as in things, e.g. \"kot\"" },
+                                "preposition": { "type": "string", "enum": crate::scenes::PREPOSITIONS },
+                                "object": { "type": "string", "description": "The thing it is placed by: its Polish exactly as in things, e.g. \"stół\"" },
+                                "phrase": { "type": "string", "description": "The words of pl that say where, exactly as written there, e.g. \"pod stołem\"" },
+                                "wrong": { "type": "array", "items": { "type": "string" }, "description": "1–3 phrases for a clearly different place, correctly inflected, e.g. [\"na stole\", \"obok stołu\"] — never one that could also be true (not \"nad\" for \"na\")" }
+                            },
+                            "required": ["pl", "en", "subject", "preposition", "object", "phrase", "wrong"]
+                        }
+                    },
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course to add it to; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
+                },
+                "required": ["title", "scene", "things"]
+            }),
+        ),
+        tool(
             "create_listening_lesson",
             "Making the listening lesson…",
             "Make a listening lesson for a song: the learner listens, then the examiner asks about what they heard (meaning, missing words, translation, grammar). One per song.",
@@ -1828,6 +1869,19 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 }),
                 "lessonCreated",
                 format!("Made “{}” — a picture lesson, {} objects", lesson.title, lesson.items),
+                lesson.id,
+            ))
+        }
+        "create_scene_lesson" => {
+            let args: crate::scenes::NewScene = parse(arguments)?;
+            let lesson = crate::scenes::create(conn, args, "tutor")?;
+            Ok(Outcome::lesson(
+                json!({
+                    "created": lesson_json(&lesson),
+                    "scene": "being drawn in the background, then its things are found in it; until then the lesson is a word drill",
+                }),
+                "lessonCreated",
+                format!("Made “{}” — a scene, {} things", lesson.title, lesson.items),
                 lesson.id,
             ))
         }
@@ -3140,6 +3194,11 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
                     if name == "create_picture_lesson" {
                         drop(guard);
                         crate::pictures::draw_missing_in_background(app);
+                        return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
+                    }
+                    if name == "create_scene_lesson" {
+                        drop(guard);
+                        crate::scenes::resume_pending(app);
                         return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
                     }
                     done

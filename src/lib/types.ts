@@ -156,6 +156,11 @@ export const ExerciseKindSchema = z.enum([
   "picturePick",
   "dictation",
   "soundPair",
+  "sceneExplore",
+  "sceneFind",
+  "sceneName",
+  "sceneType",
+  "sceneWhere",
 ]);
 export type ExerciseKind = z.infer<typeof ExerciseKindSchema>;
 
@@ -186,6 +191,30 @@ export const TileEndingSchema = z.object({
 });
 export type TileEnding = z.infer<typeof TileEndingSchema>;
 
+/** One thing in a scene lesson's picture, and where it is. */
+export const SceneSpotSchema = z.object({
+  wordId: WordIdSchema,
+  pl: z.string(),
+  en: z.string(),
+  /** Its box, in fractions of the picture's width and height (0–1, from the top left). */
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  /** The card points it out: the thing to name, or the two a sentence is about. */
+  lit: z.boolean(),
+});
+export type SceneSpot = z.infer<typeof SceneSpotSchema>;
+
+/** A scene as a card shows it: the picture, its size in pixels, its things. */
+export const SceneCardSchema = z.object({
+  image: FileIdSchema,
+  width: z.number(),
+  height: z.number(),
+  spots: z.array(SceneSpotSchema),
+});
+export type SceneCard = z.infer<typeof SceneCardSchema>;
+
 export const ExerciseSchema = z.object({
   key: z.string(),
   kind: ExerciseKindSchema,
@@ -211,6 +240,8 @@ export const ExerciseSchema = z.object({
   context: z.array(DialogueLineSchema),
   /** Word order: the tiles whose ending is to be picked; empty for plain ordering. */
   endings: z.array(TileEndingSchema),
+  /** Scene lessons: the picture and where each thing is in it. */
+  scene: SceneCardSchema.nullable(),
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
 
@@ -358,6 +389,20 @@ export const WordPictureSchema = z.object({
 });
 export type WordPicture = z.infer<typeof WordPictureSchema>;
 
+/** A scene lesson's picture as its page shows it, and how far along it is. */
+export const SceneInfoSchema = z.object({
+  status: z.enum(["drawing", "locating", "ready", "failed"]),
+  /** Why it failed, when it did. */
+  error: z.string(),
+  /** Being made on this device right now. */
+  working: z.boolean(),
+  description: z.string(),
+  card: SceneCardSchema.nullable(),
+  /** The "Where is it?" sentences the picture bears out: [Polish, English]. */
+  statements: z.array(z.tuple([z.string(), z.string()])),
+});
+export type SceneInfo = z.infer<typeof SceneInfoSchema>;
+
 export const LessonDetailSchema = LessonSchema.extend({
   content: z.string(),
   objectives: z.array(z.string()),
@@ -374,6 +419,8 @@ export const LessonDetailSchema = LessonSchema.extend({
   factCheckedAt: z.number().nullable(),
   /** Its words with their ids and pictures. */
   wordPictures: z.array(WordPictureSchema),
+  /** A scene lesson's scene; null for every other lesson. */
+  scene: SceneInfoSchema.nullable(),
 });
 export type LessonDetail = z.infer<typeof LessonDetailSchema>;
 
@@ -664,6 +711,8 @@ export const SettingsSchema = z.object({
   favoriteModels: z.array(z.string()),
   /** Draws course pictures; empty means the default image model. */
   imageModel: z.string(),
+  /** Finds the things in a scene lesson's picture; empty means the default. */
+  visionModel: z.string(),
   hasKieKey: z.boolean(),
   sunoModel: z.string(),
   sunoModels: z.array(z.string()),
@@ -692,6 +741,7 @@ export const SettingsPatchSchema = z.object({
   wordChatModel: z.string().optional(),
   favoriteModels: z.array(z.string()).optional(),
   imageModel: z.string().optional(),
+  visionModel: z.string().optional(),
   sunoModel: z.string().optional(),
   songLength: SongLengthSchema.optional(),
   theme: z.enum(["system", "light", "dark"]).optional(),
@@ -820,6 +870,8 @@ export const AiModelSchema = z.object({
   tools: z.boolean(),
   /** Can make images — for course pictures. */
   images: z.boolean(),
+  /** Can read images — for finding the things in a scene. */
+  vision: z.boolean(),
 });
 export type AiModel = z.infer<typeof AiModelSchema>;
 

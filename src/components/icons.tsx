@@ -338,6 +338,17 @@ export function PictureIcon() {
   );
 }
 
+/** A scene: a picture with a thing in it pointed out. */
+export function SceneIcon() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <path d="M4 17.5l4.5-4.5 3.5 3.5" />
+      <rect x="13" y="8" width="5" height="5" rx="1.2" strokeDasharray="2 1.6" />
+    </Glyph>
+  );
+}
+
 /** Slowly: a tortoise — read at a glance, at any size. */
 export function SlowIcon() {
   return (

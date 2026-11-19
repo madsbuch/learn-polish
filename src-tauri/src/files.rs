@@ -35,6 +35,8 @@ pub const COURSE_IMAGE: &str = "course_image";
 pub const WIKI_IMAGE: &str = "wiki_image";
 /// A word's picture (picture lessons).
 pub const WORD_IMAGE: &str = "word_image";
+/// A scene lesson's picture (scenes.rs).
+pub const SCENE_IMAGE: &str = "scene_image";
 
 /// A file's details, without its bytes.
 #[allow(dead_code)] // every column, though not every caller reads each
@@ -147,7 +149,7 @@ pub fn delete(conn: &mut Conn, ids: &[FileId]) -> Result<usize> {
 /// Every file some row points at. This is the one list of the columns that
 /// reference files: a new one belongs here, with a foreign key in the schema.
 pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> {
-    use crate::schema::{song_tracks, speech_clips, courses, wiki_sources, words};
+    use crate::schema::{scenes, song_tracks, speech_clips, courses, wiki_sources, words};
     let mut ids: std::collections::HashSet<FileId> =
         speech_clips::table.select(speech_clips::file_id).load::<FileId>(conn)?.into_iter().collect();
     let takes: Vec<(Option<FileId>, Option<FileId>)> =
@@ -156,6 +158,7 @@ pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> 
     ids.extend(courses::table.select(courses::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     ids.extend(wiki_sources::table.select(wiki_sources::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     ids.extend(words::table.select(words::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(scenes::table.select(scenes::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     Ok(ids)
 }
 

@@ -49,6 +49,8 @@ export function Session({
   const [revealAll, setRevealAll] = useState(false);
   const [gapsFilled, setGapsFilled] = useState<(number | null)[]>([]);
   const [memoryTurns, setMemoryTurns] = useState<number | null>(null);
+  // Bumped by a card that submits itself (onDone).
+  const [done, setDone] = useState(0);
 
   // The chat about the current word, when open.
   const [talking, setTalking] = useState(false);
@@ -75,6 +77,7 @@ export function Session({
     setForms({});
     setGapsFilled([]);
     setMemoryTurns(null);
+    setDone(0);
     setTalking(false);
     setError(null);
     bodyRef.current?.scrollTo({ top: 0 });
@@ -98,11 +101,12 @@ export function Session({
   const given = exercise && module ? module.given(exercise, answerState) : "";
   const canSubmit = exercise && module ? module.canSubmit(exercise, answerState) : false;
 
-  // Finding the last pair is the answer; no separate Check tap needed.
+  // Finding the last pair (or the thing in the picture) is the answer; no
+  // separate Check tap needed. Run after the render that has the answer in.
   useEffect(() => {
-    if (module?.submitsItself && memoryTurns !== null && phase === "answering") void check();
+    if (module?.submitsItself && (memoryTurns !== null || done > 0) && phase === "answering") void check();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memoryTurns]);
+  }, [memoryTurns, done]);
 
   /** Submits the answer; true when it was recorded. */
   async function check(): Promise<boolean> {
@@ -196,6 +200,7 @@ export function Session({
     setForms,
     setGapsFilled,
     onMemoryComplete: setMemoryTurns,
+    onDone: () => setDone((n) => n + 1),
     revealAll,
     onToggleReveal: () => setRevealAll((v) => !v),
     inputRef,
@@ -206,7 +211,7 @@ export function Session({
   };
 
   return (
-    <div className="session">
+    <div className={module.wide ? "session session--wide" : "session"}>
       <div className="session-top">
         <IconButton icon={<CloseIcon />} label="Leave practice" onClick={onQuit} />
         <div className="grow">
