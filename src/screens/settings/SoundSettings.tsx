@@ -5,6 +5,7 @@ import { IconButton, Inline, List, ListItem, Screen, Section, SettingRow, Switch
 import { api } from "../../lib/api";
 import { playClip } from "../../lib/speech";
 import { playCorrect, setSoundsEnabled, soundsEnabled } from "../../lib/sounds";
+import { canBuzz, hapticRight, setHapticsEnabled } from "../../lib/haptics";
 import type { AudioCacheStats, Voice } from "../../lib/types";
 import { megabytes } from "../AudioScreen";
 import { useSettingsActions, type SettingsPageProps } from "./actions";
@@ -149,6 +150,24 @@ export function SoundSettings({
               />
             }
           />
+          {canBuzz ? (
+            <SettingRow
+              label="Vibration"
+              description="A tap when you're right, a buzz when you're not"
+              control={
+                <Switch
+                  label="Vibration"
+                  checked={settings.haptics}
+                  onChange={(haptics) => {
+                    patch({ haptics }, "haptics");
+                    // Felt at once: what it will be like.
+                    setHapticsEnabled(haptics);
+                    if (haptics) hapticRight();
+                  }}
+                />
+              }
+            />
+          ) : null}
           <SettingRow
             label="Fetch a session's audio up front"
             description="So no line waits on the network"

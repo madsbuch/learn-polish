@@ -134,7 +134,14 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
         });
     }
 
-    let correct = answers_match(&answer.expected, &answer.given);
+    // Tiles are given, not typed: their Polish letters are the point (the
+    // ending picked on a tile: "kawę", not "kawą"), so nothing is forgiven
+    // there but case and punctuation.
+    let correct = if answer.kind == "wordOrder" {
+        crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given)
+    } else {
+        answers_match(&answer.expected, &answer.given)
+    };
     let grade = answer
         .grade
         .unwrap_or(if correct { srs::GOOD } else { srs::AGAIN })

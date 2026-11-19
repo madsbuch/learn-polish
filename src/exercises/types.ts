@@ -14,6 +14,8 @@ export interface AnswerState {
   typed: string;
   /** Word order: the indices into `exercise.tokens`, in the order placed. */
   built: number[];
+  /** Word order: the ending picked on a tile, by its index into `exercise.tokens`. */
+  forms: Partial<Record<number, string>>;
   /** Fill the gaps: for each gap, the index of the bank word in it, or null. */
   gapsFilled: (number | null)[];
   /** Memory: the turns it took to find every pair, once they are all found. */
@@ -29,6 +31,7 @@ export interface ExerciseProps extends AnswerState {
   setPicked: (option: string) => void;
   setTyped: (text: string) => void;
   setBuilt: (built: number[]) => void;
+  setForms: (forms: Partial<Record<number, string>>) => void;
   setGapsFilled: (filled: (number | null)[]) => void;
   /** Memory: called once, with the turns taken, when the last pair is found. */
   onMemoryComplete: (turns: number) => void;

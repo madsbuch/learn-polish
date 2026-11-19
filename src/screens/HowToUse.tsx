@@ -69,6 +69,11 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           that covers a missed day by itself. XP is only paid for real work: harder exercises pay more, wrong answers
           and cards you only read pay nothing.
         </P>
+        <P>
+          Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, or flip memory cards —
+          play with words you have already met. They earn a little XP (up to 30 a day) and don&apos;t change when a
+          word comes back: that stays the lessons&apos; job.
+        </P>
       </Part>
 
       <Part title="Courses and lessons">

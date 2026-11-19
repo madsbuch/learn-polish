@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
 import { useBackHandler } from "../lib/back";
+import { hapticTick } from "../lib/haptics";
 import { current as currentToasts, dismiss as dismissToast, subscribe as subscribeToasts } from "../lib/toast";
 import {
   backward,
@@ -529,7 +530,16 @@ export function Button({
       data-size={size}
       data-wide={wide}
       disabled={disabled || loading}
-      onClick={onClick}
+      onClick={
+        // The one thing that matters on the screen: felt as a light tick
+        // under the finger, on a phone (lib/haptics.ts).
+        onClick && (variant === "primary" || variant === "success")
+          ? () => {
+              hapticTick();
+              onClick();
+            }
+          : onClick
+      }
       aria-label={label}
       aria-busy={loading || undefined}
     >

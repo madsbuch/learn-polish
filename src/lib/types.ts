@@ -170,6 +170,17 @@ export const PairSchema = z.object({
 });
 export type Pair = z.infer<typeof PairSchema>;
 
+/** A word-order tile whose ending the learner picks ("kawa" → "kawę"). */
+export const TileEndingSchema = z.object({
+  /** Which tile: its index in the card's `tokens`. */
+  token: z.number(),
+  /** What it shows until an ending is picked: the dictionary form. */
+  shown: z.string(),
+  /** The forms to pick from, the right one among them. */
+  choices: z.array(z.string()),
+});
+export type TileEnding = z.infer<typeof TileEndingSchema>;
+
 export const ExerciseSchema = z.object({
   key: z.string(),
   kind: ExerciseKindSchema,
@@ -193,8 +204,49 @@ export const ExerciseSchema = z.object({
   optionImages: z.array(FileIdSchema.nullable()),
   /** Dialogue gaps: the conversation just before the gap, oldest first. */
   context: z.array(DialogueLineSchema),
+  /** Word order: the tiles whose ending is to be picked; empty for plain ordering. */
+  endings: z.array(TileEndingSchema),
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
+
+/** Quick games on Home: enough words to play, the records, today's XP from them. */
+export const QuickGamesSchema = z.object({
+  wordsMet: z.number(),
+  minWords: z.number(),
+  matchBestMs: z.number().nullable(),
+  flipBestMoves: z.number().nullable(),
+  flipBestMs: z.number().nullable(),
+  xpToday: z.number(),
+  xpPerDay: z.number(),
+  xpPerGame: z.number(),
+});
+export type QuickGames = z.infer<typeof QuickGamesSchema>;
+
+export const QuickGameKindSchema = z.enum(["match", "flip"]);
+export type QuickGameKind = z.infer<typeof QuickGameKindSchema>;
+
+/** One game's cards. */
+export const QuickGameSchema = z.object({
+  game: QuickGameKindSchema,
+  pairs: z.array(PairSchema),
+});
+export type QuickGame = z.infer<typeof QuickGameSchema>;
+
+/** What finishing a quick game brought. */
+export const GameFinishedSchema = z.object({
+  xpGained: z.number(),
+  /** Beat the best before it (a first game only sets one). */
+  record: z.boolean(),
+  bestMs: z.number().nullable(),
+  bestMoves: z.number().nullable(),
+  previousMs: z.number().nullable(),
+  previousMoves: z.number().nullable(),
+  xpToday: z.number(),
+  xpPerDay: z.number(),
+  totalXp: z.number(),
+  level: z.number(),
+});
+export type GameFinished = z.infer<typeof GameFinishedSchema>;
 
 export const SessionPlanSchema = z.object({
   day: z.number(),
@@ -565,6 +617,8 @@ export const SettingsSchema = z.object({
   /** Empty until first stored. */
   theme: z.enum(["", "system", "light", "dark"]),
   playerRepeat: z.enum(["", "off", "all", "one"]),
+  /** Taps and buzzes with the answers, on a phone (kept on this device). */
+  haptics: z.boolean(),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -587,6 +641,7 @@ export const SettingsPatchSchema = z.object({
   songLength: SongLengthSchema.optional(),
   theme: z.enum(["system", "light", "dark"]).optional(),
   playerRepeat: z.enum(["off", "all", "one"]).optional(),
+  haptics: z.boolean().optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 

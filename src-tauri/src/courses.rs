@@ -34,10 +34,15 @@ pub struct NewWord {
     pub pos: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct NewSentence {
     pub pl: String,
     pub en: String,
+    /// Its words that stand in another form than their dictionary one, so a
+    /// word-order card can ask for the ending (tiles.rs). Optional: without
+    /// them the sentence is built by plain ordering.
+    #[serde(default)]
+    pub endings: Vec<crate::tiles::Ending>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -635,6 +640,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
         if pl.is_empty() || en.is_empty() {
             continue;
         }
+        let endings = crate::tiles::clean_endings(&pl, &sentence.endings);
         let added = diesel::insert_or_ignore_into(sentences::table)
             .values((
                 sentences::id.eq(SentenceId::new()),
@@ -642,6 +648,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
                 sentences::ord.eq(ord),
                 sentences::pl.eq(pl),
                 sentences::en.eq(en),
+                sentences::endings.eq(serde_json::to_string(&endings)?),
             ))
             .execute(conn)?;
         if added == 0 {

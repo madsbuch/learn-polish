@@ -34,8 +34,15 @@ const patched = manifest.replace(/<activity\b[^>]*>/g, (tag) => {
 if (!matched) throw new Error("MainActivity was not found in the Android manifest.");
 // Sync between the learner's devices talks to the local network: TCP and
 // UDP broadcast (INTERNET), and whether Wi-Fi is up (ACCESS_NETWORK_STATE).
+// Answers are felt as well as heard (src/lib/haptics.ts): VIBRATE, a normal
+// permission granted at install. The haptics plugin's own manifest asks for
+// it too; naming it here keeps it if that ever changes.
 let permitted = patched;
-for (const permission of ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"]) {
+for (const permission of [
+  "android.permission.INTERNET",
+  "android.permission.ACCESS_NETWORK_STATE",
+  "android.permission.VIBRATE",
+]) {
   if (permitted.includes(`android:name="${permission}"`)) continue;
   permitted = permitted.replace(/<application\b/, `<uses-permission android:name="${permission}" />\n    <application`);
 }

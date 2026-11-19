@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS sentences (
     ord      INTEGER NOT NULL,
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
+    -- Its words in another form than their dictionary one, from the tutor
+    -- (a JSON list of {form, base, wrong}: tiles.rs). '[]' for sentences
+    -- made without (schema 9): they are built by plain ordering.
+    endings  TEXT    NOT NULL DEFAULT '[]',
     UNIQUE (lesson_id, pl)
 );
 

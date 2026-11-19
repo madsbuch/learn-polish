@@ -25,8 +25,12 @@ import type {
   SongDraft,
   SpeechLine,
   SettingsPatch,
+  QuickGameKind,
 } from "./types";
 import {
+  GameFinishedSchema,
+  QuickGameSchema,
+  QuickGamesSchema,
   FileIdSchema,
   JoinResultSchema,
   ResolvedIdSchema,
@@ -160,6 +164,10 @@ export const api = {
     run?: string;
   }) => call(AnswerResultSchema, "submit_answer", { answer }),
   xpDay: (day: number) => call(XpDaySchema, "xp_day", { day }),
+  quickGames: () => call(QuickGamesSchema, "quick_games"),
+  quickGameDeal: (game: QuickGameKind) => call(QuickGameSchema, "quick_game_deal", { game }),
+  quickGameFinish: (game: QuickGameKind, pairs: number, ms: number, moves: number) =>
+    call(GameFinishedSchema, "quick_game_finish", { game, pairs, ms, moves }),
   xpHistory: (days: number) =>
     call(z.array(XpHistoryDaySchema), "xp_history", { days }),
   lessonsOverview: () => call(LessonOverviewSchema, "lessons_overview"),

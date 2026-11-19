@@ -397,6 +397,147 @@
   align-content: flex-start;
 }
 
+/* ======================================================== sentence tiles */
+/* Word order (components/SentenceTiles.tsx): the sentence line, the bank of
+   words, and the endings of the tile being changed. */
+.tile-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tile-line {
+  min-height: 68px;
+  border-radius: var(--radius-md);
+  border: 1.5px dashed var(--line);
+  background: var(--surface-sunken);
+  padding: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  align-content: flex-start;
+  transition:
+    border-color var(--duration) var(--ease-out),
+    background-color var(--duration) var(--ease-out);
+}
+/* A tile held over the line: the line lights up to take it. */
+.tile-line[data-over] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+.tile-line__hint {
+  padding-left: var(--space-1);
+}
+.tile-bank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tile {
+  min-height: var(--control-md);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  color: var(--text);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* A tile is dragged, not scrolled or selected: the finger is the tile's. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.tile:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.tile:disabled {
+  cursor: default;
+}
+.tile[data-used] {
+  opacity: 0.25;
+}
+/* Its ending is still to be picked: a dotted line under the word. */
+.tile[data-ending] {
+  text-decoration: underline dotted var(--brand);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+.tile[data-ending="picked"] {
+  text-decoration: none;
+  color: var(--brand-ink);
+}
+.tile[data-state="picking"] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+.tile[data-state="right"] {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+  color: var(--text);
+  --glow-colour: var(--glow-ok);
+  animation:
+    bump var(--duration-slow) var(--ease-spring),
+    glow 0.7s var(--ease-out) var(--duration-fast);
+}
+.tile[data-state="wrong"] {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+  color: var(--text);
+  animation: shake 0.36s var(--ease-out);
+}
+/* Where a held tile would land. */
+.tile-gap {
+  min-width: var(--control-md);
+  border: 1.5px dashed var(--brand);
+  background: transparent;
+}
+/* The tile in the hand: lifted above everything, following the finger
+   (outside every scroller: it is drawn over the page). */
+.tile-floating {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-toast);
+  pointer-events: none;
+  border-color: var(--brand);
+  box-shadow: var(--shadow);
+  scale: 1.06;
+  animation: tile-lift var(--duration-fast) var(--ease-spring) backwards;
+}
+@keyframes tile-lift {
+  from {
+    scale: 1;
+    box-shadow: none;
+  }
+}
+.tile-endings {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.tile-endings__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tile-choice[data-chosen] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
 .verdict {
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -506,6 +647,26 @@
 .memory-card[data-state="open"] {
   border-color: var(--brand);
 }
+/* Turning a card: the face it turns to swings in edge-on, once, as the
+   state changes (a different animation per face, so each change runs it
+   again), and ends flat: nothing stays transformed inside the scroller. */
+.memory-card[data-state="open"],
+.memory-card[data-state="found"] {
+  animation: card-flip-up var(--duration) var(--ease-out);
+}
+.memory-card[data-state="down"] {
+  animation: card-flip-down var(--duration) var(--ease-out);
+}
+@keyframes card-flip-up {
+  from {
+    transform: perspective(600px) rotateY(-90deg);
+  }
+}
+@keyframes card-flip-down {
+  from {
+    transform: perspective(600px) rotateY(90deg);
+  }
+}
 .memory-card[data-state="miss"] {
   border-color: var(--bad);
   animation: shake 0.3s;
@@ -514,6 +675,84 @@
   border-color: var(--ok);
   background: var(--ok-bg);
   color: var(--text);
+  --glow-colour: var(--glow-ok);
+  animation:
+    bump var(--duration-slow) var(--ease-spring),
+    glow 0.7s var(--ease-out) var(--duration-fast);
+}
+
+/* =========================================================== quick games */
+/* Quick games (screens/QuickGames.tsx): the clock and moves above the board,
+   Match pairs' two columns, the result. */
+.game-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* The running clock: digits that don't jostle as they change. */
+.game-clock {
+  font-variant-numeric: tabular-nums;
+}
+.game-bar .badge {
+  font-variant-numeric: tabular-nums;
+}
+.match-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.match-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.match-tile {
+  min-height: var(--control-lg);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-body);
+  font-weight: var(--weight-bold);
+  text-align: center;
+  overflow-wrap: anywhere;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration) var(--ease-out);
+}
+.match-tile[data-lang="en"] {
+  font-weight: var(--weight-medium);
+  color: var(--text-dim);
+}
+.match-tile:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.match-tile[data-state="picked"] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--text);
+}
+/* A pair found: it swells and glows once, then rests, done, in green. */
+.match-tile[data-state="found"] {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+  color: var(--text-faint);
+  cursor: default;
+  --glow-colour: var(--glow-ok);
+  animation:
+    bump var(--duration-slow) var(--ease-spring),
+    glow 0.7s var(--ease-out) var(--duration-fast);
+}
+.match-tile[data-state="slip"] {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+  animation: shake 0.36s var(--ease-out);
+}
+.game-result {
+  padding-block: var(--space-6);
 }
 
 /* ============================================================== dialogue */

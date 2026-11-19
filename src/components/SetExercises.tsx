@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, Stack, Text } from "../design";
 import { fileUrl } from "../lib/files";
-import type { Exercise, FileId } from "../lib/types";
+import type { Exercise, FileId, Pair } from "../lib/types";
+import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playMatch, playWrong } from "../lib/sounds";
 
 /**
@@ -130,30 +131,38 @@ function shuffle<T>(items: T[]): T[] {
  * its English meaning stay up, anything else turns back.
  */
 export function Memory({
-  exercise,
+  pairs,
+  deal,
   onComplete,
+  onTurn,
 }: {
-  exercise: Exercise;
+  pairs: Pair[];
+  /** Names this deal: new cards are shuffled when it changes. */
+  deal: string;
   /** Called once, when every pair is found, with how many turns it took. */
   onComplete: (turns: number) => void;
+  /** Called as each card is turned (a quick game starts its clock). */
+  onTurn?: () => void;
 }) {
   const cards = useMemo<Card[]>(
     () =>
       shuffle(
-        exercise.pairs.flatMap((pair, i) => [
+        pairs.flatMap((pair, i) => [
           { id: i * 2, pair: i, text: pair.pl, lang: "pl" as const, image: null },
           // In a picture lesson the second card is the picture.
           { id: i * 2 + 1, pair: i, text: pair.en, lang: "en" as const, image: pair.image ?? null },
         ]),
       ),
-    [exercise.key],
+    // Shuffled once per deal, not again when the same cards come back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deal],
   );
   const [open, setOpen] = useState<number[]>([]);
   const [found, setFound] = useState<Set<number>>(new Set());
   const [miss, setMiss] = useState<number[]>([]);
   const [turns, setTurns] = useState(0);
   const timer = useRef<number | undefined>(undefined);
-  const done = found.size === exercise.pairs.length;
+  const done = found.size === pairs.length;
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
   useEffect(() => {
@@ -165,7 +174,9 @@ export function Memory({
   function flip(index: number) {
     const card = cards[index];
     if (done || found.has(card.pair) || open.includes(index) || miss.length > 0) return;
+    onTurn?.();
     if (open.length === 0) {
+      hapticTick();
       setOpen([index]);
       return;
     }
@@ -175,8 +186,10 @@ export function Memory({
       setFound(new Set([...found, card.pair]));
       setOpen([]);
       playMatch();
+      hapticRight();
     } else {
       playWrong();
+      hapticWrong();
       setOpen([open[0], index]);
       setMiss([open[0], index]);
       timer.current = window.setTimeout(() => {
@@ -218,7 +231,7 @@ export function Memory({
         })}
       </div>
       <Text variant="small" tone="faint" align="center" as="div">
-        {found.size} of {exercise.pairs.length} pairs · {turns} turn{turns === 1 ? "" : "s"}
+        {found.size} of {pairs.length} pairs · {turns} turn{turns === 1 ? "" : "s"}
       </Text>
     </>
   );

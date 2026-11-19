@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 8;
+pub(crate) const SCHEMA_VERSION: i64 = 9;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -729,6 +729,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
         crate::upgrade_v8::run(conn, SCHEMA)?;
     }
     conn.batch_execute(SCHEMA)?;
+    // Version 9: a sentence's endings for word-order tiles (tiles.rs). Older
+    // sentences get none: they keep being built by plain ordering.
+    add_column(conn, "sentences", "endings", "TEXT NOT NULL DEFAULT '[]'")?;
     // Every synced table watched by triggers that list its current columns:
     // a schema change that adds a column (with an idempotent ALTER here, and
     // a bump of SCHEMA_VERSION) gets its triggers re-made by this.
@@ -1460,7 +1463,7 @@ pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
             .collect();
         let sentences: Vec<crate::courses::NewSentence> = content::parse_sentences(course.sentences)
             .into_iter()
-            .map(|s| crate::courses::NewSentence { pl: s.pl.to_string(), en: s.en.to_string() })
+            .map(|s| crate::courses::NewSentence { pl: s.pl.to_string(), en: s.en.to_string(), ..Default::default() })
             .collect();
         let mut lines = Vec::new();
         for line in &convo.lines {
@@ -1571,6 +1574,9 @@ pub(crate) const DEVICE_SETTINGS: &[&str] = &[
     "reminder_minute",
     "tts_prefetch",
     "player_repeat",
+    // Whether this phone taps and buzzes with the answers: a phone's
+    // preference, not the learner's (a computer has nothing to buzz).
+    "haptics",
     "starter_seeded",
     crate::demo_course::SEEDED,
     crate::starter_retirement::RETIRED,

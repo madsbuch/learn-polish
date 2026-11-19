@@ -42,10 +42,12 @@ mod srs;
 mod stats;
 mod starter_retirement;
 mod text;
+mod tiles;
 mod tutor;
 mod wiki;
 mod work;
 mod xplog;
+mod games;
 
 
 use tauri::{Emitter, Manager};
@@ -61,6 +63,18 @@ fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 #[cfg(not(mobile))]
 fn barcode_scanner<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("barcode-scanner-none").build()
+}
+
+/// Taps under the finger for right and wrong answers (src/lib/haptics.ts).
+#[cfg(mobile)]
+fn haptics<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri_plugin_haptics::init()
+}
+
+/// Computers have nothing to buzz; the front end doesn't call it there.
+#[cfg(not(mobile))]
+fn haptics<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("haptics-none").build()
 }
 
 
@@ -96,6 +110,8 @@ pub fn run() {
         .plugin(tauri_plugin_sync_background::init())
         // Scanning another device's API keys off a QR code (phones only).
         .plugin(barcode_scanner())
+        // A soft tap for a right answer, a double buzz for a wrong one (phones).
+        .plugin(haptics())
         // Every file the webview shows or plays — pictures, covers, songs —
         // by id, straight from the files table: media://localhost/<id>.
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
@@ -215,6 +231,9 @@ pub fn run() {
             db::db_upgrading,
             diagnostics::diagnostics_note,
             xplog::xp_day,
+            games::quick_games,
+            games::quick_game_deal,
+            games::quick_game_finish,
             xplog::xp_history,
             diagnostics::diagnostics_clear,
             pictures::word_picture_draw,
@@ -1832,11 +1851,142 @@ mod integration {
     }
 
     #[test]
+    fn sentence_tiles_ask_for_the_endings_the_tutor_gave() {
+        let mut conn = scratch_db("sentence-tiles");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let made = tutor::run_tool_for_test(
+            &mut conn,
+            "create_drill_lesson",
+            serde_json::json!({
+                "title": "At the café",
+                "format": "sentences",
+                "complexity": "low",
+                "course_id": course,
+                "sentences": [
+                    {
+                        "pl": "Poproszę kawę z mlekiem.",
+                        "en": "A coffee with milk, please.",
+                        "endings": [
+                            { "form": "kawę", "base": "kawa", "wrong": ["kawy", "kawą"] },
+                            { "form": "mlekiem", "base": "mleko", "wrong": ["mleka", "mleku"] },
+                            { "form": "herbatę", "base": "herbata", "wrong": [] }
+                        ]
+                    },
+                    // Without endings: plain ordering, as before.
+                    { "pl": "Dzień dobry.", "en": "Good morning." }
+                ]
+            }),
+        );
+        let lesson_id = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let plan = session::build_lesson(&mut conn, lesson_id).unwrap();
+        let orders: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "wordOrder").collect();
+        assert_eq!(orders.len(), 2);
+        let coffee = orders.iter().find(|e| e.answer.starts_with("Poproszę")).unwrap();
+        // Only the endings that fit the sentence are kept.
+        assert_eq!(coffee.endings.len(), 2);
+        for ending in &coffee.endings {
+            let token = &coffee.tokens[ending.token];
+            assert!(ending.choices.contains(token), "{token} is among {:?}", ending.choices);
+            assert_ne!(&ending.shown, token, "the tile shows the dictionary form");
+        }
+        let plain = orders.iter().find(|e| e.answer.starts_with("Dzień")).unwrap();
+        assert!(plain.endings.is_empty());
+
+        // The dictionary form left as it is, or the wrong ending, is wrong —
+        // Polish letters count on a tile; case and punctuation don't.
+        let mut answer = |given: &str| {
+            practice::submit_answer_in(
+                &mut conn,
+                practice::SubmitAnswer {
+                    kind: "wordOrder".into(),
+                    item_kind: "sentence".into(),
+                    item_id: coffee.item_id.clone(),
+                    expected: coffee.answer.clone(),
+                    given: given.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .correct
+        };
+        assert!(!answer("Poproszę kawa z mleko."));
+        assert!(!answer("Poproszę kawą z mlekiem."));
+        assert!(answer("poproszę kawę z mlekiem"));
+    }
+
+    #[test]
+    fn quick_games_pay_a_little_and_leave_the_schedule_alone() {
+        let mut conn = scratch_db("quick-games");
+        let overview = crate::games::overview(&mut conn).unwrap();
+        if overview.words_met < overview.min_words {
+            assert!(crate::games::deal(&mut conn, "match", &mut rand::rng()).is_err(), "no game without words met");
+        }
+        // Meet some words.
+        let met: Vec<(WordId, String)> = crate::schema::words::table
+            .select((crate::schema::words::id, crate::schema::words::pl))
+            .limit(10)
+            .load(&mut conn)
+            .unwrap();
+        assert!(met.len() >= 8);
+        for (id, pl) in &met {
+            practice::submit_answer_in(
+                &mut conn,
+                practice::SubmitAnswer {
+                    kind: "recognise".into(),
+                    item_kind: "word".into(),
+                    item_id: id.to_string(),
+                    expected: pl.clone(),
+                    given: pl.clone(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        let reviews = |conn: &mut Conn| {
+            crate::schema::reviews::table
+                .select((crate::schema::reviews::item_id, crate::schema::reviews::due_day, crate::schema::reviews::reps))
+                .order(crate::schema::reviews::item_id)
+                .load::<(String, i64, i64)>(conn)
+                .unwrap()
+        };
+        let before = reviews(&mut conn);
+        let game = crate::games::deal(&mut conn, "match", &mut rand::rng()).unwrap();
+        assert!(game.pairs.len() >= crate::games::MIN_PAIRS);
+        assert!(crate::games::deal(&mut conn, "chess", &mut rand::rng()).is_err());
+
+        // A first game sets the best; a slower one isn't a record; a faster one is.
+        let first = crate::games::finish(&mut conn, "match", 8, 40_000, 2).unwrap();
+        assert!(!first.record);
+        assert_eq!((first.xp_gained, first.best_ms), (10, Some(40_000)));
+        let slower = crate::games::finish(&mut conn, "match", 8, 50_000, 0).unwrap();
+        assert!(!slower.record);
+        let faster = crate::games::finish(&mut conn, "match", 8, 30_000, 0).unwrap();
+        assert!(faster.record);
+        assert_eq!(faster.previous_ms, Some(40_000));
+        // The day's cap: a fourth game earns nothing.
+        let capped = crate::games::finish(&mut conn, "flip", 6, 30_000, 9).unwrap();
+        assert_eq!((capped.xp_gained, capped.xp_today), (0, crate::games::GAME_XP_PER_DAY));
+        assert_eq!(capped.best_moves, Some(9));
+        let fewer = crate::games::finish(&mut conn, "flip", 6, 60_000, 7).unwrap();
+        assert!(fewer.record, "fewer moves beat a faster game");
+
+        // The day's XP screen names them, and no review moved.
+        let today = db::today(&mut conn);
+        let day = crate::xplog::day(&mut conn, today).unwrap();
+        let games: Vec<_> = day.runs.iter().filter(|r| r.lesson_title == "Quick game").collect();
+        assert_eq!(games.len(), 5);
+        assert_eq!(games.iter().map(|r| r.xp).sum::<i64>(), crate::games::GAME_XP_PER_DAY);
+        assert_eq!(reviews(&mut conn), before);
+        let overview = crate::games::overview(&mut conn).unwrap();
+        assert_eq!((overview.match_best_ms, overview.flip_best_moves), (Some(30_000), Some(7)));
+    }
+
+    #[test]
     fn every_lesson_type_can_be_made_and_practised() {
         let mut conn = scratch_db("lesson-types");
         let course = db::require_course_id(&mut conn, 1).unwrap();
         let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into() };
-        let sentence = |pl: &str, en: &str| courses::NewSentence { pl: pl.into(), en: en.into() };
+        let sentence = |pl: &str, en: &str| courses::NewSentence { pl: pl.into(), en: en.into(), ..Default::default() };
         let line = |speaker: &str, pl: &str, en: &str| courses::NewLine { speaker: speaker.into(), gender: "f".into(), pl: pl.into(), en: en.into() };
         let screens = include_str!("../../src/lib/types.ts");
         let mut ids = std::collections::HashSet::new();
@@ -2487,6 +2637,29 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("Sentence.list", &commands::browse_sentences_in(&mut conn, basics).unwrap());
         write("CataloguePage", &commands::browse_catalogue_in(&mut conn, None, String::new(), 10).unwrap());
         write("SessionPlan", &session::build_lesson(&mut conn, drill.id).unwrap());
+        // A sentence with endings: its word-order card asks for them.
+        let tiles = tutor::run_tool_for_test(
+            &mut conn,
+            "create_drill_lesson",
+            serde_json::json!({
+                "title": "Tiles", "format": "sentences", "complexity": "low", "course_id": basics,
+                "sentences": [{ "pl": "Poproszę kawę.", "en": "A coffee, please.",
+                                "endings": [{ "form": "kawę", "base": "kawa", "wrong": ["kawy", "kawą"] }] }]
+            }),
+        );
+        let tiles = serde_json::from_value(tiles["_action"]["lessonId"].clone()).unwrap();
+        let tile_plan = session::build_lesson(&mut conn, tiles).unwrap();
+        assert!(tile_plan.exercises.iter().any(|e| !e.endings.is_empty()));
+        write("Exercise.list", &tile_plan.exercises);
+        // Quick games, once a few words are met.
+        let met: Vec<WordId> = crate::schema::words::table.select(crate::schema::words::id).limit(8).load(&mut conn).unwrap();
+        for id in &met {
+            let answer = practice::SubmitAnswer { kind: "recognise".into(), item_kind: "word".into(), item_id: id.to_string(), ..Default::default() };
+            practice::submit_answer_in(&mut conn, answer).unwrap();
+        }
+        write("QuickGame", &crate::games::deal(&mut conn, "flip", &mut rand::rng()).unwrap());
+        write("GameFinished", &crate::games::finish(&mut conn, "match", 8, 42_000, 1).unwrap());
+        write("QuickGames", &crate::games::overview(&mut conn).unwrap());
         write("LessonTypeInfo.list", &crate::lesson_types::lesson_types());
         write("Song.list", &songs::list_songs(&mut conn, false).unwrap());
         write("Playlist.list", &playlists::list(&mut conn).unwrap());

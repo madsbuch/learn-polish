@@ -1,21 +1,23 @@
+import { SentenceTiles, tileText } from "../components/SentenceTiles";
 import { Card, Text } from "../design";
 import type { Exercise } from "../lib/types";
 import { defineExercise, type AnswerState } from "./types";
 
-/** The sentence as built so far, words joined by spaces. */
-function builtSentence(exercise: Exercise, { built }: AnswerState) {
-  return built.map((i) => exercise.tokens[i]).join(" ");
+/** The sentence as built so far: each tile as it reads now (its ending, if picked), joined by spaces. */
+function builtSentence(exercise: Exercise, { built, forms }: AnswerState) {
+  return built.map((i) => tileText(exercise, forms, i)).join(" ");
 }
 
 /**
- * Build the Polish sentence from shuffled words: tap a word to add it to the
- * answer, tap it in the answer to take it back.
+ * Build the Polish sentence from its words, as tiles: drag them into the
+ * line (or tap), reorder them, and pick the ending of a word that needs
+ * another form than its dictionary one (see components/SentenceTiles).
  */
 export const wordOrder = defineExercise({
   kinds: ["wordOrder"],
   given: builtSentence,
   canSubmit: (exercise, state) => builtSentence(exercise, state).trim().length > 0,
-  render: ({ exercise, built, setBuilt, isChecked }) => (
+  render: ({ exercise, built, setBuilt, forms, setForms, isChecked }) => (
     <>
       <Text variant="eyebrow">Build the Polish sentence</Text>
       <Card>
@@ -23,31 +25,14 @@ export const wordOrder = defineExercise({
           {exercise.prompt}
         </Text>
       </Card>
-      <div className="answer-slot">
-        {built.map((tokenIndex, position) => (
-          <button
-            key={`${tokenIndex}-${position}`}
-            className="token"
-            disabled={isChecked}
-            onClick={() => setBuilt(built.filter((_, i) => i !== position))}
-          >
-            {exercise.tokens[tokenIndex]}
-          </button>
-        ))}
-      </div>
-      <div className="tokens">
-        {exercise.tokens.map((token, tokenIndex) => (
-          <button
-            key={`${token}-${tokenIndex}`}
-            className="token"
-            data-used={built.includes(tokenIndex)}
-            disabled={isChecked || built.includes(tokenIndex)}
-            onClick={() => setBuilt([...built, tokenIndex])}
-          >
-            {token}
-          </button>
-        ))}
-      </div>
+      <SentenceTiles
+        exercise={exercise}
+        built={built}
+        forms={forms}
+        checked={isChecked}
+        onBuilt={setBuilt}
+        onForms={setForms}
+      />
     </>
   ),
 });

@@ -94,6 +94,7 @@ export function Exercises({
   onOpenCourse,
   onOpenTutor,
   onOpenProgress,
+  onOpenGames,
   onOpenXpDay,
   onOpenSearch,
 }: {
@@ -105,6 +106,8 @@ export function Exercises({
   /** Opens the tutor; with `ask`, a new conversation that starts with it. */
   onOpenTutor: (ask?: string) => void;
   onOpenProgress: () => void;
+  /** Quick games over the words met, outside the daily five. */
+  onOpenGames: () => void;
   /** What earned a day's XP. */
   onOpenXpDay: (day: number) => void;
   onOpenSearch: () => void;
@@ -276,6 +279,15 @@ export function Exercises({
                     chevron
                     onClick={onOpenProgress}
                   />
+                  {stats.wordsSeen >= 4 ? (
+                    <ListItem
+                      leading={<Avatar>🃏</Avatar>}
+                      title="Quick games"
+                      subtitle="Match pairs and memory cards with words you know"
+                      chevron
+                      onClick={onOpenGames}
+                    />
+                  ) : null}
                 </List>
               </div>
             ) : null}

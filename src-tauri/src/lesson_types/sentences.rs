@@ -9,7 +9,7 @@ pub const TYPE: LessonType = LessonType {
     id: "sentences",
     name: "Sentences",
     icon: "drill",
-    description: "Build sentences from their words, then fill the gaps in them.",
+    description: "Build sentences from their words as tiles (picking the ending where a word changes form), then fill the gaps in them.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Sentences,

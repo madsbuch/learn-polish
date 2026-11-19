@@ -36,6 +36,8 @@ pub struct SentenceRow {
     pub id: SentenceId,
     pub pl: String,
     pub meaning: String,
+    /// Its words in another form than their dictionary one (tiles.rs).
+    pub endings: Vec<crate::tiles::Ending>,
 }
 
 pub fn load_course(conn: &mut Conn, course_id: CourseId) -> Result<Course> {
@@ -101,6 +103,7 @@ pub(crate) fn word_intro(w: &WordRow) -> Exercise {
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -123,6 +126,7 @@ pub(crate) fn typing(w: &WordRow) -> Exercise {
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -145,6 +149,7 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
     }
@@ -179,17 +184,17 @@ pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(
 }
 
 pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(SentenceRow, bool)>> {
-    let rows: Vec<(SentenceId, String, String)> = sentences::table
+    let rows: Vec<(SentenceId, String, String, String)> = sentences::table
         .filter(sentences::lesson_id.eq(lesson_id))
         .order((sentences::ord, sentences::id))
-        .select((sentences::id, sentences::pl, sentences::en))
+        .select((sentences::id, sentences::pl, sentences::en, sentences::endings))
         .load(conn)?;
     let seen = met(conn, "sentence", &rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>())?;
     Ok(rows
         .into_iter()
-        .map(|(id, pl, meaning)| {
+        .map(|(id, pl, meaning, endings)| {
             let new = !seen.contains_key(&id.to_string());
-            (SentenceRow { id, pl, meaning }, new)
+            (SentenceRow { id, pl, meaning, endings: crate::tiles::parse(&endings) }, new)
         })
         .collect())
 }
@@ -271,6 +276,7 @@ pub(crate) fn dialogue_read(lesson_id: LessonId, course: &Course) -> Exercise {
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
         pl: course.title_pl.clone(),
         meaning: course.summary.clone(),
     }
@@ -377,6 +383,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: LessonId,
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
     })
 }
 
@@ -432,6 +439,7 @@ pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rn
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -454,15 +462,22 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
 }
 
+/// Build the sentence from its shuffled words. Words that stand in another
+/// form than their dictionary one (when the sentence has them: tiles.rs) are
+/// laid out in their dictionary form, with the endings to pick from.
 pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
+    let rng = &mut rand::rng();
     let mut tokens: Vec<String> = s.pl.split_whitespace().map(str::to_string).collect();
-    tokens.shuffle(&mut rand::rng());
+    tokens.shuffle(rng);
+    let endings = crate::tiles::tile_endings(&tokens, &s.endings, rng);
     Exercise {
+        endings,
         key: format!("s{}-order", s.id),
         kind: "wordOrder".into(),
         item_kind: "sentence".into(),
@@ -530,6 +545,7 @@ pub(crate) fn dialogue_gaps(
                 image: None,
                 option_images: vec![],
                 context: dialogue[i.saturating_sub(DIALOGUE_CONTEXT)..i].to_vec(),
+                endings: vec![],
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
@@ -570,22 +586,33 @@ fn short_gloss(meaning: &str) -> String {
     meaning.split([',', ';']).next().unwrap_or(meaning).trim().to_string()
 }
 
-/// Face-down cards: find each Polish word's English partner.
-pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rng: &mut impl rand::Rng) -> Option<Exercise> {
-    let mut pool: Vec<&&WordRow> = words.iter().collect();
-    pool.shuffle(rng);
+/// Up to `count` Polish/English pairs from `words`, in their order, no two
+/// alike on either side — two cards that read the same would make a
+/// matching game unwinnable. `pictures`: a pictured word brings its picture
+/// for its second card (in place of the English), no picture twice.
+pub(crate) fn pick_pairs(words: &[&WordRow], count: usize, pictures: bool) -> Vec<Pair> {
     let mut pairs: Vec<Pair> = Vec::new();
-    for w in pool {
+    for w in words {
         let en = short_gloss(&w.meaning);
-        // Two cards that read the same would make the game unwinnable.
-        if en.is_empty() || pairs.iter().any(|p| p.en.eq_ignore_ascii_case(&en) || p.pl == w.pl) {
+        let image = if pictures { w.image } else { None };
+        if en.is_empty()
+            || pairs.iter().any(|p| p.en.eq_ignore_ascii_case(&en) || p.pl == w.pl || (image.is_some() && p.image == image))
+        {
             continue;
         }
-        pairs.push(Pair { pl: w.pl.clone(), en, image: None });
-        if pairs.len() == MEMORY_PAIRS {
+        pairs.push(Pair { pl: w.pl.clone(), en, image });
+        if pairs.len() == count {
             break;
         }
     }
+    pairs
+}
+
+/// Face-down cards: find each Polish word's English partner.
+pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rng: &mut impl rand::Rng) -> Option<Exercise> {
+    let mut pool: Vec<&WordRow> = words.to_vec();
+    pool.shuffle(rng);
+    let pairs = pick_pairs(&pool, MEMORY_PAIRS, false);
     if pairs.len() < 4 {
         return None;
     }
@@ -607,11 +634,12 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rn
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
     })
 }
 
 /// Splits "Anna." into ("", "Anna", "."), so punctuation stays out of the gap.
-fn split_punctuation(token: &str) -> (&str, &str, &str) {
+pub(crate) fn split_punctuation(token: &str) -> (&str, &str, &str) {
     let start = token.find(|c: char| c.is_alphanumeric()).unwrap_or(token.len());
     let end = token
         .rfind(|c: char| c.is_alphanumeric())
@@ -734,6 +762,7 @@ pub(crate) fn gap_fill(
         image: None,
         option_images: vec![],
         context: vec![],
+        endings: vec![],
     }))
 }
 

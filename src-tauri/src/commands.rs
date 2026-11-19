@@ -61,6 +61,7 @@ pub(crate) fn read_settings(conn: &mut Conn) -> Result<Settings> {
         player_repeat: db::get_setting(conn, "player_repeat")?
             .filter(|t| matches!(t.as_str(), "off" | "all" | "one"))
             .unwrap_or_default(),
+        haptics: db::get_setting_i64(conn, "haptics", 1) == 1,
     })
 }
 
@@ -125,6 +126,7 @@ pub struct SettingsPatch {
     pub song_length: Option<String>,
     pub theme: Option<String>,
     pub player_repeat: Option<String>,
+    pub haptics: Option<bool>,
 }
 
 #[tauri::command]
@@ -171,6 +173,9 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(prefetch) = patch.tts_prefetch {
         db::set_setting(conn, "tts_prefetch", if prefetch { "1" } else { "0" })?;
+    }
+    if let Some(haptics) = patch.haptics {
+        db::set_setting(conn, "haptics", if haptics { "1" } else { "0" })?;
     }
     if let Some(model) = patch.songwriter_model {
         db::set_setting(conn, "songwriter_model", model.trim())?;

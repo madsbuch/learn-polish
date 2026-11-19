@@ -69,6 +69,7 @@ diesel::table! {
         ord -> BigInt,
         pl -> Text,
         en -> Text,
+        endings -> Text,
     }
 }
 

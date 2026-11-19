@@ -36,7 +36,7 @@ export const memory = defineExercise({
   render: ({ exercise, onMemoryComplete }) => (
     <>
       <Text variant="eyebrow">Memory · find the pairs</Text>
-      <Memory exercise={exercise} onComplete={onMemoryComplete} />
+      <Memory pairs={exercise.pairs} deal={exercise.key} onComplete={onMemoryComplete} />
     </>
   ),
   // Praise a quick finish: at most two turns more than there are pairs.

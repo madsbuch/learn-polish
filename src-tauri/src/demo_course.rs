@@ -41,7 +41,7 @@ pub fn seed_once(conn: &mut Conn) -> Result<()> {
                 ("Jak się nazywasz?", "What is your name?"),
                 ("Mówię po angielsku.", "I speak English."),
                 ("Nie rozumiem.", "I do not understand."),
-            ].into_iter().map(|(pl, en)| NewSentence { pl: pl.into(), en: en.into() }).collect::<Vec<_>>();
+            ].into_iter().map(|(pl, en)| NewSentence { pl: pl.into(), en: en.into(), ..Default::default() }).collect::<Vec<_>>();
             let dialogue = [
                 ("Anna", "f", "Cześć! Nazywam się Anna.", "Hello! My name is Anna."),
                 ("Adam", "m", "Cześć! Nazywam się Adam.", "Hello! My name is Adam."),

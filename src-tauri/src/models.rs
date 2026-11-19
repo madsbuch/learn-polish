@@ -112,6 +112,9 @@ pub struct Exercise {
     /// Dialogue gaps: the conversation just before the gap, oldest first —
     /// enough to know where you are without remembering the whole script.
     pub context: Vec<DialogueLine>,
+    /// Word order: the tiles whose ending is to be picked (tiles.rs); empty
+    /// for a sentence built by plain ordering.
+    pub endings: Vec<crate::tiles::TileEnding>,
 }
 
 /// One sentence with a word taken out of it.
@@ -284,6 +287,8 @@ pub struct Settings {
     pub theme: String,
     /// The music player's repeat mode: "off" | "all" | "one", or empty.
     pub player_repeat: String,
+    /// Taps and buzzes with the answers, on a phone (a device setting).
+    pub haptics: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

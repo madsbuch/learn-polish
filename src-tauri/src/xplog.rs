@@ -122,9 +122,16 @@ pub fn day(conn: &mut Conn, day: i64) -> Result<XpDay> {
             order.push(run.clone());
             Run {
                 lesson_id,
-                lesson_title: lesson_id
-                    .and_then(|id| titles.get(&id).cloned())
-                    .unwrap_or_else(|| if lesson_id.is_some() { "A lesson since deleted".into() } else { "Practice".into() }),
+                lesson_title: lesson_id.and_then(|id| titles.get(&id).cloned()).unwrap_or_else(|| {
+                    if lesson_id.is_some() {
+                        "A lesson since deleted".into()
+                    } else if run.starts_with(crate::games::RUN_PREFIX) {
+                        // Played from Home, outside the lessons (games.rs).
+                        "Quick game".into()
+                    } else {
+                        "Practice".into()
+                    }
+                }),
                 course_title: lesson_id.and_then(|id| course_of.get(&id).cloned()),
                 started_at: at,
                 xp: 0,

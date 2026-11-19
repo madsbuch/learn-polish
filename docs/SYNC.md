@@ -64,7 +64,7 @@ this file says why.
 3. **Device settings.** `device_settings(key, value)` is local; `db::get_setting`
    and `set_setting` route the keys in `DEVICE_SETTINGS` there: `theme`,
    `tz_offset_minutes`, `reminders_enabled`, `reminder_hour`,
-   `reminder_minute`, `tts_prefetch`, `player_repeat`, the marks that say
+   `reminder_minute`, `tts_prefetch`, `player_repeat`, `haptics`, the marks that say
    built-in content was seeded here (`starter_seeded`,
    `demo_first_steps_seeded_v1`, `bundled_courses_retired_v1`: synced, a
    device joining a vault could seed the demo again into it), and sync's own. Schema

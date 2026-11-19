@@ -37,6 +37,8 @@ import { Search } from "./screens/Search";
 import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
 import { XpDayScreen } from "./screens/XpDayScreen";
+import { QuickGames } from "./screens/QuickGames";
+import { setHapticsEnabled } from "./lib/haptics";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
@@ -89,6 +91,8 @@ type Overlay =
       back: Overlay;
     }
   | { kind: "progress" }
+  /** Quick games, from Home (screens/QuickGames.tsx). */
+  | { kind: "games" }
   | { kind: "achievement"; code: string }
   | { kind: "xpDay"; day: number; back: Overlay }
   | { kind: "memories"; back: Overlay }
@@ -266,6 +270,11 @@ export default function App() {
     },
     [refresh],
   );
+
+  // Answers are felt on a phone unless this device's setting says not.
+  useEffect(() => {
+    setHapticsEnabled(settings?.haptics ?? true);
+  }, [settings?.haptics]);
 
   // The speech layer needs to know whether an OpenRouter voice is available,
   // because that decides which of the two engines a 🔊 tap uses.
@@ -667,6 +676,21 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "games") {
+    return (
+      <div className="app">
+        <QuickGames
+          level={stats.level}
+          onBack={() => {
+            setOverlay({ kind: "none" });
+            void refresh();
+          }}
+          onPlayed={() => void refresh()}
+        />
+      </div>
+    );
+  }
+
   if (overlay.kind === "progress") {
     return (
       <div className="app">
@@ -760,6 +784,7 @@ export default function App() {
             setTab("tutor");
           }}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
+          onOpenGames={() => setOverlay({ kind: "games" })}
           onOpenXpDay={(day) =>
             setOverlay({ kind: "xpDay", day, back: { kind: "none" } })
           }

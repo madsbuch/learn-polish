@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
+import { hapticCelebrate } from "../lib/haptics";
+
 /*
  * Motion that needs JavaScript: which way a screen comes in, numbers that
  * count up, lists that rise in once, confetti. The rest of the app's motion
@@ -201,6 +203,9 @@ export function Confetti({
   fixed?: boolean;
 }) {
   const [still] = useState(prefersReducedMotion);
+  // A party is felt too, on a phone — reduced motion or not: a buzz isn't
+  // motion, and has its own switch (lib/haptics.ts).
+  useEffect(hapticCelebrate, []);
   const bits = useMemo(
     () =>
       Array.from({ length: pieces }, (_, i) => ({

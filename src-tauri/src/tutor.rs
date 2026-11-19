@@ -114,7 +114,10 @@ The app:
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
   language hook (the city in \"w Krakowie\", \"z Krakowa\").
 - Polish must be correct, with diacritics. Words in dictionary form, lowercase, with a short \
-  gloss; sentences short and natural.
+  gloss; sentences short and natural. With each sentence, list in `endings` its words that \
+  stand in another form than their dictionary one (\"kawę\" for \"kawa\"), each with two \
+  other real forms of the same word that do not fit there: the learner picks the ending when \
+  building the sentence from its words.
 - Songs cost the learner credits: one per request. Give a new song or podcast the course it \
   fits (course_id): it is filed there, with its listening lesson. Put the course's level and the \
   words it should use in requirements — the songwriter writes at the level it is given (a \
@@ -326,7 +329,20 @@ fn sentence_schema() -> Value {
             "type": "object",
             "properties": {
                 "pl": { "type": "string" },
-                "en": { "type": "string" }
+                "en": { "type": "string" },
+                "endings": {
+                    "type": "array",
+                    "description": "The sentence's words that stand in another form than their dictionary form (a case ending, a conjugated verb), for the word-order tiles: the learner sees the dictionary form and picks the ending. Leave out words already in their dictionary form.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "form": { "type": "string", "description": "The word exactly as it stands in the sentence, e.g. \"kawę\"" },
+                            "base": { "type": "string", "description": "Its dictionary form, e.g. \"kawa\"" },
+                            "wrong": { "type": "array", "items": { "type": "string" }, "description": "Two other real forms of the same word that are wrong here, e.g. [\"kawy\", \"kawą\"]" }
+                        },
+                        "required": ["form", "base", "wrong"]
+                    }
+                }
             },
             "required": ["pl", "en"]
         }

@@ -8,6 +8,7 @@ import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
+import { hapticRight, hapticWrong } from "../lib/haptics";
 import { playCorrect, playWrong } from "../lib/sounds";
 import { exerciseModule, type AnswerState, type ExerciseProps } from "../exercises";
 import { WordIdSchema } from "../lib/types";
@@ -44,6 +45,7 @@ export function Session({
   const [picked, setPicked] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
   const [built, setBuilt] = useState<number[]>([]);
+  const [forms, setForms] = useState<Partial<Record<number, string>>>({});
   const [revealAll, setRevealAll] = useState(false);
   const [gapsFilled, setGapsFilled] = useState<(number | null)[]>([]);
   const [memoryTurns, setMemoryTurns] = useState<number | null>(null);
@@ -70,6 +72,7 @@ export function Session({
     setPicked(null);
     setTyped("");
     setBuilt([]);
+    setForms({});
     setGapsFilled([]);
     setMemoryTurns(null);
     setTalking(false);
@@ -91,7 +94,7 @@ export function Session({
     }
   }, [exercise]);
 
-  const answerState: AnswerState = { picked, typed, built, gapsFilled, memoryTurns };
+  const answerState: AnswerState = { picked, typed, built, forms, gapsFilled, memoryTurns };
   const given = exercise && module ? module.given(exercise, answerState) : "";
   const canSubmit = exercise && module ? module.canSubmit(exercise, answerState) : false;
 
@@ -124,8 +127,13 @@ export function Session({
       if (answer.correct && !reading) setCorrectCount((n) => n + 1);
       setPhase("checked");
       if (!reading) {
-        if (answer.correct) playCorrect();
-        else playWrong();
+        if (answer.correct) {
+          playCorrect();
+          hapticRight();
+        } else {
+          playWrong();
+          hapticWrong();
+        }
       }
       if (exercise.pl && exercise.itemKind !== "dialogue" && exercise.itemKind !== "set") {
         // Let the chime ring before the word is read out — after a miss too,
@@ -184,6 +192,7 @@ export function Session({
     setPicked,
     setTyped,
     setBuilt,
+    setForms,
     setGapsFilled,
     onMemoryComplete: setMemoryTurns,
     revealAll,

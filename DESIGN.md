@@ -151,7 +151,14 @@ counting and celebrating.
   value. Nothing moves on a reload that changed nothing.
 - **Practice.** The next card slides in; a right answer swells and glows, a
   wrong one shakes; the XP badge bumps (`useBump`). A day done or a new level
-  gets `Confetti`.
+  gets `Confetti`. A sentence tile lifts when picked up and follows the
+  finger above the page; the line makes room, and the tile springs into its
+  slot (FLIP: one-off, ending untransformed). Memory cards turn edge-on to
+  their new face. A running clock writes its own digits (no re-render).
+- **Haptics** (phones; `src/lib/haptics.ts`, Settings → Voices & sound): a
+  soft tap for a right answer, a firm double buzz for a wrong one, a light
+  tick under a primary button or a tile, a roll with every `Confetti`. Not
+  tied to reduced motion: it has its own switch.
 - **Touch and mouse.** Pressed things scale down a touch and spring back.
   Hover (mouse only, under `(hover: hover) and (pointer: fine)`) changes
   shadow, border or tint — never a transform (see below).
