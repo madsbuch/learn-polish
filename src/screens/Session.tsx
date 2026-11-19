@@ -189,6 +189,7 @@ export function Session({
     exercise,
     plan,
     isChecked,
+    diff: result?.diff ?? [],
     setPicked,
     setTyped,
     setBuilt,

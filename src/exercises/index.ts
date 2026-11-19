@@ -2,6 +2,7 @@ import type { ExerciseKind } from "../lib/types";
 import { recogniseProduce, dialogueGap } from "./choice";
 import { dialogueRead } from "./dialogueRead";
 import { intro, sentenceIntro } from "./intro";
+import { dictation, soundPair } from "./listen";
 import { pictureIntro, picturePick, wordPick } from "./pictures";
 import { gapFill, memory } from "./sets";
 import { typeWord } from "./type";
@@ -24,6 +25,8 @@ const MODULES = [
   pictureIntro,
   wordPick,
   picturePick,
+  dictation,
+  soundPair,
 ] as const;
 
 /** The kinds no module claims. */

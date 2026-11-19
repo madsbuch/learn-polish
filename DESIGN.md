@@ -154,7 +154,13 @@ counting and celebrating.
   gets `Confetti`. A sentence tile lifts when picked up and follows the
   finger above the page; the line makes room, and the tile springs into its
   slot (FLIP: one-off, ending untransformed). Memory cards turn edge-on to
-  their new face. A running clock writes its own digits (no re-render).
+  their new face. A running clock writes its own digits (no re-render). A
+  checked dictation's words land one after another (an entrance, once).
+- **Sing along** (the lyrics, `FollowLyrics`): a blank is the word in
+  transparent ink on a dashed line, so filling it moves nothing; it fills
+  by colour with a glow (a shadow), or shows in gold when missed. The
+  choices and the score sit above the scroller, where they may pop; a
+  word's meaning opens in a popover inside it, at once, with no fade.
 - **Haptics** (phones; `src/lib/haptics.ts`, Settings → Voices & sound): a
   soft tap for a right answer, a firm double buzz for a wrong one, a light
   tick under a primary button or a tile, a roll with every `Confetti`. Not

@@ -16,7 +16,8 @@ change to the schema follows these.
   `pl_` playlist, `pe_` playlist entry, `fl_` file, `ci_` check-in, `cm_`
   check-in message, `cv_` tutor conversation, `msg_` tutor message, `mem_`
   memory, `src_` Wikipedia source, `xp_` XP entry, `cost_` AI cost, `bench_`
-  benchmark run, `dev_` device (sync). A new table gets a new prefix, added
+  benchmark run, `dev_` device (sync), `sp_` built-in sound pair
+  (`sounds.rs`: derived ids, kept in the code, not a table). A new table gets a new prefix, added
   to `ids.rs` and here.
 - **Each kind has its own type**: `LessonId`, `CourseId`, … in Rust; branded
   strings (`LessonIdSchema`) in `src/lib/types.ts`. Only a correctly tagged id

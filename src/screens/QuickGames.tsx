@@ -9,7 +9,6 @@ import {
   Card,
   Confetti,
   CountUp,
-  EmptyState,
   List,
   ListItem,
   Loading,
@@ -22,18 +21,34 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playComplete, playMatch, playWrong } from "../lib/sounds";
+import { DictationGame, SoundsGame } from "../components/EarGames";
 import type { GameFinished, Pair, QuickGame, QuickGameKind, QuickGames as Overview } from "../lib/types";
 
 /*
  * Quick games, from Home: a minute's play over words already met, outside
  * the daily five (games.rs). Match pairs is timed; Flip and match counts
- * moves. They pay a little XP, capped a day, and leave the schedule alone.
+ * moves; Dictation and Sound pairs, for the ear, count right answers. They
+ * pay a little XP, capped a day, and leave the schedule alone.
  */
 
 const GAMES: { kind: QuickGameKind; title: string; icon: string; blurb: string }[] = [
   { kind: "match", title: "Match pairs", icon: "🔗", blurb: "Eight pairs against the clock" },
   { kind: "flip", title: "Flip and match", icon: "🃏", blurb: "Memory cards: a word and its picture" },
+  { kind: "dictation", title: "Dictation", icon: "✍️", blurb: "Write down five sentences you hear" },
+  { kind: "sounds", title: "Sound pairs", icon: "👂", blurb: "Proszę or prosię? Tell them apart" },
 ];
+
+/** Games scored in right answers rather than time or moves. */
+const scored = (kind: QuickGameKind) => kind === "dictation" || kind === "sounds";
+
+/** Why a game can't be played yet, or null when it can. */
+function notYet(overview: Overview, kind: QuickGameKind): string | null {
+  if (kind === "sounds") return null;
+  if (kind === "dictation") {
+    return overview.sentencesMet >= overview.minSentences ? null : "Meet a few sentences in your lessons first";
+  }
+  return overview.wordsMet >= overview.minWords ? null : "Meet a few words in your lessons first";
+}
 
 /** "0:42" — or, while it runs, "0:42.3". */
 export function clock(ms: number, tenths = false) {
@@ -46,6 +61,7 @@ export function clock(ms: number, tenths = false) {
 
 /** What the menu says of a game's best. */
 function bestLine(overview: Overview, kind: QuickGameKind) {
+  if (scored(kind)) return null;
   if (kind === "match") return overview.matchBestMs !== null ? `Best ${clock(overview.matchBestMs)}` : null;
   return overview.flipBestMoves !== null ? `Best ${overview.flipBestMoves} moves` : null;
 }
@@ -86,7 +102,6 @@ export function QuickGames({
     );
   }
 
-  const enough = overview ? overview.wordsMet >= overview.minWords : false;
   return (
     <Screen
       title="Quick games"
@@ -111,26 +126,29 @@ export function QuickGames({
         error ? null : (
           <Loading />
         )
-      ) : !enough ? (
-        <EmptyState icon="🃏" title="Meet a few words first">
-          The games use words from your lessons. Do a lesson or two, and they are ready.
-        </EmptyState>
       ) : (
         <>
           <Section title="Play">
             <List stagger>
-              {GAMES.map((game) => (
-                <ListItem
-                  key={game.kind}
-                  leading={<Avatar>{game.icon}</Avatar>}
-                  title={game.title}
-                  subtitle={[game.blurb, bestLine(overview, game.kind)].filter(Boolean).join(" · ")}
-                  onClick={() => {
-                    hapticTick();
-                    setPlaying(game.kind);
-                  }}
-                />
-              ))}
+              {GAMES.map((game) => {
+                const waiting = notYet(overview, game.kind);
+                return (
+                  <ListItem
+                    key={game.kind}
+                    leading={<Avatar muted={waiting !== null}>{game.icon}</Avatar>}
+                    title={game.title}
+                    subtitle={waiting ?? [game.blurb, bestLine(overview, game.kind)].filter(Boolean).join(" · ")}
+                    onClick={
+                      waiting
+                        ? undefined
+                        : () => {
+                            hapticTick();
+                            setPlaying(game.kind);
+                          }
+                    }
+                  />
+                );
+              })}
             </List>
           </Section>
           <Text variant="small" tone="dim" align="center" as="p">
@@ -187,8 +205,10 @@ function GameScreen({
     const now = performance.now();
     setEndedAt(now);
     const ms = Math.round(now - (startedAt ?? now));
+    const played =
+      kind === "dictation" ? (deal?.sentences.length ?? 0) : kind === "sounds" ? (deal?.sounds.length ?? 0) : (deal?.pairs.length ?? 0);
     try {
-      const finished = await api.quickGameFinish(kind, deal?.pairs.length ?? 0, ms, finalMoves);
+      const finished = await api.quickGameFinish(kind, played, ms, finalMoves);
       setResult(finished);
       playComplete();
       onPlayed();
@@ -198,6 +218,50 @@ function GameScreen({
   }
 
   const elapsed = startedAt === null ? 0 : (endedAt ?? 0) - startedAt;
+  if (scored(kind)) {
+    const total = kind === "dictation" ? (deal?.sentences.length ?? 0) : (deal?.sounds.length ?? 0);
+    return (
+      <Screen title={title} onBack={onBack} nav={false}>
+        {error ? <Banner tone="error">{error}</Banner> : null}
+        {result ? (
+          <GameResult
+            kind={kind}
+            ms={elapsed}
+            moves={moves}
+            total={total}
+            result={result}
+            levelUp={result.level > startLevel}
+            onAgain={() => setRound((n) => n + 1)}
+            onBack={onBack}
+          />
+        ) : !deal ? (
+          error ? null : (
+            <Loading />
+          )
+        ) : kind === "dictation" ? (
+          <DictationGame
+            key={round}
+            sentences={deal.sentences}
+            onStart={start}
+            onDone={(misses) => {
+              setMoves(misses);
+              void finish(misses);
+            }}
+          />
+        ) : (
+          <SoundsGame
+            key={round}
+            rounds={deal.sounds}
+            onStart={start}
+            onDone={(misses) => {
+              setMoves(misses);
+              void finish(misses);
+            }}
+          />
+        )}
+      </Screen>
+    );
+  }
   return (
     <Screen title={title} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
@@ -374,6 +438,7 @@ function GameResult({
   kind,
   ms,
   moves,
+  total = 0,
   result,
   levelUp,
   onAgain,
@@ -382,11 +447,52 @@ function GameResult({
   kind: QuickGameKind;
   ms: number;
   moves: number;
+  /** Scored games: how many were played (`moves` is how many were missed). */
+  total?: number;
   result: GameFinished;
   levelUp: boolean;
   onAgain: () => void;
   onBack: () => void;
 }) {
+  if (scored(kind)) {
+    const right = Math.max(0, total - moves);
+    const all = right === total;
+    return (
+      <>
+        {all || levelUp ? <Confetti fixed pieces={36} /> : null}
+        <Card className="game-result pop">
+          <Stack gap={2} align="center">
+            <Text variant="display">{all ? "🎧" : "👂"}</Text>
+            <Text variant="headline" weight="bold" className={all ? "celebrate-rise" : undefined}>
+              {right} of {total}
+            </Text>
+            {all ? <Badge tone="gold">Every one!</Badge> : null}
+            {levelUp ? <Badge tone="brand">Level {result.level}!</Badge> : null}
+            <Text variant="small" tone="dim" align="center" as="div">
+              {kind === "dictation" ? "sentences written right" : "pairs told apart"} · {clock(ms)}
+            </Text>
+            <Badge tone={result.xpGained > 0 ? "gold" : "neutral"}>
+              {result.xpGained > 0 ? (
+                <>
+                  +<CountUp value={result.xpGained} from={0} /> XP
+                </>
+              ) : (
+                `Today's ${result.xpPerDay} XP from games earned`
+              )}
+            </Badge>
+          </Stack>
+        </Card>
+        <Stack gap={2}>
+          <Button variant="primary" size="lg" wide onClick={onAgain}>
+            Play again
+          </Button>
+          <Button variant="plain" wide onClick={onBack}>
+            Back to games
+          </Button>
+        </Stack>
+      </>
+    );
+  }
   const headline = kind === "match" ? clock(ms, true) : `${moves} moves`;
   const before =
     kind === "match"

@@ -85,16 +85,7 @@ pub fn check(expected: &str, given: &str) -> Checked {
     let mut out = Vec::new();
     let (mut from_said, mut from_typed) = (0, 0);
     for (at_said, at_typed) in matched.into_iter().chain(std::iter::once((n, m))) {
-        let left: Vec<&String> = said[from_said..at_said].iter().collect();
-        let put: Vec<&String> = typed[from_typed..at_typed].iter().collect();
-        for k in 0..left.len().max(put.len()) {
-            out.push(match (left.get(k), put.get(k)) {
-                (Some(e), Some(g)) => word(e, g, "wrong"),
-                (Some(e), None) => word(e, "", "missing"),
-                (None, Some(g)) => word("", g, "extra"),
-                (None, None) => continue,
-            });
-        }
+        out.extend(between(&said[from_said..at_said], &typed[from_typed..at_typed]));
         if at_said < n {
             let (e, g) = (&said[at_said], &typed[at_typed]);
             let status = if e.to_lowercase() == g.to_lowercase() { "right" } else { "accents" };
@@ -105,6 +96,59 @@ pub fn check(expected: &str, given: &str) -> Checked {
     }
     let correct = n > 0 && out.iter().all(|w| w.status == "right" || w.status == "accents");
     Checked { correct, words: out }
+}
+
+/// How alike two words are, 0 to 1, by their letters (folded): one minus
+/// the edits between them over the longer's length.
+fn likeness(a: &str, b: &str) -> f64 {
+    let (a, b): (Vec<char>, Vec<char>) = (normalize(a).chars().collect(), normalize(b).chars().collect());
+    let longest = a.len().max(b.len());
+    if longest == 0 {
+        return 1.0;
+    }
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, x) in a.iter().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, y) in b.iter().enumerate() {
+            let here = (row[j + 1] + 1).min(row[j] + 1).min(diagonal + usize::from(x != y));
+            diagonal = row[j + 1];
+            row[j + 1] = here;
+        }
+    }
+    1.0 - crate::convert::real_len(row[b.len()]) / crate::convert::real_len(longest)
+}
+
+/// The words between two lined-up ones: each typed word goes against the
+/// said word most like it, in order ("mlekem" against "mlekiem", not
+/// against the "z" before it); said words left over were missed, typed
+/// ones left over were not said.
+fn between(said: &[String], typed: &[String]) -> Vec<DiffWord> {
+    let (n, m) = (said.len(), typed.len());
+    // best[i][j]: the most likeness from pairing said[i..] with typed[j..].
+    let mut best = vec![vec![0.0f64; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            let pair = best[i + 1][j + 1] + likeness(&said[i], &typed[j]) + 0.01;
+            best[i][j] = pair.max(best[i + 1][j]).max(best[i][j + 1]);
+        }
+    }
+    let mut out = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        if i < n && j < m && (best[i][j] - (best[i + 1][j + 1] + likeness(&said[i], &typed[j]) + 0.01)).abs() < 1e-9 {
+            out.push(word(&said[i], &typed[j], "wrong"));
+            i += 1;
+            j += 1;
+        } else if i < n && (j == m || (best[i][j] - best[i + 1][j]).abs() < 1e-9) {
+            out.push(word(&said[i], "", "missing"));
+            i += 1;
+        } else {
+            out.push(word("", &typed[j], "extra"));
+            j += 1;
+        }
+    }
+    out
 }
 
 /// Checks a dictation: for the quick game, which checks as it goes.
@@ -154,6 +198,16 @@ mod tests {
                 ("piekarni", "piekarni", "right"),
             ]
         );
+    }
+
+    #[test]
+    fn a_misspelt_word_goes_against_the_word_it_was_meant_for() {
+        let checked = check("Poproszę kawę z mlekiem.", "poprosze kawe mlekem");
+        assert_eq!(
+            statuses(&checked)[2..],
+            [("z", "", "missing"), ("mlekiem", "mlekem", "wrong")]
+        );
+        assert!(likeness("mlekiem", "mlekem") > likeness("z", "mlekem"));
     }
 
     #[test]

@@ -70,8 +70,9 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           and cards you only read pay nothing.
         </P>
         <P>
-          Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, or flip memory cards —
-          play with words you have already met. They earn a little XP (up to 30 a day) and don&apos;t change when a
+          Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, flip memory cards,
+          write down sentences you hear, or tell near sounds apart (proszę or prosię?) — play with what you have
+          already met. They earn a little XP (up to 30 a day) and don&apos;t change when a
           word comes back: that stays the lessons&apos; job.
         </P>
       </Part>
@@ -151,6 +152,11 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
         <P>
           Nothing needs approving: keep what you like and delete the rest. A listening lesson turns any of them into
           practice.
+        </P>
+        <P>
+          In the player&apos;s lyrics, tap a {LANGUAGE} word to see what it means. Turn on <em>Sing along</em> and some
+          words go blank just before their line: pick the right one (or type it) before the line ends, and see your
+          score when the song is done.
         </P>
       </Part>
 

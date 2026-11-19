@@ -283,7 +283,7 @@ export function Exercises({
                     <ListItem
                       leading={<Avatar>🃏</Avatar>}
                       title="Quick games"
-                      subtitle="Match pairs and memory cards with words you know"
+                      subtitle="Match pairs, memory cards, dictation and sound pairs"
                       chevron
                       onClick={onOpenGames}
                     />

@@ -191,7 +191,7 @@ pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(
         .into_iter()
         .map(|(id, pl, meaning, pos, image, near_pl, near_en)| {
             let seen = reps.get(&id.to_string()).copied();
-            let near = (!near_pl.is_empty()).then(|| Near { pl: near_pl, en: near_en });
+            let near = (!near_pl.is_empty()).then_some(Near { pl: near_pl, en: near_en });
             (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image, near }, seen.is_none())
         })
         .collect())

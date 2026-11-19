@@ -25,7 +25,7 @@ export function WordChat({
   itemId: string;
   /** The Polish, shown as the sheet's title. */
   title: string;
-  /** For a line of a conversation (itemKind "line"): what it means. */
+  /** For a line of a conversation ("line"): what it means; for a word of a song ("lyric"): its line. */
   meaning?: string;
   onClose: () => void;
 }) {
@@ -44,7 +44,7 @@ export function WordChat({
     if (opened.current) return;
     opened.current = true;
     api
-      .tutorTalkAbout(itemKind, itemId, itemKind === "line" ? title : undefined, meaning)
+      .tutorTalkAbout(itemKind, itemId, itemKind === "line" || itemKind === "lyric" ? title : undefined, meaning)
       .then((talk) => {
         if (!talk.existing) job.begin();
         setConversationId(talk.conversationId);

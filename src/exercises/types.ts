@@ -1,6 +1,6 @@
 import type { ReactNode, RefObject } from "react";
 
-import type { Exercise, ExerciseKind, SessionPlan } from "../lib/types";
+import type { DiffWord, Exercise, ExerciseKind, SessionPlan } from "../lib/types";
 
 /**
  * Everything a learner can have put in so far on one card. The session owns
@@ -28,6 +28,8 @@ export interface ExerciseProps extends AnswerState {
   plan: SessionPlan;
   /** The answer has been submitted: options lock and show right/wrong. */
   isChecked: boolean;
+  /** Once checked, a dictation word by word (empty for other kinds). */
+  diff: DiffWord[];
   setPicked: (option: string) => void;
   setTyped: (text: string) => void;
   setBuilt: (built: number[]) => void;

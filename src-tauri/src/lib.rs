@@ -1922,6 +1922,144 @@ mod integration {
     }
 
     #[test]
+    fn the_ear_is_drilled_by_dictation_and_sound_pairs() {
+        let mut conn = scratch_db("ear");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let list = lessons::for_course(&mut conn, basics).unwrap();
+
+        // A dialogue lesson: two gaps and a line to write down, in its
+        // speaker's voice — as long as before.
+        let dialogue = list.iter().find(|b| b.lesson_type == "dialogue").unwrap();
+        let plan = session::build_lesson(&mut conn, dialogue.id).unwrap();
+        let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(kinds.iter().filter(|k| **k == "dialogueGap").count(), session::DIALOGUE_GAPS, "{kinds:?}");
+        let dictation = plan.exercises.iter().find(|e| e.kind == "dictation").expect("a line to write down");
+        assert_eq!(dictation.context.len(), 1, "the line, for its voice");
+        assert!(plan.exercises.iter().filter(|e| e.kind == "dialogueGap").all(|g| g.answer != dictation.answer));
+
+        // Sentences: new ones are built; once met, some are written from hearing.
+        let lesson = list.iter().find(|b| b.lesson_type == "sentences").unwrap();
+        let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
+        assert!(plan.exercises.iter().all(|e| e.kind != "dictation"), "new sentences are built first");
+        let count = plan.exercises.len();
+        for e in plan.exercises.iter().filter(|e| e.item_kind == "sentence" && e.kind == "wordOrder") {
+            let answer = practice::SubmitAnswer { kind: e.kind.clone(), item_kind: e.item_kind.clone(), item_id: e.item_id.clone(), expected: e.answer.clone(), given: e.answer.clone(), ..Default::default() };
+            practice::submit_answer_in(&mut conn, answer).unwrap();
+        }
+        let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
+        let written: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "dictation").collect();
+        assert!(!written.is_empty() && plan.exercises.iter().any(|e| e.kind == "wordOrder"), "some of each");
+        assert!(plan.exercises.len() <= count, "no longer than before");
+
+        // Checking a dictation: forgiving, word by word, and it counts as a review.
+        let s = written[0];
+        // Lowercase, no punctuation, no Polish letters.
+        let plain = |c: char| match c {
+            'ą' => 'a', 'ę' => 'e', 'ó' => 'o', 'ł' => 'l', 'ś' => 's', 'ż' | 'ź' => 'z', 'ć' => 'c', 'ń' => 'n',
+            other => other,
+        };
+        let typed: String = s.answer.to_lowercase().chars().map(plain).filter(|c| c.is_alphanumeric() || *c == ' ').collect();
+        let reply = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "dictation".into(), item_kind: "sentence".into(), item_id: s.item_id.clone(), expected: s.answer.clone(), given: typed, ..Default::default()
+        }).unwrap();
+        assert!(reply.correct, "{:?}", reply.diff);
+        assert_eq!(reply.diff.len(), s.answer.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count());
+        assert_eq!(reply.xp_gained, stats::xp_for_answer("dictation", true, false));
+        let reply = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "dictation".into(), item_kind: "sentence".into(), item_id: s.item_id.clone(), expected: s.answer.clone(), given: "nic".into(), ..Default::default()
+        }).unwrap();
+        assert!(!reply.correct && reply.diff.iter().any(|w| w.status != "right"));
+
+        // The tutor gives a word its near neighbour; its words lesson plays the pair.
+        let made = tutor::run_tool_for_test(
+            &mut conn,
+            "create_drill_lesson",
+            serde_json::json!({
+                "title": "Please", "format": "words", "complexity": "low", "course_id": basics,
+                "words": [
+                    { "pl": "proszę", "en": "please", "pos": "part", "near": { "pl": "prosię", "en": "piglet" } },
+                    { "pl": "dom", "en": "house", "pos": "n-m", "near": { "pl": "dom", "en": "house" } },
+                    { "pl": "kot", "en": "cat", "pos": "n-m" }
+                ]
+            }),
+        );
+        let id: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let near: Vec<(String, String)> = t::words::table
+            .filter(t::words::lesson_id.eq(id))
+            .order(t::words::ord)
+            .select((t::words::near_pl, t::words::near_en))
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(near[0], ("prosię".to_string(), "piglet".to_string()));
+        assert_eq!(near[1].0, "", "a word is not its own neighbour");
+        let plan = session::build_lesson(&mut conn, id).unwrap();
+        let pair = plan.exercises.iter().find(|e| e.kind == "soundPair").expect("a sound pair");
+        assert_eq!(pair.options, ["proszę", "prosię"]);
+        assert_eq!(pair.prompt, "sz or ś");
+        // Exact: the pair differs in just the letters typing forgives.
+        let other = pair.options.iter().find(|o| **o != pair.answer).unwrap().clone();
+        let wrong = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "soundPair".into(), item_kind: "set".into(), item_id: id.to_string(), expected: "tę".into(), given: "te".into(), ..Default::default()
+        }).unwrap();
+        assert!(!wrong.correct);
+        let right = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "soundPair".into(), item_kind: "set".into(), item_id: id.to_string(), expected: pair.answer.clone(), given: pair.answer.clone(), ..Default::default()
+        }).unwrap();
+        assert!(right.correct && other != pair.answer);
+
+        // The quick games: Dictation over sentences met, Sound pairs from the
+        // built-in list; scored, no best kept, no review written.
+        let reviews_before: i64 = t::reviews::table.count().get_result(&mut conn).unwrap();
+        let game = crate::games::deal(&mut conn, "dictation", &mut rand::rng()).unwrap();
+        assert!((crate::games::MIN_SENTENCES..=5).contains(&game.sentences.len()));
+        let sounds = crate::games::deal(&mut conn, "sounds", &mut rand::rng()).unwrap();
+        assert_eq!(sounds.sounds.len(), 8);
+        let labels: std::collections::HashSet<&str> = sounds.sounds.iter().map(|r| r.pair.label.as_str()).collect();
+        assert_eq!(labels.len(), 8, "a different contrast each round");
+        assert!(sounds.sounds.iter().all(|r| r.said == r.pair.a || r.said == r.pair.b));
+        let done = crate::games::finish(&mut conn, "dictation", 5, 60_000, 1).unwrap();
+        assert!(!done.record && done.best_ms.is_none());
+        assert_eq!(done.xp_gained, 10);
+        let today = db::today(&mut conn);
+        let day = crate::xplog::day(&mut conn, today).unwrap();
+        assert!(day.runs.iter().flat_map(|r| r.entries.iter()).any(|e| e.label == "Dictation: 4 of 5 sentences right"));
+        crate::games::finish(&mut conn, "sounds", 8, 30_000, 0).unwrap();
+        assert_eq!(t::reviews::table.count().get_result::<i64>(&mut conn).unwrap(), reviews_before);
+        let overview = crate::games::overview(&mut conn).unwrap();
+        assert!(overview.sentences_met >= overview.min_sentences);
+    }
+
+    #[test]
+    fn a_song_s_words_have_their_meanings() {
+        let mut conn = scratch_db("glossary");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        tutor::run_tool_for_test(
+            &mut conn,
+            "create_drill_lesson",
+            serde_json::json!({ "title": "Kawa", "format": "words", "complexity": "low", "course_id": basics,
+                "words": [{ "pl": "kawa", "en": "coffee", "pos": "n-f" }, { "pl": "mleko", "en": "milk", "pos": "n-n" }] }),
+        );
+        let mut draft = songs::SongDraft {
+            title: "Kawa".into(),
+            course_id: Some(basics),
+            sections: vec![songs::SongSection {
+                kind: "chorus".into(),
+                lines: vec![songs::SongLine { en: "A coffee with milk, please".into(), pl: "Poproszę kawę z mlekiem!".into(), ..Default::default() }],
+            }],
+            ..Default::default()
+        };
+        draft.origin.given.words = vec!["poprosić = to ask for".into()];
+        let song = songs::insert_song(&mut conn, &draft, "V6").unwrap();
+        let glossary = crate::singalong::glossary(&mut conn, song).unwrap();
+        let find = |form: &str| glossary.iter().find(|g| g.form == form);
+        let coffee = find("kawę").expect("kawę is kawa");
+        assert_eq!((coffee.pl.as_str(), coffee.en.as_str(), coffee.lesson), ("kawa", "coffee", true));
+        assert!(coffee.word_id.is_some());
+        assert_eq!(find("mlekiem").map(|g| g.en.as_str()), Some("milk"));
+        assert!(find("z").is_none(), "no meaning, no entry: the tutor is offered instead");
+    }
+
+    #[test]
     fn quick_games_pay_a_little_and_leave_the_schedule_alone() {
         let mut conn = scratch_db("quick-games");
         let overview = crate::games::overview(&mut conn).unwrap();
@@ -2657,7 +2795,32 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let tiles = serde_json::from_value(tiles["_action"]["lessonId"].clone()).unwrap();
         let tile_plan = session::build_lesson(&mut conn, tiles).unwrap();
         assert!(tile_plan.exercises.iter().any(|e| !e.endings.is_empty()));
-        write("Exercise.list", &tile_plan.exercises);
+        // And the ear's: a dialogue line to write down, a sound pair.
+        let mut exercises = tile_plan.exercises.clone();
+        let dialogue = all.iter().find(|l| l.lesson_type == "dialogue").unwrap();
+        exercises.extend(session::build_lesson(&mut conn, dialogue.id).unwrap().exercises);
+        let pairs = tutor::run_tool_for_test(
+            &mut conn,
+            "create_drill_lesson",
+            serde_json::json!({ "title": "Pairs", "format": "words", "complexity": "low", "course_id": basics,
+                "words": [{ "pl": "być", "en": "to be", "pos": "v", "near": { "pl": "bić", "en": "to beat" } }] }),
+        );
+        let pairs = serde_json::from_value(pairs["_action"]["lessonId"].clone()).unwrap();
+        exercises.extend(session::build_lesson(&mut conn, pairs).unwrap().exercises);
+        for kind in ["dictation", "soundPair", "wordOrder"] {
+            assert!(exercises.iter().any(|e| e.kind == kind), "a {kind} card");
+        }
+        write("Exercise.list", &exercises);
+        let dictated = exercises.iter().find(|e| e.kind == "dictation").unwrap();
+        write(
+            "AnswerResult",
+            &practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+                kind: "dictation".into(), item_kind: dictated.item_kind.clone(), item_id: dictated.item_id.clone(),
+                expected: dictated.answer.clone(), given: "cos innego".into(), ..Default::default()
+            }).unwrap(),
+        );
+        write("DictationChecked", &crate::dictation::check("Poproszę kawę.", "poprosze kawy"));
+        write("GlossWord.list", &crate::singalong::glossary(&mut conn, song(1)).unwrap());
         // Quick games, once a few words are met.
         let met: Vec<WordId> = crate::schema::words::table.select(crate::schema::words::id).limit(8).load(&mut conn).unwrap();
         for id in &met {
@@ -2665,6 +2828,15 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             practice::submit_answer_in(&mut conn, answer).unwrap();
         }
         write("QuickGame", &crate::games::deal(&mut conn, "flip", &mut rand::rng()).unwrap());
+        let sentences: Vec<SentenceId> = crate::schema::sentences::table.select(crate::schema::sentences::id).limit(5).load(&mut conn).unwrap();
+        for id in &sentences {
+            let answer = practice::SubmitAnswer { kind: "wordOrder".into(), item_kind: "sentence".into(), item_id: id.to_string(), ..Default::default() };
+            practice::submit_answer_in(&mut conn, answer).unwrap();
+        }
+        write(
+            "QuickGame.list",
+            &["dictation", "sounds"].map(|game| crate::games::deal(&mut conn, game, &mut rand::rng()).unwrap()),
+        );
         write("GameFinished", &crate::games::finish(&mut conn, "match", 8, 42_000, 1).unwrap());
         write("QuickGames", &crate::games::overview(&mut conn).unwrap());
         write("LessonTypeInfo.list", &crate::lesson_types::lesson_types());
