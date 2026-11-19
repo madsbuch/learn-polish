@@ -39,6 +39,9 @@ pub struct NewWord {
     /// The grammar it shows (grammar.rs keys). Optional; checked.
     #[serde(default)]
     pub grammar: Vec<String>,
+    /// What it is about (topics.rs keys). Optional; checked.
+    #[serde(default)]
+    pub topics: Vec<String>,
 }
 
 /// A word's near neighbour by sound: "prosię" (piglet) for "proszę".
@@ -61,6 +64,13 @@ pub struct NewSentence {
     /// The grammar it shows (grammar.rs keys). Optional; checked.
     #[serde(default)]
     pub grammar: Vec<String>,
+    /// What it is about (topics.rs keys). Optional; checked.
+    #[serde(default)]
+    pub topics: Vec<String>,
+    /// The sentence word by word (grammar.rs: one token per word, every
+    /// value from the vocabulary). Optional; checked against the sentence.
+    #[serde(default)]
+    pub tokens: Vec<crate::grammar::TokenIn>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -640,6 +650,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
             .filter(|(_, en)| !en.is_empty())
             .unwrap_or_default();
         let tags = crate::grammar::validate(&word.grammar)?;
+        let topics = crate::topics::validate(&word.topics)?;
         let id = WordId::new();
         let added = diesel::insert_or_ignore_into(words::table)
             .values((
@@ -657,6 +668,7 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
             skipped += 1;
         } else {
             crate::grammar::set_word(conn, id, &tags)?;
+            crate::topics::set_word(conn, id, &topics)?;
             ord += 1;
         }
     }
@@ -673,6 +685,8 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
         }
         let endings = crate::tiles::clean_endings(&pl, &sentence.endings);
         let tags = crate::grammar::validate(&sentence.grammar)?;
+        let topics = crate::topics::validate(&sentence.topics)?;
+        let tokens = if sentence.tokens.is_empty() { vec![] } else { crate::grammar::validate_tokens(conn, &pl, &sentence.tokens)? };
         let id = SentenceId::new();
         let added = diesel::insert_or_ignore_into(sentences::table)
             .values((
@@ -688,6 +702,8 @@ pub fn insert_items(conn: &mut Conn, lesson_id: LessonId, items: &Items) -> Resu
             skipped += 1;
         } else {
             crate::grammar::set_sentence(conn, id, &tags)?;
+            crate::topics::set_sentence(conn, id, &topics)?;
+            crate::grammar::set_tokens(conn, id, &tokens)?;
             ord += 1;
         }
     }

@@ -335,6 +335,439 @@ pub fn for_tutor() -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Sentences word by word (schema 15)
+// ---------------------------------------------------------------------------
+//
+// The tutor annotates each new sentence token by token: its dictionary
+// form (and the learner's word, when they have it), part of speech, case,
+// number, gender, person, tense, aspect, mood, and why it has that form
+// (`reason`). Every value comes from the lists below; an unknown one fails
+// the call by name. Reasons that are grammar tags too ("z-instrumental",
+// "negation-genitive") let the Structures page say which words the learner
+// gets right or wrong in that structure.
+
+pub const POS: &[(&str, &str)] = &[
+    ("noun", "noun"),
+    ("verb", "verb"),
+    ("adj", "adjective"),
+    ("adv", "adverb"),
+    ("pron", "pronoun"),
+    ("prep", "preposition"),
+    ("conj", "conjunction"),
+    ("part", "particle"),
+    ("num", "numeral"),
+    ("interj", "interjection"),
+];
+pub const CASES_LIST: &[(&str, &str)] = &[
+    ("nominative", "nominative"),
+    ("genitive", "genitive"),
+    ("dative", "dative"),
+    ("accusative", "accusative"),
+    ("instrumental", "instrumental"),
+    ("locative", "locative"),
+    ("vocative", "vocative"),
+];
+pub const NUMBERS_LIST: &[(&str, &str)] = &[("sg", "singular"), ("pl", "plural")];
+pub const GENDERS: &[(&str, &str)] = &[
+    ("m-pers", "masculine personal"),
+    ("m-anim", "masculine animate"),
+    ("m-inan", "masculine inanimate"),
+    ("f", "feminine"),
+    ("n", "neuter"),
+    ("non-m-pers", "non-masculine-personal (plural)"),
+];
+pub const PERSONS: &[(&str, &str)] = &[("1", "1st person"), ("2", "2nd person"), ("3", "3rd person")];
+pub const TENSES: &[(&str, &str)] = &[("present", "present"), ("past", "past"), ("future", "future")];
+pub const ASPECTS: &[(&str, &str)] = &[("imperfective", "imperfective"), ("perfective", "perfective")];
+pub const MOODS: &[(&str, &str)] = &[
+    ("indicative", "indicative"),
+    ("imperative", "imperative"),
+    ("conditional", "conditional"),
+    ("infinitive", "infinitive"),
+    ("participle", "participle"),
+];
+
+/// Why a token has its form: the key, how it reads ("z → instrumental"),
+/// and the case it calls for, when it calls for one.
+pub struct Reason {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub case: Option<&'static str>,
+}
+
+const fn r(key: &'static str, label: &'static str, case: Option<&'static str>) -> Reason {
+    Reason { key, label, case }
+}
+
+const NOM: Option<&str> = Some("nominative");
+const GEN: Option<&str> = Some("genitive");
+const DAT: Option<&str> = Some("dative");
+const ACC: Option<&str> = Some("accusative");
+const INS: Option<&str> = Some("instrumental");
+const LOC: Option<&str> = Some("locative");
+const VOC: Option<&str> = Some("vocative");
+
+pub const REASONS: &[Reason] = &[
+    r("subject", "subject → nominative", NOM),
+    r("naming", "to jest… → nominative", NOM),
+    r("direct-object", "object → accusative", ACC),
+    r("animate-accusative", "animate object → accusative (-a)", ACC),
+    r("negation-genitive", "after negation → genitive", GEN),
+    r("indirect-object", "to or for someone → dative", DAT),
+    r("possession", "of someone → genitive", GEN),
+    r("quantity-genitive", "an amount → genitive", GEN),
+    r("numbers-2-4", "after 2, 3, 4 → nominative plural", NOM),
+    r("numbers-5", "after 5 and up → genitive plural", GEN),
+    r("predicate-instrumental", "być + noun → instrumental", INS),
+    r("verb-government", "the verb takes this case", None),
+    r("address", "calling someone → vocative", VOC),
+    r("time-expression", "a time expression", None),
+    r("agreement", "agrees with its noun", None),
+    r("infinitive-complement", "after a verb → infinitive", None),
+    r("dictionary-form", "dictionary form", None),
+    r("w-locative", "w (in) → locative", LOC),
+    r("na-locative", "na (on, at) → locative", LOC),
+    r("w-accusative", "w (on a day, into) → accusative", ACC),
+    r("na-accusative", "na (to, for) → accusative", ACC),
+    r("do-genitive", "do → genitive", GEN),
+    r("z-genitive", "z (from) → genitive", GEN),
+    r("z-instrumental", "z (with) → instrumental", INS),
+    r("od-genitive", "od → genitive", GEN),
+    r("bez-genitive", "bez → genitive", GEN),
+    r("dla-genitive", "dla → genitive", GEN),
+    r("u-genitive", "u → genitive", GEN),
+    r("obok-genitive", "obok, koło, blisko → genitive", GEN),
+    r("o-locative", "o (about) → locative", LOC),
+    r("po-locative", "po (after, around) → locative", LOC),
+    r("przy-locative", "przy → locative", LOC),
+    r("place-instrumental", "pod, nad, przed, za, między → instrumental", INS),
+    r("motion-accusative", "pod, nad, przed, za (motion) → accusative", ACC),
+    r("przez-accusative", "przez → accusative", ACC),
+    r("dative-preposition", "dzięki, ku, wbrew → dative", DAT),
+];
+
+pub fn reason(key: &str) -> Option<&'static Reason> {
+    REASONS.iter().find(|r| r.key == key)
+}
+
+/// How a token value reads, from any of the lists ("instrumental",
+/// "z (with) → instrumental", "plural").
+pub fn value_label(field: &str, key: &str) -> String {
+    if field == "reason" {
+        return reason(key).map_or(key, |r| r.label).to_string();
+    }
+    let list = match field {
+        "pos" => POS,
+        "case" => CASES_LIST,
+        "number" => NUMBERS_LIST,
+        "gender" => GENDERS,
+        "person" => PERSONS,
+        "tense" => TENSES,
+        "aspect" => ASPECTS,
+        "mood" => MOODS,
+        _ => &[],
+    };
+    list.iter().find(|(k, _)| *k == key).map_or(key, |(_, l)| l).to_string()
+}
+
+/// A sentence's words as tokens are numbered: split at spaces, the
+/// punctuation around each taken off, empty ones left out. The same
+/// numbering for annotations, the learning log's links (wordlinks.rs) and
+/// what the screens show. Each as written, and lowercased.
+pub fn words_of(text: &str) -> Vec<(String, String)> {
+    text.split_whitespace()
+        .map(|t| crate::session::split_punctuation(t).1)
+        .filter(|w| !w.is_empty())
+        .map(|w| (w.to_string(), w.to_lowercase()))
+        .collect()
+}
+
+/// One token as the tutor gives it.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TokenIn {
+    pub form: String,
+    #[serde(default)]
+    pub lemma: String,
+    /// The learner's word it is, when the tutor knows it (wd_…).
+    #[serde(default)]
+    pub word_id: Option<String>,
+    #[serde(default)]
+    pub pos: String,
+    #[serde(default)]
+    pub case: String,
+    #[serde(default)]
+    pub number: String,
+    #[serde(default)]
+    pub gender: String,
+    #[serde(default)]
+    pub person: String,
+    #[serde(default)]
+    pub tense: String,
+    #[serde(default)]
+    pub aspect: String,
+    #[serde(default)]
+    pub mood: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// A token as kept and read back.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::sentence_tokens)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    pub position: i64,
+    pub form: String,
+    pub lemma: String,
+    pub word_id: Option<WordId>,
+    pub pos: String,
+    #[diesel(column_name = gram_case)]
+    pub case: String,
+    pub number: String,
+    pub gender: String,
+    pub person: String,
+    pub tense: String,
+    pub aspect: String,
+    pub mood: String,
+    pub reason: String,
+}
+
+/// Checks a sentence's tokens: one per word, in order, each form the
+/// sentence's word there; every value from its list (named when it is
+/// not); a reason that calls for a case agrees with the token's case; a
+/// word id is a word's. Values are lowercased and trimmed.
+pub fn validate_tokens(conn: &mut Conn, pl: &str, tokens: &[TokenIn]) -> Result<Vec<Token>> {
+    let words = words_of(pl);
+    if tokens.len() != words.len() {
+        let listed: Vec<&str> = words.iter().map(|(w, _)| w.as_str()).collect();
+        return Err(Error::msg(format!(
+            "\"{pl}\" has {} words ({}), but {} tokens were given: give one token per word, in order, without punctuation.",
+            words.len(),
+            listed.join(", "),
+            tokens.len()
+        )));
+    }
+    let lists: [(&str, &[(&str, &str)]); 8] = [
+        ("pos", POS),
+        ("case", CASES_LIST),
+        ("number", NUMBERS_LIST),
+        ("gender", GENDERS),
+        ("person", PERSONS),
+        ("tense", TENSES),
+        ("aspect", ASPECTS),
+        ("mood", MOODS),
+    ];
+    let mut out = Vec::with_capacity(tokens.len());
+    for (i, (tok, (written, lower))) in tokens.iter().zip(&words).enumerate() {
+        let n = i + 1;
+        if crate::session::split_punctuation(tok.form.trim()).1.to_lowercase() != *lower {
+            return Err(Error::msg(format!("Token {n} of \"{pl}\" is \"{}\", but the word there is \"{written}\".", tok.form)));
+        }
+        let clean = |v: &str| v.trim().to_lowercase();
+        let values = [&tok.pos, &tok.case, &tok.number, &tok.gender, &tok.person, &tok.tense, &tok.aspect, &tok.mood].map(|v| clean(v));
+        for ((field, list), value) in lists.iter().zip(&values) {
+            if !value.is_empty() && !list.iter().any(|(k, _)| k == value) {
+                let allowed: Vec<&str> = list.iter().map(|(k, _)| *k).collect();
+                return Err(Error::msg(format!(
+                    "Unknown {field} \"{value}\" on token {n} ({written}). Use one of: {}.",
+                    allowed.join(", ")
+                )));
+            }
+        }
+        let why = clean(&tok.reason);
+        if !why.is_empty() {
+            let Some(found) = reason(&why) else {
+                return Err(Error::msg(format!(
+                    "Unknown reason \"{why}\" on token {n} ({written}). Use one of: {}.",
+                    REASONS.iter().map(|r| r.key).collect::<Vec<_>>().join(", ")
+                )));
+            };
+            if let Some(case) = found.case {
+                if !values[1].is_empty() && values[1] != case {
+                    return Err(Error::msg(format!(
+                        "Token {n} ({written}): the reason \"{why}\" calls for the {case}, but its case is {}.",
+                        values[1]
+                    )));
+                }
+            }
+        }
+        let word_id = match tok.word_id.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+            Some(id) => {
+                let word = WordId::parse(id).map_err(|e| Error::msg(format!("Token {n} ({written}): {e}")))?;
+                if crate::schema::words::table.find(word).count().get_result::<i64>(conn)? == 0 {
+                    return Err(Error::msg(format!("Token {n} ({written}): no word {id}.")));
+                }
+                Some(word)
+            }
+            None => None,
+        };
+        let [pos, case, number, gender, person, tense, aspect, mood] = values;
+        out.push(Token {
+            position: crate::convert::count(i),
+            form: written.clone(),
+            lemma: tok.lemma.trim().to_string(),
+            word_id,
+            pos,
+            case: case.clone(),
+            number,
+            gender,
+            person,
+            tense,
+            aspect,
+            mood,
+            reason: why,
+        });
+    }
+    Ok(out)
+}
+
+/// Keeps a sentence's tokens (replacing any it had). A token without a word
+/// id is linked to the learner's word with its lemma, when there is one.
+pub fn set_tokens(conn: &mut Conn, sentence_id: SentenceId, tokens: &[Token]) -> Result<()> {
+    use crate::schema::sentence_tokens as st;
+    diesel::delete(st::table.filter(st::sentence_id.eq(sentence_id))).execute(conn)?;
+    let lemmas: Vec<String> = tokens.iter().filter(|t| t.word_id.is_none() && !t.lemma.is_empty()).map(|t| t.lemma.to_lowercase()).collect();
+    let mut by_lemma: std::collections::HashMap<String, WordId> = std::collections::HashMap::new();
+    if !lemmas.is_empty() {
+        // The sentence's own lesson's words first, then any.
+        let lesson: Option<LessonId> =
+            crate::schema::sentences::table.find(sentence_id).select(crate::schema::sentences::lesson_id).first(conn).optional()?;
+        let rows: Vec<(WordId, String, LessonId)> = crate::schema::words::table
+            .select((crate::schema::words::id, crate::schema::words::pl, crate::schema::words::lesson_id))
+            .load(conn)?;
+        for (id, pl, word_lesson) in rows {
+            let key = pl.to_lowercase();
+            if lemmas.contains(&key) && (Some(word_lesson) == lesson || !by_lemma.contains_key(&key)) {
+                by_lemma.insert(key, id);
+            }
+        }
+    }
+    for t in tokens {
+        let word = t.word_id.or_else(|| by_lemma.get(&t.lemma.to_lowercase()).copied());
+        diesel::insert_into(st::table)
+            .values((
+                st::sentence_id.eq(sentence_id),
+                st::position.eq(t.position),
+                st::form.eq(&t.form),
+                st::lemma.eq(&t.lemma),
+                st::word_id.eq(word),
+                st::pos.eq(&t.pos),
+                st::gram_case.eq(&t.case),
+                st::number.eq(&t.number),
+                st::gender.eq(&t.gender),
+                st::person.eq(&t.person),
+                st::tense.eq(&t.tense),
+                st::aspect.eq(&t.aspect),
+                st::mood.eq(&t.mood),
+                st::reason.eq(&t.reason),
+            ))
+            .execute(conn)?;
+    }
+    Ok(())
+}
+
+/// A sentence's tokens, in order (none when it was never annotated).
+pub fn tokens_of(conn: &mut Conn, sentence_id: SentenceId) -> Result<Vec<Token>> {
+    use crate::schema::sentence_tokens as st;
+    Ok(st::table.filter(st::sentence_id.eq(sentence_id)).order(st::position).select(Token::as_select()).load(conn)?)
+}
+
+/// One sentence the tutor annotates (`annotate_sentences`).
+#[derive(Debug, Deserialize)]
+pub struct AnnotateItem {
+    pub id: String,
+    pub tokens: Vec<TokenIn>,
+}
+
+/// Annotates existing sentences (the tutor, asked by the learner): each
+/// checked against its own words; one bad one fails the call, saying which.
+pub fn annotate(conn: &mut Conn, items: &[AnnotateItem]) -> Result<usize> {
+    if items.len() > 60 {
+        return Err(Error::msg("At most 60 sentences per call: annotate the rest in another call."));
+    }
+    for item in items {
+        let id = SentenceId::parse(item.id.trim()).map_err(|e| Error::msg(e.to_string()))?;
+        let pl: String = crate::schema::sentences::table
+            .find(id)
+            .select(crate::schema::sentences::pl)
+            .first(conn)
+            .optional()?
+            .ok_or_else(|| Error::msg(format!("No sentence {}.", item.id)))?;
+        let tokens = validate_tokens(conn, &pl, &item.tokens)?;
+        set_tokens(conn, id, &tokens)?;
+    }
+    Ok(items.len())
+}
+
+/// Sentences in open courses with no tokens yet.
+pub fn unannotated_count(conn: &mut Conn) -> Result<i64> {
+    Ok(diesel::sql_query(
+        "SELECT count(DISTINCT s.id) AS n FROM sentences s
+           JOIN course_lessons cl ON cl.lesson_id = s.lesson_id
+           JOIN courses c ON c.id = cl.course_id AND c.closed_at IS NULL
+          WHERE NOT EXISTS (SELECT 1 FROM sentence_tokens t WHERE t.sentence_id = s.id)",
+    )
+    .get_result::<Count>(conn)?
+    .n)
+}
+
+/// Unannotated sentences, a page of them, for the tutor: (id, Polish,
+/// English, course).
+pub fn unannotated(conn: &mut Conn, course_id: Option<CourseId>, limit: i64) -> Result<Vec<(String, String, String, String)>> {
+    #[derive(QueryableByName)]
+    struct Row {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        id: String,
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        pl: String,
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        en: String,
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        course: String,
+    }
+    let course = course_id.map(|c| c.to_string()).unwrap_or_default();
+    let rows: Vec<Row> = diesel::sql_query(
+        "SELECT DISTINCT s.id AS id, s.pl AS pl, s.en AS en, c.title_en AS course FROM sentences s
+           JOIN course_lessons cl ON cl.lesson_id = s.lesson_id
+           JOIN courses c ON c.id = cl.course_id AND c.closed_at IS NULL
+          WHERE NOT EXISTS (SELECT 1 FROM sentence_tokens t WHERE t.sentence_id = s.id) AND (?1 = '' OR c.id = ?1)
+         ORDER BY course, id LIMIT ?2",
+    )
+    .bind::<diesel::sql_types::Text, _>(course)
+    .bind::<diesel::sql_types::BigInt, _>(limit.clamp(1, 200))
+    .load(conn)?;
+    Ok(rows.into_iter().map(|r| (r.id, r.pl, r.en, r.course)).collect())
+}
+
+/// The token vocabulary as the tutor's tool schema describes it.
+pub fn token_schema() -> serde_json::Value {
+    let keys = |list: &[(&'static str, &'static str)]| list.iter().map(|(k, _)| *k).collect::<Vec<_>>();
+    serde_json::json!({
+        "type": "array",
+        "description": "The sentence word by word: one token per word, in order, punctuation left out.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "form": { "type": "string", "description": "The word as written in the sentence" },
+                "lemma": { "type": "string", "description": "Its dictionary form" },
+                "word_id": { "type": "string", "pattern": "^wd_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The learner's word it is, when known" },
+                "pos": { "type": "string", "enum": keys(POS) },
+                "case": { "type": "string", "enum": keys(CASES_LIST) },
+                "number": { "type": "string", "enum": keys(NUMBERS_LIST) },
+                "gender": { "type": "string", "enum": keys(GENDERS) },
+                "person": { "type": "string", "enum": keys(PERSONS) },
+                "tense": { "type": "string", "enum": keys(TENSES) },
+                "aspect": { "type": "string", "enum": keys(ASPECTS) },
+                "mood": { "type": "string", "enum": keys(MOODS) },
+                "reason": { "type": "string", "enum": REASONS.iter().map(|r| r.key).collect::<Vec<_>>(), "description": "Why it has this form" }
+            },
+            "required": ["form", "lemma", "pos"]
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +792,21 @@ mod tests {
         assert_eq!(ok.iter().map(|t| t.key).collect::<Vec<_>>(), ["w-locative", "accusative"]);
         let err = validate(&["accusative".into(), "ablative".into()]).unwrap_err().to_string();
         assert!(err.contains("ablative") && !err.contains("accusative,"), "{err}");
+    }
+
+    #[test]
+    fn reasons_and_values_are_well_formed() {
+        let keys: std::collections::HashSet<_> = REASONS.iter().map(|r| r.key).collect();
+        assert_eq!(keys.len(), REASONS.len());
+        for r in REASONS {
+            if let Some(case) = r.case {
+                assert!(CASES_LIST.iter().any(|(k, _)| *k == case), "{}", r.key);
+            }
+        }
+        // The preposition reasons are grammar tags too (the Structures page
+        // links them).
+        assert!(by_key("z-instrumental").is_some() && reason("z-instrumental").is_some());
+        assert_eq!(words_of("Kawa, z mlekiem!").iter().map(|(w, _)| w.as_str()).collect::<Vec<_>>(), ["Kawa", "z", "mlekiem"]);
+        assert_eq!(value_label("reason", "z-instrumental"), "z (with) → instrumental");
     }
 }

@@ -32,12 +32,12 @@ import {
   Stack,
   Text,
 } from "../design";
-import { logEvent } from "../lib/learnLog";
+import { logEvent, setPracticeContext } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { lessonType } from "../lib/lessonTypes";
 import { useSyncReload } from "../lib/sync";
 import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
-import type { CourseProgress, LessonDetail, LessonId, WikiSource } from "../lib/types";
+import type { CourseProgress, LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/types";
 
 /** Sections that head the page, above its columns: a scene, a story. */
 const HEADERS = ["scene", "story"];
@@ -54,6 +54,7 @@ const RESULT_TEXT = {
  */
 export function LessonPage({
   lessonId,
+  from,
   today,
   onBack,
   onStartDrill,
@@ -61,6 +62,8 @@ export function LessonPage({
   onDeleted,
 }: {
   lessonId: LessonId;
+  /** Where it was opened from (a course page, the daily five…), for the learning log. */
+  from: PracticeContext;
   today: number;
   onBack: () => void;
   onStartDrill: (lessonId: LessonId) => void;
@@ -91,7 +94,9 @@ export function LessonPage({
       .catch((cause) => setError(errorMessage(cause)));
   useEffect(() => {
     void reload();
-    logEvent({ kind: "lesson_opened", lessonId, itemKind: "lesson", itemId: lessonId });
+    // Everything done from this page is logged as practised from where it was opened.
+    setPracticeContext(from);
+    logEvent({ kind: "lesson_opened", lessonId, itemKind: "lesson", itemId: lessonId, ...from });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
   // The lesson as another device changed it (sync).

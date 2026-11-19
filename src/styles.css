@@ -3427,8 +3427,13 @@ button.measure-row {
 /* Progress → What you've met: three cards, side by side from a tablet. */
 .met-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+}
+@media (min-width: 600px) {
+  .met-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 .met-card {
   min-width: 0;
@@ -3547,4 +3552,122 @@ button.measure-row {
 }
 .insight-segmented {
   max-width: 520px;
+}
+
+/* Progress → Insights → Raw log: rows that open to every field. Off-screen
+   rows are skipped by the browser's layout and paint (content-visibility),
+   so a long log scrolls like a short one. */
+.raw-row {
+  border-bottom: 1px solid var(--line-soft);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+.raw-row:last-child {
+  border-bottom: 0;
+}
+.raw-row > .list-item {
+  border-bottom: 0;
+}
+.raw-row[data-open="true"] {
+  background: var(--surface-sunken);
+}
+.raw-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+.raw-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.raw-fields dt {
+  color: var(--text-faint);
+  padding-top: 2px;
+}
+.raw-fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.raw-options,
+.raw-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.raw-options span {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  font-size: var(--font-small);
+  line-height: var(--leading-small);
+}
+.raw-options span[data-expected="true"] {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.raw-options span[data-given="true"] {
+  border-color: var(--bad-line);
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.raw-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+  text-align: left;
+}
+.raw-link span {
+  color: var(--text-dim);
+}
+.raw-link .polish {
+  color: var(--crimson-ink);
+  font-size: var(--font-small);
+}
+.raw-link[data-correct="true"] {
+  border-color: var(--ok-line);
+}
+.raw-link[data-correct="false"] {
+  border-color: var(--bad-line);
+  background: var(--bad-bg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .raw-link:hover {
+    border-color: var(--brand-ink);
+  }
+}
+.raw-selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.raw-selects select {
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 160px;
+}
+/* Topics: a domain per card, two columns on a wide window. */
+.topic-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+@media (min-width: 1000px) {
+  .topic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

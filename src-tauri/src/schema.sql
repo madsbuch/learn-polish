@@ -493,7 +493,14 @@ CREATE TABLE IF NOT EXISTS attempts (
     -- Everything else, small and typed (learnlog::AttemptDetails, versioned
     -- by its "v"): word-by-word results, the options shown, the first pick.
     details    TEXT    NOT NULL DEFAULT '{}'
-);
+-- Schema 15: where it was practised and exactly which card. The course it
+-- was practised from and how it was reached (learnlog::SOURCES: course,
+-- daily, other, game, …); the card's key in its run, the way it asked
+-- (pl→en, en→pl, audio→pl…: learnlog::direction), the prompt as shown, its
+-- place in the run, and the check-in a verdict or slip belongs to. The
+-- rest of what was shown (every option in order, tiles, hint, picture)
+-- is in details. Indexed in db.rs, after the columns exist.
+, course_id TEXT, source TEXT NOT NULL DEFAULT '', card_key TEXT NOT NULL DEFAULT '', direction TEXT NOT NULL DEFAULT '', prompt TEXT NOT NULL DEFAULT '', position INTEGER, checkin_id TEXT);
 
 CREATE INDEX IF NOT EXISTS attempts_item ON attempts(item_id, at);
 CREATE INDEX IF NOT EXISTS attempts_day ON attempts(day);
@@ -515,7 +522,8 @@ CREATE TABLE IF NOT EXISTS learning_events (
     run        TEXT    NOT NULL DEFAULT '',
     -- learnlog::EventDetails, versioned by its "v".
     details    TEXT    NOT NULL DEFAULT '{}'
-);
+-- Schema 15: the course it happened in and how it was reached, as attempts.
+, course_id TEXT, source TEXT NOT NULL DEFAULT '');
 
 CREATE INDEX IF NOT EXISTS learning_events_day ON learning_events(day, kind);
 CREATE INDEX IF NOT EXISTS learning_events_item ON learning_events(item_id);
@@ -536,6 +544,83 @@ CREATE TABLE IF NOT EXISTS sentence_grammar (
 );
 
 CREATE INDEX IF NOT EXISTS word_grammar_tag ON word_grammar(tag_id);
+
+-- Every known word an answer involved (wordlinks.rs, schema 15), written
+-- with the answer: the card's own word or sentence (target), each word of
+-- a sentence, dialogue line, story or song line it was in, and the wrong
+-- options shown beside it (distractor) — with the form it had there
+-- ("kawą" for kawa), its place in the sentence (the token's position, as
+-- sentence_tokens numbers them) and, where the exercise grades word by
+-- word, whether that word was right. Append-only, per device, like the
+-- answer; no foreign keys (history outlives its words).
+CREATE TABLE IF NOT EXISTS attempt_items (
+    attempt_id TEXT    NOT NULL,
+    item_id    TEXT    NOT NULL,
+    -- word | sentence | line
+    item_kind  TEXT    NOT NULL,
+    -- target | in_sentence | in_line | in_story | in_song | distractor
+    role       TEXT    NOT NULL,
+    form       TEXT    NOT NULL DEFAULT '',
+    position   INTEGER NOT NULL DEFAULT 0,
+    -- 1 right, 0 wrong, NULL not graded word by word.
+    correct    INTEGER,
+    PRIMARY KEY (attempt_id, item_id, role, position)
+);
+
+CREATE INDEX IF NOT EXISTS attempt_items_item ON attempt_items(item_id, role);
+
+-- A sentence word by word, as the tutor annotated it (grammar.rs: a
+-- curated vocabulary, checked): its form, dictionary form and the word it
+-- is when the learner has it, part of speech, case, number, gender,
+-- person, tense, aspect, mood, and why it has that form ("z-instrumental":
+-- after z; "direct-object"; "negation-genitive"). Made with new
+-- sentences; older ones only when the learner asks the tutor.
+CREATE TABLE IF NOT EXISTS sentence_tokens (
+    sentence_id TEXT    NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    form        TEXT    NOT NULL,
+    lemma       TEXT    NOT NULL DEFAULT '',
+    word_id     TEXT,
+    pos         TEXT    NOT NULL DEFAULT '',
+    gram_case   TEXT    NOT NULL DEFAULT '',
+    number      TEXT    NOT NULL DEFAULT '',
+    gender      TEXT    NOT NULL DEFAULT '',
+    person      TEXT    NOT NULL DEFAULT '',
+    tense       TEXT    NOT NULL DEFAULT '',
+    aspect      TEXT    NOT NULL DEFAULT '',
+    mood        TEXT    NOT NULL DEFAULT '',
+    reason      TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (sentence_id, position)
+);
+
+CREATE INDEX IF NOT EXISTS sentence_tokens_word ON sentence_tokens(word_id);
+
+-- What words, sentences and lessons are about (topics.rs: a curated
+-- ontology of domains and topics kept in the code, ids derived from their
+-- keys). The tutor tags what it makes; older content only when asked. The
+-- column is `topic`, not `topic_id`: courses were once called topics, and
+-- the upgrade checks that no `topic_id` is left.
+CREATE TABLE IF NOT EXISTS word_topics (
+    word_id  TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+    topic TEXT NOT NULL,
+    PRIMARY KEY (word_id, topic)
+);
+
+CREATE TABLE IF NOT EXISTS sentence_topics (
+    sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+    topic    TEXT NOT NULL,
+    PRIMARY KEY (sentence_id, topic)
+);
+
+CREATE TABLE IF NOT EXISTS lesson_topics (
+    lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+    topic  TEXT NOT NULL,
+    PRIMARY KEY (lesson_id, topic)
+);
+
+CREATE INDEX IF NOT EXISTS word_topics_topic ON word_topics(topic);
+CREATE INDEX IF NOT EXISTS sentence_topics_topic ON sentence_topics(topic);
+CREATE INDEX IF NOT EXISTS lesson_topics_topic ON lesson_topics(topic);
 CREATE INDEX IF NOT EXISTS sentence_grammar_tag ON sentence_grammar(tag_id);
 
 CREATE INDEX IF NOT EXISTS words_lesson ON words(lesson_id, ord);

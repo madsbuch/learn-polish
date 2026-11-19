@@ -125,6 +125,73 @@ export const REPORT_ASK =
 export const TAG_ASK =
   "Tag the grammar in my courses: list the words and sentences without grammar tags (list_untagged) and give each its tags with tag_grammar, a course at a time, until none are left. Change nothing else.";
 
+/** What the Structures page's second button asks (PRINCIPLES #4: a button, no backfill). */
+export const ANNOTATE_ASK =
+  "Annotate the sentences in my courses word by word: list the sentences without tokens (list_untagged with missing: tokens) and annotate each with annotate_sentences — dictionary form, part of speech, case, number, gender, person, tense, aspect, mood and the reason for each form — a course at a time, until none are left. Change nothing else.";
+
+/** What the Topics page's button asks. */
+export const TOPICS_ASK =
+  "Tag the topics in my courses: list the lessons, words and sentences without topics (list_untagged with missing: topics) and give each its topics with tag_topics, a course at a time, until none are left. Change nothing else.";
+
+/** Every kind of mistake (mistakes.rs CLASSES), for the raw log's filter. */
+export const MISTAKE_CLASSES: { value: string; label: string }[] = [
+  { value: "diacritics", label: "Polish letters" },
+  { value: "ending", label: "Endings" },
+  { value: "word_order", label: "Word order" },
+  { value: "sound_contrast", label: "Sounds" },
+  { value: "preposition", label: "Prepositions" },
+  { value: "typo", label: "Typos" },
+  { value: "lookalike", label: "Look-alike words" },
+  { value: "partial", label: "Some words wrong" },
+  { value: "unknown_word", label: "Didn't know it" },
+];
+
+/** How practice was reached (learnlog.rs SOURCES), as the pages say it. */
+export const SOURCES: { value: string; label: string }[] = [
+  { value: "course", label: "From its course" },
+  { value: "daily", label: "Today's lessons" },
+  { value: "other", label: "Other lessons" },
+  { value: "game", label: "Quick games" },
+  { value: "tutor", label: "From the tutor" },
+  { value: "music", label: "From Music" },
+  { value: "link", label: "From a link" },
+  { value: "none", label: "Not recorded" },
+];
+
+/** The exercise kinds the raw log filters by (analytics.rs exercise_label). */
+export const EXERCISES: { value: string; label: string }[] = [
+  { value: "recognise", label: "Pick the meaning" },
+  { value: "produce", label: "Pick the Polish" },
+  { value: "type", label: "Write it" },
+  { value: "wordOrder", label: "Build the sentence" },
+  { value: "dialogueGap", label: "What comes next" },
+  { value: "gapFill", label: "Fill the gaps" },
+  { value: "picturePick", label: "Pictures" },
+  { value: "dictation", label: "Dictation" },
+  { value: "soundPair", label: "Sound pair" },
+  { value: "sceneWhere", label: "Where is it?" },
+  { value: "storyQuestion", label: "Story question" },
+  { value: "sayIt", label: "Say it" },
+  { value: "dialogueSay", label: "Say your line" },
+  { value: "checkin", label: "Check-in" },
+  { value: "checkinMistake", label: "Check-in slip" },
+  { value: "game:dictation", label: "Dictation game" },
+  { value: "game:sounds", label: "Sound pairs game" },
+  { value: "game:say", label: "Say it game" },
+];
+
+/** The ways a word's answers group on its page (contexts.rs GROUPS). */
+export const CONTEXT_GROUPS: { value: string; label: string }[] = [
+  { value: "role", label: "Alone or in context" },
+  { value: "reason", label: "Why that form" },
+  { value: "case", label: "Case" },
+  { value: "form", label: "Form" },
+  { value: "course", label: "Course" },
+  { value: "topic", label: "Topic" },
+  { value: "exercise", label: "Exercise" },
+  { value: "source", label: "Reached from" },
+];
+
 /** A word-by-word result as the pages show it. */
 export const WORD_STATUS: Record<string, string> = {
   r: "right",

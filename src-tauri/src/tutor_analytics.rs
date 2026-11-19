@@ -146,14 +146,122 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "list_untagged",
             "Looking for untagged items…",
-            "Words and sentences in open courses that have no grammar tag yet, with their ids, and how many in all.",
+            "Items in open courses still missing something, with their ids, and how many in all: grammar \
+             tags (words and sentences), tokens (sentences not yet annotated word by word) or topics \
+             (lessons, words and sentences).",
             json!({
                 "type": "object",
-                "properties": { "course_id": course_prop(), "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Default 100" } }
+                "properties": {
+                    "missing": { "type": "string", "enum": ["grammar", "tokens", "topics"], "description": "Default grammar" },
+                    "course_id": course_prop(),
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Default 100" }
+                }
+            }),
+        ),
+        tool(
+            "tag_topics",
+            "Tagging the topics…",
+            "Give existing lessons, words and sentences their topics (replacing any they had). Ids from \
+             get_course, list_lessons or list_untagged.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "maxItems": 200,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string", "pattern": "^(wd|sn|ls)_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                                "topics": crate::tutor::topics_prop()
+                            },
+                            "required": ["id", "topics"]
+                        }
+                    }
+                },
+                "required": ["items"]
+            }),
+        ),
+        tool(
+            "annotate_sentences",
+            "Annotating the sentences…",
+            "Annotate existing sentences word by word (replacing any annotation they had): one token \
+             per word, in order. Ids from get_course or list_untagged.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "maxItems": 60,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string", "pattern": "^sn_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                                "tokens": crate::grammar::token_schema()
+                            },
+                            "required": ["id", "tokens"]
+                        }
+                    }
+                },
+                "required": ["items"]
+            }),
+        ),
+        tool(
+            "get_raw_log",
+            "Reading the log…",
+            "The learner's answer and event log, newest first, a page at a time: each answer with its \
+             date, exercise, direction, prompt as shown, options in order, given and expected, right or \
+             wrong, mistake class, course, lesson, source, time to answer, tries, plays, translations \
+             shown, the words it involved (dictionary=form@role:result) and a check-in's verdict; each \
+             event with its kind and details. `next` continues the listing.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "period": period_prop(),
+                    "from": { "type": "string", "pattern": DATE, "description": "First day (instead of period)" },
+                    "to": { "type": "string", "pattern": DATE },
+                    "course_id": course_prop(),
+                    "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "item_id": { "type": "string", "pattern": ITEM, "description": "A word, sentence or line: its answers and every answer it appeared in" },
+                    "role": { "type": "string", "enum": crate::wordlinks::ROLES.iter().map(|(k, _)| *k).collect::<Vec<_>>(), "description": "With item_id: only where it had this role" },
+                    "search": { "type": "string", "description": "Text in an item's Polish or English, or in a prompt, answer or expected answer" },
+                    "exercise": { "type": "string" },
+                    "mistake": { "type": "string", "enum": classes },
+                    "topic": { "type": "string", "enum": crate::topics::keys() },
+                    "grammar": { "type": "string", "enum": crate::grammar::keys() },
+                    "correct": { "type": "boolean" },
+                    "source": { "type": "string", "enum": crate::learnlog::SOURCES.iter().map(|(k, _)| *k).collect::<Vec<_>>() },
+                    "kind": { "type": "string", "enum": ["answers", "events"] },
+                    "next": { "type": "string", "description": "From the previous page" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Default 40" }
+                }
+            }),
+        ),
+        tool(
+            "get_context_stats",
+            "Looking at the contexts…",
+            "Answers grouped one way, with counts and accuracy per group: for one word or sentence (every \
+             time it appeared, on its own or inside other items), one grammar structure, one topic, or \
+             everything. Groups: course practised from, role (on its own, in a sentence, dialogue, story, \
+             song, or as a wrong option), case and reason (as annotated in the sentence), form, topic, \
+             exercise, or source.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "item_id": { "type": "string", "pattern": ITEM },
+                    "tag": { "type": "string", "enum": crate::grammar::keys() },
+                    "topic": { "type": "string", "enum": crate::topics::keys() },
+                    "group_by": { "type": "string", "enum": crate::contexts::GROUPS.iter().map(|(k, _)| *k).collect::<Vec<_>>() },
+                    "period": period_prop(),
+                    "course_id": course_prop()
+                },
+                "required": ["group_by"]
             }),
         ),
     ]
 }
+
+const ITEM: &str = "^(wd|sn|dl)_[0-7][0-9a-hjkmnp-tv-z]{25}$";
 
 #[derive(Debug, Deserialize)]
 struct PeriodArgs {
@@ -217,9 +325,123 @@ struct TagArgs {
 #[derive(Debug, Deserialize)]
 struct UntaggedArgs {
     #[serde(default)]
+    missing: Option<String>,
+    #[serde(default)]
     course_id: Option<CourseId>,
     #[serde(default)]
     limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TopicArgs {
+    items: Vec<crate::topics::TopicItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnnotateArgs {
+    items: Vec<crate::grammar::AnnotateItem>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawArgs {
+    #[serde(default)]
+    period: String,
+    from: Option<String>,
+    to: Option<String>,
+    course_id: Option<CourseId>,
+    lesson_id: Option<LessonId>,
+    item_id: Option<String>,
+    role: Option<String>,
+    search: Option<String>,
+    exercise: Option<String>,
+    mistake: Option<String>,
+    topic: Option<String>,
+    grammar: Option<String>,
+    correct: Option<bool>,
+    source: Option<String>,
+    kind: Option<String>,
+    next: Option<String>,
+    limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContextArgs {
+    #[serde(default)]
+    item_id: Option<String>,
+    #[serde(default)]
+    tag: Option<String>,
+    #[serde(default)]
+    topic: Option<String>,
+    group_by: String,
+    #[serde(default)]
+    period: String,
+    #[serde(default)]
+    course_id: Option<CourseId>,
+}
+
+/// A raw-log row as the model reads it: what happened, compactly.
+fn raw_row(r: &crate::rawlog::RawRow) -> Value {
+    let mut v = json!({ "id": r.id, "date": date(r.day), "course": r.course, "lesson": r.lesson, "source": r.source });
+    if !r.item.is_empty() {
+        v["item"] = json!(r.item);
+        v["item_id"] = json!(r.item_id);
+    }
+    match &r.answer {
+        Some(a) => {
+            v["exercise"] = json!(a.exercise);
+            v["direction"] = json!(a.direction);
+            if !a.prompt.is_empty() {
+                v["prompt"] = json!(a.prompt);
+            }
+            if !a.options.is_empty() {
+                v["options"] = json!(a.options);
+            }
+            v["given"] = json!(a.given);
+            v["expected"] = json!(a.expected);
+            v["correct"] = json!(a.correct);
+            if !a.mistake.is_empty() {
+                v["mistake"] = json!(a.mistake);
+                v["detail"] = json!(a.detail);
+            }
+            if let Some(ms) = a.ms_answer {
+                v["seconds"] = json!(crate::convert::round(crate::convert::real(ms) / 1000.0));
+            }
+            for (key, n) in [("tries", a.tries), ("plays", a.plays), ("reveals", a.reveals)] {
+                if n > 0 {
+                    v[key] = json!(n);
+                }
+            }
+            if let Some(p) = a.position {
+                v["card"] = json!(format!("{p}/{}", a.shown.as_ref().and_then(|s| s.of_cards).map(|n| n.to_string()).unwrap_or_default()));
+            }
+            let words: Vec<String> = a
+                .links
+                .iter()
+                .filter(|l| l.item_kind == "word")
+                .map(|l| {
+                    let result = match l.correct {
+                        Some(true) => ":right",
+                        Some(false) => ":wrong",
+                        None => "",
+                    };
+                    let why = if l.reason.is_empty() { String::new() } else { format!(" ({})", l.reason) };
+                    format!("{}={}@{}{result}{why}", l.pl, l.form, l.role)
+                })
+                .collect();
+            if !words.is_empty() {
+                v["words"] = json!(words);
+            }
+            if let Some(verdict) = &a.verdict {
+                v["verdict"] = json!({ "result": verdict.result, "xp": verdict.xp, "checkin_id": a.checkin_id });
+            }
+        }
+        None => {
+            v["event"] = json!(r.event);
+            v["details"] = json!(r.event_details);
+        }
+    }
+    v
 }
 
 /// Days since 1970 of a date written 2026-11-19.
@@ -425,10 +647,79 @@ pub fn run(conn: &mut Conn, name: &str, arguments: &str) -> Option<Result<Value>
         })(),
         "list_untagged" => (|| {
             let args: UntaggedArgs = parse(arguments)?;
-            let items = crate::grammar::untagged(conn, args.course_id, args.limit.unwrap_or(100))?;
+            let limit = args.limit.unwrap_or(100);
+            let (total, items) = match args.missing.as_deref().unwrap_or("grammar") {
+                "grammar" => (crate::grammar::untagged_count(conn)?, crate::grammar::untagged(conn, args.course_id, limit)?),
+                "tokens" => (crate::grammar::unannotated_count(conn)?, crate::grammar::unannotated(conn, args.course_id, limit)?),
+                "topics" => (crate::topics::untagged_count(conn)?, crate::topics::untagged(conn, args.course_id, limit)?),
+                other => return Err(Error::msg(format!("Unknown 'missing': {other} (grammar, tokens or topics)."))),
+            };
             Ok(json!({
-                "total": crate::grammar::untagged_count(conn)?,
+                "total": total,
                 "items": items.iter().map(|(id, pl, en, course)| json!({ "id": id, "pl": pl, "en": en, "course": course })).collect::<Vec<_>>(),
+            }))
+        })(),
+        "tag_topics" => (|| {
+            let args: TopicArgs = parse(arguments)?;
+            let (words, sentences, lessons) = crate::topics::tag_items(conn, &args.items)?;
+            Ok(json!({ "tagged_words": words, "tagged_sentences": sentences, "tagged_lessons": lessons, "still_untagged": crate::topics::untagged_count(conn)? }))
+        })(),
+        "annotate_sentences" => (|| {
+            let args: AnnotateArgs = parse(arguments)?;
+            let n = crate::grammar::annotate(conn, &args.items)?;
+            Ok(json!({ "annotated": n, "still_unannotated": crate::grammar::unannotated_count(conn)? }))
+        })(),
+        "get_raw_log" => (|| {
+            let args: RawArgs = parse(arguments)?;
+            let span = match (&args.from, &args.to) {
+                (None, None) => Filter::period(conn, &args.period, None)?,
+                (from, to) => Filter {
+                    from_day: from.as_deref().map(day_of).transpose()?,
+                    to_day: to.as_deref().map(day_of).transpose()?,
+                    course_id: None,
+                },
+            };
+            let filter = crate::rawlog::RawFilter {
+                from_day: span.from_day,
+                to_day: span.to_day,
+                course_id: args.course_id,
+                lesson_id: args.lesson_id,
+                item_id: args.item_id,
+                role: args.role,
+                search: args.search,
+                exercise: args.exercise,
+                mistake: args.mistake,
+                topic: args.topic,
+                grammar: args.grammar,
+                correct: args.correct,
+                source: args.source,
+                kind: args.kind,
+                context: None,
+            };
+            let before = match args.next.as_deref().filter(|s| !s.is_empty()) {
+                Some(next) => {
+                    let (at, id) = next.split_once(':').ok_or_else(|| Error::msg("`next` is the value the previous page gave."))?;
+                    Some(crate::rawlog::Cursor { at: at.parse().map_err(|_| Error::msg("`next` is the value the previous page gave."))?, id: id.into() })
+                }
+                None => None,
+            };
+            let page = crate::rawlog::page(conn, &filter, before.as_ref(), args.limit.unwrap_or(40).clamp(1, 100))?;
+            Ok(json!({
+                "rows": page.rows.iter().map(raw_row).collect::<Vec<_>>(),
+                "next": page.next.map(|c| format!("{}:{}", c.at, c.id)),
+            }))
+        })(),
+        "get_context_stats" => (|| {
+            let args: ContextArgs = parse(arguments)?;
+            let f = Filter::period(conn, &args.period, args.course_id)?;
+            let subject = crate::contexts::Subject { item_id: args.item_id, tag: args.tag, topic: args.topic };
+            let s = crate::contexts::stats(conn, &subject, &args.group_by, &f)?;
+            Ok(json!({
+                "period": span(&f),
+                "subject": s.subject,
+                "group_by": s.group_by,
+                "answers": s.attempts,
+                "groups": s.groups.iter().map(|g| json!({ "key": g.key, "label": g.label, "answers": g.attempts, "correct": g.correct, "accuracy_pct": pct(g.accuracy) })).collect::<Vec<_>>(),
             }))
         })(),
         _ => return None,

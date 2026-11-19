@@ -104,6 +104,12 @@ pub struct SubmitAnswer {
     /// How it was answered (time, tries, audio, translations shown).
     #[serde(default)]
     pub signals: Option<crate::learnlog::Signals>,
+    /// Where it is practised from (the plan's context, handed back).
+    #[serde(default)]
+    pub context: Option<crate::learnlog::PracticeContext>,
+    /// What else the card showed: its key, place in the run, hint, tiles.
+    #[serde(default)]
+    pub card: Option<crate::learnlog::CardShown>,
 }
 
 /// Cards that are only read (a new word, a new sentence, a dialogue to read
@@ -142,6 +148,7 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
 
 fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     let today = db::today(conn);
+    let context = crate::learnlog::resolve(conn, answer.context.as_ref(), answer.lesson_id, "")?;
 
     // Reading a card is not answering it: no XP, no review, not counted in
     // accuracy. (Seeing a new word must not move it toward "mastered".)
@@ -158,6 +165,7 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
             answer.lesson_id,
             &answer.run,
             crate::learnlog::EventDetails { exercise: Some(answer.kind.clone()), source: Some("session".into()), ..Default::default() },
+            &context,
         )?;
         let total_xp = stats::total_xp(conn)?;
         let day_xp = stats::day_xp(conn, today)?;
@@ -268,6 +276,12 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
             options: &answer.options,
             grammar: vec![],
             note: String::new(),
+            context: &context,
+            prompt: &answer.prompt,
+            card: answer.card.as_ref(),
+            pl: &answer.pl,
+            checkin_id: None,
+            verdict: None,
         },
     )?;
 
@@ -316,8 +330,16 @@ fn unlocked_codes(conn: &mut Conn) -> Result<std::collections::HashSet<String>> 
 
 /// The exercises of a drill lesson.
 #[tauri::command]
-pub async fn lesson_session(db: State<'_, Db>, lesson_id: LessonId) -> Result<SessionPlan> {
-    session::build_lesson(&mut db.lock(), lesson_id)
+pub async fn lesson_session(db: State<'_, Db>, lesson_id: LessonId, context: Option<crate::learnlog::PracticeContext>) -> Result<SessionPlan> {
+    session_with(&mut db.lock(), lesson_id, context.as_ref())
+}
+
+/// A drill's plan, with where it is practised from (checked, its course
+/// filled in from the lesson when the screen gave none).
+pub fn session_with(conn: &mut Conn, lesson_id: LessonId, context: Option<&crate::learnlog::PracticeContext>) -> Result<SessionPlan> {
+    let mut plan = session::build_lesson(conn, lesson_id)?;
+    plan.context = crate::learnlog::resolve(conn, context, Some(lesson_id), "")?;
+    Ok(plan)
 }
 
 #[derive(Debug, Serialize)]
@@ -338,18 +360,37 @@ pub struct LessonFinished {
 /// A drill is done: its score becomes a result that schedules the next
 /// check-in, and the day counts toward the streak.
 #[tauri::command]
-pub async fn lesson_finish(db: State<'_, Db>, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
-    lesson_finish_in(&mut db.lock(), lesson_id, correct, total)
+pub async fn lesson_finish(
+    db: State<'_, Db>,
+    lesson_id: LessonId,
+    correct: i64,
+    total: i64,
+    context: Option<crate::learnlog::PracticeContext>,
+) -> Result<LessonFinished> {
+    lesson_finish_with(&mut db.lock(), lesson_id, correct, total, context.as_ref())
 }
 
 /// The work behind [`lesson_finish`], callable without Tauri (tests).
 /// Finishes a drill: its grade, schedule, mastery, XP and the day, all or
 /// nothing (one transaction).
+#[cfg(test)]
 pub fn lesson_finish_in(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
-    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, correct, total))
+    lesson_finish_with(conn, lesson_id, correct, total, None)
 }
 
-fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
+/// A drill finished, where it was practised from (for its event).
+pub fn lesson_finish_with(
+    conn: &mut Conn,
+    lesson_id: LessonId,
+    correct: i64,
+    total: i64,
+    context: Option<&crate::learnlog::PracticeContext>,
+) -> Result<LessonFinished> {
+    let context = crate::learnlog::resolve(conn, context, Some(lesson_id), "")?;
+    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, correct, total, &context))
+}
+
+fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64, context: &crate::learnlog::PracticeContext) -> Result<LessonFinished> {
     let before = unlocked_codes(conn)?;
     crate::learnlog::note(
         conn,
@@ -359,6 +400,7 @@ fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total
         Some(lesson_id),
         "",
         crate::learnlog::EventDetails { answered: Some(total), correct: Some(correct), ..Default::default() },
+        context,
     )?;
     let result = lessons::result_from_score(correct, total);
     let today = db::today(conn);

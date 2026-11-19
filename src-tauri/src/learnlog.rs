@@ -23,8 +23,9 @@ use crate::mistakes::{Mistake, WordResult};
 use crate::schema::{attempts, learning_events};
 
 /// The version of the details kept with each row; bumped when their shape
-/// changes, so a reader knows what it has.
-pub const DETAILS_VERSION: u32 = 1;
+/// changes, so a reader knows what it has. 2 (schema 15): what the card
+/// showed and a check-in's verdict.
+pub const DETAILS_VERSION: u32 = 2;
 
 /// The longest given or expected text kept: enough for a sentence.
 const TEXT_KEPT: usize = 160;
@@ -79,6 +80,127 @@ pub struct Signals {
     pub first_pick: Option<String>,
 }
 
+// ---------------------------------------------------------------------------
+// Where it happened (schema 15)
+// ---------------------------------------------------------------------------
+
+/// How the learner reached what they practised, and what each means.
+pub const SOURCES: &[(&str, &str)] = &[
+    ("course", "a lesson opened from its course's page"),
+    ("daily", "today's lessons (the daily five)"),
+    ("other", "a lesson in Other lessons"),
+    ("game", "a quick game"),
+    ("tutor", "a lesson opened from the tutor's conversation"),
+    ("music", "a song's listening lesson, from Music"),
+    ("link", "a lesson opened from a link elsewhere (a title chip)"),
+    ("search", "something found with Search"),
+    ("insights", "the Progress pages"),
+];
+
+/// Where practice happens, as the screens say it: how it was reached and
+/// the course it was opened from. Passed into a drill (`lesson_session`),
+/// a check-in (`checkin_start`) and a game, and handed back with every
+/// answer and event.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PracticeContext {
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub course_id: Option<CourseId>,
+}
+
+/// A context checked and filled in: the source is one of [`SOURCES`] (an
+/// unknown one fails by name: a screen bug, caught in testing), and the
+/// course, when the screen gave none, is the lesson's own (its first
+/// course) — what a lesson opened from the daily five belongs to.
+pub fn resolve(conn: &mut Conn, context: Option<&PracticeContext>, lesson_id: Option<LessonId>, fallback: &str) -> Result<PracticeContext> {
+    let given = context.cloned().unwrap_or_default();
+    let source = if given.source.trim().is_empty() { fallback.to_string() } else { given.source.trim().to_lowercase() };
+    if !source.is_empty() && !SOURCES.iter().any(|(k, _)| *k == source) {
+        return Err(Error::msg(format!(
+            "Unknown practice source '{source}': one of {}.",
+            SOURCES.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ")
+        )));
+    }
+    let course_id = match given.course_id {
+        Some(course) => Some(course),
+        None => match lesson_id {
+            Some(lesson) => crate::schema::course_lessons::table
+                .filter(crate::schema::course_lessons::lesson_id.eq(lesson))
+                // The course it was listed in first: the lesson's own.
+                .order(crate::schema::course_lessons::rowid)
+                .select(crate::schema::course_lessons::course_id)
+                .first::<CourseId>(conn)
+                .optional()?,
+            None => None,
+        },
+    };
+    Ok(PracticeContext { source, course_id })
+}
+
+/// The way a kind of card asks, for the log: what it shows → what the
+/// learner gives ("pl→en": Polish shown, its meaning picked).
+pub fn direction(exercise: &str) -> &'static str {
+    match exercise {
+        "recognise" => "pl→en",
+        "produce" => "en→pl",
+        "type" | "sceneType" => "en→pl typed",
+        "wordOrder" => "en→pl tiles",
+        "gapFill" => "pl gaps",
+        "dialogueGap" => "dialogue→pl",
+        "memory" => "pl↔en pairs",
+        "picturePick" => "picture→pl",
+        "wordPick" => "pl→picture",
+        "dictation" | "game:dictation" => "audio→pl typed",
+        "soundPair" | "game:sounds" => "audio→pl",
+        "sceneFind" => "pl→picture spot",
+        "sceneName" => "picture spot→pl",
+        "sceneWhere" => "picture→pl place",
+        "storyQuestion" => "story→answer",
+        "sayIt" | "game:say" => "pl→speech",
+        "dialogueSay" => "en→speech",
+        "checkin" | "checkinMistake" => "conversation",
+        _ => "",
+    }
+}
+
+/// What a card showed beyond its prompt and options, from the practice
+/// screen: its key in the drill, its place in the run, the hint under the
+/// prompt, the tiles offered, the picture.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CardShown {
+    #[serde(default)]
+    pub key: String,
+    /// Its place in the run, from 1.
+    #[serde(default)]
+    pub position: Option<i64>,
+    #[serde(default)]
+    pub of_cards: Option<i64>,
+    #[serde(default)]
+    pub hint: String,
+    #[serde(default)]
+    pub tokens: Vec<String>,
+    #[serde(default)]
+    pub image: Option<FileId>,
+    /// The English meaning shown with it, when it was.
+    #[serde(default)]
+    pub meaning: String,
+}
+
+/// A check-in's verdict, kept with its answer.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Verdict {
+    pub result: String,
+    pub xp: i64,
+    #[serde(default)]
+    pub aced: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub summary: String,
+}
+
 /// What an attempt keeps beyond its columns (versioned by `v`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -98,6 +220,12 @@ pub struct AttemptDetails {
     /// A check-in mistake's note.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    /// What the card showed beyond its prompt and options (v2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown: Option<CardShown>,
+    /// A check-in's verdict (v2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<Verdict>,
 }
 
 pub fn read_details(json: &str) -> AttemptDetails {
@@ -119,6 +247,16 @@ pub struct NewAttempt<'a> {
     pub options: &'a [String],
     pub grammar: Vec<String>,
     pub note: String,
+    /// Where it was practised (resolved: [`resolve`]).
+    pub context: &'a PracticeContext,
+    /// What the card showed (the prompt as displayed, and the rest).
+    pub prompt: &'a str,
+    pub card: Option<&'a CardShown>,
+    /// The Polish the card is about, when it is not the item's own (a
+    /// dialogue line, a story question): its words are linked.
+    pub pl: &'a str,
+    pub checkin_id: Option<CheckinId>,
+    pub verdict: Option<Verdict>,
 }
 
 /// Writes one answer to the log. Called inside the grade's transaction.
@@ -127,10 +265,21 @@ pub fn write_attempt(conn: &mut Conn, a: &NewAttempt) -> Result<AttemptId> {
     let details = AttemptDetails {
         v: DETAILS_VERSION,
         words: a.mistake.words.iter().take(40).map(|w| WordResult { e: short(&w.e), g: short(&w.g), s: w.s }).collect(),
-        options: a.options.iter().take(8).map(|o| short(o)).collect(),
+        // Every option, in the order shown: the card can be rebuilt.
+        options: a.options.iter().take(24).map(|o| short(o)).collect(),
         first_pick: a.signals.first_pick.as_deref().map(short),
         grammar: a.grammar.clone(),
         note: short(&a.note),
+        shown: a.card.map(|c| CardShown {
+            key: short(&c.key),
+            position: c.position,
+            of_cards: c.of_cards,
+            hint: short(&c.hint),
+            tokens: c.tokens.iter().take(30).map(|t| short(t)).collect(),
+            image: c.image,
+            meaning: short(&c.meaning),
+        }),
+        verdict: a.verdict.clone().map(|v| Verdict { summary: short(&v.summary), ..v }),
     };
     let s = a.signals;
     diesel::insert_into(attempts::table)
@@ -159,8 +308,17 @@ pub fn write_attempt(conn: &mut Conn, a: &NewAttempt) -> Result<AttemptId> {
             attempts::reveals.eq(s.reveals.clamp(0, 999)),
             attempts::changed.eq(i64::from(s.changed)),
             attempts::details.eq(serde_json::to_string(&details)?),
+            attempts::course_id.eq(a.context.course_id),
+            attempts::source.eq(&a.context.source),
+            attempts::card_key.eq(a.card.map(|c| short(&c.key)).unwrap_or_default()),
+            attempts::direction.eq(direction(a.exercise)),
+            attempts::prompt.eq(short(a.prompt)),
+            attempts::position.eq(a.card.and_then(|c| c.position)),
+            attempts::checkin_id.eq(a.checkin_id),
         ))
         .execute(conn)?;
+    // The words it involved, with the answer (wordlinks.rs).
+    crate::wordlinks::write(conn, id, a)?;
     Ok(id)
 }
 
@@ -247,6 +405,11 @@ pub struct EventIn {
     pub at: Option<i64>,
     #[serde(default)]
     pub details: EventDetails,
+    /// Where it happened: the course and how it was reached (schema 15).
+    #[serde(default)]
+    pub course_id: Option<CourseId>,
+    #[serde(default)]
+    pub source: String,
 }
 
 /// The most events one batch takes.
@@ -258,6 +421,9 @@ fn check_event(event: &EventIn) -> Result<()> {
     }
     if !event.item_id.is_empty() && crate::ids::kind_of(&event.item_id).is_none() {
         return Err(Error::msg(format!("An event's item must be a TypeID: {}", event.item_id)));
+    }
+    if !event.source.is_empty() && !SOURCES.iter().any(|(k, _)| *k == event.source) {
+        return Err(Error::msg(format!("Unknown practice source '{}' on an event.", event.source)));
     }
     Ok(())
 }
@@ -290,6 +456,8 @@ pub fn write_event(conn: &mut Conn, event: EventIn) -> Result<()> {
             learning_events::lesson_id.eq(event.lesson_id),
             learning_events::run.eq(short(&event.run)),
             learning_events::details.eq(serde_json::to_string(&clean_details(event.details))?),
+            learning_events::course_id.eq(event.course_id),
+            learning_events::source.eq(&event.source),
         ))
         .execute(conn)?;
     Ok(())
@@ -319,11 +487,32 @@ pub async fn learning_log(db: State<'_, Db>, events: Vec<EventIn>) -> Result<()>
     log_events(&mut db.lock(), events).map(|_| ())
 }
 
-/// An event written from Rust (a card read, a check-in started).
-pub fn note(conn: &mut Conn, kind: &str, item_kind: &str, item_id: &str, lesson_id: Option<LessonId>, run: &str, details: EventDetails) -> Result<()> {
+/// An event written from Rust (a card read, a check-in started), where it
+/// happened.
+#[allow(clippy::too_many_arguments)]
+pub fn note(
+    conn: &mut Conn,
+    kind: &str,
+    item_kind: &str,
+    item_id: &str,
+    lesson_id: Option<LessonId>,
+    run: &str,
+    details: EventDetails,
+    context: &PracticeContext,
+) -> Result<()> {
     write_event(
         conn,
-        EventIn { kind: kind.into(), item_kind: item_kind.into(), item_id: item_id.into(), lesson_id, run: run.into(), at: None, details },
+        EventIn {
+            kind: kind.into(),
+            item_kind: item_kind.into(),
+            item_id: item_id.into(),
+            lesson_id,
+            run: run.into(),
+            at: None,
+            details,
+            course_id: context.course_id,
+            source: context.source.clone(),
+        },
     )
 }
 
@@ -334,13 +523,17 @@ mod tests {
     #[test]
     fn event_details_are_strict_and_versioned() {
         let ok: EventIn = serde_json::from_str(r#"{"kind":"lesson_left","details":{"atCard":3,"ofCards":12}}"#).unwrap();
-        assert_eq!(ok.details.v, 1);
+        assert_eq!(ok.details.v, 2);
         assert_eq!(ok.details.at_card, Some(3));
         assert!(serde_json::from_str::<EventIn>(r#"{"kind":"lesson_left","details":{"mood":"bad"}}"#).is_err());
         assert!(check_event(&EventIn { kind: "nap".into(), ..EventIn::default() }).is_err());
         assert!(check_event(&EventIn { kind: "talk_opened".into(), item_id: "42".into(), ..EventIn::default() }).is_err());
-        let written = serde_json::to_string(&EventDetails { v: 1, slow: Some(true), ..EventDetails::default() }).unwrap();
-        assert_eq!(written, r#"{"v":1,"slow":true}"#, "compact: only what is set");
+        let written = serde_json::to_string(&EventDetails { v: 2, slow: Some(true), ..EventDetails::default() }).unwrap();
+        assert_eq!(written, r#"{"v":2,"slow":true}"#, "compact: only what is set");
+        // Details written at version 1 still read.
+        let old = read_details(r#"{"v":1,"options":["kot","pies"]}"#);
+        assert_eq!((old.v, old.options.len(), old.shown), (1, 2, None));
+        assert!(check_event(&EventIn { kind: "lesson_opened".into(), source: "fridge".into(), ..EventIn::default() }).is_err());
     }
 
     #[test]

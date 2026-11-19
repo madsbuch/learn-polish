@@ -20,7 +20,8 @@ change to the schema follows these.
   (`sounds.rs`: derived ids, kept in the code, not a table), `spot_` where a
   thing is in a scene lesson's picture, `pnl_` a story lesson's panel, `att_` an answer in the learning log, `ev_` a
   learning event, `gr_` a grammar tag (`grammar.rs`: derived from its key, kept
-  in the code, not a table). A new table gets a new prefix, added
+  in the code, not a table), `tp_` a topic (`topics.rs`: derived from its key, kept in the
+  code, not a table). A new table gets a new prefix, added
   to `ids.rs` and here.
 - **Each kind has its own type**: `LessonId`, `CourseId`, … in Rust; branded
   strings (`LessonIdSchema`) in `src/lib/types.ts`. Only a correctly tagged id
@@ -42,6 +43,18 @@ change to the schema follows these.
   strict about its fields (`learnlog.rs`). Grammar tags link items to the
   built-in list: `word_grammar(word_id, tag_id)` and
   `sentence_grammar(sentence_id, tag_id)`, keyed by their pair.
+- **Context in the log** (schema 15): each answer and event keeps the course
+  it was practised from and how it was reached (`course_id`, `source`: one of
+  `learnlog::SOURCES`), and each answer the card exactly (`card_key`,
+  `direction`, `prompt`, `position`, `checkin_id`; every option in order,
+  the tiles, the hint and a verdict in its `details`, version 2). The words
+  an answer involved are `attempt_items(attempt_id, item_id, role,
+  position)` — role target, in_sentence, in_line, in_story, in_song or
+  distractor, with the form and its own result — written with the answer.
+  A sentence word by word is `sentence_tokens(sentence_id, position)`, every
+  value from the vocabulary in `grammar.rs`; topics link to the built-in
+  ontology: `word_topics`, `sentence_topics`, `lesson_topics` (column
+  `topic`, never `topic_id`: the name courses had before version 6).
 - **No ids inside stored text** unless they are TypeIDs: JSON in a column
   (a tutor message's actions, a song's origin, the day's list) holds TypeIDs
   only, never positions or integers.

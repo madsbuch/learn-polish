@@ -586,6 +586,7 @@ diesel::table! {
 }
 
 diesel::joinable!(word_examples -> words (word_id));
+diesel::joinable!(attempt_items -> attempts (attempt_id));
 diesel::joinable!(words -> lessons (lesson_id));
 diesel::joinable!(sentences -> lessons (lesson_id));
 diesel::joinable!(conversation_lines -> lessons (lesson_id));
@@ -727,6 +728,13 @@ diesel::table! {
         reveals -> BigInt,
         changed -> BigInt,
         details -> Text,
+        course_id -> Nullable<CourseIdSql>,
+        source -> Text,
+        card_key -> Text,
+        direction -> Text,
+        prompt -> Text,
+        position -> Nullable<BigInt>,
+        checkin_id -> Nullable<CheckinIdSql>,
     }
 }
 
@@ -745,6 +753,75 @@ diesel::table! {
         lesson_id -> Nullable<LessonIdSql>,
         run -> Text,
         details -> Text,
+        course_id -> Nullable<CourseIdSql>,
+        source -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    attempt_items (attempt_id, item_id, role, position) {
+        attempt_id -> AttemptIdSql,
+        item_id -> Text,
+        item_kind -> Text,
+        role -> Text,
+        form -> Text,
+        position -> BigInt,
+        correct -> Nullable<BigInt>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    sentence_tokens (sentence_id, position) {
+        sentence_id -> SentenceIdSql,
+        position -> BigInt,
+        form -> Text,
+        lemma -> Text,
+        word_id -> Nullable<WordIdSql>,
+        pos -> Text,
+        gram_case -> Text,
+        number -> Text,
+        gender -> Text,
+        person -> Text,
+        tense -> Text,
+        aspect -> Text,
+        mood -> Text,
+        reason -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    word_topics (word_id, topic) {
+        word_id -> WordIdSql,
+        topic -> TopicIdSql,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    sentence_topics (sentence_id, topic) {
+        sentence_id -> SentenceIdSql,
+        topic -> TopicIdSql,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    lesson_topics (lesson_id, topic) {
+        lesson_id -> LessonIdSql,
+        topic -> TopicIdSql,
     }
 }
 
@@ -819,4 +896,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     learning_events,
     word_grammar,
     sentence_grammar,
+    attempt_items,
+    sentence_tokens,
+    word_topics,
+    sentence_topics,
+    lesson_topics,
 );

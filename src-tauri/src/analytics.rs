@@ -85,6 +85,8 @@ pub struct Row {
     pub plays: i64,
     pub reveals: i64,
     pub details: String,
+    pub course_id: Option<CourseId>,
+    pub source: String,
 }
 
 impl Row {
@@ -93,7 +95,7 @@ impl Row {
     }
 }
 
-fn course_lessons_of(conn: &mut Conn, course_id: CourseId) -> Result<Vec<LessonId>> {
+pub(crate) fn course_lessons_of(conn: &mut Conn, course_id: CourseId) -> Result<Vec<LessonId>> {
     Ok(course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?)
 }
 
@@ -107,8 +109,10 @@ pub fn load(conn: &mut Conn, f: &Filter) -> Result<Vec<Row>> {
         query = query.filter(attempts::day.le(to));
     }
     if let Some(course) = f.course_id {
+        // The course it was practised from; answers from before that was
+        // kept (schema 14) count for their lesson's courses.
         let lessons = course_lessons_of(conn, course)?;
-        query = query.filter(attempts::lesson_id.eq_any(lessons));
+        query = query.filter(attempts::course_id.eq(course).or(attempts::course_id.is_null().and(attempts::lesson_id.eq_any(lessons))));
     }
     let mut rows: Vec<Row> = query.load(conn)?;
     rows.reverse();
@@ -242,7 +246,7 @@ pub fn exercise_label(kind: &str) -> String {
     .to_string()
 }
 
-fn view(row: &Row, titles: &Titles, with_words: bool) -> AttemptView {
+pub(crate) fn view(row: &Row, titles: &Titles, with_words: bool) -> AttemptView {
     AttemptView {
         id: row.id,
         at: row.at,
@@ -278,7 +282,7 @@ pub fn class_counts<'a>(rows: impl Iterator<Item = &'a Row>) -> Vec<ClassCount> 
     out
 }
 
-fn accuracy(correct: i64, attempts: i64) -> f64 {
+pub(crate) fn accuracy(correct: i64, attempts: i64) -> f64 {
     if attempts == 0 { 0.0 } else { real(correct) / real(attempts) }
 }
 
@@ -413,6 +417,8 @@ pub struct Overview {
     pub words_met: i64,
     pub structures_met: i64,
     pub sounds_met: i64,
+    /// Topics with something tagged (topics.rs).
+    pub topics_met: i64,
     pub untagged: i64,
 }
 
@@ -519,6 +525,7 @@ pub fn overview(conn: &mut Conn, f: &Filter) -> Result<Overview> {
         words_met: met.0,
         structures_met: met.1,
         sounds_met: met.2,
+        topics_met: count(crate::topics::all_links(conn)?.into_values().flatten().collect::<HashSet<_>>().len()),
         untagged: grammar::untagged_count(conn)?,
     })
 }
@@ -659,7 +666,7 @@ pub struct ItemHistory {
     pub grammar: Vec<TagInfo>,
 }
 
-fn event_label(kind: &str) -> String {
+pub(crate) fn event_label(kind: &str) -> String {
     match kind {
         "item_viewed" => "Seen",
         "spot_explored" => "Tapped in the picture",
@@ -826,6 +833,11 @@ pub struct MetWordDetail {
     pub examples: Vec<Example>,
     pub near: Option<Example>,
     pub history: ItemHistory,
+    /// Every time it appeared, grouped by course, role, grammatical
+    /// context, topic, exercise and source (contexts.rs).
+    pub contexts: crate::contexts::WordContexts,
+    /// Its topics.
+    pub topics: Vec<crate::topics::TopicInfo>,
 }
 
 pub fn met_word(conn: &mut Conn, word_id: WordId) -> Result<MetWordDetail> {
@@ -865,7 +877,15 @@ pub fn met_word(conn: &mut Conn, word_id: WordId) -> Result<MetWordDetail> {
         }
     }
     let near = (!info.near.0.is_empty()).then(|| Example { pl: info.near.0.clone(), en: info.near.1.clone() });
-    Ok(MetWordDetail { word, lessons, examples, near, history: item_history(conn, &id).or_else(|_| empty_history(conn, &id, &info))? })
+    let contexts = crate::contexts::item_contexts(conn, &id, &Filter::default())?;
+    let topics = crate::topics::all_links(conn)?
+        .remove(&id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(crate::topics::by_id)
+        .map(crate::topics::TopicInfo::from)
+        .collect();
+    Ok(MetWordDetail { word, lessons, examples, near, history: item_history(conn, &id).or_else(|_| empty_history(conn, &id, &info))?, contexts, topics })
 }
 
 fn empty_history(conn: &mut Conn, id: &str, info: &WordInfo) -> Result<ItemHistory> {
@@ -909,6 +929,8 @@ pub struct Structures {
     pub tags: Vec<StructureRow>,
     /// Words and sentences in open courses with no tag yet.
     pub untagged: i64,
+    /// Sentences in open courses not yet annotated word by word.
+    pub unannotated: i64,
 }
 
 fn structure_rows(conn: &mut Conn, f: &Filter) -> Result<(Vec<StructureRow>, Vec<Row>, Tagged)> {
@@ -954,7 +976,7 @@ fn structure_rows(conn: &mut Conn, f: &Filter) -> Result<(Vec<StructureRow>, Vec
 
 pub fn structures(conn: &mut Conn, f: &Filter) -> Result<Structures> {
     let (tags, _, _) = structure_rows(conn, f)?;
-    Ok(Structures { tags, untagged: grammar::untagged_count(conn)? })
+    Ok(Structures { tags, untagged: grammar::untagged_count(conn)?, unannotated: grammar::unannotated_count(conn)? })
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -977,6 +999,8 @@ pub struct StructureDetail {
     pub classes: Vec<ClassCount>,
     /// Misses on its items, newest first.
     pub mistakes: Vec<AttemptView>,
+    /// The words met in it, each with how it went there (contexts.rs).
+    pub words: Vec<crate::contexts::WordInContext>,
 }
 
 pub fn structure(conn: &mut Conn, key: &str, f: &Filter) -> Result<StructureDetail> {
@@ -1023,6 +1047,7 @@ pub fn structure(conn: &mut Conn, key: &str, f: &Filter) -> Result<StructureDeta
         examples,
         classes: class_counts(mine.iter().copied()),
         mistakes: mine.iter().rev().filter(|r| !r.right()).take(30).map(|r| view(r, &titles, true)).collect(),
+        words: crate::contexts::structure_words(conn, key, f)?,
     })
 }
 

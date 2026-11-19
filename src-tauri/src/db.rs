@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 14;
+pub(crate) const SCHEMA_VERSION: i64 = 15;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -748,6 +748,38 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     // tags (word_grammar, sentence_grammar) — new tables, made by the schema
     // above. Nothing is filled in: the log starts now, and older words and
     // sentences are tagged only when the learner asks the tutor to.
+    // Version 15: context in the learning log — the course and source of
+    // each answer and event, the exact card (key, direction, prompt,
+    // position) and the check-in a verdict belongs to; the words each
+    // answer involved (attempt_items), sentences word by word
+    // (sentence_tokens) and topics (word_topics, sentence_topics,
+    // lesson_topics) — new tables, made by the schema above. Older answers
+    // keep what they had (their course is read from their lesson), and
+    // older content is annotated only when the learner asks the tutor.
+    for (column, definition) in [
+        ("course_id", "TEXT"),
+        ("source", "TEXT NOT NULL DEFAULT ''"),
+        ("card_key", "TEXT NOT NULL DEFAULT ''"),
+        ("direction", "TEXT NOT NULL DEFAULT ''"),
+        ("prompt", "TEXT NOT NULL DEFAULT ''"),
+        ("position", "INTEGER"),
+        ("checkin_id", "TEXT"),
+    ] {
+        add_column(conn, "attempts", column, definition)?;
+    }
+    add_column(conn, "learning_events", "course_id", "TEXT")?;
+    add_column(conn, "learning_events", "source", "TEXT NOT NULL DEFAULT ''")?;
+    // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
+    conn.batch_execute(
+        "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);
+         CREATE INDEX IF NOT EXISTS attempts_course ON attempts(course_id, at);
+         CREATE INDEX IF NOT EXISTS attempts_lesson ON attempts(lesson_id, at);
+         CREATE INDEX IF NOT EXISTS attempts_exercise ON attempts(exercise, at);
+         CREATE INDEX IF NOT EXISTS attempts_source ON attempts(source, at);
+         CREATE INDEX IF NOT EXISTS learning_events_at ON learning_events(at);
+         CREATE INDEX IF NOT EXISTS learning_events_course ON learning_events(course_id, at);
+         CREATE INDEX IF NOT EXISTS learning_events_lesson ON learning_events(lesson_id, at);",
+    )?;
     // Every synced table watched by triggers that list its current columns:
     // a schema change that adds a column (with an idempotent ALTER here, and
     // a bump of SCHEMA_VERSION) gets its triggers re-made by this.

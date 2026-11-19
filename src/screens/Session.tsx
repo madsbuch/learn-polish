@@ -6,7 +6,7 @@ import { CloseIcon } from "../components/icons";
 import { Badge, Banner, Button, CountUp, EmptyState, IconButton, Progress, Text, useBump } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useBackHandler } from "../lib/back";
-import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, takeSignals } from "../lib/learnLog";
+import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, setPracticeContext, takeSignals } from "../lib/learnLog";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
 import { hapticRight, hapticWrong } from "../lib/haptics";
@@ -68,6 +68,7 @@ export function Session({
   const runKey = useRef(`${plan.lessonId}-${Date.now()}`);
   // The learning log: this go started, and where it was left if it ends early.
   useEffect(() => {
+    setPracticeContext(plan.context);
     logEvent({ kind: "lesson_started", lessonId: plan.lessonId, run: runKey.current, details: { ofCards: plan.exercises.length } });
     return () => endCard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,6 +166,18 @@ export function Session({
         prompt: exercise.prompt,
         pl: exercise.pl,
         signals: takeSignals(),
+        // Where it is practised from, and exactly which card: the log can
+        // rebuild what was on screen.
+        context: plan.context,
+        card: {
+          key: exercise.key,
+          position: index + 1,
+          ofCards: total,
+          hint: exercise.hint,
+          tokens: exercise.tokens,
+          image: exercise.image,
+          meaning: revealAll ? exercise.meaning : "",
+        },
       });
       setResult(answer);
       setSessionXp((xp) => xp + answer.xpGained);
@@ -210,7 +223,7 @@ export function Session({
     flushLog();
     try {
       const scored = played.filter((e) => !exerciseModule(e.kind).reading).length;
-      onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored), sessionXp);
+      onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored, plan.context), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);

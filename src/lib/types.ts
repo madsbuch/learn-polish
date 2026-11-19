@@ -73,6 +73,8 @@ export type AttemptId = z.infer<typeof AttemptIdSchema>;
 /** A grammar structure from the built-in list (grammar.rs): derived, not a row. */
 export const GrammarTagIdSchema = typeId<"GrammarTagId">("gr");
 export type GrammarTagId = z.infer<typeof GrammarTagIdSchema>;
+export const TopicIdSchema = typeId<"TopicId">("tp");
+export type TopicId = z.infer<typeof TopicIdSchema>;
 
 // Mirrors the serde structs in src-tauri/src/models.rs.
 export const CourseSchema = z.object({
@@ -414,6 +416,8 @@ export const SessionPlanSchema = z.object({
   lessonId: LessonIdSchema,
   /** Done before and not due: extra practice — half XP, schedule unchanged. */
   extra: z.boolean(),
+  /** Where it is practised from: handed back with every answer (learnlog.rs). */
+  context: z.lazy(() => PracticeContextSchema),
 });
 export type SessionPlan = z.infer<typeof SessionPlanSchema>;
 
@@ -1734,6 +1738,7 @@ export const OverviewSchema = z.object({
   wordsMet: z.number(),
   structuresMet: z.number(),
   soundsMet: z.number(),
+  topicsMet: z.number(),
   untagged: z.number(),
 });
 export type Overview = z.infer<typeof OverviewSchema>;
@@ -1823,12 +1828,57 @@ export const MetWordSchema = z.object({
 });
 export type MetWord = z.infer<typeof MetWordSchema>;
 
+/** A group of answers in one context (contexts.rs): a course, a role, a case… */
+export const ContextGroupSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  attempts: z.number(),
+  correct: z.number(),
+  accuracy: z.number(),
+  lastAt: z.number(),
+});
+export type ContextGroup = z.infer<typeof ContextGroupSchema>;
+
+export const ContextStatsSchema = z.object({
+  subject: z.string(),
+  groupBy: z.string(),
+  attempts: z.number(),
+  groups: z.array(ContextGroupSchema),
+});
+export type ContextStats = z.infer<typeof ContextStatsSchema>;
+
+/** A word's every appearance, grouped each way. */
+export const WordContextsSchema = z.object({
+  appearances: z.number(),
+  byCourse: z.array(ContextGroupSchema),
+  byRole: z.array(ContextGroupSchema),
+  byCase: z.array(ContextGroupSchema),
+  byReason: z.array(ContextGroupSchema),
+  byForm: z.array(ContextGroupSchema),
+  byTopic: z.array(ContextGroupSchema),
+  byExercise: z.array(ContextGroupSchema),
+  bySource: z.array(ContextGroupSchema),
+});
+export type WordContexts = z.infer<typeof WordContextsSchema>;
+
+export const TopicInfoSchema = z.object({
+  id: TopicIdSchema,
+  key: z.string(),
+  name: z.string(),
+  domain: z.string(),
+  domainName: z.string(),
+  isDomain: z.boolean(),
+});
+export type TopicInfo = z.infer<typeof TopicInfoSchema>;
+
 export const MetWordDetailSchema = z.object({
   word: MetWordSchema,
   lessons: z.array(z.object({ id: LessonIdSchema, title: z.string() })),
   examples: z.array(z.object({ pl: z.string(), en: z.string() })),
   near: z.object({ pl: z.string(), en: z.string() }).nullable(),
   history: ItemHistorySchema,
+  contexts: WordContextsSchema,
+  topics: z.array(TopicInfoSchema),
 });
 export type MetWordDetail = z.infer<typeof MetWordDetailSchema>;
 
@@ -1846,6 +1896,8 @@ export type StructureRow = z.infer<typeof StructureRowSchema>;
 export const StructuresSchema = z.object({
   tags: z.array(StructureRowSchema),
   untagged: z.number(),
+  /** Sentences not yet annotated word by word. */
+  unannotated: z.number(),
 });
 export type Structures = z.infer<typeof StructuresSchema>;
 
@@ -1863,8 +1915,189 @@ export const StructureDetailSchema = z.object({
   ),
   classes: z.array(ClassCountSchema),
   mistakes: z.array(AttemptViewSchema),
+  words: z.array(z.lazy(() => WordInContextSchema)),
 });
 export type StructureDetail = z.infer<typeof StructureDetailSchema>;
+
+/** A word as it went in one context: a structure, a topic. */
+export const WordInContextSchema = z.object({
+  wordId: WordIdSchema,
+  pl: z.string(),
+  en: z.string(),
+  forms: z.array(z.string()),
+  attempts: z.number(),
+  correct: z.number(),
+  accuracy: z.number(),
+});
+export type WordInContext = z.infer<typeof WordInContextSchema>;
+
+export const TopicRowSchema = z.object({
+  topic: TopicInfoSchema,
+  items: z.number(),
+  attempts: z.number(),
+  correct: z.number(),
+  accuracy: z.number().nullable(),
+  score: z.number(),
+});
+export type TopicRow = z.infer<typeof TopicRowSchema>;
+
+export const TopicsPageSchema = z.object({
+  domains: z.array(z.object({ domain: TopicRowSchema, topics: z.array(TopicRowSchema) })),
+  untagged: z.number(),
+});
+export type TopicsPage = z.infer<typeof TopicsPageSchema>;
+
+export const TopicDetailSchema = z.object({
+  row: TopicRowSchema,
+  topics: z.array(TopicRowSchema),
+  words: z.array(WordInContextSchema),
+  byExercise: z.array(ContextGroupSchema),
+  byCourse: z.array(ContextGroupSchema),
+  mistakes: z.array(AttemptViewSchema),
+});
+export type TopicDetail = z.infer<typeof TopicDetailSchema>;
+
+// ------------------------------------------------------------------ the raw log (rawlog.rs)
+
+/** How practice was reached (learnlog::SOURCES) and the course it was opened from. */
+export const PracticeSourceSchema = z.enum([
+  "course",
+  "daily",
+  "other",
+  "game",
+  "tutor",
+  "music",
+  "link",
+  "search",
+  "insights",
+  "",
+]);
+export type PracticeSource = z.infer<typeof PracticeSourceSchema>;
+
+export const PracticeContextSchema = z.object({
+  source: PracticeSourceSchema,
+  courseId: CourseIdSchema.nullable(),
+});
+export type PracticeContext = z.infer<typeof PracticeContextSchema>;
+
+export const CardShownSchema = z.object({
+  key: z.string(),
+  position: z.number().nullable(),
+  ofCards: z.number().nullable(),
+  hint: z.string(),
+  tokens: z.array(z.string()),
+  image: FileIdSchema.nullable(),
+  meaning: z.string(),
+});
+export type CardShown = z.infer<typeof CardShownSchema>;
+
+export const LinkViewSchema = z.object({
+  itemId: z.string(),
+  itemKind: z.string(),
+  pl: z.string(),
+  en: z.string(),
+  role: z.string(),
+  roleLabel: z.string(),
+  form: z.string(),
+  position: z.number(),
+  correct: z.boolean().nullable(),
+  case: z.string(),
+  reason: z.string(),
+});
+export type LinkView = z.infer<typeof LinkViewSchema>;
+
+export const AnswerViewSchema = z.object({
+  exercise: z.string(),
+  exerciseLabel: z.string(),
+  direction: z.string(),
+  prompt: z.string(),
+  cardKey: z.string(),
+  position: z.number().nullable(),
+  run: z.string(),
+  correct: z.boolean(),
+  given: z.string(),
+  expected: z.string(),
+  mistake: z.string(),
+  mistakeLabel: z.string(),
+  detail: z.string(),
+  contrast: z.string(),
+  msFirst: z.number().nullable(),
+  msAnswer: z.number().nullable(),
+  tries: z.number(),
+  hints: z.number(),
+  plays: z.number(),
+  slowPlays: z.number(),
+  reveals: z.number(),
+  changed: z.boolean(),
+  firstPick: z.string().nullable(),
+  options: z.array(z.string()),
+  words: z.array(WordResultSchema),
+  shown: CardShownSchema.nullable(),
+  checkinId: CheckinIdSchema.nullable(),
+  verdict: z
+    .object({
+      result: z.string(),
+      xp: z.number(),
+      aced: z.boolean(),
+      summary: z.string().optional(),
+    })
+    .nullable(),
+  grammar: z.array(z.string()),
+  note: z.string(),
+  links: z.array(LinkViewSchema),
+});
+export type AnswerView = z.infer<typeof AnswerViewSchema>;
+
+export const RawRowSchema = z.object({
+  kind: z.enum(["answer", "event"]),
+  id: z.string(),
+  at: z.number(),
+  day: z.number(),
+  device: z.string(),
+  source: z.string(),
+  sourceLabel: z.string(),
+  courseId: CourseIdSchema.nullable(),
+  course: z.string(),
+  lessonId: LessonIdSchema.nullable(),
+  lesson: z.string(),
+  itemKind: z.string(),
+  itemId: z.string(),
+  item: z.string(),
+  itemEn: z.string(),
+  answer: AnswerViewSchema.nullable(),
+  event: z.string(),
+  eventLabel: z.string(),
+  eventDetails: EventDetailsSchema.nullable(),
+});
+export type RawRow = z.infer<typeof RawRowSchema>;
+
+export const RawCursorSchema = z.object({ at: z.number(), id: z.string() });
+export type RawCursor = z.infer<typeof RawCursorSchema>;
+
+export const RawPageSchema = z.object({
+  rows: z.array(RawRowSchema),
+  next: RawCursorSchema.nullable(),
+});
+export type RawPage = z.infer<typeof RawPageSchema>;
+
+/** Which rows of the raw log (rawlog::RawFilter); everything optional. */
+export interface RawFilter {
+  fromDay?: number | null;
+  toDay?: number | null;
+  courseId?: CourseId | null;
+  lessonId?: LessonId | null;
+  itemId?: string | null;
+  role?: string | null;
+  search?: string | null;
+  exercise?: string | null;
+  mistake?: string | null;
+  topic?: string | null;
+  grammar?: string | null;
+  correct?: boolean | null;
+  source?: string | null;
+  kind?: "answers" | "events" | null;
+  context?: { groupBy: string; key: string } | null;
+}
 
 export const SoundRowSchema = z.object({
   label: z.string(),

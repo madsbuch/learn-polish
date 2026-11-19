@@ -85,7 +85,13 @@ this file says why.
    devices never write the same row and nothing conflicts. The analytics
    pages and the tutor read every device's rows. Grammar tags
    (`word_grammar`, `sentence_grammar`) are links keyed by their pair and go
-   with their word or sentence (`ON DELETE CASCADE`).
+   with their word or sentence (`ON DELETE CASCADE`). Since schema 15 an
+   answer's words (`attempt_items`) are written with it, by the same device,
+   and are append-only like it; a sentence's annotation (`sentence_tokens`)
+   and topics (`word_topics`, `sentence_topics`, `lesson_topics`) are keyed
+   by their item and go with it. A check-in's verdict is logged with where
+   the check-in was started from, read from its own `checkin_started` event —
+   on the device that started it (work in progress stays on its device).
 7. **The day's five** (`daily_ids`, `daily_day`) sync: both devices show the
    same lessons; if both chose a list while apart, the later wins.
 8. **No backfill of the learner's content.** Schema 8 records the rows already

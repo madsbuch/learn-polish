@@ -382,6 +382,15 @@ fn log_verdict(conn: &mut Conn, checkin_id: CheckinId, lesson_id: LessonId, asse
     let lesson = lesson_id.to_string();
     let none = crate::mistakes::Mistake::default();
     let signals = crate::learnlog::Signals::default();
+    let context = started_from(conn, checkin_id, lesson_id)?;
+    let verdict = crate::learnlog::Verdict {
+        result: assessment.result.clone(),
+        xp: assessment.xp,
+        aced: assessment.aced,
+        summary: assessment.summary.clone(),
+    };
+    let title = crate::schema::lessons::table.find(lesson_id).select(crate::schema::lessons::title).first::<String>(conn).optional()?.unwrap_or_default();
+    let prompt = format!("Check-in: {title}");
     crate::learnlog::write_attempt(
         conn,
         &crate::learnlog::NewAttempt {
@@ -398,6 +407,12 @@ fn log_verdict(conn: &mut Conn, checkin_id: CheckinId, lesson_id: LessonId, asse
             options: &[],
             grammar: vec![],
             note: assessment.to_review.join("; "),
+            context: &context,
+            prompt: &prompt,
+            card: None,
+            pl: "",
+            checkin_id: Some(checkin_id),
+            verdict: Some(verdict.clone()),
         },
     )?;
     for slip in assessment.mistakes.iter().take(20) {
@@ -427,10 +442,30 @@ fn log_verdict(conn: &mut Conn, checkin_id: CheckinId, lesson_id: LessonId, asse
                 options: &[],
                 grammar,
                 note: slip.note.clone(),
+                context: &context,
+                prompt: &prompt,
+                card: None,
+                pl: "",
+                checkin_id: Some(checkin_id),
+                verdict: Some(verdict.clone()),
             },
         )?;
     }
     Ok(())
+}
+
+/// Where a check-in was started from: what its `checkin_started` event
+/// kept (the course page, the daily five…), or the lesson's own course.
+fn started_from(conn: &mut Conn, checkin_id: CheckinId, lesson_id: LessonId) -> Result<crate::learnlog::PracticeContext> {
+    use crate::schema::learning_events as ev;
+    let found: Option<(Option<CourseId>, String)> = ev::table
+        .filter(ev::kind.eq("checkin_started"))
+        .filter(ev::run.eq(checkin_id.to_string()))
+        .select((ev::course_id, ev::source))
+        .first(conn)
+        .optional()?;
+    let given = found.map(|(course_id, source)| crate::learnlog::PracticeContext { source, course_id });
+    crate::learnlog::resolve(conn, given.as_ref(), Some(lesson_id), "")
 }
 
 /// Records the verdict: schedules the lesson, awards XP and counts the day.
@@ -616,22 +651,28 @@ pub async fn checkin_start(
     db: State<'_, Db>,
     lesson_id: LessonId,
     stream_id: String,
+    context: Option<crate::learnlog::PracticeContext>,
 ) -> Result<CheckinTurn> {
-    let checkin_id = {
-        let mut guard = db.lock();
-        let conn = &mut *guard;
-        let lesson = lessons::load(conn, lesson_id)?;
-        if crate::lesson_types::get(&lesson.lesson_type)?.is_drill() {
-            return Err(Error::msg("Only study lessons have an interview."));
-        }
+    let checkin_id = start(&mut db.lock(), lesson_id, context.as_ref())?;
+    turn(&app, &db, checkin_id, None, &stream_id).await
+}
+
+/// Opens a check-in on a study lesson, noting where it was started from
+/// (its verdict is logged with that: [`started_from`]).
+pub fn start(conn: &mut Conn, lesson_id: LessonId, context: Option<&crate::learnlog::PracticeContext>) -> Result<CheckinId> {
+    let context = crate::learnlog::resolve(conn, context, Some(lesson_id), "")?;
+    let lesson = lessons::load(conn, lesson_id)?;
+    if crate::lesson_types::get(&lesson.lesson_type)?.is_drill() {
+        return Err(Error::msg("Only study lessons have an interview."));
+    }
+    conn.transaction(|conn| {
         let id = diesel::insert_into(checkins::table)
             .values((checkins::id.eq(CheckinId::new()), checkins::lesson_id.eq(lesson_id), checkins::started_at.eq(db::now_secs())))
             .returning(checkins::id)
             .get_result::<CheckinId>(conn)?;
-        crate::learnlog::note(conn, "checkin_started", "lesson", &lesson_id.to_string(), Some(lesson_id), &id.to_string(), Default::default())?;
-        id
-    };
-    turn(&app, &db, checkin_id, None, &stream_id).await
+        crate::learnlog::note(conn, "checkin_started", "lesson", &lesson_id.to_string(), Some(lesson_id), &id.to_string(), Default::default(), &context)?;
+        Ok(id)
+    })
 }
 
 /// Ends a writing conversation early: the partner gives its verdict on what

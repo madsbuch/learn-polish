@@ -18,7 +18,7 @@ import {
   Text,
   markBack,
 } from "../design";
-import { logEvent } from "../lib/learnLog";
+import { logEvent, setPracticeContext } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playComplete, playMatch, playWrong } from "../lib/sounds";
@@ -86,6 +86,11 @@ export function QuickGames({
   onPlayed: () => void;
 }) {
   const [overview, setOverview] = useState<Overview | null>(null);
+  // Everything played here is logged as from a quick game.
+  useEffect(() => {
+    setPracticeContext({ source: "game", courseId: null });
+    return () => setPracticeContext(null);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<QuickGameKind | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);

@@ -169,6 +169,9 @@ pub struct SessionPlan {
     pub lesson_id: LessonId,
     /// Done before and not due: extra practice — half XP, schedule unchanged.
     pub extra: bool,
+    /// Where it is practised from (the course page, the daily five…): the
+    /// screen hands it back with every answer, for the learning log.
+    pub context: crate::learnlog::PracticeContext,
 }
 
 #[derive(Debug, Clone, Serialize)]

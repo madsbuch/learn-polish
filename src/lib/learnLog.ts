@@ -1,5 +1,6 @@
 import { api, type AnswerSignals, type LearningEventIn } from "./api";
 import { describe, logError } from "./log";
+import type { PracticeContext } from "./types";
 
 /*
  * The learning log, from the screens' side (learnlog.rs keeps it).
@@ -17,6 +18,22 @@ import { describe, logError } from "./log";
  */
 
 const queue: LearningEventIn[] = [];
+
+/*
+ * Where the learner is practising: the course page a lesson was opened
+ * from, the daily five, a quick game… The screen that opens practice sets
+ * it (a lesson's page, a drill, a game) and every event is logged with it,
+ * so the log can say in which course and from where each thing happened.
+ */
+let where: PracticeContext | null = null;
+
+export function setPracticeContext(context: PracticeContext | null): void {
+  where = context;
+}
+
+export function practiceContext(): PracticeContext | null {
+  return where;
+}
 let timer: number | undefined;
 /** Sent this long after the first event of a batch. */
 const BATCH_MS = 4000;
@@ -24,7 +41,12 @@ const BATCH_MS = 4000;
 const BATCH_MAX = 60;
 
 export function logEvent(event: LearningEventIn): void {
-  queue.push({ ...event, at: event.at ?? Date.now() });
+  queue.push({
+    ...event,
+    at: event.at ?? Date.now(),
+    courseId: event.courseId ?? where?.courseId ?? null,
+    source: event.source ?? where?.source ?? "",
+  });
   if (queue.length >= BATCH_MAX) {
     flushLog();
   } else if (timer === undefined) {

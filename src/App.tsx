@@ -20,6 +20,7 @@ import type {
   LessonId,
   LessonOverview,
   LessonResult,
+  PracticeContext,
   SessionPlan,
   SessionResult,
   Settings,
@@ -63,11 +64,18 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
 /** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
 type Overlay =
   | { kind: "none" }
-  | { kind: "lesson"; lessonId: LessonId; back: Overlay }
+  | {
+      kind: "lesson";
+      lessonId: LessonId;
+      /** Where it was opened from: the learning log keeps it with everything practised. */
+      from: PracticeContext;
+      back: Overlay;
+    }
   | { kind: "session"; plan: SessionPlan; back: Overlay }
   | {
       kind: "checkin";
       lessonId: LessonId;
+      from: PracticeContext;
       title: string;
       songId: SongId | null;
       /** A writing lesson's situation and goals, shown above the conversation. */
@@ -324,10 +332,10 @@ export default function App() {
 
   /** Starts a drill lesson's exercises. */
   const startDrill = useCallback(
-    async (lessonId: LessonId, back: Overlay) => {
+    async (lessonId: LessonId, back: Overlay, from: PracticeContext) => {
       stopAudio();
       try {
-        const session = await api.lessonSession(lessonId);
+        const session = await api.lessonSession(lessonId, from);
         setOverlay({ kind: "session", plan: session, back });
         prefetchAudio(session);
       } catch (cause) {
@@ -355,7 +363,12 @@ export default function App() {
     setIdOpeners({
       course: (courseId) => void openCourseById(courseId),
       lesson: (lessonId) =>
-        setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } }),
+        setOverlay({
+          kind: "lesson",
+          lessonId,
+          from: { source: "link", courseId: null },
+          back: { kind: "none" },
+        }),
       song: (songId) => {
         setOverlay({ kind: "none" });
         setTab("music");
@@ -566,7 +579,17 @@ export default function App() {
           today={overview.today}
           onBack={() => setOverlay(overlay.back)}
           onOpenLesson={(lessonId) =>
-            setOverlay({ kind: "lesson", lessonId, back: overlay })
+            setOverlay({
+              kind: "lesson",
+              lessonId,
+              // The course page it was opened from (Other lessons is a course of its own).
+              from: {
+                source:
+                  overlay.progress.course.kind === "other" ? "other" : "course",
+                courseId: overlay.progress.course.id,
+              },
+              back: overlay,
+            })
           }
           onDeleted={() => {
             setOverlay(overlay.back);
@@ -583,17 +606,21 @@ export default function App() {
       <div className="app">
         <LessonPage
           lessonId={overlay.lessonId}
+          from={overlay.from}
           today={overview.today}
           onBack={() => {
             setOverlay(overlay.back);
             void refresh();
           }}
-          onStartDrill={(lessonId) => void startDrill(lessonId, overlay)}
+          onStartDrill={(lessonId) =>
+            void startDrill(lessonId, overlay, overlay.from)
+          }
           onCheckIn={async (lessonId) => {
             const detail = await api.lessonDetail(lessonId).catch(() => null);
             setOverlay({
               kind: "checkin",
               lessonId,
+              from: overlay.from,
               title: detail?.title ?? "Conversation",
               songId: detail?.songId ?? null,
               writing:
@@ -622,6 +649,7 @@ export default function App() {
       <div className="app">
         <CheckIn
           lessonId={overlay.lessonId}
+          from={overlay.from}
           songId={overlay.songId}
           writing={overlay.writing}
           title={overlay.title}
@@ -807,6 +835,8 @@ export default function App() {
             setOverlay({
               kind: "lesson",
               lessonId: lesson.id,
+              // Home lists today's lessons: the daily five.
+              from: { source: "daily", courseId: lesson.courseId },
               back: { kind: "none" },
             })
           }
@@ -832,7 +862,12 @@ export default function App() {
           openSongId={musicSong}
           onSongOpened={clearMusicSong}
           onOpenLesson={(lessonId) =>
-            setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })
+            setOverlay({
+              kind: "lesson",
+              lessonId,
+              from: { source: "music", courseId: null },
+              back: { kind: "none" },
+            })
           }
           // Songs need the kie.ai key (Settings → Songs); with it, what is
           // missing is the OpenRouter key (Settings → AI).
@@ -850,7 +885,12 @@ export default function App() {
           onOpenSettings={() => openSettings("ai")}
           onOpenCourse={(courseId) => void openCourseById(courseId)}
           onOpenLesson={(lessonId) =>
-            setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })
+            setOverlay({
+              kind: "lesson",
+              lessonId,
+              from: { source: "tutor", courseId: null },
+              back: { kind: "none" },
+            })
           }
           onOpenSong={(songId) => {
             setTab("music");

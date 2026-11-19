@@ -80,7 +80,7 @@ export function DictationGame({
     setError(null);
     try {
       // Graded in Rust and written to the learning log with its mistake.
-      const result = await api.quickGameAnswer({ game: "dictation", itemId: item.id, expected: item.pl, given: typed, run: run.current, signals: takeSignals() });
+      const result = await api.quickGameAnswer({ game: "dictation", itemId: item.id, expected: item.pl, given: typed, run: run.current, signals: takeSignals(), card: { key: `dictation:${item.id}`, position: index + 1, ofCards: sentences.length } });
       setChecked(result);
       if (result.correct) {
         playCorrect();
@@ -202,7 +202,7 @@ export function SoundsGame({
     setPicked(word);
     // Graded here for the moment; logged (and classified) in Rust.
     void api
-      .quickGameAnswer({ game: "sounds", itemId: round.id ?? undefined, expected: round.said, given: word, options: [round.a, round.b], run: run.current, signals: takeSignals() })
+      .quickGameAnswer({ game: "sounds", itemId: round.id ?? undefined, expected: round.said, given: word, options: [round.a, round.b], run: run.current, signals: takeSignals(), card: { key: `sounds:${round.a}/${round.b}`, position: index + 1, ofCards: rounds.length } })
       .catch(() => undefined);
     if (word === round.said) {
       playCorrect();
@@ -313,7 +313,7 @@ export function SayGame({
     if (done || !attempt) return;
     setDone(true);
     void api
-      .quickGameAnswer({ game: "say", itemId: item.id, expected: item.pl, given: attempt.heard, run: run.current, signals: takeSignals() })
+      .quickGameAnswer({ game: "say", itemId: item.id, expected: item.pl, given: attempt.heard, run: run.current, signals: takeSignals(), card: { key: `say:${item.id}`, position: index + 1, ofCards: sentences.length } })
       .catch(() => undefined);
     if (attempt.spoken.correct) {
       playCorrect();

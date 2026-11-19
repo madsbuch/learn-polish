@@ -49,6 +49,7 @@ pub const KINDS: &[(&str, &str)] = &[
     ("att", "answer"),
     ("ev", "learning event"),
     ("gr", "grammar tag"),
+    ("tp", "topic"),
 ];
 
 /// What an id names, by its prefix ("a lesson"), if it is a known kind.
@@ -308,6 +309,9 @@ typed_id!(/// One thing the learner did that is not an answer (a lesson opened,
 typed_id!(/// A grammar structure from the built-in vocabulary (grammar.rs):
     /// derived from its key, the same on every device. Not a table.
     GrammarTagId, GrammarTagIdSql, "gr");
+typed_id!(/// A topic from the built-in ontology (topics.rs): derived from its key,
+    /// the same on every device. Not a table.
+    TopicId, TopicIdSql, "tp");
 
 #[cfg(test)]
 mod tests {

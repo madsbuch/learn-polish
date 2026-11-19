@@ -220,6 +220,13 @@ function Met({
       note: "Near pairs you tell apart",
       memory: "met:sounds",
     },
+    {
+      page: { page: "topics" },
+      value: data?.topicsMet ?? 0,
+      label: "Topics",
+      note: "Food, travel, time, family…",
+      memory: "met:topics",
+    },
   ];
   return (
     <div className="met-board">
@@ -227,8 +234,8 @@ function Met({
         title="What you've met"
         info={
           <p>
-            Every word, grammar structure and sound you have practised, with how
-            well each is going and the mistakes you make on it.
+            Every word, grammar structure, sound and topic you have practised,
+            with how well each is going and the mistakes you make on it.
           </p>
         }
       >
@@ -304,6 +311,11 @@ function Met({
               title="Activity and habits"
               subtitle="When and how you practise"
               onClick={() => onOpen({ page: "activity" })}
+            />
+            <ListItem
+              title="Raw log"
+              subtitle="Every answer and event, in full"
+              onClick={() => onOpen({ page: "rawlog" })}
             />
           </List>
           <Button

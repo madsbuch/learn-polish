@@ -281,6 +281,7 @@ pub fn build_lesson(conn: &mut Conn, lesson_id: LessonId) -> Result<SessionPlan>
         already_completed: false,
         lesson_id,
         extra: crate::lessons::is_extra_practice(&lesson, today),
+        context: crate::learnlog::resolve(conn, None, Some(lesson_id), "")?,
     })
 }
 

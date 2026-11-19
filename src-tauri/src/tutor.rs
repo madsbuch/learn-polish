@@ -122,10 +122,18 @@ The app:
   it as the word's `near`: words lessons play the two for the learner to tell apart. \
   Give each word and sentence its `grammar`: the structures it shows, as keys from this list \
   (the learner's Progress page groups what they have met by them):{grammar}
+  Give each word, sentence and lesson its `topics`: what it is about, as keys from this list \
+  (a domain, or one of its topics):{topics}
+  Give each sentence its `tokens`: the sentence word by word, one token per word in order \
+  (punctuation left out), with its dictionary form, part of speech and — where they apply — \
+  case, number, gender, person, tense, aspect, mood and the reason for its form, from the \
+  values the tool lists.
 - Tools that read the learner's answer log (get_learning_overview, find_hard_items, \
-  get_item_history, get_structure_stats, get_mistakes, compare_periods, get_activity) are \
-  available. Asked to tag the grammar of existing courses, list_untagged gives what has none \
-  and tag_grammar sets it.
+  get_item_history, get_structure_stats, get_mistakes, compare_periods, get_activity, \
+  get_raw_log, get_context_stats) are available. Asked to tag the grammar, annotate the \
+  sentences or tag the topics of existing courses, list_untagged gives what has none \
+  (`missing`: grammar, tokens or topics), and tag_grammar, annotate_sentences and tag_topics \
+  set them.
 - Songs cost the learner credits: one per request. Give a new song or podcast the course it \
   fits (course_id): it is filed there, with its listening lesson. Put the course's level and the \
   words it should use in requirements — the songwriter writes at the level it is given (a \
@@ -162,7 +170,11 @@ pub(crate) fn system_prompt(conn: &mut Conn) -> Result<String> {
 /// a new type is known to the tutor without editing the rules. The same from
 /// turn to turn, so it can be cached.
 pub(crate) fn rules() -> String {
-    format!("{}\n- The lesson types:\n{}", RULES.replace("{grammar}", &crate::grammar::for_tutor()), crate::lesson_types::for_tutor())
+    format!(
+        "{}\n- The lesson types:\n{}",
+        RULES.replace("{grammar}", &crate::grammar::for_tutor()).replace("{topics}", &crate::topics::for_tutor()),
+        crate::lesson_types::for_tutor()
+    )
 }
 
 /// What changes from turn to turn: the learner's numbers, what is due, the
@@ -320,6 +332,15 @@ fn grammar_prop() -> Value {
     })
 }
 
+/// A word's, sentence's or lesson's topics: keys from the ontology.
+pub(crate) fn topics_prop() -> Value {
+    json!({
+        "type": "array",
+        "items": { "type": "string", "enum": crate::topics::keys() },
+        "description": "What it is about (one to three), from the topic list: a domain (\"food\") or one of its topics (\"food.drinks\")."
+    })
+}
+
 fn word_schema() -> Value {
     json!({
         "type": "array",
@@ -342,7 +363,8 @@ fn word_schema() -> Value {
                     },
                     "required": ["pl", "en"]
                 },
-                "grammar": grammar_prop()
+                "grammar": grammar_prop(),
+                "topics": topics_prop()
             },
             "required": ["pl", "en", "pos"]
         }
@@ -370,7 +392,9 @@ fn sentence_schema() -> Value {
                         "required": ["form", "base", "wrong"]
                     }
                 },
-                "grammar": grammar_prop()
+                "grammar": grammar_prop(),
+                "topics": topics_prop(),
+                "tokens": crate::grammar::token_schema()
             },
             "required": ["pl", "en"]
         }
@@ -1222,8 +1246,28 @@ pub fn tool_definitions() -> Vec<Tool> {
     ]
     .into_iter()
     .chain(crate::tutor_analytics::tools())
+    .map(|mut t| {
+        // Every tool that makes lessons takes their topics too.
+        if LESSON_MAKERS.contains(&t.name) {
+            t.definition["function"]["parameters"]["properties"]["topics"] = topics_prop();
+        }
+        t
+    })
     .collect()
 }
+
+/// The tools that make lessons (create_course: every lesson it makes):
+/// their `topics` go on the lessons made.
+const LESSON_MAKERS: &[&str] = &[
+    "create_course",
+    "create_writing_lesson",
+    "create_study_lesson",
+    "create_drill_lesson",
+    "create_picture_lesson",
+    "create_scene_lesson",
+    "create_story_lesson",
+    "create_listening_lesson",
+];
 
 /// What a tool produced: JSON for the model, and, when the app changed, an
 /// action for the learner to see.
@@ -1779,11 +1823,57 @@ fn execute(conn: &mut Conn, name: &str, arguments: &str) -> Outcome {
 }
 
 fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
+    // A lesson's topics are checked before anything is made (an unknown one
+    // fails the call by name) and given to what was made after.
+    let topics: Vec<&'static crate::topics::Topic> = if LESSON_MAKERS.contains(&name) {
+        let keys: Vec<String> = serde_json::from_str::<Value>(arguments)
+            .ok()
+            .and_then(|v| v.get("topics").cloned())
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        crate::topics::validate(&keys)?
+    } else {
+        vec![]
+    };
+    let outcome = run_tool_steps(conn, name, arguments)?;
+    if !topics.is_empty() {
+        if let Some(action) = &outcome.action {
+            let lessons: Vec<LessonId> = match (action.lesson_id, action.course_id) {
+                (Some(lesson), _) => vec![lesson],
+                (None, Some(course)) if name == "create_course" => crate::schema::course_lessons::table
+                    .filter(crate::schema::course_lessons::course_id.eq(course))
+                    .select(crate::schema::course_lessons::lesson_id)
+                    .load(conn)?,
+                _ => vec![],
+            };
+            for lesson in lessons {
+                crate::topics::set_lesson(conn, lesson, &topics)?;
+            }
+        }
+    }
+    Ok(outcome)
+}
+
+fn run_tool_steps(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
     if let Some(result) = crate::tutor_analytics::run(conn, name, arguments) {
         let result = result?;
+        let plural = |n: i64, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
+        let n = |key: &str| result[key].as_i64().unwrap_or(0);
         if name == "tag_grammar" {
-            let (words, sentences) = (result["tagged_words"].as_i64().unwrap_or(0), result["tagged_sentences"].as_i64().unwrap_or(0));
-            let label = format!("Tagged the grammar of {words} word{} and {sentences} sentence{}", if words == 1 { "" } else { "s" }, if sentences == 1 { "" } else { "s" });
+            let label = format!("Tagged the grammar of {} and {}", plural(n("tagged_words"), "word"), plural(n("tagged_sentences"), "sentence"));
+            return Ok(Outcome::acted(result, "courseUpdated", label, None));
+        }
+        if name == "tag_topics" {
+            let label = format!(
+                "Tagged the topics of {}, {} and {}",
+                plural(n("tagged_lessons"), "lesson"),
+                plural(n("tagged_words"), "word"),
+                plural(n("tagged_sentences"), "sentence")
+            );
+            return Ok(Outcome::acted(result, "courseUpdated", label, None));
+        }
+        if name == "annotate_sentences" {
+            let label = format!("Annotated {} word by word", plural(n("annotated"), "sentence"));
             return Ok(Outcome::acted(result, "courseUpdated", label, None));
         }
         return Ok(Outcome::data(result));

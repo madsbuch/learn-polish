@@ -302,6 +302,7 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
             None,
             "",
             crate::learnlog::EventDetails { game: Some(game.into()), ms: Some(ms), answered: Some(pairs), ..Default::default() },
+            &crate::learnlog::PracticeContext { source: "game".into(), course_id: None },
         )?;
         let earned = xp_on(conn, today)?;
         let xp = GAME_XP.min(GAME_XP_PER_DAY - earned).max(0);
@@ -387,6 +388,12 @@ pub struct GameAnswer {
     pub run: String,
     #[serde(default)]
     pub signals: Option<crate::learnlog::Signals>,
+    /// Where it is played from: a quick game, unless the screen says else.
+    #[serde(default)]
+    pub context: Option<crate::learnlog::PracticeContext>,
+    /// The round's place in the game, and what else it showed.
+    #[serde(default)]
+    pub card: Option<crate::learnlog::CardShown>,
 }
 
 #[derive(Debug, Serialize)]
@@ -426,7 +433,9 @@ pub fn answer(conn: &mut Conn, a: GameAnswer) -> Result<GameAnswered> {
         options: &a.options,
         ..Default::default()
     });
-    let signals = a.signals.unwrap_or_default();
+    let signals = a.signals.clone().unwrap_or_default();
+    let context = crate::learnlog::resolve(conn, a.context.as_ref(), None, "game")?;
+    let prompt = if a.game == "sounds" { "Which did you hear?" } else { "" };
     conn.transaction::<_, Error, _>(|conn| {
         crate::learnlog::write_attempt(
             conn,
@@ -444,6 +453,12 @@ pub fn answer(conn: &mut Conn, a: GameAnswer) -> Result<GameAnswered> {
                 options: &a.options,
                 grammar: vec![],
                 note: String::new(),
+                context: &context,
+                prompt,
+                card: a.card.as_ref(),
+                pl: "",
+                checkin_id: None,
+                verdict: None,
             },
         )
     })?;

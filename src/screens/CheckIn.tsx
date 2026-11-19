@@ -28,7 +28,7 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/lessons";
-import type { Assessment, CheckinId, LessonId, SongId } from "../lib/types";
+import type { Assessment, CheckinId, LessonId, PracticeContext, SongId } from "../lib/types";
 
 /** A writing lesson's situation and goals. */
 export interface Writing {
@@ -61,6 +61,7 @@ interface Line {
  */
 export function CheckIn({
   lessonId,
+  from,
   songId,
   writing,
   title,
@@ -68,6 +69,8 @@ export function CheckIn({
   onFinished,
 }: {
   lessonId: LessonId;
+  /** Where the lesson was opened from: its verdict is logged with it. */
+  from: PracticeContext;
   /** For a listening lesson: its song, playable during the check-in. */
   songId: SongId | null;
   /** For a writing lesson: the conversation is with a partner, in Polish. */
@@ -117,7 +120,7 @@ export function CheckIn({
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void exchange((streamId) => api.checkinStart(lessonId, streamId));
+    void exchange((streamId) => api.checkinStart(lessonId, streamId, from));
   }, [lessonId]);
 
   async function answer() {
@@ -219,7 +222,7 @@ export function CheckIn({
         <Stack gap={2}>
           <Banner tone="error">{error}</Banner>
           {checkinId === null ? (
-            <Button onClick={() => void exchange((streamId) => api.checkinStart(lessonId, streamId))}>Try again</Button>
+            <Button onClick={() => void exchange((streamId) => api.checkinStart(lessonId, streamId, from))}>Try again</Button>
           ) : null}
         </Stack>
       ) : null}

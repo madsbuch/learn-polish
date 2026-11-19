@@ -59,6 +59,10 @@ mod mistakes;
 mod learnlog;
 mod analytics;
 mod tutor_analytics;
+mod topics;
+mod wordlinks;
+mod rawlog;
+mod contexts;
 
 
 use tauri::{Emitter, Manager};
@@ -215,6 +219,12 @@ pub fn run() {
             analytics::met_structures,
             analytics::met_structure,
             analytics::met_sounds,
+            contexts::context_stats,
+            contexts::item_contexts_cmd,
+            contexts::met_topics,
+            contexts::met_topic,
+            rawlog::learning_raw_log,
+            rawlog::learning_log_export,
             lessons::commands::lessons_overview,
             lessons::commands::lessons_for_course,
             lessons::commands::lessons_by_importance,
@@ -3629,6 +3639,18 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("MistakePage", &page);
         write("Comparison", &crate::analytics::compare(&mut conn, &crate::analytics::Filter { to_day: Some(today - 1), ..all_time }, &crate::analytics::Filter { from_day: Some(today), ..all_time }).unwrap());
         write("Activity", &crate::analytics::activity(&mut conn, &all_time).unwrap());
+        // Schema 15: the raw log, contexts and topics.
+        let raw = crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter::default(), None, 200).unwrap();
+        assert!(raw.rows.iter().any(|r| r.kind == "answer") && raw.rows.iter().any(|r| r.kind == "event"));
+        write("RawPage", &raw);
+        write("ContextStats", &crate::contexts::stats(&mut conn, &crate::contexts::Subject::default(), "exercise", &all_time).unwrap());
+        for id in &met {
+            crate::topics::set_word(&mut conn, *id, &crate::topics::validate(&["food.drinks".into()]).unwrap()).unwrap();
+        }
+        let topics_page = crate::contexts::topics_page(&mut conn, &all_time).unwrap();
+        assert!(!topics_page.domains.is_empty());
+        write("TopicsPage", &topics_page);
+        write("TopicDetail", &crate::contexts::topic_detail(&mut conn, "food", &all_time).unwrap());
         write("QuickGames", &crate::games::overview(&mut conn).unwrap());
         write("LessonTypeInfo.list", &crate::lesson_types::lesson_types());
         write("Song.list", &songs::list_songs(&mut conn, false).unwrap());
@@ -4437,16 +4459,31 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
     fn logging_a_long_session_stays_fast() {
         let mut conn = scratch_db("log-speed");
         let ids: Vec<WordId> = t::words::table.select(t::words::id).limit(50).load(&mut conn).unwrap();
+        let sentences: Vec<(SentenceId, String, LessonId)> = t::sentences::table.select((t::sentences::id, t::sentences::pl, t::sentences::lesson_id)).limit(20).load(&mut conn).unwrap();
+        let context = crate::learnlog::PracticeContext { source: "daily".into(), course_id: None };
         let started = std::time::Instant::now();
         for i in 0..400 {
             let id = ids[i % ids.len()];
-            practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
-                kind: "type".into(), item_kind: "word".into(), item_id: id.to_string(), expected: "kawę".into(),
-                given: if i % 3 == 0 { "kawy".into() } else { "kawę".into() }, run: "long".into(),
-                signals: Some(crate::learnlog::Signals { ms_answer: Some(3000), ..Default::default() }), ..Default::default()
-            }).unwrap();
+            // Every fourth a dictation: its words found and linked with the grade.
+            let answer = if i % 4 == 0 {
+                let (sentence, pl, lesson) = &sentences[i % sentences.len()];
+                practice::SubmitAnswer {
+                    kind: "dictation".into(), item_kind: "sentence".into(), item_id: sentence.to_string(), expected: pl.clone(),
+                    given: pl.to_lowercase(), lesson_id: Some(*lesson), run: "long".into(), context: Some(context.clone()), ..Default::default()
+                }
+            } else {
+                practice::SubmitAnswer {
+                    kind: "recognise".into(), item_kind: "word".into(), item_id: id.to_string(), expected: "kawę".into(),
+                    given: if i % 3 == 0 { "kawy".into() } else { "kawę".into() }, run: "long".into(), options: vec!["kawę".into(), "kawy".into(), "herbatę".into(), "wodę".into()],
+                    card: Some(crate::learnlog::CardShown { key: format!("k{i}"), position: Some(i64::try_from(i).unwrap() + 1), of_cards: Some(400), ..Default::default() }),
+                    context: Some(context.clone()),
+                    signals: Some(crate::learnlog::Signals { ms_answer: Some(3000), ..Default::default() }), ..Default::default()
+                }
+            };
+            practice::submit_answer_in(&mut conn, answer).unwrap();
         }
         let answers = started.elapsed();
+        assert!(t::attempt_items::table.count().get_result::<i64>(&mut conn).unwrap() > 400, "the words of the sentences are linked");
         let events: Vec<crate::learnlog::EventIn> = (0..200)
             .map(|i| crate::learnlog::EventIn { kind: "audio_played".into(), item_id: ids[i % ids.len()].to_string(), item_kind: "word".into(), ..Default::default() })
             .collect();
@@ -4464,8 +4501,424 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         crate::analytics::overview(&mut conn, &crate::analytics::Filter::default()).unwrap();
         crate::analytics::met_words(&mut conn).unwrap();
         assert!(started.elapsed() < std::time::Duration::from_secs(3), "{:?}", started.elapsed());
+        // The raw log: a page, deep or filtered, and a word in context.
+        let started = std::time::Instant::now();
+        let first = crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter::default(), None, 50).unwrap();
+        crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter::default(), first.next.as_ref(), 50).unwrap();
+        crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter { correct: Some(false), source: Some("daily".into()), ..Default::default() }, None, 50).unwrap();
+        crate::contexts::item_contexts(&mut conn, &ids[0].to_string(), &crate::analytics::Filter::default()).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(3), "{:?}", started.elapsed());
     }
 
+
+    /// A lesson with kawa, mleko and two annotated sentences, for the
+    /// context tests: (lesson, kawa, mleko, "Piję kawę z mlekiem.", "Mleko jest zimne.").
+    fn context_lesson(conn: &mut Conn) -> (LessonId, WordId, WordId, SentenceId, SentenceId) {
+        let basics = db::require_course_id(conn, 1).unwrap();
+        let made = tutor::run_tool_for_test(conn, "create_drill_lesson", serde_json::json!({
+            "title": "Kawa", "format": "words", "complexity": "low", "course_id": basics, "topics": ["food.drinks"],
+            "words": [
+                { "pl": "kawa", "en": "coffee", "pos": "n-f", "topics": ["food.drinks"] },
+                { "pl": "mleko", "en": "milk", "pos": "n-n", "topics": ["food.drinks"] },
+                { "pl": "herbata", "en": "tea", "pos": "n-f" }
+            ],
+            "sentences": [
+                { "pl": "Piję kawę z mlekiem.", "en": "I drink coffee with milk.", "topics": ["food.drinks"],
+                  "endings": [{ "form": "kawę", "base": "kawa", "wrong": ["kawy", "kawą"] }],
+                  "tokens": [
+                      { "form": "Piję", "lemma": "pić", "pos": "verb", "person": "1", "number": "sg", "tense": "present", "aspect": "imperfective", "mood": "indicative" },
+                      { "form": "kawę", "lemma": "kawa", "pos": "noun", "case": "accusative", "number": "sg", "gender": "f", "reason": "direct-object" },
+                      { "form": "z", "lemma": "z", "pos": "prep" },
+                      { "form": "mlekiem", "lemma": "mleko", "pos": "noun", "case": "instrumental", "number": "sg", "gender": "n", "reason": "z-instrumental" }
+                  ] },
+                { "pl": "Mleko jest zimne.", "en": "The milk is cold.",
+                  "tokens": [
+                      { "form": "Mleko", "lemma": "mleko", "pos": "noun", "case": "nominative", "reason": "subject" },
+                      { "form": "jest", "lemma": "być", "pos": "verb", "person": "3", "tense": "present" },
+                      { "form": "zimne", "lemma": "zimny", "pos": "adj", "case": "nominative", "reason": "agreement" }
+                  ] }
+            ]
+        }));
+        assert!(made["error"].is_null(), "{made}");
+        let lesson: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let words = session::lesson_words(conn, lesson).unwrap();
+        let word = |pl: &str| words.iter().find(|w| w.0.pl == pl).unwrap().0.id;
+        let sentences = session::lesson_sentences(conn, lesson).unwrap();
+        let sentence = |pl: &str| sentences.iter().find(|s| s.0.pl == pl).unwrap().0.id;
+        (lesson, word("kawa"), word("mleko"), sentence("Piję kawę z mlekiem."), sentence("Mleko jest zimne."))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn answer(conn: &mut Conn, lesson: LessonId, kind: &str, item_kind: &str, item: &str, expected: &str, given: &str, context: Option<crate::learnlog::PracticeContext>) -> AttemptId {
+        practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: kind.into(), item_kind: item_kind.into(), item_id: item.into(), expected: expected.into(), given: given.into(),
+            lesson_id: Some(lesson), run: "ctx".into(), context, ..Default::default()
+        }).unwrap();
+        t::attempts::table.order(t::attempts::id.desc()).select(t::attempts::id).first(conn).unwrap()
+    }
+
+    #[test]
+    fn where_it_was_practised_is_recorded_from_every_entry_point() {
+        use crate::learnlog::PracticeContext;
+        let mut conn = scratch_db("log-context");
+        let (lesson, kawa, ..) = context_lesson(&mut conn);
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        // The same lesson in a second course: opened from that course's page.
+        let second = db::require_course_id(&mut conn, 2).unwrap();
+        crate::courses::add_lesson(&mut conn, second, lesson).unwrap();
+        let from_second = PracticeContext { source: "course".into(), course_id: Some(second) };
+        let plan = practice::session_with(&mut conn, lesson, Some(&from_second)).unwrap();
+        assert_eq!(plan.context, from_second, "the plan carries its context back to the screen");
+        let row = |conn: &mut Conn, id: AttemptId| -> (Option<CourseId>, String) {
+            t::attempts::table.find(id).select((t::attempts::course_id, t::attempts::source)).first(conn).unwrap()
+        };
+        let a = answer(&mut conn, lesson, "type", "word", &kawa.to_string(), "kawa", "kawa", Some(plan.context.clone()));
+        assert_eq!(row(&mut conn, a), (Some(second), "course".into()));
+        // The daily five: no course given, so the lesson's own.
+        let a = answer(&mut conn, lesson, "type", "word", &kawa.to_string(), "kawa", "kawa", Some(PracticeContext { source: "daily".into(), course_id: None }));
+        assert_eq!(row(&mut conn, a), (Some(basics), "daily".into()));
+        // Other entry points.
+        for source in ["other", "tutor", "music", "link", "search"] {
+            let a = answer(&mut conn, lesson, "recognise", "word", &kawa.to_string(), "coffee", "coffee", Some(PracticeContext { source: source.into(), course_id: None }));
+            assert_eq!(row(&mut conn, a).1, source);
+        }
+        // An unknown source is a screen bug: refused by name.
+        let bad = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "type".into(), item_kind: "word".into(), item_id: kawa.to_string(), expected: "kawa".into(), given: "kawa".into(),
+            lesson_id: Some(lesson), context: Some(PracticeContext { source: "fridge".into(), course_id: None }), ..Default::default()
+        });
+        assert!(bad.unwrap_err().to_string().contains("fridge"));
+        // A quick game: source game, no course.
+        let sentence: SentenceId = t::sentences::table.select(t::sentences::id).first(&mut conn).unwrap();
+        crate::games::answer(&mut conn, crate::games::GameAnswer { game: "dictation".into(), item_id: Some(sentence.to_string()), expected: "Dzień dobry.".into(), given: "dzien dobry".into(), ..Default::default() }).unwrap();
+        let game: (Option<CourseId>, String, String) = t::attempts::table.order(t::attempts::id.desc()).select((t::attempts::course_id, t::attempts::source, t::attempts::direction)).first(&mut conn).unwrap();
+        assert_eq!(game, (None, "game".into(), "audio→pl typed".into()));
+        // A drill's end, with its context.
+        practice::lesson_finish_with(&mut conn, lesson, 3, 4, Some(&from_second)).unwrap();
+        let finished: (Option<CourseId>, String) = t::learning_events::table.filter(t::learning_events::kind.eq("lesson_finished"))
+            .select((t::learning_events::course_id, t::learning_events::source)).first(&mut conn).unwrap();
+        assert_eq!(finished, (Some(second), "course".into()));
+        // Events from the screens carry it too; an unknown source fails the batch.
+        crate::learnlog::log_events(&mut conn, vec![crate::learnlog::EventIn { kind: "lesson_opened".into(), lesson_id: Some(lesson), course_id: Some(second), source: "course".into(), ..Default::default() }]).unwrap();
+        assert!(crate::learnlog::log_events(&mut conn, vec![crate::learnlog::EventIn { kind: "lesson_opened".into(), source: "fridge".into(), ..Default::default() }]).is_err());
+        // A check-in: started from the daily five, its verdict and slips logged so, with the check-in and its verdict.
+        let study = starter_lesson(&mut conn);
+        let checkin = crate::examiner::start(&mut conn, study.id, Some(&PracticeContext { source: "daily".into(), course_id: None })).unwrap();
+        let verdict: crate::examiner::Assessment = serde_json::from_value(serde_json::json!({
+            "result": "pass", "summary": "Good.", "mistakes": [{ "said": "z mleko", "correct": "z mlekiem", "grammar": ["z-instrumental"] }]
+        })).unwrap();
+        crate::examiner::record(&mut conn, checkin, verdict).unwrap();
+        type Logged = (Option<CourseId>, String, Option<CheckinId>, String, String);
+        let logged: Vec<Logged> = t::attempts::table.filter(t::attempts::run.eq(checkin.to_string())).order(t::attempts::id)
+            .select((t::attempts::course_id, t::attempts::source, t::attempts::checkin_id, t::attempts::details, t::attempts::prompt)).load(&mut conn).unwrap();
+        assert_eq!(logged.len(), 2);
+        for (course, source, id, details, prompt) in &logged {
+            assert_eq!((course.is_some(), source.as_str(), *id), (true, "daily", Some(checkin)));
+            let v = crate::learnlog::read_details(details).verdict.unwrap();
+            assert_eq!(v.result, "pass");
+            assert!(v.xp > 0 && prompt.starts_with("Check-in"));
+        }
+        // The slip's words are linked: mleko, as written correctly.
+        let slip: AttemptId = t::attempts::table.filter(t::attempts::exercise.eq("checkinMistake")).select(t::attempts::id).first(&mut conn).unwrap();
+        let mleko: Vec<(String, String)> = t::attempt_items::table.filter(t::attempt_items::attempt_id.eq(slip)).select((t::attempt_items::form, t::attempt_items::role)).load(&mut conn).unwrap();
+        assert!(mleko.contains(&("mlekiem".into(), "in_sentence".into())), "{mleko:?}");
+    }
+
+    #[test]
+    fn a_logged_answer_rebuilds_its_card() {
+        let mut conn = scratch_db("log-card");
+        let (lesson, kawa, mleko, ..) = context_lesson(&mut conn);
+        let options = vec!["tea".to_string(), "coffee".into(), "milk".into(), "water".into()];
+        practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "recognise".into(), item_kind: "word".into(), item_id: kawa.to_string(), expected: "coffee".into(), given: "milk".into(),
+            lesson_id: Some(lesson), run: "r1".into(), prompt: "kawa".into(), pl: "kawa".into(), options: options.clone(),
+            card: Some(crate::learnlog::CardShown { key: format!("w{kawa}-recognise"), position: Some(3), of_cards: Some(12), hint: "n-f".into(), ..Default::default() }),
+            signals: Some(crate::learnlog::Signals { ms_first: Some(800), ms_answer: Some(2400), plays: 2, tries: 1, changed: true, first_pick: Some("tea".into()), ..Default::default() }),
+            ..Default::default()
+        }).unwrap();
+        let page = crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter { kind: Some("answers".into()), ..Default::default() }, None, 10).unwrap();
+        let row = &page.rows[0];
+        let a = row.answer.as_ref().unwrap();
+        assert_eq!((a.prompt.as_str(), a.direction.as_str(), a.card_key.as_str(), a.position), ("kawa", "pl→en", format!("w{kawa}-recognise").as_str(), Some(3)));
+        assert_eq!(a.options, options, "every option, in the order shown");
+        assert_eq!((a.given.as_str(), a.expected.as_str(), a.correct), ("milk", "coffee", false));
+        let shown = a.shown.as_ref().unwrap();
+        assert_eq!((shown.of_cards, shown.hint.as_str()), (Some(12), "n-f"));
+        assert_eq!((a.ms_first, a.ms_answer, a.plays, a.tries, a.first_pick.as_deref()), (Some(800), Some(2400), 2, 1, Some("tea")));
+        assert_eq!((row.item.as_str(), row.lesson.as_str(), row.course_id.is_some()), ("kawa", "Kawa", true));
+        // The words beside it: mleko was picked by mistake, herbata was not.
+        let target = a.links.iter().find(|l| l.role == "target").unwrap();
+        assert_eq!((target.item_id.clone(), target.correct), (kawa.to_string(), Some(false)));
+        let picked = a.links.iter().find(|l| l.item_id == mleko.to_string()).unwrap();
+        assert_eq!((picked.role.as_str(), picked.correct), ("distractor", Some(false)));
+        assert!(a.links.iter().any(|l| l.pl == "herbata" && l.role == "distractor" && l.correct == Some(true)));
+    }
+
+    #[test]
+    fn answers_link_every_known_word_in_them() {
+        let mut conn = scratch_db("log-links");
+        let (lesson, kawa, mleko, coffee, cold) = context_lesson(&mut conn);
+        // A dictation: mlekiem misspelt, kawę right.
+        answer(&mut conn, lesson, "dictation", "sentence", &coffee.to_string(), "Piję kawę z mlekiem.", "Piję kawę z mlekem.", None);
+        let links = |conn: &mut Conn| -> Vec<(String, String, String, i64, Option<i64>)> {
+            let last: AttemptId = t::attempts::table.order(t::attempts::id.desc()).select(t::attempts::id).first(conn).unwrap();
+            t::attempt_items::table.filter(t::attempt_items::attempt_id.eq(last)).order(t::attempt_items::position)
+                .select((t::attempt_items::item_id, t::attempt_items::role, t::attempt_items::form, t::attempt_items::position, t::attempt_items::correct)).load(conn).unwrap()
+        };
+        let got = links(&mut conn);
+        assert!(got.contains(&(coffee.to_string(), "target".into(), "Piję kawę z mlekiem.".into(), 0, Some(0))), "{got:?}");
+        assert!(got.contains(&(kawa.to_string(), "in_sentence".into(), "kawę".into(), 1, Some(1))), "an inflected form, by its annotation: {got:?}");
+        assert!(got.contains(&(mleko.to_string(), "in_sentence".into(), "mlekiem".into(), 3, Some(0))), "its own word-by-word result: {got:?}");
+        // Without an annotation: the endings, then the glossary's forms.
+        diesel::delete(t::sentence_tokens::table).execute(&mut conn).unwrap();
+        answer(&mut conn, lesson, "wordOrder", "sentence", &coffee.to_string(), "Piję kawę z mlekiem.", "Piję kawę z mlekiem.", None);
+        let got = links(&mut conn);
+        assert!(got.contains(&(kawa.to_string(), "in_sentence".into(), "kawę".into(), 1, Some(1))), "kawę by the sentence's endings: {got:?}");
+        assert!(got.contains(&(mleko.to_string(), "in_sentence".into(), "mlekiem".into(), 3, Some(1))), "mlekiem by the glossary: {got:?}");
+        answer(&mut conn, lesson, "wordOrder", "sentence", &cold.to_string(), "Mleko jest zimne.", "Jest mleko zimne.", None);
+        let got = links(&mut conn);
+        assert!(got.contains(&(mleko.to_string(), "in_sentence".into(), "Mleko".into(), 0, Some(0))), "tiles graded word by word: Mleko out of place: {got:?}");
+        // A word's history includes every appearance.
+        let history = crate::contexts::item_contexts(&mut conn, &mleko.to_string(), &crate::analytics::Filter::default()).unwrap();
+        assert_eq!(history.appearances, 3);
+    }
+
+    #[test]
+    fn token_annotations_are_checked_by_name() {
+        let mut conn = scratch_db("log-tokens");
+        let (_, _, mleko, coffee, _) = context_lesson(&mut conn);
+        let tokens = crate::grammar::tokens_of(&mut conn, coffee).unwrap();
+        assert_eq!(tokens.len(), 4);
+        assert_eq!((tokens[3].case.as_str(), tokens[3].reason.as_str(), tokens[3].word_id), ("instrumental", "z-instrumental", Some(mleko)), "linked to the word by its lemma");
+        let tok = |v: serde_json::Value| -> Vec<crate::grammar::TokenIn> { serde_json::from_value(v).unwrap() };
+        let check = |conn: &mut Conn, v: serde_json::Value| crate::grammar::validate_tokens(conn, "Piję kawę.", &tok(v)).map(|_| ()).map_err(|e| e.to_string());
+        let ok = serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb" }, { "form": "kawę", "lemma": "kawa", "pos": "noun", "case": "accusative", "reason": "direct-object" }]);
+        assert!(check(&mut conn, ok).is_ok());
+        let err = check(&mut conn, serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb" }])).unwrap_err();
+        assert!(err.contains("2 words") && err.contains("kawę"), "{err}");
+        let err = check(&mut conn, serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb" }, { "form": "kawa", "lemma": "kawa", "pos": "noun" }])).unwrap_err();
+        assert!(err.contains("Token 2") && err.contains("kawę"), "{err}");
+        let err = check(&mut conn, serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb" }, { "form": "kawę", "lemma": "kawa", "pos": "noun", "case": "ablative" }])).unwrap_err();
+        assert!(err.contains("Unknown case \"ablative\"") && err.contains("accusative"), "{err}");
+        let err = check(&mut conn, serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb", "tense": "aorist" }, { "form": "kawę", "lemma": "kawa", "pos": "noun" }])).unwrap_err();
+        assert!(err.contains("aorist"), "{err}");
+        let err = check(&mut conn, serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb" }, { "form": "kawę", "lemma": "kawa", "pos": "noun", "case": "accusative", "reason": "z-instrumental" }])).unwrap_err();
+        assert!(err.contains("calls for the instrumental"), "{err}");
+        let err = check(&mut conn, serde_json::json!([{ "form": "Piję", "lemma": "pić", "pos": "verb" }, { "form": "kawę", "lemma": "kawa", "pos": "noun", "reason": "because" }])).unwrap_err();
+        assert!(err.contains("Unknown reason \"because\""), "{err}");
+        // A tool call with a bad token makes nothing.
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let refused = tutor::run_tool_for_test(&mut conn, "create_drill_lesson", serde_json::json!({
+            "title": "Zle", "format": "sentences", "complexity": "low", "course_id": basics,
+            "sentences": [{ "pl": "Mam kota.", "en": "I have a cat.", "tokens": [{ "form": "Mam", "lemma": "mieć", "pos": "verb" }, { "form": "kota", "lemma": "kot", "pos": "noun", "gender": "masc" }] }]
+        }));
+        assert!(refused["error"].as_str().unwrap().contains("masc"), "{refused}");
+        // Existing sentences: annotated only when asked, through the tutor.
+        let before = crate::grammar::unannotated_count(&mut conn).unwrap();
+        assert!(before > 0);
+        let listed = tutor::run_tool_for_test(&mut conn, "list_untagged", serde_json::json!({ "missing": "tokens", "limit": 1 }));
+        assert_eq!(listed["total"], before);
+        let id = listed["items"][0]["id"].as_str().unwrap().to_string();
+        let pl = listed["items"][0]["pl"].as_str().unwrap().to_string();
+        let tokens: Vec<serde_json::Value> = crate::grammar::words_of(&pl).iter().map(|(w, l)| serde_json::json!({ "form": w, "lemma": l, "pos": "noun" })).collect();
+        let done = tutor::run_tool_for_test(&mut conn, "annotate_sentences", serde_json::json!({ "items": [{ "id": id, "tokens": tokens }] }));
+        assert_eq!(done["still_unannotated"], before - 1, "{done}");
+        assert!(done["_action"]["label"].as_str().unwrap().starts_with("Annotated 1 sentence"));
+    }
+
+    #[test]
+    fn topics_are_checked_and_tagged_when_asked() {
+        let mut conn = scratch_db("log-topics");
+        let (lesson, kawa, ..) = context_lesson(&mut conn);
+        let links = crate::topics::all_links(&mut conn).unwrap();
+        assert_eq!(links[&lesson.to_string()], vec![crate::topics::id_of("food.drinks")], "a lesson takes the topics its tool was given");
+        assert_eq!(links[&kawa.to_string()], vec![crate::topics::id_of("food.drinks")]);
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let refused = tutor::run_tool_for_test(&mut conn, "create_drill_lesson", serde_json::json!({
+            "title": "Piwo", "format": "words", "complexity": "low", "course_id": basics, "topics": ["food.beer"],
+            "words": [{ "pl": "piwo", "en": "beer", "pos": "n-n" }]
+        }));
+        assert!(refused["error"].as_str().unwrap().contains("food.beer"), "{refused}");
+        assert_eq!(t::lessons::table.filter(t::lessons::title.eq("Piwo")).count().get_result::<i64>(&mut conn).unwrap(), 0, "nothing made");
+        let refused = tutor::run_tool_for_test(&mut conn, "create_drill_lesson", serde_json::json!({
+            "title": "Piwo", "format": "words", "complexity": "low", "course_id": basics,
+            "words": [{ "pl": "piwo", "en": "beer", "pos": "n-n", "topics": ["drinks"] }]
+        }));
+        assert!(refused["error"].as_str().unwrap().contains("drinks"), "{refused}");
+        // Existing content: tagged when asked.
+        let before = crate::topics::untagged_count(&mut conn).unwrap();
+        let listed = tutor::run_tool_for_test(&mut conn, "list_untagged", serde_json::json!({ "missing": "topics", "limit": 2 }));
+        assert_eq!(listed["total"], before);
+        let ids: Vec<String> = listed["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap().to_string()).collect();
+        let done = tutor::run_tool_for_test(&mut conn, "tag_topics", serde_json::json!({ "items": ids.iter().map(|id| serde_json::json!({ "id": id, "topics": ["time"] })).collect::<Vec<_>>() }));
+        assert_eq!(done["still_untagged"], before - 2, "{done}");
+        assert!(done["_action"]["label"].as_str().unwrap().starts_with("Tagged the topics"));
+        let bad = tutor::run_tool_for_test(&mut conn, "tag_topics", serde_json::json!({ "items": [{ "id": ids[0], "topics": ["time.never"] }] }));
+        assert!(bad["error"].as_str().unwrap().contains("time.never"));
+    }
+
+    #[test]
+    fn context_stats_on_a_fixed_history() {
+        use crate::analytics::Filter;
+        use crate::contexts::{stats, Subject};
+        let mut conn = scratch_db("log-context-stats");
+        let (lesson, _, mleko, coffee, cold) = context_lesson(&mut conn);
+        let second = db::require_course_id(&mut conn, 2).unwrap();
+        let from = |source: &str, course: Option<CourseId>| Some(crate::learnlog::PracticeContext { source: source.into(), course_id: course });
+        // mleko on its own: right twice (from its course, then the second).
+        answer(&mut conn, lesson, "type", "word", &mleko.to_string(), "mleko", "mleko", from("course", None));
+        answer(&mut conn, lesson, "type", "word", &mleko.to_string(), "mleko", "mleko", from("course", Some(second)));
+        // As the subject: right; after z: wrong.
+        answer(&mut conn, lesson, "wordOrder", "sentence", &cold.to_string(), "Mleko jest zimne.", "Mleko jest zimne.", from("daily", None));
+        answer(&mut conn, lesson, "dictation", "sentence", &coffee.to_string(), "Piję kawę z mlekiem.", "Piję kawę z mlekem.", from("daily", None));
+        let all = Filter::default();
+        let item = Subject { item_id: Some(mleko.to_string()), ..Default::default() };
+        let groups = |conn: &mut Conn, by: &str| -> Vec<(String, i64, i64)> {
+            stats(conn, &item, by, &all).unwrap().groups.into_iter().map(|g| (g.key, g.attempts, g.correct)).collect()
+        };
+        let mut by_reason = groups(&mut conn, "reason");
+        by_reason.sort();
+        assert_eq!(by_reason, [("alone".into(), 2, 2), ("subject".into(), 1, 1), ("z-instrumental".into(), 1, 0)], "mleko: right as the subject, wrong after z");
+        let mut by_case = groups(&mut conn, "case");
+        by_case.sort();
+        assert_eq!(by_case, [("alone".into(), 2, 2), ("instrumental".into(), 1, 0), ("nominative".into(), 1, 1)]);
+        let mut by_role = groups(&mut conn, "role");
+        by_role.sort();
+        assert_eq!(by_role, [("in_sentence".into(), 2, 1), ("target".into(), 2, 2)]);
+        let by_course = groups(&mut conn, "course");
+        assert!(by_course.contains(&(second.to_string(), 1, 1)), "{by_course:?}");
+        let mut by_form = groups(&mut conn, "form");
+        by_form.sort();
+        assert_eq!(by_form, [("mlekiem".into(), 1, 0), ("mleko".into(), 3, 3)]);
+        let by_source = groups(&mut conn, "source");
+        assert!(by_source.contains(&("daily".into(), 2, 1)) && by_source.contains(&("course".into(), 2, 2)), "{by_source:?}");
+        let by_topic = groups(&mut conn, "topic");
+        assert!(by_topic.contains(&("food.drinks".into(), 4, 3)), "{by_topic:?}");
+        assert!(stats(&mut conn, &item, "mood", &all).unwrap_err().to_string().contains("mood"));
+        // A topic's own numbers, and a structure's words.
+        let topic = stats(&mut conn, &Subject { topic: Some("food".into()), ..Default::default() }, "exercise", &all).unwrap();
+        assert_eq!(topic.attempts, 4, "a domain takes its topics' answers in");
+        let detail = crate::contexts::topic_detail(&mut conn, "food.drinks", &all).unwrap();
+        let milk = detail.words.iter().find(|w| w.word_id == mleko).unwrap();
+        assert_eq!((milk.attempts, milk.correct), (4, 3));
+        let page = crate::contexts::topics_page(&mut conn, &all).unwrap();
+        assert!(page.domains.iter().any(|d| d.domain.topic.key == "food" && d.topics.iter().any(|t| t.topic.key == "food.drinks" && t.attempts == 4)));
+        let words = crate::contexts::structure_words(&mut conn, "z-instrumental", &all).unwrap();
+        let milk = words.iter().find(|w| w.word_id == mleko).unwrap();
+        assert_eq!((milk.attempts, milk.correct, milk.forms.clone()), (1, 0, vec!["mlekiem".to_string()]));
+        // Drilling down: the answers behind a group.
+        let ids = crate::contexts::attempt_ids(&mut conn, &item, "reason", "z-instrumental", &all).unwrap();
+        assert_eq!(ids.len(), 1);
+        let drilled = crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter { item_id: Some(mleko.to_string()), context: Some(crate::rawlog::ContextRef { group_by: "reason".into(), key: "z-instrumental".into() }), ..Default::default() }, None, 50).unwrap();
+        assert_eq!(drilled.rows.len(), 1);
+        assert_eq!(drilled.rows[0].answer.as_ref().unwrap().given, "Piję kawę z mlekem.");
+        // The word page carries every breakdown; the tutor's tool the same numbers.
+        let detail = crate::analytics::met_word(&mut conn, mleko).unwrap();
+        assert_eq!(detail.contexts.appearances, 4);
+        let tool = tutor::run_tool_for_test(&mut conn, "get_context_stats", serde_json::json!({ "item_id": mleko.to_string(), "group_by": "reason", "period": "all" }));
+        let z = tool["groups"].as_array().unwrap().iter().find(|g| g["key"] == "z-instrumental").unwrap();
+        assert_eq!((z["answers"].as_i64(), z["accuracy_pct"].as_i64()), (Some(1), Some(0)), "{tool}");
+    }
+
+    #[test]
+    fn the_raw_log_filters_and_pages() {
+        use crate::rawlog::{page, RawFilter};
+        let mut conn = scratch_db("log-raw");
+        let (lesson, kawa, mleko, coffee, _) = context_lesson(&mut conn);
+        let daily = Some(crate::learnlog::PracticeContext { source: "daily".into(), course_id: None });
+        for i in 0..23 {
+            let given = if i % 3 == 0 { "kawy" } else { "kawa" };
+            answer(&mut conn, lesson, "type", "word", &kawa.to_string(), "kawa", given, if i % 2 == 0 { daily.clone() } else { None });
+        }
+        answer(&mut conn, lesson, "dictation", "sentence", &coffee.to_string(), "Piję kawę z mlekiem.", "Piję kawę z mlekem.", None);
+        crate::learnlog::log_events(&mut conn, (0..7).map(|_| crate::learnlog::EventIn { kind: "audio_played".into(), item_kind: "word".into(), item_id: kawa.to_string(), lesson_id: Some(lesson), ..Default::default() }).collect()).unwrap();
+        // Pages of 5 cover everything once, newest first, however many share a moment.
+        let mut seen: Vec<String> = Vec::new();
+        let mut cursor = None;
+        loop {
+            let p = page(&mut conn, &RawFilter::default(), cursor.as_ref(), 5).unwrap();
+            assert!(p.rows.len() <= 5);
+            assert!(p.rows.windows(2).all(|w| w[0].at >= w[1].at));
+            seen.extend(p.rows.iter().map(|r| r.id.clone()));
+            match p.next {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+        let total = t::attempts::table.count().get_result::<i64>(&mut conn).unwrap() + t::learning_events::table.count().get_result::<i64>(&mut conn).unwrap();
+        assert_eq!(i64::try_from(seen.len()).unwrap(), total);
+        assert_eq!(seen.iter().collect::<std::collections::HashSet<_>>().len(), seen.len(), "no row twice");
+        let count = |conn: &mut Conn, f: RawFilter| crate::rawlog::all_rows(conn, &f).unwrap().len();
+        assert_eq!(count(&mut conn, RawFilter { correct: Some(false), ..Default::default() }), 9, "8 kawy, 1 dictation");
+        assert_eq!(count(&mut conn, RawFilter { exercise: Some("dictation".into()), ..Default::default() }), 1);
+        assert_eq!(count(&mut conn, RawFilter { mistake: Some("ending".into()), ..Default::default() }), 8);
+        assert_eq!(count(&mut conn, RawFilter { source: Some("daily".into()), kind: Some("answers".into()), ..Default::default() }), 12);
+        assert_eq!(count(&mut conn, RawFilter { kind: Some("events".into()), ..Default::default() }), t::learning_events::table.count().get_result::<i64>(&mut conn).unwrap().try_into().unwrap_or(0usize));
+        // An item: its own answers, and the dictation it appeared in.
+        assert_eq!(count(&mut conn, RawFilter { item_id: Some(mleko.to_string()), kind: Some("answers".into()), ..Default::default() }), 1);
+        assert_eq!(count(&mut conn, RawFilter { item_id: Some(kawa.to_string()), role: Some("in_sentence".into()), ..Default::default() }), 1);
+        assert_eq!(count(&mut conn, RawFilter { search: Some("mlek".into()), kind: Some("answers".into()), ..Default::default() }), 1);
+        assert_eq!(count(&mut conn, RawFilter { topic: Some("food".into()), kind: Some("answers".into()), ..Default::default() }), 24);
+        assert_eq!(count(&mut conn, RawFilter { grammar: Some("z-instrumental".into()), ..Default::default() }), 1, "by the sentence's annotation");
+        let other = db::require_course_id(&mut conn, 3).unwrap();
+        assert_eq!(count(&mut conn, RawFilter { course_id: Some(other), ..Default::default() }), 0);
+        assert_eq!(count(&mut conn, RawFilter { lesson_id: Some(lesson), kind: Some("answers".into()), ..Default::default() }), 24);
+        let today = db::today(&mut conn);
+        assert_eq!(count(&mut conn, RawFilter { to_day: Some(today - 1), ..Default::default() }), 0);
+        assert!(page(&mut conn, &RawFilter { source: Some("fridge".into()), ..Default::default() }, None, 5).is_err());
+        // The tutor's view pages the same way.
+        let first = tutor::run_tool_for_test(&mut conn, "get_raw_log", serde_json::json!({ "limit": 3, "kind": "answers", "correct": false }));
+        assert_eq!(first["rows"].as_array().unwrap().len(), 3);
+        let next = tutor::run_tool_for_test(&mut conn, "get_raw_log", serde_json::json!({ "limit": 10, "kind": "answers", "correct": false, "next": first["next"] }));
+        assert_eq!(next["rows"].as_array().unwrap().len(), 6, "{next}");
+        let dictation = tutor::run_tool_for_test(&mut conn, "get_raw_log", serde_json::json!({ "exercise": "dictation" }));
+        let words: Vec<&str> = dictation["rows"][0]["words"].as_array().unwrap().iter().map(|w| w.as_str().unwrap()).collect();
+        assert!(words.contains(&"mleko=mlekiem@in_sentence:wrong (z-instrumental)"), "{words:?}");
+    }
+
+    #[test]
+    fn the_raw_log_exports_as_csv_and_json() {
+        let mut conn = scratch_db("log-export");
+        let (lesson, kawa, _, coffee, _) = context_lesson(&mut conn);
+        answer(&mut conn, lesson, "type", "word", &kawa.to_string(), "kawa", "kawy", None);
+        practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "recognise".into(), item_kind: "word".into(), item_id: kawa.to_string(), expected: "coffee".into(), given: "coffee".into(),
+            lesson_id: Some(lesson), prompt: "kawa, \"the drink\"".into(), options: vec!["tea".into(), "coffee".into()], ..Default::default()
+        }).unwrap();
+        answer(&mut conn, lesson, "dictation", "sentence", &coffee.to_string(), "Piję kawę z mlekiem.", "Piję kawę z mlekem.", None);
+        crate::learnlog::log_events(&mut conn, vec![crate::learnlog::EventIn { kind: "talk_opened".into(), item_kind: "word".into(), item_id: kawa.to_string(), ..Default::default() }]).unwrap();
+        let rows = crate::rawlog::all_rows(&mut conn, &crate::rawlog::RawFilter::default()).unwrap();
+        let csv = crate::rawlog::export_text(&rows, "csv", 60).unwrap();
+        // A small CSV reader: fields, quotes doubled inside quoted ones.
+        let parse = |text: &str| -> Vec<Vec<String>> {
+            let (mut out, mut row, mut field, mut quoted, mut chars) = (vec![], vec![], String::new(), false, text.chars().peekable());
+            while let Some(c) = chars.next() {
+                match (c, quoted) {
+                    ('"', true) if chars.peek() == Some(&'"') => { field.push('"'); chars.next(); }
+                    ('"', _) => quoted = !quoted,
+                    (',', false) => row.push(std::mem::take(&mut field)),
+                    ('\n', false) => { row.push(std::mem::take(&mut field)); out.push(std::mem::take(&mut row)); }
+                    _ => field.push(c),
+                }
+            }
+            out
+        };
+        let table = parse(&csv);
+        assert_eq!(table[0], crate::rawlog::CSV_COLUMNS);
+        assert_eq!(table.len(), rows.len() + 1);
+        assert!(table.iter().all(|r| r.len() == crate::rawlog::CSV_COLUMNS.len()), "every row has every column");
+        let col = |name: &str| crate::rawlog::CSV_COLUMNS.iter().position(|c| *c == name).unwrap();
+        let choice = table.iter().find(|r| r[col("exercise")] == "recognise").unwrap();
+        assert_eq!((choice[col("prompt")].as_str(), choice[col("options")].as_str(), choice[col("direction")].as_str()), ("kawa, \"the drink\"", "tea | coffee", "pl→en"));
+        let dictation = table.iter().find(|r| r[col("exercise")] == "dictation").unwrap();
+        assert!(dictation[col("linked_words")].contains("mleko=mlekiem@in_sentence#3:wrong:z-instrumental"), "{}", dictation[col("linked_words")]);
+        assert_eq!(table.iter().filter(|r| r[col("kind")] == "event").count(), rows.iter().filter(|r| r.kind == "event").count());
+        let json = crate::rawlog::export_text(&rows, "json", 0).unwrap();
+        let back: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.len(), rows.len());
+        assert!(back.iter().any(|r| r["answer"]["links"].as_array().is_some_and(|l| !l.is_empty())));
+        assert!(crate::rawlog::export_text(&rows, "xlsx", 0).is_err());
+    }
 
     /// Not a test: a realistic learning history (a few hundred answers over
     /// eleven weeks, with every kind of mistake, classified as the app
@@ -4524,17 +4977,96 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             if keys.is_empty() { keys.push("present"); }
             crate::grammar::set_sentence(&mut conn, *id, &tag(&keys)).unwrap();
         }
+        // Topics, as the tutor would give them: a course's lessons share a
+        // domain; words and sentences take their lesson's, or one by what
+        // they say.
+        let titles: Vec<String> = courses.iter().map(|c| t::courses::table.find(*c).select(t::courses::title_en).first::<String>(&mut conn).unwrap().to_lowercase()).collect();
+        let course_topics: Vec<[&str; 2]> = titles.iter().map(|title| {
+            if title.contains("famil") { ["family.relatives", "family.celebrations"] }
+            else if title.contains("cloth") || title.contains("shop") { ["shopping.clothes", "shopping.prices"] }
+            else if title.contains("meet") || title.contains("hello") { ["communication.greetings", "people.introductions"] }
+            else if title.contains("caf") || title.contains("food") || title.contains("restaur") { ["food.drinks", "food.restaurant"] }
+            else if title.contains("travel") || title.contains("train") || title.contains("city") { ["travel.transport", "city.places"] }
+            else { ["time.days-dates", "time.routine"] }
+        }).collect();
+        println!("{titles:?}");
+        let topic = |keys: &[&str]| crate::topics::validate(&keys.iter().map(|k| k.to_string()).collect::<Vec<_>>()).unwrap();
+        for (c, course) in courses.iter().enumerate() {
+            for lesson in crate::lessons::for_course(&mut conn, *course).unwrap() {
+                crate::topics::set_lesson(&mut conn, lesson.id, &topic(&course_topics[c])).unwrap();
+            }
+        }
+        let topic_by_text = |pl: &str, fallback: &'static str| -> &'static str {
+            let low = pl.to_lowercase();
+            for (needle, key) in [("kaw", "food.drinks"), ("herbat", "food.drinks"), ("wod", "food.drinks"), ("chleb", "food.meals"), ("obiad", "food.meals"), ("dom", "home.rooms"), ("pracy", "work.office"), ("prac", "work.jobs"), ("mam", "family.relatives"), ("tat", "family.relatives"), ("pociąg", "travel.transport"), ("autobus", "travel.transport"), ("sklep", "shopping.shops"), ("kot", "nature.animals"), ("pies", "nature.animals"), ("pogod", "weather.conditions")] {
+                if low.contains(needle) { return key; }
+            }
+            fallback
+        };
+        let course_of_lesson = |conn: &mut Conn, lesson: LessonId| -> usize {
+            let c: CourseId = t::course_lessons::table.filter(t::course_lessons::lesson_id.eq(lesson)).select(t::course_lessons::course_id).first(conn).unwrap();
+            courses.iter().position(|x| *x == c).unwrap_or(0)
+        };
+        for (id, pl, _, _, lesson) in &words {
+            let c = course_of_lesson(&mut conn, *lesson);
+            crate::topics::set_word(&mut conn, *id, &topic(&[topic_by_text(pl, course_topics[c][0])])).unwrap();
+        }
+        for (id, pl, _, lesson) in &sentences {
+            let c = course_of_lesson(&mut conn, *lesson);
+            crate::topics::set_sentence(&mut conn, *id, &topic(&[topic_by_text(pl, course_topics[c][1])])).unwrap();
+            // Word by word, as the tutor would annotate it (roughly, for the preview).
+            let ws = crate::grammar::words_of(pl);
+            let tokens: Vec<crate::grammar::TokenIn> = ws.iter().enumerate().map(|(i, (form, low))| {
+                let preps = ["w", "na", "do", "z", "ze", "bez", "za", "pod", "przed"];
+                let possessive = ["moja", "mój", "moje", "twoja", "twój", "nasza", "nasz", "ta", "ten"];
+                // The preposition governing it: just before, or before one word (z moją rodziną).
+                let before = if i > 0 && preps.contains(&ws[i - 1].1.as_str()) { ws[i - 1].1.as_str() }
+                    else if i > 1 && preps.contains(&ws[i - 2].1.as_str()) && !preps.contains(&low.as_str()) { ws[i - 2].1.as_str() }
+                    else if (i > 1 && ws[i - 1].1 == "jest" && ws[i - 2].1 == "to") || (i > 2 && ws[i - 2].1 == "jest" && ws[i - 3].1 == "to") { "to jest" }
+                    else if i > 0 { ws[i - 1].1.as_str() } else { "" };
+                let (pos, case, reason) = match before {
+                    "to jest" => ("noun", "nominative", "naming"),
+                    "za" | "pod" | "przed" if low.ends_with('ą') || low.ends_with("em") || low.ends_with("ami") => ("noun", "instrumental", "place-instrumental"),
+                    _ if i == 0 && possessive.contains(&low.as_str()) => ("adj", "nominative", "agreement"),
+                    _ if i == 1 && possessive.contains(&ws[0].1.as_str()) => ("noun", "nominative", "subject"),
+                    "w" => ("noun", "locative", "w-locative"),
+                    "na" => ("noun", "locative", "na-locative"),
+                    "do" => ("noun", "genitive", "do-genitive"),
+                    "z" | "ze" => ("noun", "instrumental", "z-instrumental"),
+                    "bez" => ("noun", "genitive", "bez-genitive"),
+                    "nie" if !low.ends_with('ć') => ("noun", "genitive", "negation-genitive"),
+                    _ if preps.contains(&low.as_str()) || ["o", "u"].contains(&low.as_str()) => ("prep", "", ""),
+                    _ if low == "nie" => ("part", "", ""),
+                    _ if i == 0 && (low.ends_with('m') || low.ends_with('ę')) => ("verb", "", ""),
+                    _ if i == 0 => ("noun", "nominative", "subject"),
+                    _ if low.ends_with('ę') => ("noun", "accusative", "direct-object"),
+                    _ => ("noun", "", ""),
+                };
+                crate::grammar::TokenIn { form: form.clone(), lemma: low.clone(), pos: pos.into(), case: case.into(), reason: reason.into(), ..Default::default() }
+            }).collect();
+            let checked = crate::grammar::validate_tokens(&mut conn, pl, &tokens).unwrap();
+            crate::grammar::set_tokens(&mut conn, *id, &checked).unwrap();
+        }
         // How hard each thing is, and how much better it gets over the weeks.
         let hardness: Vec<f64> = words.iter().map(|_| rng.random_range(0.04..0.55)).collect();
         let fold = |w: &str| w.chars().map(|c| match c { 'ą' => 'a', 'ę' => 'e', 'ł' => 'l', 'ś' => 's', 'ć' => 'c', 'ż' | 'ź' => 'z', 'ó' => 'o', 'ń' => 'n', x => x }).collect::<String>();
         let ending = |w: &str, r: u32| { let mut c: Vec<char> = w.chars().collect(); if let Some(l) = c.last_mut() { *l = ['ę', 'y', 'ą', 'e', 'u'][usize::try_from(r % 5).unwrap()]; } c.into_iter().collect::<String>() };
         let typo = |w: &str| { let mut c: Vec<char> = w.chars().collect(); if c.len() > 3 { c.swap(1, 2); } c.into_iter().collect::<String>() };
         let sound = |w: &str| { for (a, b) in [("sz", "ś"), ("ż", "sz"), ("ę", "e"), ("y", "i"), ("ł", "l"), ("cz", "ć"), ("rz", "r")] { if w.contains(a) { return Some(w.replacen(a, b, 1)); } } None };
+        let position = std::cell::Cell::new(0i64);
         let put = |conn: &mut Conn, day: i64, ms: i64, kind: &str, id: &str, lesson: LessonId, exercise: &str, run: &str, given: &str, expected: &str, correct: bool, diff: &[crate::dictation::DiffWord], options: &[String], prompt: &str, pl: &str| {
             let mistake = crate::mistakes::classify(&crate::mistakes::Graded { exercise, expected, given, correct, diff, options, prompt, pl, endings: &[] });
-            let signals = crate::learnlog::Signals { ms_first: Some(ms / 3), ms_answer: Some(ms), plays: i64::from(ms > 6000), ..Default::default() };
+            let signals = crate::learnlog::Signals { ms_first: Some(ms / 3), ms_answer: Some(ms), plays: i64::from(ms > 6000), reveals: i64::from(ms > 8000), tries: i64::from(ms % 7 == 0), ..Default::default() };
+            // Where it was practised: the course page most days, the daily
+            // five or Other lessons on others.
+            let source = ["course", "daily", "course", "other", "daily"][usize::try_from(day.rem_euclid(5)).unwrap()];
+            let context = crate::learnlog::resolve(conn, Some(&crate::learnlog::PracticeContext { source: source.into(), course_id: None }), Some(lesson), "").unwrap();
+            position.set(position.get() + 1);
+            let card = crate::learnlog::CardShown { key: format!("{}-{exercise}", &id[..id.len().min(12)]), position: Some(position.get()), of_cards: Some(14), hint: String::new(), tokens: vec![], image: None, meaning: String::new() };
+            let shown = if prompt.is_empty() { expected } else { prompt };
             let at_id = crate::learnlog::write_attempt(conn, &crate::learnlog::NewAttempt {
                 item_kind: kind, item_id: id, lesson_id: Some(lesson), exercise, run, correct, given, expected, mistake: &mistake, signals: &signals, options, grammar: vec![], note: String::new(),
+                context: &context, prompt: shown, card: Some(&card), pl, checkin_id: None, verdict: None,
             }).unwrap();
             let hour = [8, 8, 12, 13, 19, 20, 21, 21, 22][usize::try_from(day.unsigned_abs() % 9).unwrap()];
             diesel::update(t::attempts::table.find(at_id)).set((t::attempts::day.eq(day), t::attempts::at.eq(day * 86_400_000 + hour * 3_600_000 + ms))).execute(conn).unwrap();
@@ -4547,6 +5079,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             let lesson = words[rng.random_range(0..words.len())].4;
             let run = format!("{lesson}-{day}");
             let cards = rng.random_range(8..16);
+            position.set(0);
             let mut answered = 0;
             let mut right = 0;
             for _ in 0..cards {
@@ -4574,7 +5107,15 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
                     (kind, pl.clone(), given)
                 };
                 let correct = if exercise == "recognise" { given == expected } else { crate::practice::normalize(&given) == crate::practice::normalize(&expected) };
-                put(&mut conn, day, ms, "word", &id.to_string(), *lesson, exercise, &run, &given, &expected, correct, &[], &[], "", "");
+                // A choice shows four options, the answer among three others.
+                let options: Vec<String> = if exercise == "type" { vec![] } else {
+                    let mut o: Vec<String> = (0..3).map(|k| { let w = &words[(n + 1 + k * 7) % words.len()]; if exercise == "recognise" { w.2.clone() } else { w.1.clone() } }).collect();
+                    if !o.contains(&given) && given != expected { o[0] = given.clone(); }
+                    o.insert(usize::try_from(day.rem_euclid(4)).unwrap(), expected.clone());
+                    o
+                };
+                let prompt = if exercise == "recognise" { pl.clone() } else { en.clone() };
+                put(&mut conn, day, ms, "word", &id.to_string(), *lesson, exercise, &run, &given, &expected, correct, &[], &options, &prompt, "");
                 answered += 1;
                 right += i64::from(correct);
             }
@@ -4654,6 +5195,21 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("analytics_compare", &a::compare(&mut conn, &Filter { from_day: Some(today - 13), to_day: Some(today - 7), course_id: None }, &Filter { from_day: Some(today - 6), to_day: Some(today), course_id: None }).unwrap());
         write("analytics_activity", &a::activity(&mut conn, &month).unwrap());
         write("analytics_item", &a::item_history(&mut conn, &met[0].id.to_string()).unwrap());
+        // Schema 15: the raw log, a word in its contexts, topics.
+        let raw = crate::rawlog::page(&mut conn, &crate::rawlog::RawFilter::default(), None, 50).unwrap();
+        write("learning_raw_log", &raw);
+        // The word met in the most grammatical contexts, alone and in sentences.
+        let candidates: Vec<String> = t::attempt_items::table.filter(t::attempt_items::item_kind.eq("word")).filter(t::attempt_items::role.ne("target"))
+            .select(t::attempt_items::item_id).distinct().load(&mut conn).unwrap();
+        let busiest = candidates.iter().max_by_key(|id| {
+            let c = crate::contexts::item_contexts(&mut conn, id, &all).unwrap();
+            (c.by_reason.len().min(4), c.by_role.len(), c.appearances)
+        }).unwrap();
+        write("met_word_context", &a::met_word(&mut conn, WordId::parse(busiest).unwrap()).unwrap());
+        let topics = crate::contexts::topics_page(&mut conn, &month).unwrap();
+        write("met_topics", &topics);
+        write("met_topic", &crate::contexts::topic_detail(&mut conn, &topics.domains[0].domain.topic.key, &month).unwrap());
+        write("met_structure_words", &a::structure(&mut conn, "w-locative", &all).unwrap());
         write("today", &today);
     }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { BarChart, Measure, type Bar } from "../components/Charts";
 import { WordChat } from "../components/WordChat";
@@ -27,8 +27,16 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
+import { KIND_ICON, useOpener } from "../lib/ids";
+import { toast } from "../lib/toast";
 import {
   ALL_TIME,
+  ANNOTATE_ASK,
+  CONTEXT_GROUPS,
+  EXERCISES,
+  MISTAKE_CLASSES,
+  SOURCES,
+  TOPICS_ASK,
   dayLabel,
   filterFor,
   pct,
@@ -62,6 +70,14 @@ import type {
   Strength,
   StructureDetail,
   WordId,
+  ContextGroup,
+  RawCursor,
+  RawFilter,
+  RawRow,
+  TopicDetail,
+  TopicRow,
+  WordContexts,
+  WordInContext,
 } from "../lib/types";
 
 /*
@@ -85,7 +101,11 @@ export type InsightPage =
   | { page: "mistakes"; cls: string | null }
   | { page: "compare" }
   | { page: "activity" }
-  | { page: "item"; itemId: string };
+  | { page: "item"; itemId: string }
+  /** Every answer and event, filtered: a drill-down presets some filters. */
+  | { page: "rawlog"; preset?: RawFilter; title?: string }
+  | { page: "topics" }
+  | { page: "topic"; key: string };
 
 interface Nav {
   today: number;
@@ -146,6 +166,12 @@ function PageFor({ page, nav }: { page: InsightPage; nav: Nav }) {
       return <ActivityPage nav={nav} />;
     case "item":
       return <ItemPage nav={nav} itemId={page.itemId} />;
+    case "rawlog":
+      return <RawLogPage nav={nav} preset={page.preset} title={page.title} />;
+    case "topics":
+      return <TopicsPage nav={nav} />;
+    case "topic":
+      return <TopicPage nav={nav} topicKey={page.key} />;
   }
 }
 
@@ -645,6 +671,12 @@ function WordPage({ nav, wordId }: { nav: Nav; wordId: WordId }) {
       <div className="insight-board">
         <div className="insight-col">
           <WordHead detail={data} onTalk={() => setTalking(true)} />
+          <ContextBreakdown
+            contexts={data.contexts}
+            nav={nav}
+            itemId={wordId}
+            title={data.word.pl}
+          />
           <Section title="Your answers">
             <Attempts
               attempts={data.history.history}
@@ -693,6 +725,21 @@ function WordPage({ nav, wordId }: { nav: Nav; wordId: WordId }) {
                     key={t.key}
                     tone="brand"
                     onClick={() => nav.open({ page: "structure", key: t.key })}
+                  >
+                    {t.name}
+                  </Badge>
+                ))}
+              </Inline>
+            </Section>
+          ) : null}
+          {data.topics.length ? (
+            <Section title="Topics">
+              <Inline gap={2} wrap>
+                {data.topics.map((t) => (
+                  <Badge
+                    key={t.key}
+                    tone="sky"
+                    onClick={() => nav.open({ page: "topic", key: t.key })}
                   >
                     {t.name}
                   </Badge>
@@ -825,6 +872,25 @@ function StructuresPage({ nav }: { nav: Nav }) {
                   onClick={() => nav.onAskTutor(TAG_ASK)}
                 >
                   ✨ Tag the grammar in your courses
+                </Button>
+              </Stack>
+            </Card>
+          ) : null}
+          {data.unannotated > 0 ? (
+            <Card>
+              <Stack gap={3}>
+                <Text variant="small">
+                  {data.unannotated === 1
+                    ? "1 sentence isn't"
+                    : `${data.unannotated} sentences aren't`}{" "}
+                  annotated word by word yet, so their words' cases and forms
+                  aren't counted.
+                </Text>
+                <Button
+                  variant={data.untagged > 0 ? "secondary" : "primary"}
+                  onClick={() => nav.onAskTutor(ANNOTATE_ASK)}
+                >
+                  ✨ Annotate your sentences word by word
                 </Button>
               </Stack>
             </Card>
@@ -965,6 +1031,33 @@ function StructureBody({ data, nav }: { data: StructureDetail; nav: Nav }) {
               />
             </Card>
           </Section>
+          <Section
+            title="Words in it"
+            info={
+              <p>
+                Each word as it went in this structure: in your sentences where
+                the tutor's annotation gives it this case or this reason, and on
+                its own when the word itself is tagged with it.
+              </p>
+            }
+          >
+            <WordsInContext
+              words={data.words}
+              nav={nav}
+              empty="No annotated sentences with it answered yet."
+            />
+          </Section>
+          <Button
+            onClick={() =>
+              nav.open({
+                page: "rawlog",
+                preset: { grammar: row.tag.key },
+                title: row.tag.name,
+              })
+            }
+          >
+            Every answer in the raw log
+          </Button>
           <Section title="Your examples">
             <List>
               {data.examples.map((e) => (
@@ -1842,6 +1935,1045 @@ function ItemPage({ nav, itemId }: { nav: Nav; itemId: string }) {
           onClose={() => setTalking(false)}
         />
       ) : null}
+    </Page>
+  );
+}
+
+
+// ------------------------------------------------------------ in context
+
+/** One group of a breakdown as a bar: its share right, and how many. */
+function GroupMeasures({
+  groups,
+  memory,
+  onOpen,
+  empty,
+}: {
+  groups: ContextGroup[];
+  memory: string;
+  onOpen: (group: ContextGroup) => void;
+  empty: string;
+}) {
+  if (groups.length === 0) {
+    return (
+      <Text variant="small" tone="dim">
+        {empty}
+      </Text>
+    );
+  }
+  return (
+    <Stack gap={1}>
+      {groups.map((g) => (
+        <Measure
+          key={g.key}
+          label={g.label}
+          value={Math.round(g.accuracy * 100)}
+          max={100}
+          shown={`${pct(g.accuracy)} right of ${g.attempts}`}
+          tone={g.accuracy >= 0.85 ? "mint" : "gold"}
+          memory={`${memory}:${g.key}`}
+          onClick={() => onOpen(g)}
+        />
+      ))}
+    </Stack>
+  );
+}
+
+const BY_GROUP: Record<string, keyof WordContexts> = {
+  role: "byRole",
+  reason: "byReason",
+  case: "byCase",
+  form: "byForm",
+  course: "byCourse",
+  topic: "byTopic",
+  exercise: "byExercise",
+  source: "bySource",
+};
+
+/** A word's every appearance, one way at a time, each group opening its rows. */
+function ContextBreakdown({
+  contexts,
+  nav,
+  itemId,
+  title,
+}: {
+  contexts: WordContexts;
+  nav: Nav;
+  itemId: string;
+  title: string;
+}) {
+  const [by, setBy] = useState("role");
+  const field = BY_GROUP[by] ?? "byRole";
+  const value = contexts[field];
+  const groups = Array.isArray(value) ? value : [];
+  const label = CONTEXT_GROUPS.find((g) => g.value === by)?.label ?? by;
+  return (
+    <Section
+      title="In context"
+      info={
+        <p>
+          Every time this word came up — on its own, inside a sentence, a
+          dialogue or a story, or as a wrong option — grouped by where: the
+          course, the grammar around it (the case and why, from the tutor's
+          annotation of the sentence), the form it had, the topic, the exercise
+          and how you reached it. Tap a group for its answers.
+        </p>
+      }
+    >
+      <Stack gap={3}>
+        <ChoiceRow>
+          {CONTEXT_GROUPS.map((g) => (
+            <Choice
+              key={g.value}
+              selected={by === g.value}
+              onClick={() => setBy(g.value)}
+            >
+              {g.label}
+            </Choice>
+          ))}
+        </ChoiceRow>
+        <Card>
+          <Stack gap={2}>
+            <Text variant="caption" tone="faint">
+              {contexts.appearances === 1
+                ? "1 appearance"
+                : `${contexts.appearances} appearances`}{" "}
+              · by {label.toLowerCase()}
+            </Text>
+            <GroupMeasures
+              groups={groups}
+              memory={`ctx:${itemId}:${by}`}
+              empty="Not met in an answer yet."
+              onOpen={(g) =>
+                nav.open({
+                  page: "rawlog",
+                  preset: { itemId, context: { groupBy: by, key: g.key } },
+                  title: `${title} · ${g.label}`,
+                })
+              }
+            />
+          </Stack>
+        </Card>
+        <Button
+          size="sm"
+          variant="plain"
+          onClick={() =>
+            nav.open({ page: "rawlog", preset: { itemId }, title })
+          }
+        >
+          Every appearance in the raw log
+        </Button>
+      </Stack>
+    </Section>
+  );
+}
+
+/** The forms a word had there, when they differ from its dictionary form. */
+function formsOf(w: WordInContext): string {
+  const other = w.forms.filter((f) => f !== w.pl.toLowerCase());
+  return other.length ? ` · as ${other.join(", ")}` : "";
+}
+
+/** Words as they went in one context (a structure, a topic). */
+function WordsInContext({
+  words,
+  nav,
+  empty,
+}: {
+  words: WordInContext[];
+  nav: Nav;
+  empty: string;
+}) {
+  if (words.length === 0) {
+    return (
+      <Card>
+        <Text variant="small" tone="dim">
+          {empty}
+        </Text>
+      </Card>
+    );
+  }
+  return (
+    <List>
+      {words.map((w) => (
+        <ListItem
+          key={w.wordId}
+          title={<Text tone="polish">{w.pl}</Text>}
+          subtitle={`${w.en}${formsOf(w)} · ${w.correct} of ${w.attempts} right`}
+          trailing={
+            <Badge
+              tone={
+                w.accuracy < 0.7 ? "crimson" : w.accuracy < 0.9 ? "gold" : "mint"
+              }
+            >
+              {pct(w.accuracy)}
+            </Badge>
+          }
+          chevron
+          onClick={() => nav.open({ page: "word", wordId: w.wordId })}
+        />
+      ))}
+    </List>
+  );
+}
+
+// ------------------------------------------------------------ topics
+
+function accuracyBadge(accuracy: number | null) {
+  return accuracy === null ? (
+    <Badge>New</Badge>
+  ) : (
+    <Badge tone={accuracy < 0.7 ? "crimson" : accuracy < 0.9 ? "gold" : "mint"}>
+      {pct(accuracy)}
+    </Badge>
+  );
+}
+
+function topicSubtitle(row: TopicRow): string {
+  const items = `${row.items} item${row.items === 1 ? "" : "s"}`;
+  return row.accuracy === null
+    ? `${items} · not answered yet`
+    : `${items} · ${pct(row.accuracy)} right of ${row.attempts}`;
+}
+
+function TopicsPage({ nav }: { nav: Nav }) {
+  const filter = useFilter(nav);
+  const { data, error } = useLoad(() => api.metTopics(filter), [filter]);
+  const rise = useStagger(data !== null);
+  return (
+    <Page
+      title="Topics"
+      subtitle="What your words and sentences are about"
+      nav={nav}
+      info={
+        <p>
+          Food, travel, time, family and more: the topics the tutor gave your
+          lessons, words and sentences, and how your answers go in each. A
+          domain counts everything in its topics.
+        </p>
+      }
+    >
+      <Filters nav={nav} />
+      {!data ? (
+        <Wait error={error} />
+      ) : (
+        <>
+          {data.untagged > 0 ? (
+            <Card>
+              <Stack gap={3}>
+                <Text variant="small">
+                  {data.untagged === 1
+                    ? "1 lesson, word or sentence has"
+                    : `${data.untagged} lessons, words and sentences have`}{" "}
+                  no topic yet, so {data.untagged === 1 ? "it isn't" : "they aren't"}{" "}
+                  counted here.
+                </Text>
+                <Button
+                  variant="primary"
+                  onClick={() => nav.onAskTutor(TOPICS_ASK)}
+                >
+                  ✨ Tag the topics in your courses
+                </Button>
+              </Stack>
+            </Card>
+          ) : null}
+          {data.domains.length === 0 ? (
+            <EmptyState icon="🗺️" title="No topics yet">
+              New lessons come with their topics; older ones once the tutor has
+              tagged them.
+            </EmptyState>
+          ) : (
+            <div className={rise ? `topic-grid ${rise}` : "topic-grid"}>
+              {data.domains.map((d) => (
+                <Section key={d.domain.topic.key} title={d.domain.topic.name}>
+                  <List>
+                    <ListItem
+                      title={<Text weight="bold">All of {d.domain.topic.name.toLowerCase()}</Text>}
+                      subtitle={topicSubtitle(d.domain)}
+                      trailing={accuracyBadge(d.domain.accuracy)}
+                      chevron
+                      onClick={() =>
+                        nav.open({ page: "topic", key: d.domain.topic.key })
+                      }
+                    />
+                    {d.topics.map((t) => (
+                      <ListItem
+                        key={t.topic.key}
+                        title={t.topic.name}
+                        subtitle={topicSubtitle(t)}
+                        trailing={accuracyBadge(t.accuracy)}
+                        chevron
+                        onClick={() => nav.open({ page: "topic", key: t.topic.key })}
+                      />
+                    ))}
+                  </List>
+                </Section>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Page>
+  );
+}
+
+function TopicPage({ nav, topicKey }: { nav: Nav; topicKey: string }) {
+  const filter = useFilter(nav);
+  const { data, error } = useLoad(
+    () => api.metTopic(topicKey, filter),
+    [topicKey, filter],
+  );
+  if (!data) {
+    return (
+      <Page title="Topic" nav={nav}>
+        <Wait error={error} />
+      </Page>
+    );
+  }
+  return <TopicBody data={data} nav={nav} />;
+}
+
+function TopicBody({ data, nav }: { data: TopicDetail; nav: Nav }) {
+  const { row } = data;
+  const rawlog = (preset: RawFilter, title: string) =>
+    nav.open({ page: "rawlog", preset, title });
+  return (
+    <Page
+      title={row.topic.name}
+      subtitle={row.topic.isDomain ? "A domain" : row.topic.domainName}
+      nav={nav}
+    >
+      <Filters nav={nav} />
+      <div className="insight-board">
+        <div className="insight-col">
+          <Card>
+            <StatGrid>
+              <Stat value={<CountUp value={row.items} from={0} />} label="items" />
+              <Stat
+                value={<CountUp value={row.attempts} from={0} />}
+                label="answers"
+              />
+              <Stat
+                value={
+                  row.accuracy === null ? (
+                    "—"
+                  ) : (
+                    <CountUp
+                      value={Math.round(row.accuracy * 100)}
+                      from={0}
+                      format={(v) => `${v}%`}
+                    />
+                  )
+                }
+                label="right"
+              />
+            </StatGrid>
+          </Card>
+          <Section
+            title="Words in it"
+            info={
+              <p>
+                Each word as it went in this topic: on its own when the word is
+                about it, and inside the topic's sentences and lessons.
+              </p>
+            }
+          >
+            <WordsInContext
+              words={data.words}
+              nav={nav}
+              empty="No words of this topic answered yet."
+            />
+          </Section>
+          <Section title="Mistakes">
+            <Attempts
+              attempts={data.mistakes}
+              nav={nav}
+              showItem
+              empty="No mistakes in this topic yet."
+            />
+          </Section>
+        </div>
+        <div className="insight-col">
+          {data.topics.length ? (
+            <Section title="Its topics">
+              <List>
+                {data.topics.map((t) => (
+                  <ListItem
+                    key={t.topic.key}
+                    title={t.topic.name}
+                    subtitle={topicSubtitle(t)}
+                    trailing={accuracyBadge(t.accuracy)}
+                    chevron
+                    onClick={() => nav.open({ page: "topic", key: t.topic.key })}
+                  />
+                ))}
+              </List>
+            </Section>
+          ) : null}
+          <Section title="By exercise">
+            <Card>
+              <GroupMeasures
+                groups={data.byExercise}
+                memory={`topic:${row.topic.key}:ex`}
+                empty="Not answered yet."
+                onOpen={(g) =>
+                  rawlog(
+                    { topic: row.topic.key, exercise: g.key },
+                    `${row.topic.name} · ${g.label}`,
+                  )
+                }
+              />
+            </Card>
+          </Section>
+          <Section title="By course">
+            <Card>
+              <GroupMeasures
+                groups={data.byCourse}
+                memory={`topic:${row.topic.key}:course`}
+                empty="Not answered yet."
+                onOpen={(g) =>
+                  rawlog(
+                    {
+                      topic: row.topic.key,
+                      context: { groupBy: "course", key: g.key },
+                    },
+                    `${row.topic.name} · ${g.label}`,
+                  )
+                }
+              />
+            </Card>
+          </Section>
+          <Button onClick={() => rawlog({ topic: row.topic.key }, row.topic.name)}>
+            Every answer in the raw log
+          </Button>
+        </div>
+      </div>
+    </Page>
+  );
+}
+
+// ------------------------------------------------------------ the raw log
+
+const RAW_PAGE = 50;
+
+const ITEM_KINDS: Record<string, string> = {
+  word: "Word",
+  sentence: "Sentence",
+  dialogue: "Dialogue",
+  lesson: "Lesson",
+  set: "Lesson",
+  sound: "Sound pair",
+};
+
+/** A time in a run: "1.8 s". */
+function seconds(ms: number | null): string {
+  return ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** One answer or event: a line, and every field when opened. */
+function RawLogRow({
+  row,
+  open,
+  onToggle,
+  nav,
+}: {
+  row: RawRow;
+  open: boolean;
+  onToggle: () => void;
+  nav: Nav;
+}) {
+  const a = row.answer;
+  const head = (
+    <div className="attempt-row">
+      <Inline justify="between" gap={2}>
+        <Text variant="caption" tone="faint">
+          {a ? a.exerciseLabel : row.eventLabel} · {whenLabel(row.at, nav.today)}
+          {row.course ? ` · ${row.course}` : ""}
+        </Text>
+        {a ? (
+          a.mistakeLabel ? (
+            <Badge tone={a.correct ? "sky" : "crimson"}>{a.mistakeLabel}</Badge>
+          ) : a.correct ? (
+            <Badge tone="mint">Right</Badge>
+          ) : (
+            <Badge tone="crimson">Wrong</Badge>
+          )
+        ) : (
+          <Badge>Event</Badge>
+        )}
+      </Inline>
+      {row.item ? (
+        <Text weight="bold" tone="polish">
+          {row.item}
+        </Text>
+      ) : null}
+      {a ? (
+        <div className="attempt-row__vs">
+          <Text variant="small" tone="dim">
+            You:
+          </Text>
+          <span className="attempt-given t-small" data-correct={a.correct}>
+            {a.given || "—"}
+          </span>
+          {!a.correct || a.given !== a.expected ? (
+            <>
+              <Text variant="small" tone="dim">
+                expected
+              </Text>
+              <Text variant="small" weight="bold">
+                {a.expected}
+              </Text>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+  return (
+    <div className="raw-row" data-open={open}>
+      <ListItem title={head} onClick={onToggle} chevron={false} label={open ? "Close the details" : "Open the details"} />
+      {open ? <RawDetail row={row} nav={nav} /> : null}
+    </div>
+  );
+}
+
+/** A course or lesson by its title (the row has it), opening it. */
+function TitleLink({ id, title }: { id: string; title: string }) {
+  const open = useOpener(id);
+  const content = (
+    <>
+      <span aria-hidden="true">{KIND_ICON[id.split("_")[0]] ?? "🔗"}</span>{" "}
+      {title || "Since deleted"}
+    </>
+  );
+  return open && title ? (
+    <button type="button" className="id-chip" title={id} onClick={open}>
+      {content}
+    </button>
+  ) : (
+    <span className="id-chip" title={id}>
+      {content}
+    </span>
+  );
+}
+
+function Field2({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="t-caption">{label}</dt>
+      <dd className="t-small selectable">{children}</dd>
+    </>
+  );
+}
+
+function RawDetail({ row, nav }: { row: RawRow; nav: Nav }) {
+  const a = row.answer;
+  const shown = a?.shown ?? null;
+  const itemPageFor = itemPage(row);
+  return (
+    <div className="raw-detail">
+      <dl className="raw-fields">
+        <Field2 label="When">
+          {dayLabel(row.day, nav.today)},{" "}
+          {new Date(row.at).toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })}
+        </Field2>
+        <Field2 label="Reached from">{row.sourceLabel}</Field2>
+        {row.courseId ? (
+          <Field2 label="Course">
+            <TitleLink id={row.courseId} title={row.course} />
+          </Field2>
+        ) : null}
+        {row.lessonId ? (
+          <Field2 label="Lesson">
+            <TitleLink id={row.lessonId} title={row.lesson} />
+          </Field2>
+        ) : null}
+        {row.item ? (
+          <Field2 label={ITEM_KINDS[row.itemKind] ?? "Item"}>
+            {row.item}
+            {row.itemEn ? ` — ${row.itemEn}` : ""}
+          </Field2>
+        ) : null}
+        {a ? (
+          <>
+            <Field2 label="Exercise">
+              {a.exerciseLabel} · {a.direction || a.exercise}
+            </Field2>
+            {a.prompt ? <Field2 label="Prompt shown">{a.prompt}</Field2> : null}
+            {shown?.hint ? <Field2 label="Hint">{shown.hint}</Field2> : null}
+            {shown?.meaning ? (
+              <Field2 label="Meaning shown">{shown.meaning}</Field2>
+            ) : null}
+            {a.position !== null ? (
+              <Field2 label="Card">
+                {a.position}
+                {shown?.ofCards ? ` of ${shown.ofCards}` : ""}
+                {a.cardKey ? ` · ${a.cardKey}` : ""}
+              </Field2>
+            ) : null}
+            <Field2 label="Given">{a.given || "—"}</Field2>
+            <Field2 label="Expected">{a.expected || "—"}</Field2>
+            {a.mistake ? (
+              <Field2 label="Mistake">
+                {a.mistakeLabel}
+                {a.detail ? ` · ${a.detail}` : ""}
+                {a.contrast ? ` · ${a.contrast}` : ""}
+              </Field2>
+            ) : null}
+            <Field2 label="Timing">
+              first touch {seconds(a.msFirst)} · answered {seconds(a.msAnswer)}
+            </Field2>
+            <Field2 label="How">
+              {a.tries} {a.tries === 1 ? "change" : "changes"} · {a.hints}{" "}
+              {a.hints === 1 ? "hint" : "hints"} · played {a.plays}
+              {a.slowPlays ? ` (${a.slowPlays} slow)` : ""} · {a.reveals}{" "}
+              {a.reveals === 1 ? "translation" : "translations"} shown
+              {a.firstPick ? ` · first picked “${a.firstPick}”` : ""}
+            </Field2>
+            {a.verdict ? (
+              <Field2 label="Verdict">
+                {a.verdict.result} · {a.verdict.xp} XP
+                {a.verdict.aced ? " · aced" : ""}
+                {a.verdict.summary ? ` — ${a.verdict.summary}` : ""}
+              </Field2>
+            ) : null}
+            {a.note ? <Field2 label="Note">{a.note}</Field2> : null}
+            {a.grammar.length ? (
+              <Field2 label="Grammar">{a.grammar.join(", ")}</Field2>
+            ) : null}
+          </>
+        ) : (
+          <Field2 label="Event">
+            {row.eventLabel}
+            {row.eventDetails
+              ? ` · ${Object.entries(row.eventDetails)
+                  .filter(([k]) => k !== "v")
+                  .map(([k, v]) => `${k}: ${String(v)}`)
+                  .join(", ")}`
+              : ""}
+          </Field2>
+        )}
+      </dl>
+      {a && a.options.length ? (
+        <Stack gap={1}>
+          <Text variant="caption" tone="faint">
+            Options, in the order shown
+          </Text>
+          <div className="raw-options">
+            {a.options.map((o, i) => (
+              <span
+                key={`${o}-${i}`}
+                data-expected={o === a.expected || undefined}
+                data-given={(o === a.given && o !== a.expected) || undefined}
+              >
+                {o}
+              </span>
+            ))}
+          </div>
+        </Stack>
+      ) : null}
+      {shown && shown.tokens.length ? (
+        <Stack gap={1}>
+          <Text variant="caption" tone="faint">
+            Tiles offered
+          </Text>
+          <div className="raw-options">
+            {shown.tokens.map((t, i) => (
+              <span key={`${t}-${i}`}>{t}</span>
+            ))}
+          </div>
+        </Stack>
+      ) : null}
+      {a && a.words.length ? (
+        <div className="attempt-words" aria-label="Word by word">
+          {a.words.map((w, i) => (
+            <span key={i} data-s={w.s} title={WORD_STATUS[w.s] ?? w.s}>
+              {w.s === "m" ? `(${w.e})` : w.g || w.e}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {a && a.links.length ? (
+        <Stack gap={1}>
+          <Text variant="caption" tone="faint">
+            Words involved
+          </Text>
+          <div className="raw-links">
+            {a.links.map((l) => (
+              <button
+                key={`${l.itemId}-${l.role}-${l.position}`}
+                type="button"
+                className="raw-link"
+                data-correct={l.correct === null ? undefined : l.correct}
+                onClick={() =>
+                  l.itemId.startsWith("wd_") || l.itemId.startsWith("sn_")
+                    ? nav.open({ page: "item", itemId: l.itemId })
+                    : undefined
+                }
+              >
+                <b className="polish">{l.form || l.pl}</b>
+                <span>
+                  {l.form && l.form.toLowerCase() !== l.pl.toLowerCase()
+                    ? `${l.pl} · `
+                    : ""}
+                  {l.roleLabel.toLowerCase()}
+                  {l.reason || l.case ? ` · ${l.reason || l.case}` : ""}
+                  {l.correct === null ? "" : l.correct ? " · right" : " · wrong"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Stack>
+      ) : null}
+      <Inline gap={2} wrap>
+        {itemPageFor ? (
+          <Button size="sm" onClick={() => nav.open(itemPageFor)}>
+            Its history
+          </Button>
+        ) : null}
+        <Text variant="caption" tone="faint">
+          {row.id}
+          {a?.checkinId ? ` · ${a.checkinId}` : ""}
+          {a?.run ? ` · run ${a.run}` : ""}
+        </Text>
+      </Inline>
+    </div>
+  );
+}
+
+/** The raw log's own choices, beside the shared period and course. */
+interface RawChoices {
+  search: string;
+  kind: "" | "answers" | "events";
+  result: "" | "right" | "wrong";
+  exercise: string;
+  mistake: string;
+  source: string;
+  topic: string;
+  grammar: string;
+}
+
+const NO_CHOICES: RawChoices = {
+  search: "",
+  kind: "",
+  result: "",
+  exercise: "",
+  mistake: "",
+  source: "",
+  topic: "",
+  grammar: "",
+};
+
+function RawLogPage({
+  nav,
+  preset,
+  title,
+}: {
+  nav: Nav;
+  preset?: RawFilter;
+  title?: string;
+}) {
+  const shared = useFilter(nav);
+  // A drill-down shows every answer behind its number: all time.
+  const span = preset ? ALL_TIME : shared;
+  const [choices, setChoices] = useState<RawChoices>({
+    ...NO_CHOICES,
+    topic: preset?.topic ?? "",
+    grammar: preset?.grammar ?? "",
+    exercise: preset?.exercise ?? "",
+  });
+  const [keep, setKeep] = useState<RawFilter>({
+    itemId: preset?.itemId ?? null,
+    lessonId: preset?.lessonId ?? null,
+    role: preset?.role ?? null,
+    context: preset?.context ?? null,
+  });
+  const [search, setSearch] = useState("");
+  // Typing waits a moment before asking.
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setChoices((c) => ({ ...c, search })),
+      300,
+    );
+    return () => window.clearTimeout(timer);
+  }, [search]);
+  const filter: RawFilter = useMemo(
+    () => ({
+      fromDay: span.fromDay,
+      toDay: span.toDay,
+      courseId: preset ? null : span.courseId,
+      ...keep,
+      search: choices.search.trim() || null,
+      kind: choices.kind || null,
+      correct: choices.result === "" ? null : choices.result === "right",
+      exercise: choices.exercise || null,
+      mistake: choices.mistake || null,
+      source: choices.source || null,
+      topic: choices.topic || null,
+      grammar: choices.grammar || null,
+    }),
+    [span, keep, choices, preset],
+  );
+  const [rows, setRows] = useState<RawRow[]>([]);
+  const [next, setNext] = useState<RawCursor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState<"csv" | "json" | null>(null);
+  const generation = useRef(0);
+  const topics = useLoad(() => api.metTopics(ALL_TIME), []);
+  const tags = useLoad(() => api.metStructures(ALL_TIME), []);
+
+  async function load(from: RawCursor | null) {
+    const mine = ++generation.current;
+    setLoading(true);
+    try {
+      const page = await api.rawLog(filter, from, RAW_PAGE);
+      if (mine !== generation.current) return;
+      setRows((before) => (from ? [...before, ...page.rows] : page.rows));
+      setNext(page.next);
+      setError(null);
+    } catch (cause) {
+      if (mine === generation.current) setError(errorMessage(cause));
+    } finally {
+      if (mine === generation.current) setLoading(false);
+    }
+  }
+  useEffect(() => {
+    setOpened(new Set());
+    void load(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  // More rows as the end of the list comes into view.
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !next || loading) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) void load(next);
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [next, loading]);
+
+  async function exportAs(format: "csv" | "json") {
+    setExporting(format);
+    try {
+      const where = await api.rawLogExport(filter, format);
+      if (where) toast(`Exported to ${decodeURIComponent(where)}`);
+    } catch (cause) {
+      toast(errorMessage(cause), "error");
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  const set = (patch: Partial<RawChoices>) => setChoices((c) => ({ ...c, ...patch }));
+  const presetChips: { label: string; clear: () => void }[] = [];
+  if (keep.itemId)
+    presetChips.push({
+      label: keep.context ? (title ?? "This group") : `${title ?? "This item"}`,
+      clear: () => setKeep({}),
+    });
+  if (keep.lessonId)
+    presetChips.push({ label: "This lesson", clear: () => setKeep((k) => ({ ...k, lessonId: null })) });
+  if (!keep.itemId && keep.context)
+    presetChips.push({ label: title ?? "This group", clear: () => setKeep((k) => ({ ...k, context: null })) });
+
+  return (
+    <Page
+      title="Raw log"
+      subtitle={title ?? "Every answer and event, newest first"}
+      nav={nav}
+      info={
+        <p>
+          Everything the app kept about your practice: each answer with the
+          card as it was shown (the prompt, every option in its order, its place
+          in the run), what you gave and what was expected, how long it took,
+          changes, plays and translations shown, the words it involved with
+          their roles and forms, and a check-in's verdict — and every event,
+          like a lesson opened or a word looked up. Tap a row for all of it.
+        </p>
+      }
+    >
+      {preset ? null : <Filters nav={nav} />}
+      <Stack gap={3}>
+        {presetChips.length ? (
+          <Inline gap={2} wrap>
+            {presetChips.map((c) => (
+              <Choice key={c.label} selected onClick={c.clear}>
+                {c.label} ✓
+              </Choice>
+            ))}
+          </Inline>
+        ) : null}
+        <Field label="Search">
+          <input
+            value={search}
+            placeholder="A word, a sentence, an answer"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </Field>
+        <ChoiceRow>
+          {(
+            [
+              ["", "Everything"],
+              ["answers", "Answers"],
+              ["events", "Events"],
+            ] as const
+          ).map(([value, label]) => (
+            <Choice
+              key={label}
+              selected={choices.kind === value}
+              onClick={() => set({ kind: value })}
+            >
+              {label}
+            </Choice>
+          ))}
+          {(
+            [
+              ["", "Right or wrong"],
+              ["right", "Right"],
+              ["wrong", "Wrong"],
+            ] as const
+          ).map(([value, label]) => (
+            <Choice
+              key={label}
+              selected={choices.result === value}
+              onClick={() => set({ result: value })}
+            >
+              {label}
+            </Choice>
+          ))}
+        </ChoiceRow>
+        <div className="raw-selects">
+          <select
+            aria-label="Exercise"
+            value={choices.exercise}
+            onChange={(e) => set({ exercise: e.target.value })}
+          >
+            <option value="">Every exercise</option>
+            {EXERCISES.map((x) => (
+              <option key={x.value} value={x.value}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Mistake"
+            value={choices.mistake}
+            onChange={(e) => set({ mistake: e.target.value })}
+          >
+            <option value="">Every kind of mistake</option>
+            {MISTAKE_CLASSES.map((x) => (
+              <option key={x.value} value={x.value}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Reached from"
+            value={choices.source}
+            onChange={(e) => set({ source: e.target.value })}
+          >
+            <option value="">Reached from anywhere</option>
+            {SOURCES.map((x) => (
+              <option key={x.value} value={x.value}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Topic"
+            value={choices.topic}
+            onChange={(e) => set({ topic: e.target.value })}
+          >
+            <option value="">Every topic</option>
+            {(topics.data?.domains ?? []).flatMap((d) => [
+              <option key={d.domain.topic.key} value={d.domain.topic.key}>
+                {d.domain.topic.name}
+              </option>,
+              ...d.topics.map((t) => (
+                <option key={t.topic.key} value={t.topic.key}>
+                  {`  ${t.topic.name}`}
+                </option>
+              )),
+            ])}
+          </select>
+          <select
+            aria-label="Grammar"
+            value={choices.grammar}
+            onChange={(e) => set({ grammar: e.target.value })}
+          >
+            <option value="">Every structure</option>
+            {(tags.data?.tags ?? []).map((t) => (
+              <option key={t.tag.key} value={t.tag.key}>
+                {t.tag.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Stack>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {rows.length === 0 && !loading ? (
+        <EmptyState icon="📜" title="Nothing here">
+          No answers or events match. Practise a lesson, or loosen the filters.
+        </EmptyState>
+      ) : (
+        <div className="list raw-list">
+          {rows.map((row) => (
+            <RawLogRow
+              key={row.id}
+              row={row}
+              nav={nav}
+              open={opened.has(row.id)}
+              onToggle={() =>
+                setOpened((o) => {
+                  const copy = new Set(o);
+                  if (copy.has(row.id)) copy.delete(row.id);
+                  else copy.add(row.id);
+                  return copy;
+                })
+              }
+            />
+          ))}
+        </div>
+      )}
+      <div ref={sentinel} />
+      {loading ? <Loading /> : null}
+      {next && !loading ? (
+        <Button onClick={() => void load(next)}>Show more</Button>
+      ) : null}
+      <Section
+        title="Export"
+        info={
+          <p>
+            Saves what the filters show — every field of every row — as a
+            spreadsheet (CSV) or as JSON, wherever you choose.
+          </p>
+        }
+      >
+        <Inline gap={2} wrap>
+          <Button
+            loading={exporting === "csv"}
+            onClick={() => void exportAs("csv")}
+          >
+            Export as CSV
+          </Button>
+          <Button
+            loading={exporting === "json"}
+            onClick={() => void exportAs("json")}
+          >
+            Export as JSON
+          </Button>
+        </Inline>
+      </Section>
     </Page>
   );
 }

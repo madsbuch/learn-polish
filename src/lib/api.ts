@@ -10,6 +10,7 @@ import type {
   CourseId,
   DeviceId,
   EntryId,
+  FileId,
   LessonId,
   PanelId,
   MemoryId,
@@ -29,9 +30,17 @@ import type {
   QuickGameKind,
   Filter,
   HardKind,
+  PracticeContext,
+  PracticeSource,
+  RawCursor,
+  RawFilter,
 } from "./types";
 import {
   ActivitySchema,
+  ContextStatsSchema,
+  RawPageSchema,
+  TopicDetailSchema,
+  TopicsPageSchema,
   ComparisonSchema,
   GameAnsweredSchema,
   HardItemSchema,
@@ -165,6 +174,17 @@ export interface AnswerSignals {
   firstPick?: string;
 }
 
+/** What a card showed beyond its prompt and options (learnlog::CardShown). */
+export interface CardShownIn {
+  key: string;
+  position?: number;
+  ofCards?: number;
+  hint?: string;
+  tokens?: string[];
+  image?: FileId | null;
+  meaning?: string;
+}
+
 /** An event for the learning log (learnlog::EventIn). */
 export interface LearningEventIn {
   kind: LearningEventKind;
@@ -173,6 +193,9 @@ export interface LearningEventIn {
   lessonId?: LessonId;
   run?: string;
   at?: number;
+  /** Where it happened: the course and how it was reached (learnLog.ts fills these in). */
+  courseId?: CourseId | null;
+  source?: PracticeSource;
   details?: {
     atCard?: number;
     ofCards?: number;
@@ -240,6 +263,10 @@ export const api = {
     prompt?: string;
     pl?: string;
     signals?: AnswerSignals;
+    /** Where it is practised from (the plan's context, handed back). */
+    context?: PracticeContext;
+    /** What else the card showed: its key, place in the run, hint, tiles. */
+    card?: CardShownIn;
   }) => call(AnswerResultSchema, "submit_answer", { answer }),
   xpDay: (day: number) => call(XpDaySchema, "xp_day", { day }),
   /** Events for the learning log, in one batch (learnLog.ts sends them). */
@@ -253,7 +280,18 @@ export const api = {
     options?: string[];
     run?: string;
     signals?: AnswerSignals;
+    card?: CardShownIn;
   }) => call(GameAnsweredSchema, "quick_game_answer", { answer }),
+  /** A page of the raw learning log, newest first, after `before`. */
+  rawLog: (filter: RawFilter, before: RawCursor | null, limit = 50) =>
+    call(RawPageSchema, "learning_raw_log", { filter, before, limit }),
+  /** Saves the filtered log as CSV or JSON where the learner picks; null if cancelled. */
+  rawLogExport: (filter: RawFilter, format: "csv" | "json") =>
+    call(z.string().nullable(), "learning_log_export", { filter, format }),
+  contextStats: (subject: { itemId?: string; tag?: string; topic?: string }, groupBy: string, filter: Filter) =>
+    call(ContextStatsSchema, "context_stats", { subject, groupBy, filter }),
+  metTopics: (filter: Filter) => call(TopicsPageSchema, "met_topics", { filter }),
+  metTopic: (key: string, filter: Filter) => call(TopicDetailSchema, "met_topic", { key, filter }),
   analyticsOverview: (filter: Filter) => call(OverviewSchema, "analytics_overview", { filter }),
   analyticsHard: (kind: HardKind, filter: Filter, limit = 50) =>
     call(z.array(HardItemSchema), "analytics_hard", { kind, filter, limit }),
@@ -296,11 +334,12 @@ export const api = {
     call(z.array(ResolvedIdSchema), "ids_resolve", { ids }),
   diagnostics: () => call(z.array(DiagnosticEntrySchema), "diagnostics_list"),
   diagnosticsClear: () => run("diagnostics_clear"),
-  lessonSession: (lessonId: LessonId) =>
-    call(SessionPlanSchema, "lesson_session", { lessonId }),
+  /** A drill's plan; `context` says where it was opened from (the log keeps it). */
+  lessonSession: (lessonId: LessonId, context?: PracticeContext) =>
+    call(SessionPlanSchema, "lesson_session", { lessonId, context: context ?? null }),
   /** A drill is done: its score schedules the next check-in. */
-  lessonFinish: (lessonId: LessonId, correct: number, total: number) =>
-    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, total }),
+  lessonFinish: (lessonId: LessonId, correct: number, total: number, context?: PracticeContext) =>
+    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, total, context: context ?? null }),
   lessonSetPeriod: (lessonId: LessonId, periodDays: number) =>
     call(LessonSchema, "lesson_set_period", { lessonId, periodDays }),
   lessonDelete: (lessonId: LessonId) => run("lesson_delete", { lessonId }),
@@ -315,8 +354,8 @@ export const api = {
   /** The listening lesson for a song, made on first ask. */
   lessonForSong: (songId: SongId) =>
     call(LessonSchema, "lesson_for_song", { songId }),
-  checkinStart: (lessonId: LessonId, streamId: string) =>
-    call(CheckinTurnSchema, "checkin_start", { lessonId, streamId }),
+  checkinStart: (lessonId: LessonId, streamId: string, context?: PracticeContext) =>
+    call(CheckinTurnSchema, "checkin_start", { lessonId, streamId, context: context ?? null }),
   checkinSend: (checkinId: CheckinId, message: string, streamId: string) =>
     call(CheckinTurnSchema, "checkin_send", { checkinId, message, streamId }),
   /** Ends a writing conversation; the partner gives its verdict. */
