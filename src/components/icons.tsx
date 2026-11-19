@@ -419,3 +419,35 @@ export function DevicesIcon() {
     </Glyph>
   );
 }
+
+/** Half light, half dark: the app's appearance. */
+export function ThemeIcon() {
+  return (
+    <Glyph>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" />
+    </Glyph>
+  );
+}
+
+/** A stack of disks: the learner's data, kept in one database. */
+export function DataIcon() {
+  return (
+    <Glyph>
+      <ellipse cx="12" cy="6" rx="7.5" ry="2.8" />
+      <path d="M4.5 6v12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6" />
+      <path d="M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8" />
+    </Glyph>
+  );
+}
+
+/** A calendar day ticked off: the daily practice. */
+export function CalendarIcon() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      <path d="M9 14.5l2 2 4-4" />
+    </Glyph>
+  );
+}

@@ -78,7 +78,7 @@ function lastSynced(status: SyncStatus): string | null {
  * Shows this device and the others, adds one (a QR code to scan) or joins
  * another's, and syncs on request.
  */
-export function Devices({ onBack }: { onBack: () => void }) {
+export function Devices({ onBack }: { onBack?: () => void }) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"rename" | "offer" | "join" | null>(null);

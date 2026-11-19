@@ -33,7 +33,7 @@ function P({ children }: { children: ReactNode }) {
  * How to use the app, and why it works the way it does: a page under
  * Settings to read once, and come back to.
  */
-export function HowToUse({ onBack }: { onBack: () => void }) {
+export function HowToUse({ onBack }: { onBack?: () => void }) {
   return (
     <Screen title="How to use" subtitle={`${APP}, and the idea behind it`} onBack={onBack} nav={false}>
       <Part title="The idea">

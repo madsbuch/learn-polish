@@ -50,7 +50,7 @@ type Editing = { id: MemoryId | null; content: string; category: MemoryCategory 
  * What the tutor and the examiner remember about the learner. Everything
  * here goes into their prompts, so the learner can correct or delete any of it.
  */
-export function Memories({ onBack }: { onBack: () => void }) {
+export function Memories({ onBack }: { onBack?: () => void }) {
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
