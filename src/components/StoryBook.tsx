@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button, IconButton, Text } from "../design";
 import { useBackHandler } from "../lib/back";
@@ -20,13 +14,7 @@ import {
 import { toast } from "../lib/toast";
 import type { LessonId, StoryInfo } from "../lib/types";
 import { CloseIcon, PlayerIcon } from "./icons";
-import {
-  StoryDots,
-  StoryLines,
-  StoryPage,
-  StoryPicture,
-  usePageTurns,
-} from "./Story";
+import { StoryDots, StoryLines, StoryPage, StoryPicture, usePageTurns } from "./Story";
 
 /*
  * A story lesson's picture book: the story to read again from its page,
@@ -56,9 +44,7 @@ export function StoryBook({
   startAt?: number;
   onClose: () => void;
 }) {
-  const [page, setPage] = useState(
-    Math.min(Math.max(0, startAt), story.panels.length - 1),
-  );
+  const [page, setPage] = useState(Math.min(Math.max(0, startAt), story.panels.length - 1));
   const [direction, setDirection] = useState<"on" | "back">("on");
   const [english, setEnglish] = useState(false);
   const body = useRef<HTMLDivElement>(null);
@@ -77,10 +63,7 @@ export function StoryBook({
     return { lines: all, places: at };
   }, [story.panels]);
   const key = conversationKey(lines);
-  const playing = useSyncExternalStore(
-    subscribeConversation,
-    currentConversation,
-  );
+  const playing = useSyncExternalStore(subscribeConversation, currentConversation);
   const narrating = playing?.key === key ? playing : null;
   const reading = narrating ? places[narrating.index] : undefined;
 
@@ -96,10 +79,7 @@ export function StoryBook({
   function listenFrom(p: number) {
     const first = places.findIndex((place) => place.page >= p);
     playConversation(lines, Math.max(0, first), GAP_MS).catch(() =>
-      toast(
-        "The story could not be read aloud: check the voice in Settings → Voices & sound.",
-        "error",
-      ),
+      toast("The story could not be read aloud: check the voice in Settings → Voices & sound.", "error"),
     );
   }
   const started = useRef(false);
@@ -136,18 +116,9 @@ export function StoryBook({
   const panel = story.panels[page];
   if (!panel) return null;
   return (
-    <div
-      className="story-book"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
+    <div className="story-book" role="dialog" aria-modal="true" aria-label={title}>
       <div className="story-book__top">
-        <IconButton
-          icon={<CloseIcon />}
-          label="Close the book"
-          onClick={close}
-        />
+        <IconButton icon={<CloseIcon />} label="Close the book" onClick={close} />
         <div className="grow story-book__title">
           <Text weight="bold" ellipsis>
             {title}
@@ -157,26 +128,14 @@ export function StoryBook({
         <Button
           size="sm"
           variant={narrating?.playing ? "primary" : "secondary"}
-          icon={
-            narrating?.playing ? (
-              <PlayerIcon.stop size={14} />
-            ) : (
-              <PlayerIcon.play size={14} />
-            )
-          }
-          onClick={() =>
-            narrating?.playing ? stopConversation() : listenFrom(page)
-          }
+          icon={narrating?.playing ? <PlayerIcon.stop size={14} /> : <PlayerIcon.play size={14} />}
+          onClick={() => (narrating?.playing ? stopConversation() : listenFrom(page))}
         >
           {narrating?.playing ? "Stop" : "Listen"}
         </Button>
       </div>
       <div className="story-book__body" ref={body}>
-        <div
-          className="story-book__page page-turn-in"
-          data-dir={direction}
-          key={panel.id}
-        >
+        <div className="story-book__page page-turn-in" data-dir={direction} key={panel.id}>
           <StoryPage picture={<StoryPicture panel={panel} />}>
             <StoryLines
               panel={panel}
@@ -186,12 +145,7 @@ export function StoryBook({
               speaking={reading?.page === page ? reading.line : -1}
             />
             <div className="story-book__tools">
-              <Button
-                size="sm"
-                variant="plain"
-                onClick={() => setEnglish((on) => !on)}
-                aria-pressed={english}
-              >
+              <Button size="sm" variant="plain" onClick={() => setEnglish((on) => !on)} aria-pressed={english}>
                 {english ? "Hide English" : "Show English"}
               </Button>
             </div>
@@ -199,11 +153,7 @@ export function StoryBook({
         </div>
       </div>
       <div className="story-book__foot">
-        <Button
-          variant="secondary"
-          disabled={page === 0}
-          onClick={() => turn(page - 1)}
-        >
+        <Button variant="secondary" disabled={page === 0} onClick={() => turn(page - 1)}>
           Back
         </Button>
         <Text variant="caption" tone="faint">

@@ -802,12 +802,17 @@ fn is_key_set(db: &Db) -> bool {
 /// drawing is that device's, or both would draw it and pay twice.
 pub fn resume_pending(app: &tauri::AppHandle) {
     use tauri::Manager;
-    let mut lessons: Vec<LessonId> = {
+    let lessons: Vec<LessonId> = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
-        pending(&mut guard, None).into_iter().map(|(lesson, _)| lesson).collect()
+        let mut lessons: Vec<LessonId> = Vec::new();
+        for (lesson, _) in pending(&mut guard, None) {
+            if !lessons.contains(&lesson) {
+                lessons.push(lesson);
+            }
+        }
+        lessons
     };
-    lessons.dedup();
     for lesson_id in lessons {
         draw_in_background(app, lesson_id);
     }

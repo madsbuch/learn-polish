@@ -5,21 +5,10 @@ import { api } from "../lib/api";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { sectionLabel } from "../lib/lyrics";
 import { livePosition, seek, usePlayer, type QueueItem } from "../lib/player";
-import {
-  chooseBlanks,
-  fold,
-  LEAD_S,
-  tokens,
-  type Blank,
-} from "../lib/singAlong";
+import { chooseBlanks, fold, LEAD_S, tokens, type Blank } from "../lib/singAlong";
 import type { GlossWord, SongId, TimedLine, TrackId } from "../lib/types";
 import { WordChat } from "./WordChat";
-import {
-  placeUnder,
-  useDismiss,
-  WordPopover,
-  type Tapped,
-} from "./WordPopover";
+import { placeUnder, useDismiss, WordPopover, type Tapped } from "./WordPopover";
 
 /**
  * Lyrics that follow the music: the line being sung is highlighted and kept
@@ -37,13 +26,9 @@ import {
  * would scroll those a moment apart). The choices sit outside the box.
  */
 /** Who spoke last before line `i` — a name shows only when the speaker changes. */
-function lastSpeaker(
-  lines: { speaker?: string | null; section: string | null }[],
-  i: number,
-): string | null {
+function lastSpeaker(lines: { speaker?: string | null; section: string | null }[], i: number): string | null {
   for (let j = i - 1; j >= 0; j--) {
-    if (lines[j].section)
-      return j === i - 1 ? null : (lines[j].speaker ?? null);
+    if (lines[j].section) return j === i - 1 ? null : (lines[j].speaker ?? null);
     if (lines[j].speaker) return lines[j].speaker ?? null;
   }
   return null;
@@ -75,11 +60,7 @@ function useGlossary(songId: SongId): Map<string, GlossWord> {
       cancelled = true;
     };
   }, [songId]);
-  return useMemo(
-    () =>
-      glossary?.id === songId ? glossary.words : new Map<string, GlossWord>(),
-    [glossary, songId],
-  );
+  return useMemo(() => (glossary?.id === songId ? glossary.words : new Map<string, GlossWord>()), [glossary, songId]);
 }
 
 type Mark = "right" | "missed";
@@ -130,8 +111,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
     return () => window.clearInterval(timer);
   }, [player.playing]);
 
-  const lines =
-    item.track.lines ?? (fetched?.id === trackId ? fetched.lines : null);
+  const lines = item.track.lines ?? (fetched?.id === trackId ? fetched.lines : null);
   const position = livePosition(player);
   let current = -1;
   if (lines) {
@@ -142,10 +122,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
   }
 
   // The blanks, once per song (and once its meanings are in).
-  const blanks = useMemo(
-    () => (lines ? chooseBlanks(lines, glossary) : new Map<number, Blank>()),
-    [lines, glossary],
-  );
+  const blanks = useMemo(() => (lines ? chooseBlanks(lines, glossary) : new Map<number, Blank>()), [lines, glossary]);
   // A new take, or Sing along started again: a fresh score.
   useEffect(() => {
     setMarks({});
@@ -171,14 +148,11 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
     if (!overdueKey) return;
     setMarks((m) => ({
       ...m,
-      ...Object.fromEntries(
-        overdueKey.split(",").map((i) => [i, "missed" as const]),
-      ),
+      ...Object.fromEntries(overdueKey.split(",").map((i) => [i, "missed" as const])),
     }));
   }, [overdueKey]);
   useEffect(() => setTyped(""), [active]);
-  const allMarked =
-    singing && blanks.size > 0 && Object.keys(marks).length === blanks.size;
+  const allMarked = singing && blanks.size > 0 && Object.keys(marks).length === blanks.size;
   const rightCount = Object.values(marks).filter((m) => m === "right").length;
   useEffect(() => {
     if (allMarked)
@@ -195,10 +169,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
     const container = box.current;
     const line = currentRef.current;
     if (!container || !line) return;
-    const target = Math.max(
-      0,
-      Math.round(line.offsetTop - container.clientHeight * 0.35),
-    );
+    const target = Math.max(0, Math.round(line.offsetTop - container.clientHeight * 0.35));
     // One smooth scroll per line change, and none when it is already there.
     if (Math.abs(container.scrollTop - target) < 2) return;
     container.scrollTo({ top: target, behavior: "smooth" });
@@ -245,17 +216,11 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
   }
 
   /** A Polish line's words, each tappable; in Sing along, its blank. */
-  function words(
-    text: string,
-    i: number,
-    polish: boolean,
-    gloss: string | null,
-  ) {
+  function words(text: string, i: number, polish: boolean, gloss: string | null) {
     if (!polish) return text;
     const blank = singing ? blanks.get(i) : undefined;
     const mark = marks[i];
-    const shown =
-      blank && lines && (mark || position >= lines[i].start - LEAD_S);
+    const shown = blank && lines && (mark || position >= lines[i].start - LEAD_S);
     return tokens(text).map((t, k) => {
       const key = `${i}-${k}`;
       if (shown && blank.token === k) {
@@ -304,12 +269,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
   // else the word in its line.
   const known = talk ? glossary.get(talk.form) : undefined;
   const chat = !talk ? null : known?.wordId ? (
-    <WordChat
-      itemKind="word"
-      itemId={known.wordId}
-      title={known.pl}
-      onClose={() => setTalk(null)}
-    />
+    <WordChat itemKind="word" itemId={known.wordId} title={known.pl} onClose={() => setTalk(null)} />
   ) : (
     <WordChat
       itemKind="lyric"
@@ -326,11 +286,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
   const finished = allMarked;
   const blank = active !== null ? blanks.get(active) : undefined;
   // The score shows from the last blank until the next song's first.
-  const shownScore = finished
-    ? { title: item.song.title, right, total }
-    : done === 0 && active === null
-      ? score
-      : null;
+  const shownScore = finished ? { title: item.song.title, right, total } : done === 0 && active === null ? score : null;
 
   const tools = (
     <div className="follow-tools">
@@ -357,9 +313,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
             {shownScore.right} of {shownScore.total}
           </Text>
           <Text variant="small" tone="dim" className="grow" ellipsis>
-            {shownScore.right === shownScore.total
-              ? "Every word — bravo!"
-              : `words filled in “${shownScore.title}”`}
+            {shownScore.right === shownScore.total ? "Every word — bravo!" : `words filled in “${shownScore.title}”`}
           </Text>
           {finished ? (
             <Button
@@ -377,11 +331,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
       ) : blank && active !== null ? (
         <div className="sing-choices pop" key={active}>
           {blank.choices.map((choice) => (
-            <button
-              key={choice}
-              className="option sing-choice"
-              onClick={() => answer(choice)}
-            >
+            <button key={choice} className="option sing-choice" onClick={() => answer(choice)}>
               {choice}
             </button>
           ))}
@@ -433,15 +383,9 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
               <div className="t-eyebrow">{sectionLabel(section.kind)}</div>
               {section.lines.map((line, j) => (
                 <div key={j} className="follow-line" data-lang="pair">
-                  {section.kind !== "chorus" && line.en ? (
-                    <span className="en">{line.en}</span>
-                  ) : null}
-                  <span className="pl">
-                    {words(line.pl, -1 - i * 1000 - j, true, line.en || null)}
-                  </span>
-                  {section.kind === "chorus" && line.en ? (
-                    <span className="gloss">{line.en}</span>
-                  ) : null}
+                  {section.kind !== "chorus" && line.en ? <span className="en">{line.en}</span> : null}
+                  <span className="pl">{words(line.pl, -1 - i * 1000 - j, true, line.en || null)}</span>
+                  {section.kind === "chorus" && line.en ? <span className="gloss">{line.en}</span> : null}
                 </div>
               ))}
             </div>
@@ -457,16 +401,10 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
     <>
       {tools}
       {bar}
-      <div
-        className="follow-lyrics"
-        ref={box}
-        data-singing={singing || undefined}
-      >
+      <div className="follow-lyrics" ref={box} data-singing={singing || undefined}>
         {lines.map((line, i) => (
           <div key={i}>
-            {line.section ? (
-              <div className="t-eyebrow follow-eyebrow">{line.section}</div>
-            ) : null}
+            {line.section ? <div className="t-eyebrow follow-eyebrow">{line.section}</div> : null}
             {line.speaker && line.speaker !== lastSpeaker(lines, i) ? (
               <div className="follow-speaker">{line.speaker}</div>
             ) : null}
@@ -474,9 +412,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
               ref={i === current ? currentRef : undefined}
               className="follow-line"
               data-lang={line.lang || "other"}
-              data-state={
-                i === current ? "current" : i < current ? "past" : "next"
-              }
+              data-state={i === current ? "current" : i < current ? "past" : "next"}
               onClick={() => seek(line.start)}
             >
               <span className={line.lang === "en" ? "en" : "pl"}>

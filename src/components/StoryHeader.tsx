@@ -17,29 +17,17 @@ import { StoryBook } from "./StoryBook";
  * in as the core reports, `stories://changed`), or failed with its reason
  * and a button to draw it again.
  */
-export function StoryHeader({
-  lesson,
-  onChanged,
-}: {
-  lesson: LessonDetail;
-  onChanged: () => void;
-}) {
+export function StoryHeader({ lesson, onChanged }: { lesson: LessonDetail; onChanged: () => void }) {
   const story = lesson.story;
-  const [open, setOpen] = useState<{ listen: boolean; page: number } | null>(
-    null,
-  );
+  const [open, setOpen] = useState<{ listen: boolean; page: number } | null>(null);
   const [retrying, setRetrying] = useState<PanelId | "all" | null>(null);
 
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
-    const off = onEvent(
-      z.object({ lessonId: LessonIdSchema, status: z.string() }),
-      "stories://changed",
-      (event) => {
-        if (event.payload.lessonId === lesson.id) changed.current();
-      },
-    );
+    const off = onEvent(z.object({ lessonId: LessonIdSchema, status: z.string() }), "stories://changed", (event) => {
+      if (event.payload.lessonId === lesson.id) changed.current();
+    });
     return () => {
       void off.then((stop) => stop());
     };
@@ -62,9 +50,7 @@ export function StoryHeader({
   const panels = story.panels;
   const ready = panels.filter((p) => p.status === "ready").length;
   const failed = panels.filter((p) => p.status === "failed").length;
-  const making = panels.some(
-    (p) => p.status === "waiting" || p.status === "drawing",
-  );
+  const making = panels.some((p) => p.status === "waiting" || p.status === "drawing");
   const cover = panels.find((p) => p.image) ?? panels[0];
 
   return (
@@ -85,11 +71,7 @@ export function StoryHeader({
         ) : null}
         <div className="story-header__side">
           <Inline gap={2} wrap>
-            <Button
-              variant="secondary"
-              icon={<StoryIcon />}
-              onClick={() => setOpen({ listen: false, page: 0 })}
-            >
+            <Button variant="secondary" icon={<StoryIcon />} onClick={() => setOpen({ listen: false, page: 0 })}>
               Read the picture book
             </Button>
             <Button
@@ -123,15 +105,10 @@ export function StoryHeader({
             <Banner tone="error">
               <Inline gap={2} justify="between" wrap>
                 <span>
-                  {failed === 1 ? "One picture" : `${failed} pictures`} could
-                  not be drawn. The story reads without
+                  {failed === 1 ? "One picture" : `${failed} pictures`} could not be drawn. The story reads without
                   {failed === 1 ? " it" : " them"}.
                 </span>
-                <Button
-                  size="sm"
-                  loading={retrying === "all"}
-                  onClick={() => void redraw(null)}
-                >
+                <Button size="sm" loading={retrying === "all"} onClick={() => void redraw(null)}>
                   Try again
                 </Button>
               </Inline>
