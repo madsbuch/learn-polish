@@ -1138,7 +1138,13 @@ async fn render(app: &AppHandle, song_id: SongId) -> Result<()> {
         .into_iter()
         .collect::<Result<_>>()?;
 
-    let episode = assemble(&song.sections, &clips, &audio)?;
+    let Episode { wav, duration, lines } = assemble(&song.sections, &clips, &audio)?;
+    drop(clips);
+    // Stored as MP3, like all speech (audio.rs). An episode is minutes of
+    // audio: encoded off the async runtime.
+    let (audio_mime, audio_bytes) = tauri::async_runtime::spawn_blocking(move || crate::audio::compact(crate::audio::WAV.to_string(), wav))
+        .await
+        .map_err(|e| Error::msg(format!("Could not store the episode's audio: {e}")))?;
 
     // The article's picture is the cover; one already downloaded is kept.
     let old_image = old.and_then(|(_, image)| image);
@@ -1150,7 +1156,8 @@ async fn render(app: &AppHandle, song_id: SongId) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
     let dir = files::media_dir(app)?;
-    let audio_id = files::store(conn, files::SONG_AUDIO, &format!("podcast-{song_id}.wav"), "audio/wav", &episode.wav)?;
+    let audio_name = format!("podcast-{song_id}.{}", files::extension_for(&audio_mime));
+    let audio_id = files::store(conn, files::SONG_AUDIO, &audio_name, &audio_mime, &audio_bytes)?;
     files::materialize(conn, &dir, audio_id)?;
     let image_id = match image {
         Some((url, mime, bytes)) => {
@@ -1162,14 +1169,14 @@ async fn render(app: &AppHandle, song_id: SongId) -> Result<()> {
         }
         None => old_image,
     };
-    let lines = serde_json::to_string(&episode.lines)?;
+    let lines = serde_json::to_string(&lines)?;
     diesel::insert_into(song_tracks::table)
         .values((
             song_tracks::id.eq(TrackId::new()),
             song_tracks::song_id.eq(song_id),
             song_tracks::ord.eq(0),
             song_tracks::remote_id.eq("episode"),
-            song_tracks::duration.eq(episode.duration),
+            song_tracks::duration.eq(duration),
             song_tracks::audio_file_id.eq(audio_id),
             song_tracks::image_file_id.eq(image_id),
             song_tracks::timed_lines.eq(&lines),
@@ -1177,7 +1184,7 @@ async fn render(app: &AppHandle, song_id: SongId) -> Result<()> {
         .on_conflict((song_tracks::song_id, song_tracks::remote_id))
         .do_update()
         .set((
-            song_tracks::duration.eq(episode.duration),
+            song_tracks::duration.eq(duration),
             song_tracks::audio_file_id.eq(audio_id),
             song_tracks::image_file_id.eq(image_id),
             song_tracks::timed_lines.eq(&lines),
@@ -1200,44 +1207,6 @@ pub struct Episode {
     pub wav: Vec<u8>,
     pub duration: f64,
     pub lines: Vec<TimedLine>,
-}
-
-/// The samples of a 16-bit PCM WAV clip: its rate, channels and data.
-fn pcm_of(wav: &[u8]) -> Result<(u32, u16, &[u8])> {
-    let bad = || Error::msg("A speech clip was not readable audio.");
-    if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
-        return Err(bad());
-    }
-    let mut at = 12;
-    let mut format: Option<(u32, u16)> = None;
-    while at + 8 <= wav.len() {
-        let id = &wav[at..at + 4];
-        let size = usize::try_from(u32::from_le_bytes([wav[at + 4], wav[at + 5], wav[at + 6], wav[at + 7]])).unwrap_or(usize::MAX);
-        let body = at + 8;
-        let end = (body + size).min(wav.len());
-        match id {
-            b"fmt " if end - body >= 16 => {
-                let tag = u16::from_le_bytes([wav[body], wav[body + 1]]);
-                let channels = u16::from_le_bytes([wav[body + 2], wav[body + 3]]);
-                let rate = u32::from_le_bytes([wav[body + 4], wav[body + 5], wav[body + 6], wav[body + 7]]);
-                let bits = u16::from_le_bytes([wav[body + 14], wav[body + 15]]);
-                if tag != 1 || bits != 16 || channels == 0 || rate == 0 {
-                    return Err(Error::msg("A speech clip was not 16-bit PCM audio."));
-                }
-                format = Some((rate, channels));
-            }
-            b"data" => {
-                let (rate, channels) = format.ok_or_else(bad)?;
-                let frame = 2 * usize::from(channels);
-                let data = &wav[body..end];
-                return Ok((rate, channels, &data[..data.len() - data.len() % frame]));
-            }
-            _ => {}
-        }
-        // Chunks are padded to an even length.
-        at = body + size + (size & 1);
-    }
-    Err(bad())
 }
 
 /// Audio being put together: 16-bit samples in one format, and the time.
@@ -1265,7 +1234,7 @@ impl Tape {
     /// Plays a clip onto the tape and returns when it starts and ends. The
     /// first clip sets the format, after a moment of silence.
     fn record(&mut self, wav: &[u8]) -> Result<(f64, f64)> {
-        let (rate, channels, data) = pcm_of(wav)?;
+        let (rate, channels, data) = crate::audio::pcm_of(wav)?;
         match self.format {
             None => {
                 self.format = Some((rate, channels));
@@ -1358,9 +1327,9 @@ mod tests {
     #[test]
     fn wav_clips_are_read_back() {
         let wav = clip(10);
-        let (rate, channels, data) = pcm_of(&wav).unwrap();
+        let (rate, channels, data) = crate::audio::pcm_of(&wav).unwrap();
         assert_eq!((rate, channels, data.len()), (1000, 1, 20));
-        assert!(pcm_of(b"not a wav file").is_err());
+        assert!(crate::audio::pcm_of(b"not a wav file").is_err());
     }
 
     #[test]
@@ -1394,7 +1363,7 @@ mod tests {
             assert!(close(got.2, want.2) && close(got.3, want.3), "{got:?} vs {want:?}");
         }
         assert!(close(episode.duration, 14.0), "a pause after the last line: {}", episode.duration);
-        assert_eq!(pcm_of(&episode.wav).unwrap().2.len(), 14_000 * 2);
+        assert_eq!(crate::audio::pcm_of(&episode.wav).unwrap().2.len(), 14_000 * 2);
     }
 
     #[test]
