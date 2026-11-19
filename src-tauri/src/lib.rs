@@ -163,6 +163,8 @@ pub fn run() {
                 songs::resume_pending(app);
                 // Picture lessons whose drawing an earlier run did not finish.
                 pictures::draw_missing_in_background(app);
+                // Course pictures the tutor asked for that an earlier run did not draw.
+                pictures::draw_wanted_in_background(app);
                 // Scene lessons whose picture an earlier run did not finish.
                 scenes::resume_pending(app);
                 // Story lessons whose panels an earlier run did not finish drawing.
@@ -234,6 +236,7 @@ pub fn run() {
             wiki::source_remove,
             wiki::fact_check_lesson,
             pictures::course_picture_delete,
+            pictures::course_picture_status,
             pictures::lesson_add_pictures,
             scenes::scene_make,
             stories::story_draw,

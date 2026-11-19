@@ -3285,28 +3285,19 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
                 } else if is_wiki_tool(&name) {
                     run_wiki_tool(db, &name, &arguments).await
                 } else {
-                    let mut guard = db.lock();
-                    let conn = &mut *guard;
-                    // Every new course gets a picture, whichever tool made it.
-                    let before = course_ids(conn);
-                    let done = execute(conn, &name, &arguments);
-                    for course_id in course_ids(conn).difference(&before) {
-                        crate::pictures::draw_in_background(app, *course_id);
+                    let (done, wanted) = run_app_tool(db, &name, &arguments);
+                    // Work in the background starts once the lock is free:
+                    // each of these takes it too, and the database's lock is
+                    // not reentrant (taken twice here, it would wait for
+                    // itself forever, and every screen with it).
+                    for course_id in wanted {
+                        crate::pictures::draw_in_background(app, course_id);
                     }
-                    if name == "create_picture_lesson" {
-                        drop(guard);
-                        crate::pictures::draw_missing_in_background(app);
-                        return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
-                    }
-                    if name == "create_scene_lesson" {
-                        drop(guard);
-                        crate::scenes::resume_pending(app);
-                        return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
-                    }
-                    if name == "create_story_lesson" {
-                        drop(guard);
-                        crate::stories::resume_pending(app);
-                        return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
+                    match name.as_str() {
+                        "create_picture_lesson" => crate::pictures::draw_missing_in_background(app),
+                        "create_scene_lesson" => crate::scenes::resume_pending(app),
+                        "create_story_lesson" => crate::stories::resume_pending(app),
+                        _ => {}
                     }
                     done
                 };
@@ -3339,6 +3330,27 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
     let conn = &mut *guard;
     let id = append(conn, conversation_id, "assistant", &reply, &actions)?;
     Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
+}
+
+/// Runs one of the tools that only write to the database, in one
+/// transaction, under the lock — released when this returns. Returns the
+/// courses it made that want a picture (`pictures::want`, recorded here so
+/// the drawing survives the app closing before it is done).
+fn run_app_tool(db: &Db, name: &str, arguments: &str) -> (Outcome, Vec<CourseId>) {
+    let mut guard = db.lock();
+    let conn = &mut *guard;
+    // Every new course gets a picture, whichever tool made it.
+    let before = course_ids(conn);
+    let done = execute(conn, name, arguments);
+    let mut wanted = Vec::new();
+    for course_id in course_ids(conn).difference(&before) {
+        match crate::pictures::want(conn, *course_id) {
+            Ok(true) => wanted.push(*course_id),
+            Ok(false) => {}
+            Err(error) => crate::diagnostics::note("background", format!("Could not ask for course {course_id}'s picture: {error}")),
+        }
+    }
+    (done, wanted)
 }
 
 fn course_ids(conn: &mut Conn) -> HashSet<CourseId> {

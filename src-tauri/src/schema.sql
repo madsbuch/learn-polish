@@ -8,6 +8,10 @@
 -- ones marked local below; the sync triggers on the others are made from
 -- this schema in Rust (sync/triggers.rs), not written here.
 
+-- Columns added by later versions go at the end, as ALTER TABLE puts them:
+-- level and level_checked_at, its CEFR level (levels.rs); picture_wanted_at,
+-- when the tutor made it and asked for its picture, until the picture is
+-- drawn or the learner deletes it (pictures.rs): work to resume.
 CREATE TABLE IF NOT EXISTS courses (
     id         TEXT PRIMARY KEY NOT NULL,
     slug       TEXT    NOT NULL UNIQUE,
@@ -26,7 +30,7 @@ CREATE TABLE IF NOT EXISTS courses (
     -- When the learner closed it as mastered: it is kept as a trophy and its
     -- lessons leave the check-ins (courses::close).
     closed_at    INTEGER
-, level TEXT, level_checked_at INTEGER);
+, level TEXT, level_checked_at INTEGER, picture_wanted_at INTEGER);
 
 CREATE TABLE IF NOT EXISTS words (
     id       TEXT PRIMARY KEY NOT NULL,

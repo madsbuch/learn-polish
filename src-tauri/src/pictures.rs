@@ -47,8 +47,19 @@ pub fn prompt(conn: &mut Conn, course_id: CourseId) -> Result<String> {
 /// Draws a new picture for a course, replacing the old one. Returns its file
 /// id (the webview shows it through the media protocol).
 #[tauri::command]
-pub async fn course_picture(db: State<'_, Db>, course_id: CourseId) -> Result<FileId> {
-    draw(&db, course_id).await
+pub async fn course_picture(app: tauri::AppHandle, db: State<'_, Db>, course_id: CourseId) -> Result<FileId> {
+    set_status(&app, course_id, Status::Drawing);
+    match draw(&db, course_id, false).await {
+        Ok(Some(file_id)) => {
+            set_status(&app, course_id, Status::Idle);
+            Ok(file_id)
+        }
+        Ok(None) => Err(Error::msg("The picture was not kept.")),
+        Err(error) => {
+            set_status(&app, course_id, Status::Idle);
+            Err(error)
+        }
+    }
 }
 
 /// Sent as `pictures://changed` when a course got a picture in the
@@ -60,35 +71,138 @@ pub struct PictureChanged {
     pub file_id: FileId,
 }
 
-/// Draws a new course's picture in the background — every course gets one
-/// without asking. A failure (no key, a model that draws nothing) is only
-/// logged: the course is there either way, and its page can try again.
-pub fn draw_in_background(app: &tauri::AppHandle, course_id: CourseId) {
+/// Whether a course's picture is being drawn, or why it could not be:
+/// `course_picture_status`, and sent as `pictures://status` whenever it
+/// changes, so the course's page shows the drawing and a failure.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PictureStatus {
+    pub course_id: CourseId,
+    pub drawing: bool,
+    /// Why the last drawing in this run failed; none once one succeeds.
+    pub error: Option<String>,
+}
+
+enum Status {
+    Idle,
+    Drawing,
+    Failed(String),
+}
+
+/// Course pictures being drawn now, and the last failure of each, in this
+/// run only: a picture still wanted is drawn again at the next start.
+static STATUS: std::sync::Mutex<Vec<PictureStatus>> = std::sync::Mutex::new(Vec::new());
+
+fn status_of(course_id: CourseId) -> PictureStatus {
+    STATUS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|s| s.course_id == course_id)
+        .cloned()
+        .unwrap_or(PictureStatus { course_id, drawing: false, error: None })
+}
+
+fn set_status(app: &tauri::AppHandle, course_id: CourseId, status: Status) {
+    use tauri::Emitter;
+    let status = match status {
+        Status::Idle => PictureStatus { course_id, drawing: false, error: None },
+        Status::Drawing => PictureStatus { course_id, drawing: true, error: None },
+        Status::Failed(error) => PictureStatus { course_id, drawing: false, error: Some(error) },
+    };
     {
-        // A folder of one-offs (Other lessons) gets no picture.
-        use tauri::Manager;
-        let slug: Option<String> =
-            courses::table.find(course_id).select(courses::slug).first(&mut *app.state::<Db>().lock()).optional().ok().flatten();
-        if slug.is_some_and(|s| crate::courses::OPEN_ENDED.contains(&s.as_str())) {
-            return;
+        let mut all = STATUS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|s| s.course_id != course_id);
+        if status.drawing || status.error.is_some() {
+            all.push(status.clone());
         }
     }
+    let _ = app.emit("pictures://status", status);
+}
+
+/// Whether a course's picture is being drawn right now, or why the last
+/// drawing failed.
+#[tauri::command]
+pub fn course_picture_status(course_id: CourseId) -> PictureStatus {
+    status_of(course_id)
+}
+
+/// Records that a new course wants a picture: work that outlives this run,
+/// drawn by [`draw_wanted_in_background`] at the next start if this run
+/// ends first. Not for a folder of one-offs (Other lessons), nor a course
+/// with a picture. Returns whether it was marked.
+pub fn want(conn: &mut Conn, course_id: CourseId) -> Result<bool> {
+    let changed = diesel::update(
+        courses::table
+            .find(course_id)
+            .filter(courses::image_file_id.is_null())
+            .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED)),
+    )
+    .set(courses::picture_wanted_at.eq(crate::db::now_secs()))
+    .execute(conn)?;
+    Ok(changed > 0)
+}
+
+/// Draws a new course's picture in the background — every course the tutor
+/// makes gets one without asking (see [`want`]). Kept only while it is still
+/// wanted: a picture the learner deleted, or drew themselves meanwhile, is
+/// not replaced. A failure is logged and shown on the course's page, which
+/// can try again; the course is there either way.
+pub fn draw_in_background(app: &tauri::AppHandle, course_id: CourseId) {
+    if status_of(course_id).drawing {
+        return;
+    }
+    set_status(app, course_id, Status::Drawing);
     let busy = crate::work::begin(app, "Drawing a course picture…");
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let _busy = busy;
         use tauri::{Emitter, Manager};
         let db = app.state::<Db>();
-        match draw(&db, course_id).await {
-            Ok(file_id) => {
+        match draw(&db, course_id, true).await {
+            Ok(Some(file_id)) => {
+                set_status(&app, course_id, Status::Idle);
                 let _ = app.emit("pictures://changed", PictureChanged { course_id, file_id });
             }
-            Err(error) => crate::diagnostics::note("background", format!("Drawing course {course_id}'s picture failed: {error}")),
+            Ok(None) => set_status(&app, course_id, Status::Idle),
+            Err(error) => {
+                crate::diagnostics::note("background", format!("Drawing course {course_id}'s picture failed: {error}"));
+                set_status(&app, course_id, Status::Failed(error.to_string()));
+            }
         }
     });
 }
 
-async fn draw(db: &Db, course_id: CourseId) -> Result<FileId> {
+/// The courses whose picture is wanted and not drawn yet ([`want`]): only
+/// those this device wrote last (`sync::written_here`) — a course another
+/// device made is that device's to draw, or both would draw it and pay
+/// twice — and never a folder of one-offs.
+pub fn wanted(conn: &mut Conn) -> Vec<CourseId> {
+    let all: Vec<CourseId> = courses::table
+        .filter(courses::picture_wanted_at.is_not_null())
+        .filter(courses::image_file_id.is_null())
+        .filter(courses::slug.ne_all(crate::courses::OPEN_ENDED))
+        .select(courses::id)
+        .load(conn)
+        .unwrap_or_default();
+    all.into_iter().filter(|id| crate::sync::written_here(conn, "courses", &id.to_string())).collect()
+}
+
+/// At startup: draws the course pictures an earlier run was asked for and
+/// did not finish (the app closed while the tutor or the drawing was busy).
+pub fn draw_wanted_in_background(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let courses = wanted(&mut app.state::<Db>().lock());
+    for course_id in courses {
+        draw_in_background(app, course_id);
+    }
+}
+
+/// Draws a course's picture and puts it in place of the old one, which is
+/// deleted. With `only_if_wanted` (the background), the picture is kept
+/// only if the course still wants one; otherwise `None`. The lock is not
+/// held while drawing.
+async fn draw(db: &Db, course_id: CourseId, only_if_wanted: bool) -> Result<Option<FileId>> {
     let (key, model, prompt) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -98,24 +212,46 @@ async fn draw(db: &Db, course_id: CourseId) -> Result<FileId> {
     let mut guard = db.lock();
     let conn = &mut *guard;
     let _ = crate::costs::record(conn, crate::costs::PICTURES, "openrouter", &model, cost, "");
-    let name = format!("course-{course_id}-{}.{}", crate::db::now_secs(), files::extension_for(&mime));
-    let id = files::store(conn, files::COURSE_IMAGE, &name, &mime, &bytes)?;
-    let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
-    diesel::update(courses::table.find(course_id)).set(courses::image_file_id.eq(id)).execute(conn)?;
-    if let Some(old) = old {
-        files::delete(conn, &[old])?;
-    }
-    Ok(id)
+    conn.transaction(|conn| {
+        let (old, wanted): (Option<FileId>, Option<i64>) = courses::table
+            .find(course_id)
+            .select((courses::image_file_id, courses::picture_wanted_at))
+            .first(conn)
+            .optional()?
+            .ok_or_else(|| Error::msg("That course no longer exists."))?;
+        if only_if_wanted && (wanted.is_none() || old.is_some()) {
+            return Ok(None);
+        }
+        let name = format!("course-{course_id}-{}.{}", crate::db::now_secs(), files::extension_for(&mime));
+        let id = files::store(conn, files::COURSE_IMAGE, &name, &mime, &bytes)?;
+        diesel::update(courses::table.find(course_id))
+            .set((courses::image_file_id.eq(id), courses::picture_wanted_at.eq(None::<i64>)))
+            .execute(conn)?;
+        if let Some(old) = old {
+            files::delete(conn, &[old])?;
+        }
+        Ok(Some(id))
+    })
 }
 
-/// Removes a course's picture.
+/// Removes a course's picture. A picture the tutor asked for and not drawn
+/// yet is no longer wanted either: what the learner deletes is never drawn
+/// again behind their back.
 #[tauri::command]
-pub async fn course_picture_delete(db: State<'_, Db>, course_id: CourseId) -> Result<()> {
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
-    diesel::update(courses::table.find(course_id)).set(courses::image_file_id.eq(None::<FileId>)).execute(conn)?;
-    files::delete(conn, &old.into_iter().collect::<Vec<_>>())?;
+pub async fn course_picture_delete(app: tauri::AppHandle, db: State<'_, Db>, course_id: CourseId) -> Result<()> {
+    {
+        let mut guard = db.lock();
+        guard.transaction(|conn| {
+            let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
+            diesel::update(courses::table.find(course_id))
+                .set((courses::image_file_id.eq(None::<FileId>), courses::picture_wanted_at.eq(None::<i64>)))
+                .execute(conn)?;
+            files::delete(conn, &old.into_iter().collect::<Vec<_>>()).map(|_| ())
+        })?;
+    }
+    if !status_of(course_id).drawing {
+        set_status(&app, course_id, Status::Idle);
+    }
     Ok(())
 }
 

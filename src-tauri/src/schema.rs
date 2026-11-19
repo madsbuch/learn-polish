@@ -41,6 +41,7 @@ diesel::table! {
         closed_at -> Nullable<BigInt>,
         level -> Nullable<Text>,
         level_checked_at -> Nullable<BigInt>,
+        picture_wanted_at -> Nullable<BigInt>,
     }
 }
 
