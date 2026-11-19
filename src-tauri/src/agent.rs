@@ -126,6 +126,9 @@ impl<'a> Agent<'a> {
     where
         F: FnMut(ToolCall) -> ToolFuture<'a, T>,
     {
+        // The whole loop, tools and all, keeps the app alive (work.rs): not
+        // only its requests, but the moments between them.
+        let _busy = crate::work::begin(self.app, "Working with the AI…");
         let mut outcome = Outcome { text: String::new(), extras: Vec::new(), remembered: Vec::new(), failed: None };
         let (key, model) = {
             let conn = &mut *self.db.lock();

@@ -93,6 +93,9 @@ struct ImageAsk<'a> {
     content: &'a str,
 }
 
+/// The work notification's text while a request to the AI runs (work.rs).
+const WORKING: &str = "Working with the AI…";
+
 /// Asks an image model for a picture. Returns its type, bytes and cost.
 pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(String, Vec<u8>, Option<f64>)> {
     generate_image_shaped(key, model, prompt, None).await
@@ -105,6 +108,9 @@ pub async fn generate_image_shaped(
     prompt: &str,
     aspect_ratio: Option<&str>,
 ) -> Result<(String, Vec<u8>, Option<f64>)> {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
@@ -586,6 +592,9 @@ async fn request(
     max_tokens: u32,
     response_format: Option<ResponseFormat>,
 ) -> Result<Reply> {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
@@ -702,6 +711,9 @@ pub async fn look_at_image(
 /// the text, whether it was cut off, and what it cost. `empty` is the error
 /// when the model says nothing.
 async fn post_for_reply(key: &str, body: &serde_json::Value, empty: &str) -> Result<Reply> {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
@@ -964,6 +976,9 @@ pub async fn stream_turn<F>(
 where
     F: FnMut(&str),
 {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     use futures_util::StreamExt;
 
     let response = crate::http::api()
@@ -1195,6 +1210,10 @@ pub fn english_speech_prompt(text: &str) -> String {
 }
 
 async fn speech_request(key: &str, model: &str, voice: &str, prompt: &str, format: &str) -> Result<Clip> {
+    // No foreground work here: a single clip is fetched while the learner
+    // taps a speaker button, and a "working" notification flashing up for
+    // every word would be noise. Bulk downloads in the background hold
+    // their own (speech.rs).
     let response = crate::http::api()
         .post(format!("{BASE_URL}/audio/speech"))
         .bearer_auth(key)

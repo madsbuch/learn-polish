@@ -37,6 +37,7 @@ import {
   QuickGameSchema,
   QuickGamesSchema,
   FileIdSchema,
+  CoursePictureStatusSchema,
   JoinResultSchema,
   ResolvedIdSchema,
   SyncHeldSchema,
@@ -316,6 +317,9 @@ export const api = {
   sceneMake: (lessonId: LessonId, redraw: boolean) => run("scene_make", { lessonId, redraw }),
   /** A story's panel drawn again, or (`panelId` null) every panel that failed. */
   storyDraw: (lessonId: LessonId, panelId: PanelId | null) => run("story_draw", { lessonId, panelId }),
+  /** Whether its picture is being drawn (in the background too), or why it could not be. */
+  coursePictureStatus: (courseId: CourseId) =>
+    call(CoursePictureStatusSchema, "course_picture_status", { courseId }),
   coursePictureDelete: (courseId: CourseId) =>
     run("course_picture_delete", { courseId }),
   tutorConversations: () =>

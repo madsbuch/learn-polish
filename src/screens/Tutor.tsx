@@ -72,6 +72,14 @@ type Shared = {
 };
 
 /**
+ * The list as last loaded, and the conversation last open, kept while the
+ * app runs: leaving the tab and coming back shows them at once (the list
+ * then refreshes), never a spinner behind a slow database.
+ */
+let cachedConversations: Conversation[] | null = null;
+let lastOpen: ConversationId | null = null;
+
+/**
  * The Tutor tab: your conversations, newest first, with a box at the bottom
  * — writing in it starts a new conversation.
  */
@@ -92,8 +100,14 @@ export function Tutor({
   onOpenSettings: () => void;
 }) {
   // null: the list; "new": a blank conversation; a number: that conversation.
-  const [open, setOpen] = useState<ConversationId | "new" | null>(null);
-  const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [open, setOpenState] = useState<ConversationId | "new" | null>(lastOpen);
+  const [conversations, setConversations] = useState<Conversation[] | null>(cachedConversations);
+  // A started conversation is remembered for coming back to the tab; a new
+  // one is not (its first message would be sent again).
+  const setOpen = useCallback((next: ConversationId | "new" | null) => {
+    lastOpen = next === "new" ? null : next;
+    setOpenState(next);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useDraft("list");
   // The message a new conversation opens with, sent as soon as it shows.
@@ -108,7 +122,7 @@ export function Tutor({
     setOpening(ask);
     setOpen("new");
     onAsked?.();
-  }, [ask, onAsked]);
+  }, [ask, onAsked, setOpen]);
 
   function start(text: string) {
     const message = text.trim();
@@ -121,7 +135,13 @@ export function Tutor({
   const refresh = useCallback(() => {
     api
       .tutorConversations()
-      .then(setConversations)
+      .then((list) => {
+        cachedConversations = list;
+        setConversations(list);
+        setError(null);
+        // One deleted elsewhere (another device) is no longer remembered.
+        if (lastOpen !== null && !list.some((entry) => entry.id === lastOpen)) lastOpen = null;
+      })
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
 

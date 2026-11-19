@@ -28,10 +28,24 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
+/// What Android said to [`keep_working`].
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorkReport {
+    /// Why an earlier start could not come to the foreground (the service
+    /// itself was refused, after it was asked to start).
+    pub refused: Option<String>,
+    /// Whether the work's notification can be seen: on Android 13 and later
+    /// only once notifications are allowed (the work runs either way).
+    pub notifications_allowed: bool,
+}
+
 /// Keeps the app running with the screen off while it works in the
 /// background (on), or lets Android freeze it again (off). Shows a quiet
-/// notification with `label` meanwhile. Does nothing off Android.
-pub fn keep_working<R: Runtime>(app: &AppHandle<R>, on: bool, label: &str) {
+/// notification with `label` meanwhile. Does nothing off Android. An error
+/// is Android refusing (a foreground service started while the app is in
+/// the background, say), with its reason.
+pub fn keep_working<R: Runtime>(app: &AppHandle<R>, on: bool, label: &str) -> Result<WorkReport, String> {
     #[cfg(target_os = "android")]
     {
         use tauri::Manager;
@@ -41,11 +55,9 @@ pub fn keep_working<R: Runtime>(app: &AppHandle<R>, on: bool, label: &str) {
             label: &'a str,
         }
         if let Some(native) = app.try_state::<Native<R>>() {
-            if let Err(error) = native.0.run_mobile_plugin::<serde::de::IgnoredAny>("keepWorking", Args { on, label }) {
-                eprintln!("keep working ({on}): {error}");
-            }
+            return native.0.run_mobile_plugin::<WorkReport>("keepWorking", Args { on, label }).map_err(|e| e.to_string());
         }
     }
-    #[cfg(not(target_os = "android"))]
     let _ = (app, on, label);
+    Ok(WorkReport { refused: None, notifications_allowed: true })
 }

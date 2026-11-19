@@ -27,11 +27,11 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
-import type { CourseClosed, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/types";
+import type { CourseClosed, CoursePictureStatus, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/types";
 import { onEvent } from "../lib/events";
 import { useSyncReload } from "../lib/sync";
 import { z } from "zod";
-import { CourseIdSchema, FileIdSchema } from "../lib/types";
+import { CourseIdSchema, CoursePictureStatusSchema, FileIdSchema } from "../lib/types";
 
 export type CourseSection = "lessons" | "words" | "sentences";
 
@@ -73,16 +73,20 @@ export function CourseDetail({
   // The picture's file id.
   const [picture, setPicture] = useState<FileId | null>(progress.imageFileId);
   const [drawing, setDrawing] = useState(false);
+  // Drawn in the background (a new course from the tutor), or why the last
+  // drawing failed.
+  const [pictureStatus, setPictureStatus] = useState<CoursePictureStatus | null>(null);
+  const [pictureError, setPictureError] = useState<string | null>(null);
   const [celebrating, setCelebrating] = useState<CourseClosed | null>(null);
 
   async function drawPicture() {
     setDrawing(true);
-    setError(null);
+    setPictureError(null);
     try {
       setPicture(await api.coursePicture(courseId));
       onChanged();
     } catch (cause) {
-      setError(errorMessage(cause));
+      setPictureError(errorMessage(cause));
     } finally {
       setDrawing(false);
     }
@@ -92,6 +96,26 @@ export function CourseDetail({
   const [closedAt, setClosedAt] = useState<number | null>(progress.closedAt);
   /** The level's explanation, open. */
   const [levelInfo, setLevelInfo] = useState(false);
+
+  // Being drawn in the background, or failed there: say so, with a retry.
+  useEffect(() => {
+    let live = true;
+    api
+      .coursePictureStatus(courseId)
+      .then((status) => {
+        if (live) setPictureStatus(status);
+      })
+      .catch(() => undefined);
+    const off = onEvent(CoursePictureStatusSchema, "pictures://status", (event) => {
+      if (event.payload.courseId === courseId) setPictureStatus(event.payload);
+    });
+    return () => {
+      live = false;
+      void off.then((stop) => stop());
+    };
+  }, [courseId]);
+  const drawingPicture = drawing || (pictureStatus?.drawing ?? false);
+  const pictureFailed = drawingPicture ? null : (pictureError ?? pictureStatus?.error ?? null);
 
   // Drawn in the background for a new course: show it as soon as it is in.
   useEffect(() => {
@@ -159,9 +183,26 @@ export function CourseDetail({
           phone the wrappers vanish (display: contents) and all is one column. */}
       <div className="page-split">
         <div className="page-split__info">
+          {pictureFailed !== null ? (
+            <Banner tone="error">
+              <Stack gap={1}>
+                <Text as="p">The picture couldn’t be drawn — try again.</Text>
+                <Text variant="small" tone="dim" as="p">
+                  {pictureFailed}
+                </Text>
+              </Stack>
+            </Banner>
+          ) : null}
           {picture !== null || progress.openEnded ? null : (
-            <Button wide icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
-              {drawing ? "Drawing a picture…" : "Make a picture for this course"}
+            <Button
+              wide
+              variant="primary"
+              icon={<SparkIcon />}
+              loading={drawingPicture}
+              disabled={drawingPicture}
+              onClick={() => void drawPicture()}
+            >
+              {drawingPicture ? "Drawing a picture…" : pictureFailed !== null ? "Try again" : "Draw a picture"}
             </Button>
           )}
           <Inline gap={2} wrap>
@@ -276,8 +317,14 @@ export function CourseDetail({
                 Rename
               </Button>
               {picture !== null ? (
-                <Button wide icon={<SparkIcon />} loading={drawing} onClick={() => void drawPicture()}>
-                  {drawing ? "Drawing…" : "Draw a new picture"}
+                <Button
+                  wide
+                  icon={<SparkIcon />}
+                  loading={drawingPicture}
+                  disabled={drawingPicture}
+                  onClick={() => void drawPicture()}
+                >
+                  {drawingPicture ? "Drawing…" : "Draw a new picture"}
                 </Button>
               ) : null}
               <ConfirmButton

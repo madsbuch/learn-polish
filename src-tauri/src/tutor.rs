@@ -1207,7 +1207,7 @@ pub fn tool_definitions() -> Vec<Tool> {
 
 /// What a tool produced: JSON for the model, and, when the app changed, an
 /// action for the learner to see.
-struct Outcome {
+pub(crate) struct Outcome {
     result: Value,
     action: Option<TutorAction>,
 }
@@ -3336,7 +3336,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
 /// transaction, under the lock — released when this returns. Returns the
 /// courses it made that want a picture (`pictures::want`, recorded here so
 /// the drawing survives the app closing before it is done).
-fn run_app_tool(db: &Db, name: &str, arguments: &str) -> (Outcome, Vec<CourseId>) {
+pub(crate) fn run_app_tool(db: &Db, name: &str, arguments: &str) -> (Outcome, Vec<CourseId>) {
     let mut guard = db.lock();
     let conn = &mut *guard;
     // Every new course gets a picture, whichever tool made it.

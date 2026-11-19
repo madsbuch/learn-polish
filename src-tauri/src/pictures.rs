@@ -239,20 +239,23 @@ async fn draw(db: &Db, course_id: CourseId, only_if_wanted: bool) -> Result<Opti
 /// again behind their back.
 #[tauri::command]
 pub async fn course_picture_delete(app: tauri::AppHandle, db: State<'_, Db>, course_id: CourseId) -> Result<()> {
-    {
-        let mut guard = db.lock();
-        guard.transaction(|conn| {
-            let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
-            diesel::update(courses::table.find(course_id))
-                .set((courses::image_file_id.eq(None::<FileId>), courses::picture_wanted_at.eq(None::<i64>)))
-                .execute(conn)?;
-            files::delete(conn, &old.into_iter().collect::<Vec<_>>()).map(|_| ())
-        })?;
-    }
+    delete_picture(&mut db.lock(), course_id)?;
     if !status_of(course_id).drawing {
         set_status(&app, course_id, Status::Idle);
     }
     Ok(())
+}
+
+/// Removes a course's picture, and its wish for one (see
+/// [`course_picture_delete`]), in one transaction.
+pub fn delete_picture(conn: &mut Conn, course_id: CourseId) -> Result<()> {
+    conn.transaction(|conn| {
+        let old: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
+        diesel::update(courses::table.find(course_id))
+            .set((courses::image_file_id.eq(None::<FileId>), courses::picture_wanted_at.eq(None::<i64>)))
+            .execute(conn)?;
+        files::delete(conn, &old.into_iter().collect::<Vec<_>>()).map(|_| ())
+    })
 }
 
 // ---------------------------------------------------------------------------

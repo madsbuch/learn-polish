@@ -526,6 +526,42 @@ fn applying_the_same_batch_twice_changes_nothing() {
     assert_eq!(dump(&mut b.conn), before);
 }
 
+/// A big batch is taken in parts, each its own transaction, so the lock is
+/// let go between them; a pull cut off between parts records nothing as
+/// pulled, and the parts already in are found equal when it comes again.
+#[test]
+fn a_batch_taken_in_parts_ends_the_same_and_resumes() {
+    let (mut a, mut b) = (device(), device());
+    for i in 0..30 {
+        memory(&mut a, MemoryId::at(at(i), 0), "fact");
+    }
+    let batch = engine::export(&mut a.conn, 0, &b.id, 1000, 1 << 20).unwrap();
+    let total = batch.changes.len();
+    let parts = engine::parts(batch.changes.clone(), 4, 1 << 20);
+    assert!(parts.len() > 1 && parts.iter().all(|p| !p.is_empty() && p.len() <= 4));
+    assert_eq!(parts.iter().map(Vec::len).sum::<usize>(), total);
+    // Only the first part, then the connection drops.
+    engine::apply_part(&mut b.conn, &a.id, &parts[0], None).unwrap();
+    assert_eq!(engine::pulled_from(&mut b.conn, &a.id).unwrap(), 0, "nothing recorded as pulled yet");
+    // Again from the start, in parts: the first part is skipped as known.
+    let last = parts.len() - 1;
+    for (n, part) in parts.iter().enumerate() {
+        let stats = engine::apply_part(&mut b.conn, &a.id, part, (n == last).then_some(batch.upto)).unwrap();
+        if n == 0 {
+            assert_eq!(stats.applied + stats.conflicts, 0, "the first part is in already");
+        }
+    }
+    assert_eq!(engine::pulled_from(&mut b.conn, &a.id).unwrap(), batch.upto);
+    assert_eq!(count(&mut b, "SELECT count(*) AS n FROM memories"), 30);
+    // A part is kept small by size too, but always holds one change.
+    assert_eq!(engine::parts(batch.changes, 100, 1).len(), total);
+    // The digest a table at a time is the whole digest.
+    let whole = engine::digest(&mut b.conn).unwrap();
+    for table in engine::digest_tables(&mut b.conn).unwrap() {
+        assert_eq!(engine::table_digest(&mut b.conn, &table).unwrap().as_ref(), whole.get(&table));
+    }
+}
+
 #[test]
 fn a_bad_batch_changes_nothing_at_all() {
     let (mut a, mut b) = (device(), device());

@@ -5,8 +5,10 @@ import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
@@ -368,12 +370,28 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 // notification, would crash the app. It stops once it has.
                 WorkService.stopRequested = true
             }
-            invoke.resolve()
+            invoke.resolve(workReport())
         } catch (error: Exception) {
             // Android refuses a foreground service started from the
             // background; the work then runs as long as Android allows.
-            invoke.reject(error.message ?: "Could not keep working in the background")
+            invoke.reject("${error.javaClass.simpleName}: ${error.message ?: "could not keep working in the background"}")
         }
+    }
+
+    /**
+     * What the app should know about keeping working: an earlier refusal
+     * inside the service (said once), and whether its notification can be
+     * seen — on Android 13 and later only once notifications are allowed.
+     */
+    private fun workReport(): JSObject {
+        val report = JSObject()
+        WorkService.lastFailure?.let { report.put("refused", it) }
+        WorkService.lastFailure = null
+        val allowed = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(activity, "android.permission.POST_NOTIFICATIONS") ==
+            PackageManager.PERMISSION_GRANTED
+        report.put("notificationsAllowed", allowed)
+        return report
     }
 
     @Command

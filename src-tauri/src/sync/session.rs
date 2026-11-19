@@ -54,6 +54,11 @@ pub const PROTOCOL: u32 = 1;
 /// enough that one transaction never holds the database for long.
 const BATCH_ROWS: i64 = 500;
 const BATCH_BYTES: usize = 4 * 1024 * 1024;
+/// A pulled batch is taken in parts of at most this many changes and about
+/// this much data, each in its own transaction, so the database's lock is
+/// never held for long (engine::apply_part).
+const APPLY_ROWS: usize = 50;
+const APPLY_BYTES: usize = 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 /// How long a QR code works.
 pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
@@ -432,13 +437,30 @@ async fn pull<S: Store>(ch: &mut Channel, store: &S, peer: &str) -> Result<Recei
             return Err(Error::msg("expected a batch"));
         };
         let done = batch.done;
-        let p = peer.to_string();
-        match with(store, move |c| engine::apply(c, &p, &batch)).await {
-            Ok(s) => got.add(s),
-            Err(e) => {
+        // Taken in parts, each in its own transaction: between them the
+        // screens get the database (a whole batch at once held it for
+        // seconds on a phone). Only the last part records how far it got.
+        let parts = engine::parts(batch.changes, APPLY_ROWS, APPLY_BYTES);
+        let last = parts.len().saturating_sub(1);
+        let upto = batch.upto;
+        if parts.is_empty() {
+            let p = peer.to_string();
+            if let Err(e) = with(store, move |c| engine::apply_part(c, &p, &[], Some(upto))).await {
                 let _ = ch.send(&Msg::Refused { reason: format!("couldn't apply: {e}") }).await;
                 return Err(e);
             }
+        }
+        for (n, part) in parts.into_iter().enumerate() {
+            let p = peer.to_string();
+            let upto = (n == last).then_some(upto);
+            match with(store, move |c| engine::apply_part(c, &p, &part, upto)).await {
+                Ok(s) => got.add(s),
+                Err(e) => {
+                    let _ = ch.send(&Msg::Refused { reason: format!("couldn't apply: {e}") }).await;
+                    return Err(e);
+                }
+            }
+            tokio::task::yield_now().await;
         }
         if done {
             return Ok(got);
@@ -484,9 +506,26 @@ fn kind(m: &Msg) -> &'static str {
 /// Compares digests, records how the sync ended, and settles rows whose
 /// parent was deleted elsewhere — what both sides do at the end of a sync
 /// that moved something.
-fn finish_sync(conn: &mut Conn, theirs: &Hello, their_digest: &Digest, addr: Option<SocketAddr>) -> Result<(bool, Vec<String>, usize)> {
-    let mine = engine::digest(conn)?;
-    let differences = engine::digest_differences(&mine, their_digest);
+/// This device's digest, a table at a time: each table in a short read of
+/// its own, so the screens are not held up behind the whole database.
+async fn digest<S: Store>(store: &S) -> Result<Digest> {
+    let mut out = Digest::new();
+    for table in with(store, engine::digest_tables).await? {
+        let name = table.clone();
+        if let Some(d) = with(store, move |c| engine::table_digest(c, &name)).await? {
+            out.insert(table, d);
+        }
+    }
+    Ok(out)
+}
+
+async fn finish_sync<S: Store>(store: &S, theirs: Hello, their_digest: Digest, addr: Option<SocketAddr>) -> Result<(bool, Vec<String>, usize)> {
+    let mine = digest(store).await?;
+    with(store, move |c| finish_with(c, &theirs, &mine, &their_digest, addr)).await
+}
+
+fn finish_with(conn: &mut Conn, theirs: &Hello, mine: &Digest, their_digest: &Digest, addr: Option<SocketAddr>) -> Result<(bool, Vec<String>, usize)> {
+    let differences = engine::digest_differences(mine, their_digest);
     let complete = differences.is_empty();
     record_outcome(conn, &theirs.device_id, &theirs.epoch, addr, complete)?;
     let removed = engine::remove_orphans(conn)?;
@@ -530,12 +569,12 @@ async fn client_session<S: Store>(
         with(store, move |c| record_outcome(c, &p, &epoch, addr, true)).await?;
         return Ok(Outcome { peer_id: peer, peer_name: theirs.name, received, complete: true, differences: vec![], digest_skipped: true });
     }
-    ch.send(&Msg::Digest(with(store, engine::digest).await?)).await?;
+    ch.send(&Msg::Digest(digest(store).await?)).await?;
     let Msg::Digest(their_digest) = expect(ch).await? else {
         return Err(Error::msg("expected a digest"));
     };
     let t = theirs.clone();
-    let (complete, differences, removed) = with(store, move |c| finish_sync(c, &t, &their_digest, addr)).await?;
+    let (complete, differences, removed) = finish_sync(store, t, their_digest, addr).await?;
     received.removed = removed;
     Ok(Outcome { peer_id: peer, peer_name: theirs.name, received, complete, differences, digest_skipped: false })
 }
@@ -575,9 +614,9 @@ async fn server_session<S: Store>(ch: &mut Channel, store: &S, me: &Hello, their
         }
         _ => return Err(Error::msg("expected a digest")),
     };
-    ch.send(&Msg::Digest(with(store, engine::digest).await?)).await?;
+    ch.send(&Msg::Digest(digest(store).await?)).await?;
     let t = theirs.clone();
-    let (complete, differences, removed) = with(store, move |c| finish_sync(c, &t, &their_digest, addr)).await?;
+    let (complete, differences, removed) = finish_sync(store, t, their_digest, addr).await?;
     received.removed = removed;
     Ok(Outcome { peer_id: peer, peer_name: theirs.name, received, complete, differences, digest_skipped: false })
 }

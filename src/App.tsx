@@ -5,7 +5,7 @@ import { Banner, markBack, Stack, useWideLayout } from "./design";
 import { Startup, type BootStep } from "./components/Startup";
 import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
-import { syncReminder } from "./lib/notifications";
+import { askForNotificationsWhenWorking, syncReminder } from "./lib/notifications";
 import { toast } from "./lib/toast";
 import {
   keepScreenAwake,
@@ -455,6 +455,14 @@ export default function App() {
       void off.then((stop) => stop());
     };
   }, [refresh]);
+
+  // Work in the background: notifications, so its notification can show.
+  useEffect(() => {
+    const off = askForNotificationsWhenWorking();
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, []);
 
   // A background reply that changed things (a course, a song): every screen
   // reloads, wherever the learner is.

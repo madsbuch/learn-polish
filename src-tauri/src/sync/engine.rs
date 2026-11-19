@@ -884,24 +884,56 @@ fn without_foreign_keys<T>(conn: &mut Conn, f: impl FnOnce(&mut Conn) -> Result<
 /// keys are off and the triggers stand aside (`applying`) while it runs;
 /// both are as they were afterwards, whatever happens.
 pub fn apply(conn: &mut Conn, peer: &str, batch: &Batch) -> Result<ApplyStats> {
-    without_foreign_keys(conn, |conn| conn.immediate_transaction(|tx| apply_in(tx, peer, batch)))
+    apply_part(conn, peer, &batch.changes, Some(batch.upto))
 }
 
-fn apply_in(conn: &mut Conn, peer: &str, batch: &Batch) -> Result<ApplyStats> {
+/// Takes in part of a batch in one transaction, and with the last part
+/// (`upto`) records how far it has been pulled. A big batch is taken in
+/// parts, each in a transaction of its own, so the database is free for the
+/// screens between them (session.rs): a pull cut off between parts records
+/// nothing as pulled, and the parts already in are found equal next time.
+pub fn apply_part(conn: &mut Conn, peer: &str, changes: &[Change], upto: Option<i64>) -> Result<ApplyStats> {
+    without_foreign_keys(conn, |conn| conn.immediate_transaction(|tx| apply_in(tx, peer, changes, upto)))
+}
+
+fn apply_in(conn: &mut Conn, peer: &str, changes: &[Change], upto: Option<i64>) -> Result<ApplyStats> {
     set_applying(conn, true)?;
     let tables = synced_tables(conn)?;
     let mut stats = ApplyStats::default();
-    for c in &batch.changes {
+    for c in changes {
         stats.add(apply_one(conn, &tables, peer, c).map_err(|e| Error::msg(format!("{} {}: {e}", c.tbl, c.pk)))?);
     }
-    diesel::insert_into(sync_peers::table)
-        .values((sync_peers::device_id.eq(peer), sync_peers::last_pulled_seq.eq(batch.upto)))
-        .on_conflict(sync_peers::device_id)
-        .do_update()
-        .set(sync_peers::last_pulled_seq.eq(diesel::dsl::sql::<BigInt>("max(last_pulled_seq, excluded.last_pulled_seq)")))
-        .execute(conn)?;
+    if let Some(upto) = upto {
+        diesel::insert_into(sync_peers::table)
+            .values((sync_peers::device_id.eq(peer), sync_peers::last_pulled_seq.eq(upto)))
+            .on_conflict(sync_peers::device_id)
+            .do_update()
+            .set(sync_peers::last_pulled_seq.eq(diesel::dsl::sql::<BigInt>("max(last_pulled_seq, excluded.last_pulled_seq)")))
+            .execute(conn)?;
+    }
     set_applying(conn, false)?;
     Ok(stats)
+}
+
+/// Splits a batch's changes into parts of at most `rows` changes and about
+/// `bytes` of data (a part holds at least one change), for [`apply_part`].
+pub fn parts(changes: Vec<Change>, rows: usize, bytes: usize) -> Vec<Vec<Change>> {
+    let mut out: Vec<Vec<Change>> = Vec::new();
+    let mut size = 0;
+    for change in changes {
+        let this = data_size(&change.data);
+        match out.last_mut() {
+            Some(part) if part.len() < rows && size + this <= bytes => {
+                size += this;
+                part.push(change);
+            }
+            _ => {
+                size = this;
+                out.push(vec![change]);
+            }
+        }
+    }
+    out
 }
 
 /// How far this device has pulled from `peer`.
@@ -995,10 +1027,31 @@ pub struct TableDigest {
 pub type Digest = BTreeMap<String, TableDigest>;
 
 pub fn digest(conn: &mut Conn) -> Result<Digest> {
-    conn.transaction(digest_in)
+    conn.transaction(|conn| {
+        let mut out = BTreeMap::new();
+        for t in synced_tables(conn)?.values() {
+            out.insert(t.name.clone(), table_digest_in(conn, t)?);
+        }
+        Ok(out)
+    })
 }
 
-/// A value's bytes for the digest: a type tag, then the value.
+/// The synced tables' names, for a digest taken a table at a time.
+pub fn digest_tables(conn: &mut Conn) -> Result<Vec<String>> {
+    Ok(synced_tables(conn)?.into_keys().collect())
+}
+
+/// One table's part of [`digest`], in a read transaction of its own: a
+/// sync takes the digest a table at a time, so the screens are not held up
+/// for the whole database (each table is compared on its own anyway).
+/// `None` if the table is no longer synced.
+pub fn table_digest(conn: &mut Conn, table: &str) -> Result<Option<TableDigest>> {
+    conn.transaction(|conn| match synced_tables(conn)?.get(table) {
+        Some(t) => Ok(Some(table_digest_in(conn, t)?)),
+        None => Ok(None),
+    })
+}
+
 fn hash_value(h: &mut Sha256, v: &Value) {
     match v {
         Value::Null => h.update([0]),
@@ -1023,10 +1076,8 @@ fn hash_value(h: &mut Sha256, v: &Value) {
     }
 }
 
-fn digest_in(conn: &mut Conn) -> Result<Digest> {
-    let tables = synced_tables(conn)?;
-    let mut out = BTreeMap::new();
-    for t in tables.values() {
+fn table_digest_in(conn: &mut Conn, t: &TableInfo) -> Result<TableDigest> {
+    {
         let versions: HashMap<String, (String, String)> = sync_rows::table
             .filter(sync_rows::tbl.eq(&t.name))
             .filter(sync_rows::deleted.eq(0))
@@ -1080,9 +1131,8 @@ fn digest_in(conn: &mut Conn) -> Result<Digest> {
             h.update(origin.as_bytes());
         }
         let hash = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
-        out.insert(t.name.clone(), TableDigest { rows: count, tracked: crate::convert::count(versions.len()), hash });
+        Ok(TableDigest { rows: count, tracked: crate::convert::count(versions.len()), hash })
     }
-    Ok(out)
 }
 
 /// The tables where two digests differ, and any where tracking is off.

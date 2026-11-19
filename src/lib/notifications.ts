@@ -6,6 +6,11 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { z } from "zod";
+
+import { onEvent } from "./events";
+import { toast } from "./toast";
 
 /**
  * One reminder per day for the next week, each with its own id, so today's
@@ -101,4 +106,32 @@ export async function sendTestNotification(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+const ASKED_FOR_WORK = "polski.notifications.askedForWork";
+
+/**
+ * The first time the app works in the background (the tutor writing, a
+ * picture being drawn: `work://began`), notifications are asked for, once,
+ * with why: on Android 13 and later the notification that keeps that work
+ * alive with the screen off is hidden without them.
+ */
+export function askForNotificationsWhenWorking(): Promise<UnlistenFn> {
+  return onEvent(z.null(), "work://began", () => {
+    void (async () => {
+      try {
+        if (localStorage.getItem(ASKED_FOR_WORK)) return;
+        localStorage.setItem(ASKED_FOR_WORK, "1");
+      } catch {
+        // No storage: ask anyway; the system asks only once by itself.
+      }
+      try {
+        if (await isPermissionGranted()) return;
+      } catch {
+        return;
+      }
+      toast("Polski shows a quiet notification while it works in the background, so the work carries on with the screen off.", "info");
+      await ensurePermission();
+    })();
+  });
 }

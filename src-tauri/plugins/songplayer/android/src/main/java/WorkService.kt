@@ -32,7 +32,9 @@ class WorkService : Service() {
             startForegroundWith(notification(label))
         } catch (error: Exception) {
             // Not allowed from the background on newer Android: the work
-            // runs as long as Android lets it, without the service.
+            // runs as long as Android lets it, without the service. Said
+            // to the app with its next keepWorking (Diagnostics).
+            lastFailure = "${error.javaClass.simpleName}: ${error.message ?: "refused"}"
             stopSelf()
             return START_NOT_STICKY
         }
@@ -120,6 +122,10 @@ class WorkService : Service() {
         /** Told to stop before it got to start: stop as soon as it does. */
         @Volatile
         var stopRequested = false
+
+        /** Why the service last could not come to the foreground, until the app is told. */
+        @Volatile
+        var lastFailure: String? = null
         private const val CHANNEL_ID = "polski-work"
         private const val NOTIFICATION_ID = 7301
     }

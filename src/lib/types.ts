@@ -786,6 +786,14 @@ export const CourseClosedSchema = z.object({
 });
 export type CourseClosed = z.infer<typeof CourseClosedSchema>;
 
+/** Whether a course's picture is being drawn, or why it could not be (pictures.rs). */
+export const CoursePictureStatusSchema = z.object({
+  courseId: CourseIdSchema,
+  drawing: z.boolean(),
+  error: z.string().nullable(),
+});
+export type CoursePictureStatus = z.infer<typeof CoursePictureStatusSchema>;
+
 export const MilestoneSchema = z.object({
   courseId: CourseIdSchema,
   title: z.string(),
