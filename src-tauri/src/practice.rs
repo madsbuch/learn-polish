@@ -107,8 +107,12 @@ pub struct AnswerResult {
     pub day_xp: i64,
     pub level: i64,
     /// A dictation: what was written, word by word against the sentence
-    /// (dictation.rs). Empty for every other kind.
+    /// (dictation.rs); a speaking card: what was heard. Empty for every
+    /// other kind.
     pub diff: Vec<crate::dictation::DiffWord>,
+    /// A speaking card: words heard as others by a known contrast, and what
+    /// to try (speaking.rs). Empty for every other kind.
+    pub tips: Vec<crate::sounds::SoundTip>,
 }
 
 #[tauri::command]
@@ -135,6 +139,7 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
             day_xp,
             level: stats::level_from_xp(total_xp),
             diff: vec![],
+            tips: vec![],
         });
     }
 
@@ -144,7 +149,10 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
     // A dictation is compared word by word, missing Polish letters
     // forgiven but shown. A sound pair is the one word or the other: they
     // differ in just the letters that folding would forgive ("tę", "te").
+    // A speaking card is what the learner's best attempt was heard as,
+    // compared like a dictation (speaking.rs).
     let mut diff = vec![];
+    let mut tips = vec![];
     let correct = match answer.kind.as_str() {
         "wordOrder" => crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given),
         "dictation" => {
@@ -153,11 +161,21 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
             checked.correct
         }
         "soundPair" => answer.expected.trim().to_lowercase() == answer.given.trim().to_lowercase(),
+        "sayIt" | "dialogueSay" => {
+            let spoken = crate::speaking::check(&answer.expected, &answer.given);
+            diff = spoken.words;
+            tips = spoken.tips;
+            spoken.correct
+        }
         _ => answers_match(&answer.expected, &answer.given),
     };
+    // A sentence not quite heard is not a sentence forgotten: the learner
+    // knew what to say, and the ear (a model's, in a room) is fallible. It
+    // comes back sooner, but is not started over.
+    let missed = if crate::speaking::KINDS.contains(&answer.kind.as_str()) { srs::HARD } else { srs::AGAIN };
     let grade = answer
         .grade
-        .unwrap_or(if correct { srs::GOOD } else { srs::AGAIN })
+        .unwrap_or(if correct { srs::GOOD } else { missed })
         .clamp(srs::AGAIN, srs::EASY);
 
     // Conversation gaps exercise the dialogue rather than a scheduled item, so
@@ -193,6 +211,7 @@ pub fn submit_answer_in(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerR
         day_xp,
         level: stats::level_from_xp(total_xp),
         diff,
+        tips,
     })
 }
 

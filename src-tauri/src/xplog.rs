@@ -62,6 +62,8 @@ pub fn answer_label(kind: &str, expected: &str) -> String {
         "picturePick" => format!("Named the picture: “{what}”"),
         "dictation" => format!("Wrote down “{what}”"),
         "soundPair" => format!("Heard “{what}”"),
+        "sayIt" => format!("Said “{what}”"),
+        "dialogueSay" => format!("Said the next line: “{what}”"),
         "storyPanel" => "Read a page of a story".into(),
         "storyEnd" => "Finished a story".into(),
         "storyQuestion" => "Answered a question about the story".into(),

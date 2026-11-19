@@ -156,6 +156,9 @@ counting and celebrating.
   slot (FLIP: one-off, ending untransformed). Memory cards turn edge-on to
   their new face. A running clock writes its own digits (no re-render). A
   checked dictation's words land one after another (an entrance, once).
+  A speaking card's mic swells its ring with the voice while it records (a
+  shadow driven by a CSS variable, never a transform), and what was heard
+  rises in under it.
   A scene (`components/Scene.tsx`) fills the width on a phone and as much
   of the window as the card leaves on a big screen; its rings settle in
   (one-off) and change colour and glow only — a right find glows green, a

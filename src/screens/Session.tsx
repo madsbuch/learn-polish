@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { WordChat } from "../components/WordChat";
 import { WrongAnswerReview } from "../components/WrongAnswerReview";
@@ -56,6 +56,10 @@ export function Session({
 
   // The chat about the current word, when open.
   const [talking, setTalking] = useState(false);
+  // Speaking skipped for the rest of this go (a noisy place): spoken turns
+  // are picked instead, and the Say it cards still to come are left out.
+  const [speakingOff, setSpeakingOff] = useState(false);
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
 
   const bodyRef = useRef<HTMLDivElement>(null);
   // The XP badge swells as points come in.
@@ -64,8 +68,14 @@ export function Session({
   const runKey = useRef(`${plan.lessonId}-${Date.now()}`);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const exercise: Exercise | undefined = plan.exercises[index];
-  const total = plan.exercises.length;
+  const exercises = plan.exercises.filter((e) => !skipped.has(e.key));
+  const card: Exercise | undefined = exercises[index];
+  // A spoken turn with speaking off is the choice it was made from.
+  const exercise: Exercise | undefined = useMemo(
+    () => (card && speakingOff && card.kind === "dialogueSay" ? { ...card, kind: "dialogueGap" } : card),
+    [card, speakingOff],
+  );
+  const total = exercises.length;
   // The module that draws and scores this kind of exercise.
   const module = exercise ? exerciseModule(exercise.kind) : undefined;
 
@@ -89,7 +99,7 @@ export function Session({
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [index, exercise?.kind]);
+  }, [index, exercise?.key, exercise?.kind]);
 
   // Pronounce new material as it appears — hearing it first anchors the
   // spelling. Failures stay silent here; the 🔊 button is where they surface.
@@ -106,7 +116,7 @@ export function Session({
   // Finding the last pair (or the thing in the picture) is the answer; no
   // separate Check tap needed. Run after the render that has the answer in.
   useEffect(() => {
-    if (module?.submitsItself && (memoryTurns !== null || done > 0) && phase === "answering") void check();
+    if (((module?.submitsItself && memoryTurns !== null) || done > 0) && phase === "answering") void check();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memoryTurns, done]);
 
@@ -162,14 +172,30 @@ export function Session({
       setIndex(index + 1);
       return;
     }
+    await finish(exercises);
+  }
+
+  async function finish(played: Exercise[]) {
     setBusy(true);
     try {
-      const scored = plan.exercises.filter((e) => !exerciseModule(e.kind).reading).length;
+      const scored = played.filter((e) => !exerciseModule(e.kind).reading).length;
       onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
     }
+  }
+
+  /** No more speaking this go: the Say it cards from here on are left out
+   *  (unscored), and spoken turns become choices. */
+  function skipSpeaking() {
+    setSpeakingOff(true);
+    const later = exercises.slice(index).filter((e) => e.kind === "sayIt").map((e) => e.key);
+    if (later.length === 0) return;
+    const left = exercises.filter((e) => !later.includes(e.key));
+    // Nothing after it but Say it cards: the lesson is done.
+    if (index >= left.length) void finish(left);
+    else setSkipped(new Set([...skipped, ...later]));
   }
 
   if (!exercise || !module) {
@@ -213,6 +239,7 @@ export function Session({
     setGapsFilled,
     onMemoryComplete: setMemoryTurns,
     onDone: () => setDone((n) => n + 1),
+    onSkipSpeaking: skipSpeaking,
     revealAll,
     onToggleReveal: () => setRevealAll((v) => !v),
     inputRef,

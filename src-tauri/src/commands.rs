@@ -52,6 +52,8 @@ pub(crate) fn read_settings(conn: &mut Conn) -> Result<Settings> {
             .unwrap_or_default(),
         image_model: ai::stored_model(conn, "image_model"),
         vision_model: ai::stored_model(conn, "vision_model"),
+        hearing_model: ai::stored_model(conn, "hearing_model"),
+        speaking: db::get_setting_i64(conn, crate::speaking::SETTING, 1) == 1,
         has_kie_key: db::get_setting(conn, "kie_api_key")?.is_some_and(|k| !k.trim().is_empty()),
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
@@ -124,6 +126,8 @@ pub struct SettingsPatch {
     pub favorite_models: Option<Vec<String>>,
     pub image_model: Option<String>,
     pub vision_model: Option<String>,
+    pub hearing_model: Option<String>,
+    pub speaking: Option<bool>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
     pub theme: Option<String>,
@@ -196,6 +200,12 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
     }
     if let Some(model) = patch.vision_model {
         db::set_setting(conn, "vision_model", model.trim())?;
+    }
+    if let Some(model) = patch.hearing_model {
+        db::set_setting(conn, "hearing_model", model.trim())?;
+    }
+    if let Some(speaking) = patch.speaking {
+        db::set_setting(conn, crate::speaking::SETTING, if speaking { "1" } else { "0" })?;
     }
     if let Some(length) = patch.song_length {
         if !songs::SONG_LENGTHS.contains(&length.as_str()) {

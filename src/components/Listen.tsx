@@ -82,11 +82,11 @@ const STATUS_LABEL: Record<DiffWord["status"], string> = {
  * word that wasn't said struck through. The words land one after another,
  * once.
  */
-export function DictationDiff({ words }: { words: DiffWord[] }) {
+export function DictationDiff({ words, label = "What you wrote, word by word" }: { words: DiffWord[]; label?: string }) {
   const accents = words.filter((w) => w.status === "accents").length;
   return (
     <Stack gap={2}>
-      <p className="dictation-diff" aria-label="What you wrote, word by word">
+      <p className="dictation-diff" aria-label={label}>
         {words.map((w, i) => (
           <span
             key={i}

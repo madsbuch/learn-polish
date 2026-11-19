@@ -205,7 +205,7 @@ export function Tutor({
         info={<TutorInfo />}
         footer={
           inSplit ? undefined : (
-            <Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />
+            <Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" dictate onSend={start} />
           )
         }
         actions={
@@ -450,6 +450,7 @@ function Chat({
           draft={draft}
           setDraft={setDraft}
           placeholder="Ask the tutor"
+          dictate
           canSend={!sending}
           onSend={(text) => void send(text)}
         />

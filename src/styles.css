@@ -2397,6 +2397,133 @@ button.id-chip {
   align-self: center;
 }
 
+/* -------------------------------------------------------------- the voice */
+
+/* A speaking card's mic: big and round, in the brand's colours; red while
+   it records. Its ring swells with the voice (--level, 0–1, written by the
+   recorder's meter: a shadow, painted with the button, never a transform). */
+.big-mic {
+  --level: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Room for the ring at its widest. */
+  gap: var(--space-6);
+  padding-block: var(--space-5) var(--space-2);
+}
+.big-mic__button {
+  width: 76px;
+  height: 76px;
+  border-radius: var(--radius-full);
+  border: 0;
+  display: grid;
+  place-items: center;
+  color: var(--on-brand);
+  background: var(--brand-gradient);
+  box-shadow: 0 0 0 calc(var(--level) * 18px) var(--brand-tint);
+  transition:
+    box-shadow 80ms linear,
+    background-color var(--duration) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  cursor: pointer;
+}
+.big-mic__button svg {
+  width: 32px;
+  height: 32px;
+}
+.big-mic__button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.big-mic__button:disabled {
+  cursor: default;
+}
+.big-mic[data-state="recording"] .big-mic__button {
+  background: var(--bad);
+  box-shadow: 0 0 0 calc(4px + var(--level) * 16px) var(--bad-line);
+}
+.big-mic[data-state="hearing"] .big-mic__button {
+  background: var(--surface);
+  color: var(--text-dim);
+}
+
+/* What was heard: the comparison, the sounds to try, and the two voices. */
+.speak-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
+}
+.sound-tip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--info-bg);
+  border: 1px solid var(--info-line);
+  overflow-wrap: anywhere;
+}
+.sound-tip__pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.speak-compare {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-7);
+}
+.speak-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.speak-skip {
+  display: flex;
+  justify-content: center;
+}
+
+/* A spoken dialogue turn: the learner's line, and the answer that comes. */
+.say-line,
+.say-reply {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+}
+.say-line {
+  background: var(--brand-tint);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.say-reply {
+  background: var(--tint);
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
+}
+.say-line__text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+.say-line__text > :first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+/* The mic in a chat box: red while it records, its halo following the voice. */
+.dictate {
+  --level: 0;
+  flex: none;
+  border-radius: var(--radius-full);
+}
+.dictate[data-state="recording"] .icon-button {
+  color: var(--on-brand);
+  background: var(--bad);
+  box-shadow: 0 0 0 calc(3px + var(--level) * 12px) var(--bad-line);
+  transition: box-shadow 80ms linear;
+}
+
 /* ------------------------------------------------- the transcript's words */
 
 /* Sing along's switch, above the transcript. */

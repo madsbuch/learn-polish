@@ -31,6 +31,8 @@ import type {
 import {
   GameFinishedSchema,
   DictationCheckedSchema,
+  HeardSchema,
+  SpokenSchema,
   GlossWordSchema,
   QuickGameSchema,
   QuickGamesSchema,
@@ -173,6 +175,11 @@ export const api = {
     call(GameFinishedSchema, "quick_game_finish", { game, pairs, ms, moves }),
   dictationCheck: (expected: string, given: string) =>
     call(DictationCheckedSchema, "dictation_check", { expected, given }),
+  /** Hears a recording (base64, in `format`): for a speaking card, compared
+   *  with `expected`; for a chat box (null), just the words. */
+  speechHear: (audio: string, format: string, expected: string | null) =>
+    call(HeardSchema, "speech_hear", { audio, format, expected }),
+  speechCheck: (expected: string, heard: string) => call(SpokenSchema, "speech_check", { expected, heard }),
   xpHistory: (days: number) =>
     call(z.array(XpHistoryDaySchema), "xp_history", { days }),
   lessonsOverview: () => call(LessonOverviewSchema, "lessons_overview"),

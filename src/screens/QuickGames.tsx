@@ -21,13 +21,15 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playComplete, playMatch, playWrong } from "../lib/sounds";
-import { DictationGame, SoundsGame } from "../components/EarGames";
-import type { GameFinished, Pair, QuickGame, QuickGameKind, QuickGames as Overview } from "../lib/types";
+import { DictationGame, SayGame, SoundsGame } from "../components/EarGames";
+import { canRecord } from "../lib/mic";
+import type { GameFinished, Pair, QuickGame, QuickGameKind, QuickGames as Overview, Settings } from "../lib/types";
 
 /*
  * Quick games, from Home: a minute's play over words already met, outside
  * the daily five (games.rs). Match pairs is timed; Flip and match counts
- * moves; Dictation and Sound pairs, for the ear, count right answers. They
+ * moves; Dictation and Sound pairs, for the ear, and Say it, for the voice,
+ * count right answers. They
  * pay a little XP, capped a day, and leave the schedule alone.
  */
 
@@ -36,15 +38,21 @@ const GAMES: { kind: QuickGameKind; title: string; icon: string; blurb: string }
   { kind: "flip", title: "Flip and match", icon: "🃏", blurb: "Memory cards: a word and its picture" },
   { kind: "dictation", title: "Dictation", icon: "✍️", blurb: "Write down five sentences you hear" },
   { kind: "sounds", title: "Sound pairs", icon: "👂", blurb: "Proszę or prosię? Tell them apart" },
+  { kind: "say", title: "Say it", icon: "🎙️", blurb: "Say five sentences you've met out loud" },
 ];
 
 /** Games scored in right answers rather than time or moves. */
-const scored = (kind: QuickGameKind) => kind === "dictation" || kind === "sounds";
+const scored = (kind: QuickGameKind) => kind === "dictation" || kind === "sounds" || kind === "say";
 
 /** Why a game can't be played yet, or null when it can. */
-function notYet(overview: Overview, kind: QuickGameKind): string | null {
+function notYet(overview: Overview, kind: QuickGameKind, settings: Settings | null): string | null {
   if (kind === "sounds") return null;
-  if (kind === "dictation") {
+  if (kind === "say") {
+    if (!canRecord()) return "Needs a microphone";
+    if (settings && !settings.hasApiKey) return "Needs an OpenRouter key (Settings → AI) to hear you";
+    if (settings && !settings.speaking) return "Speaking is off (Settings → Practice)";
+  }
+  if (kind === "dictation" || kind === "say") {
     return overview.sentencesMet >= overview.minSentences ? null : "Meet a few sentences in your lessons first";
   }
   return overview.wordsMet >= overview.minWords ? null : "Meet a few words in your lessons first";
@@ -79,6 +87,7 @@ export function QuickGames({
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<QuickGameKind | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
 
   useEffect(() => {
     if (playing !== null) return;
@@ -86,6 +95,10 @@ export function QuickGames({
       .quickGames()
       .then(setOverview)
       .catch((cause) => setError(errorMessage(cause)));
+    api
+      .getSettings()
+      .then(setSettings)
+      .catch(() => undefined);
   }, [playing]);
 
   if (playing !== null) {
@@ -131,7 +144,7 @@ export function QuickGames({
           <Section title="Play">
             <List stagger>
               {GAMES.map((game) => {
-                const waiting = notYet(overview, game.kind);
+                const waiting = notYet(overview, game.kind, settings);
                 return (
                   <ListItem
                     key={game.kind}
@@ -201,12 +214,16 @@ function GameScreen({
     setStartedAt((at) => at ?? performance.now());
   }
 
-  async function finish(finalMoves: number) {
+  // Say it: sentences skipped are not played.
+  const [sayPlayed, setSayPlayed] = useState(0);
+
+  async function finish(finalMoves: number, sentencesPlayed?: number) {
     const now = performance.now();
     setEndedAt(now);
     const ms = Math.round(now - (startedAt ?? now));
     const played =
-      kind === "dictation" ? (deal?.sentences.length ?? 0) : kind === "sounds" ? (deal?.sounds.length ?? 0) : (deal?.pairs.length ?? 0);
+      sentencesPlayed ??
+      (kind === "dictation" ? (deal?.sentences.length ?? 0) : kind === "sounds" ? (deal?.sounds.length ?? 0) : (deal?.pairs.length ?? 0));
     try {
       const finished = await api.quickGameFinish(kind, played, ms, finalMoves);
       setResult(finished);
@@ -219,7 +236,8 @@ function GameScreen({
 
   const elapsed = startedAt === null ? 0 : (endedAt ?? 0) - startedAt;
   if (scored(kind)) {
-    const total = kind === "dictation" ? (deal?.sentences.length ?? 0) : (deal?.sounds.length ?? 0);
+    const total =
+      kind === "dictation" ? (deal?.sentences.length ?? 0) : kind === "say" ? sayPlayed : (deal?.sounds.length ?? 0);
     return (
       <Screen title={title} onBack={onBack} nav={false}>
         {error ? <Banner tone="error">{error}</Banner> : null}
@@ -238,6 +256,17 @@ function GameScreen({
           error ? null : (
             <Loading />
           )
+        ) : kind === "say" ? (
+          <SayGame
+            key={round}
+            sentences={deal.sentences}
+            onStart={start}
+            onDone={(misses, played) => {
+              setMoves(misses);
+              setSayPlayed(played);
+              void finish(misses, played);
+            }}
+          />
         ) : kind === "dictation" ? (
           <DictationGame
             key={round}
@@ -469,7 +498,8 @@ function GameResult({
             {all ? <Badge tone="gold">Every one!</Badge> : null}
             {levelUp ? <Badge tone="brand">Level {result.level}!</Badge> : null}
             <Text variant="small" tone="dim" align="center" as="div">
-              {kind === "dictation" ? "sentences written right" : "pairs told apart"} · {clock(ms)}
+              {kind === "dictation" ? "sentences written right" : kind === "say" ? "sentences said right" : "pairs told apart"} ·{" "}
+              {clock(ms)}
             </Text>
             <Badge tone={result.xpGained > 0 ? "gold" : "neutral"}>
               {result.xpGained > 0 ? (

@@ -37,9 +37,14 @@ export interface ExerciseProps extends AnswerState {
   setGapsFilled: (filled: (number | null)[]) => void;
   /** Memory: called once, with the turns taken, when the last pair is found. */
   onMemoryComplete: (turns: number) => void;
-  /** A card that submits itself (finding a thing in a scene): the answer is
-   *  in, check it — after the state set alongside this call has landed. */
+  /** A card that submits itself (finding a thing in a scene, a sentence
+   *  said right): the answer is in, check it — after the state set
+   *  alongside this call has landed. */
   onDone: () => void;
+  /** Speaking cards: no speaking for the rest of this go (a noisy place, a
+   *  refused microphone). A spoken turn becomes a choice again; a Say it
+   *  card is left out, unscored. */
+  onSkipSpeaking: () => void;
   /** Today's conversation: whether every line's English is showing. */
   revealAll: boolean;
   onToggleReveal: () => void;

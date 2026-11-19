@@ -7,13 +7,15 @@ import { playCorrect, playWrong } from "../lib/sounds";
 import { speakQuietly } from "../lib/speech";
 import type { DictationChecked, DictationItem, SoundRound } from "../lib/types";
 import { DictationDiff, ListenButtons, useSayOnce } from "./Listen";
+import { SpeakPanel, type Attempt } from "./Speak";
 import { SpeakButton } from "./ui";
 
 /*
  * The quick games for the ear (screens/QuickGames.tsx): Dictation — five
  * sentences met in lessons, said, written down, compared word by word — and
  * Sound pairs — which of two near words was said. Each reports how many
- * were missed when the last is done.
+ * were missed when the last is done. And one for the voice: Say it — five
+ * sentences met, said aloud and heard (speaking.rs).
  */
 
 /** "3 of 5" and the misses so far, above a game for the ear. */
@@ -255,6 +257,98 @@ export function SoundsGame({
           {index + 1 === rounds.length ? "Finish" : "Next"}
         </Button>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * Say it: five sentences met, each shown and said aloud as often as you
+ * like; the best go counts, and the first go heard right moves on to the
+ * verdict. A sentence skipped (or a microphone refused) is left out of the
+ * score, not missed.
+ */
+export function SayGame({
+  sentences,
+  onStart,
+  onDone,
+}: {
+  sentences: DictationItem[];
+  onStart: () => void;
+  onDone: (misses: number, played: number) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [best, setBest] = useState<Attempt | null>(null);
+  const [done, setDone] = useState(false);
+  const [misses, setMisses] = useState(0);
+  const [skipped, setSkipped] = useState(0);
+  const item = sentences[index];
+
+  useEffect(() => {
+    onStart();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function settle(attempt: Attempt | null) {
+    if (done || !attempt) return;
+    setDone(true);
+    if (attempt.spoken.correct) {
+      playCorrect();
+      hapticRight();
+    } else {
+      playWrong();
+      hapticWrong();
+      setMisses((n) => n + 1);
+    }
+  }
+
+  function next(skippedNow = 0) {
+    const left = skipped + skippedNow;
+    if (index + 1 < sentences.length) {
+      setIndex(index + 1);
+      setBest(null);
+      setDone(false);
+      setSkipped(left);
+    } else {
+      onDone(misses, sentences.length - left);
+    }
+  }
+
+  const last = index + 1 === sentences.length;
+  return (
+    <>
+      <Tally at={index + 1} of={sentences.length} misses={misses} />
+      <div key={index} className="exercise-in">
+        <Stack gap={4}>
+          <Text variant="eyebrow">Say it</Text>
+          <div className="prompt-card">
+            <Text variant="title" weight="bold" selectable>
+              {item.pl}
+            </Text>
+            <SpeakButton text={item.pl} variant="tinted" label="Hear it first" />
+            <Text variant="caption" tone="faint">
+              {item.meaning}
+            </Text>
+          </div>
+          <SpeakPanel
+            expected={item.pl}
+            locked={done}
+            onBest={setBest}
+            onRight={settle}
+            onSkip={() => next(1)}
+            skipLabel="Skip this one"
+          />
+          {done && best ? <Verdict correct={best.spoken.correct} /> : null}
+        </Stack>
+      </div>
+      {done ? (
+        <Button variant="success" size="lg" wide onClick={() => next()}>
+          {last ? "Finish" : "Next"}
+        </Button>
+      ) : (
+        <Button variant="primary" size="lg" wide disabled={!best} onClick={() => settle(best)}>
+          Done
+        </Button>
+      )}
     </>
   );
 }

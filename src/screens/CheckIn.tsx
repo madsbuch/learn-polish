@@ -207,6 +207,7 @@ export function CheckIn({
               setDraft={setDraft}
               placeholder={writing ? "Write in Polish" : "Your answer"}
               disabled={checkinId === null}
+              dictate
               canSend={!busy}
               onSend={() => void answer()}
             />

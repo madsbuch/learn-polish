@@ -7,5 +7,8 @@
 	     pairing scans the other device's QR code with the webcam. -->
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<!-- The same for the microphone: speaking exercises record the learner. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>

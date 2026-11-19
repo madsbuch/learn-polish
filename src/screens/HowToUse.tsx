@@ -71,9 +71,16 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
         </P>
         <P>
           Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, flip memory cards,
-          write down sentences you hear, or tell near sounds apart (proszę or prosię?) — play with what you have
-          already met. They earn a little XP (up to 30 a day) and don&apos;t change when a
+          write down sentences you hear, tell near sounds apart (proszę or prosię?), or say sentences out loud — play
+          with what you have already met. They earn a little XP (up to 30 a day) and don&apos;t change when a
           word comes back: that stays the lessons&apos; job.
+        </P>
+        <P>
+          Now and then a lesson asks you to <strong>say it</strong>: a sentence or word you know, or your line in a
+          dialogue. Tap the mic, speak, and see what was heard, word by word — with a tip when a sound came out as
+          another (sz or ż?). Try as often as you like; your best go counts. Somewhere noisy? “Skip speaking for now”
+          — or turn speaking off in Settings → Practice. The mic in the tutor&apos;s box writes down what you say, to
+          check before sending.
         </P>
       </Part>
 

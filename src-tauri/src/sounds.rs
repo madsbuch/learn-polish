@@ -202,12 +202,146 @@ pub fn exercise(pair: &SoundPair, lesson_id: LessonId, rng: &mut impl rand::Rng)
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
     }
 }
 
 /// A words lesson's round of sound pairs.
 pub fn round(words: &[&WordRow], lesson_id: LessonId, rng: &mut impl rand::Rng) -> Vec<Exercise> {
     for_words(words, rng).iter().map(|pair| exercise(pair, lesson_id, rng)).collect()
+}
+
+/// What to do to make a sound: its spellings, and a word of advice for when
+/// it was wanted but something else was heard.
+struct Sound {
+    spellings: &'static [&'static str],
+    advice: &'static str,
+}
+
+/// Two sounds a learner's mouth runs together, as a speaking card hears
+/// them: the same contrasts as the pairs above (and their labels, so a tip
+/// can play the pair), plus a few that only matter when speaking.
+struct Confusion {
+    label: &'static str,
+    a: Sound,
+    b: Sound,
+}
+
+const SHARP_SZ: &str = "try a sharper sz: the tongue tip up and back, the lips pushed forward";
+const SOFT_S: &str = "try a softer ś: the tongue up behind the teeth, the lips spread as in a smile";
+const HARD_CZ: &str = "try a harder cz: the tongue tip up and back, like the ch in “church”";
+const SOFT_C: &str = "try a softer ć: a light ch with the lips spread";
+const BUZZ_Z: &str = "let the ż buzz: like the s in “pleasure”";
+const PLAIN_S: &str = "try a plain s, as in “sun”";
+const PLAIN_C: &str = "try a plain c, like the ts in “cats”";
+const PLAIN_Z: &str = "try a plain z, as in “zoo”";
+
+const CONFUSIONS: &[Confusion] = &[
+    Confusion { label: "sz or ś", a: Sound { spellings: &["sz"], advice: SHARP_SZ }, b: Sound { spellings: &["ś", "si"], advice: SOFT_S } },
+    Confusion { label: "cz or ć", a: Sound { spellings: &["cz"], advice: HARD_CZ }, b: Sound { spellings: &["ć", "ci"], advice: SOFT_C } },
+    Confusion {
+        label: "ż or sz",
+        a: Sound { spellings: &["ż", "rz"], advice: BUZZ_Z },
+        b: Sound { spellings: &["sz"], advice: "try a sharper sz, with no buzz in the throat" },
+    },
+    Confusion {
+        label: "ż or ź",
+        a: Sound { spellings: &["ż", "rz"], advice: "try a harder ż: the tongue back, the lips forward" },
+        b: Sound { spellings: &["ź", "zi"], advice: "try a softer ź, with the lips spread" },
+    },
+    Confusion {
+        label: "rz or r",
+        a: Sound { spellings: &["rz"], advice: "rz sounds like ż: let it buzz, with no roll" },
+        b: Sound { spellings: &["r"], advice: "try a rolled r: one quick tap of the tongue" },
+    },
+    Confusion { label: "s or ś", a: Sound { spellings: &["s"], advice: PLAIN_S }, b: Sound { spellings: &["ś", "si"], advice: SOFT_S } },
+    Confusion { label: "sz or s", a: Sound { spellings: &["sz"], advice: SHARP_SZ }, b: Sound { spellings: &["s"], advice: PLAIN_S } },
+    Confusion { label: "c or cz", a: Sound { spellings: &["c"], advice: PLAIN_C }, b: Sound { spellings: &["cz"], advice: HARD_CZ } },
+    Confusion { label: "c or ć", a: Sound { spellings: &["c"], advice: PLAIN_C }, b: Sound { spellings: &["ć", "ci"], advice: SOFT_C } },
+    Confusion { label: "z or ż", a: Sound { spellings: &["z"], advice: PLAIN_Z }, b: Sound { spellings: &["ż", "rz"], advice: BUZZ_Z } },
+    Confusion {
+        label: "ą or o, a",
+        a: Sound { spellings: &["ą"], advice: "let the ą ring through the nose, like a nasal o" },
+        b: Sound { spellings: &["o", "a", "om", "on"], advice: "keep the vowel plain, not through the nose" },
+    },
+    Confusion {
+        label: "ę or e",
+        a: Sound { spellings: &["ę"], advice: "let the ę ring through the nose" },
+        b: Sound { spellings: &["e", "em", "en"], advice: "keep the e plain, not through the nose" },
+    },
+    Confusion {
+        label: "y or i",
+        a: Sound { spellings: &["y"], advice: "try a darker y: the tongue further back, like the i in “bit”" },
+        b: Sound { spellings: &["i"], advice: "try a clear i, like the ee in “see”" },
+    },
+    Confusion {
+        label: "ł or l",
+        a: Sound { spellings: &["ł"], advice: "ł is like the English w" },
+        b: Sound { spellings: &["l"], advice: "try a clear l, the tongue on the ridge behind the teeth" },
+    },
+];
+
+/// A word said that was heard as another, and the sound that likely did it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundTip {
+    /// The word as it should be: "szyć".
+    pub word: String,
+    /// What was heard: "żyć".
+    pub heard: String,
+    /// The contrast: "ż or sz".
+    pub label: String,
+    /// What to try: "try a sharper sz, with no buzz in the throat".
+    pub advice: String,
+    /// A built-in pair of the contrast, to hear side by side; None when the
+    /// contrast has none.
+    pub pair: Option<SoundPair>,
+}
+
+/// Whether `heard` is `word` with one sound of `want` said as `got`.
+fn swapped(word: &str, heard: &str, want: &Sound, got: &Sound) -> bool {
+    want.spellings.iter().any(|w| {
+        word.match_indices(w).any(|(at, _)| {
+            got.spellings.iter().any(|g| {
+                let candidate = format!("{}{g}{}", &word[..at], &word[at + w.len()..]);
+                candidate == heard
+            })
+        })
+    })
+}
+
+/// Why `word` may have been heard as `heard`: the first known contrast that
+/// turns the one into the other by a single sound, with the advice for the
+/// sound that was wanted. None when the two differ otherwise (a different
+/// word, an ending, more than one sound).
+pub fn misheard(word: &str, heard: &str) -> Option<SoundTip> {
+    let (w, h) = (word.to_lowercase(), heard.to_lowercase());
+    if w == h || w.is_empty() || h.is_empty() {
+        return None;
+    }
+    CONFUSIONS.iter().find_map(|c| {
+        let want = if swapped(&w, &h, &c.a, &c.b) {
+            &c.a
+        } else if swapped(&w, &h, &c.b, &c.a) {
+            &c.b
+        } else {
+            return None;
+        };
+        Some(SoundTip {
+            word: word.into(),
+            heard: heard.into(),
+            label: c.label.into(),
+            advice: want.advice.into(),
+            pair: built_in().into_iter().find(|p| p.label == c.label),
+        })
+    })
+}
+
+/// Whether two spellings sound the same: rz and ż, ch and h, ó and u are
+/// one sound each, so a word heard with the other spelling was said right.
+pub fn sound_alike(a: &str, b: &str) -> bool {
+    let fold = |s: &str| s.to_lowercase().replace("rz", "ż").replace("ch", "h").replace('ó', "u");
+    fold(a) == fold(b)
 }
 
 /// A word's near neighbour as the tutor gave it, cleaned: one real word,
@@ -287,5 +421,35 @@ mod tests {
         assert_eq!(clean_near("proszę", "Proszę"), None);
         assert_eq!(clean_near("proszę", "two words"), None);
         assert_eq!(clean_near("proszę", ""), None);
+    }
+
+    #[test]
+    fn a_word_heard_as_another_names_the_sound() {
+        let tip = misheard("szyć", "żyć").expect("sz heard as ż");
+        assert_eq!(tip.label, "ż or sz");
+        assert!(tip.advice.contains("sharper sz"), "{}", tip.advice);
+        assert!(tip.pair.is_some(), "the contrast has a pair to hear");
+        let tip = misheard("żyć", "szyć").unwrap();
+        assert!(tip.advice.contains("buzz"));
+        assert_eq!(misheard("proszę", "prosię").unwrap().label, "sz or ś");
+        assert!(misheard("prosię", "proszę").unwrap().advice.contains("softer ś"));
+        assert_eq!(misheard("być", "bić").unwrap().label, "y or i");
+        assert_eq!(misheard("łata", "lata").unwrap().label, "ł or l");
+        assert_eq!(misheard("kąt", "kot").unwrap().label, "ą or o, a");
+        assert_eq!(misheard("chcę", "chce").unwrap().label, "ę or e");
+        assert_eq!(misheard("czysta", "cysta").unwrap().label, "c or cz");
+        assert_eq!(misheard("Kasia", "kasa").unwrap().label, "s or ś");
+        // Not a sound: another word, another ending, or the same word.
+        assert_eq!(misheard("kawa", "herbata"), None);
+        assert_eq!(misheard("kawę", "kawa"), None);
+        assert_eq!(misheard("dom", "Dom"), None);
+    }
+
+    #[test]
+    fn spellings_of_one_sound_sound_alike() {
+        assert!(sound_alike("może", "morze"));
+        assert!(sound_alike("Chleb", "hleb"));
+        assert!(sound_alike("góra", "gura"));
+        assert!(!sound_alike("szyć", "żyć"));
     }
 }

@@ -1,13 +1,32 @@
 import { Button, List, Screen, Section, SettingRow, Switch } from "../../design";
+import { canRecord } from "../../lib/mic";
 import { sendTestNotification } from "../../lib/notifications";
 import { toast } from "../../lib/toast";
 import { useSettingsActions, type SettingsPageProps } from "./actions";
 
-/** Settings → Practice: how much a day, and the daily reminder. */
+/** Settings → Practice: how much a day, speaking, and the daily reminder. */
 export function PracticeSettings({ settings, onSettings, onBack }: SettingsPageProps) {
   const { busy, patch, run } = useSettingsActions(onSettings);
   return (
-    <Screen title="Practice" onBack={onBack} nav={false}>
+    <Screen
+      title="Practice"
+      onBack={onBack}
+      nav={false}
+      info={
+        <>
+          <p>
+            <b>Speaking exercises</b>: now and then a lesson asks you to say a sentence, a word or your line in a
+            dialogue out loud, and the AI writes down what it heard, word by word — with a tip when a sound came out
+            as another. In a noisy place, tap “Skip speaking for now” in the lesson; this switch turns them off on
+            this device altogether.
+          </p>
+          <p>
+            Your recordings are sent to the model that hears you (Settings → AI) for that one request and are never
+            kept: they stay in memory while the card is open, so you can play them back, and are not saved or synced.
+          </p>
+        </>
+      }
+    >
       <Section>
         <List>
           <SettingRow
@@ -24,6 +43,25 @@ export function PracticeSettings({ settings, onSettings, onBack }: SettingsPageP
                 value={settings.dailyLessons}
                 aria-label="Lessons a day"
                 onChange={(event) => patch({ dailyLessons: Number(event.target.value) }, "lessons")}
+              />
+            }
+          />
+          <SettingRow
+            label="Speaking exercises"
+            description={
+              !canRecord()
+                ? "This device can't record"
+                : !settings.hasApiKey
+                  ? "Needs an OpenRouter key (Settings → AI) to hear you"
+                  : settings.speaking
+                    ? "Now and then, say a sentence or a dialogue line out loud. On this device"
+                    : "Off on this device"
+            }
+            control={
+              <Switch
+                label="Speaking exercises"
+                checked={settings.speaking}
+                onChange={(on) => patch({ speaking: on }, "speaking")}
               />
             }
           />

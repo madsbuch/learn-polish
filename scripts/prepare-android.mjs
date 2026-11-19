@@ -37,11 +37,18 @@ if (!matched) throw new Error("MainActivity was not found in the Android manifes
 // Answers are felt as well as heard (src/lib/haptics.ts): VIBRATE, a normal
 // permission granted at install. The haptics plugin's own manifest asks for
 // it too; naming it here keeps it if that ever changes.
+// Speaking exercises record the learner (src/lib/mic.ts): RECORD_AUDIO, a
+// runtime permission — the WebView's chrome client (wry's
+// RustWebChromeClient) asks for it, with MODIFY_AUDIO_SETTINGS, the first
+// time the page calls getUserMedia, and only grants the page the microphone
+// if both are declared here.
 let permitted = patched;
 for (const permission of [
   "android.permission.INTERNET",
   "android.permission.ACCESS_NETWORK_STATE",
   "android.permission.VIBRATE",
+  "android.permission.RECORD_AUDIO",
+  "android.permission.MODIFY_AUDIO_SETTINGS",
 ]) {
   if (permitted.includes(`android:name="${permission}"`)) continue;
   permitted = permitted.replace(/<application\b/, `<uses-permission android:name="${permission}" />\n    <application`);

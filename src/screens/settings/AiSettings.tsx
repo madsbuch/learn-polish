@@ -117,6 +117,12 @@ export function AiSettings({ settings, onSettings, onBack }: SettingsPageProps) 
               <b>Course pictures</b> draws course, word and scene pictures. <b>Finding things in scenes</b> looks at
               a scene lesson's picture and marks where each thing is; it needs a model that reads images.
             </p>
+            <p>
+              <b>Hearing you speak</b> writes down what you say in speaking exercises and with the mic in the chat
+              boxes; it needs a model that takes sound in. Your recordings are sent for that one request and never
+              kept: they stay in memory while the card is open, so you can play them back, and are not saved or
+              synced.
+            </p>
           </>
         }
       >
@@ -172,6 +178,15 @@ export function AiSettings({ settings, onSettings, onBack }: SettingsPageProps) 
             need="vision"
             {...models}
             onChange={(model) => patch({ visionModel: model }, "vision-model")}
+          />
+          <ModelSetting
+            label="Hearing you speak"
+            job="hearing"
+            value={settings.hearingModel}
+            fallback="Default (Gemini 2.5 Flash)"
+            need="hearing"
+            {...models}
+            onChange={(model) => patch({ hearingModel: model }, "hearing-model")}
           />
           <ListItem
             title="Benchmark"

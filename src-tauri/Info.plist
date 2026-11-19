@@ -9,5 +9,8 @@
 	<!-- Pairing: scanning the QR code another device shows. -->
 	<key>NSCameraUsageDescription</key>
 	<string>Polski uses the camera to scan the pairing code shown by your other device.</string>
+	<!-- Speaking exercises and the mic in the chat boxes. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Polski listens when you tap the microphone, to hear you say Polish sentences and to write down what you tell the tutor. Recordings are not kept.</string>
 </dict>
 </plist>

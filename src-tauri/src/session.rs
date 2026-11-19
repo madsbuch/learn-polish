@@ -118,6 +118,7 @@ pub(crate) fn word_intro(w: &WordRow) -> Exercise {
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -143,6 +144,7 @@ pub(crate) fn typing(w: &WordRow) -> Exercise {
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -168,6 +170,7 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
         pl: s.pl.clone(),
         meaning: s.meaning.clone(),
     }
@@ -299,6 +302,7 @@ pub(crate) fn dialogue_read(lesson_id: LessonId, course: &Course) -> Exercise {
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
         pl: course.title_pl.clone(),
         meaning: course.summary.clone(),
     }
@@ -408,6 +412,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: LessonId,
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
     })
 }
 
@@ -466,6 +471,7 @@ pub(crate) fn recognise(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rn
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -491,6 +497,7 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
         pl: w.pl.clone(),
         meaning: w.meaning.clone(),
     }
@@ -525,6 +532,7 @@ pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
         context: vec![],
         scene: None,
         story: None,
+        reply: None,
     }
 }
 
@@ -553,7 +561,51 @@ pub(crate) fn dictation(s: &SentenceRow) -> Exercise {
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
     }
+}
+
+/// Say it: a sentence already met, shown and heard, said aloud by the
+/// learner and compared with what was heard (speaking.rs).
+pub(crate) fn say_sentence(s: &SentenceRow) -> Exercise {
+    Exercise {
+        key: format!("s{}-say", s.id),
+        kind: "sayIt".into(),
+        item_kind: "sentence".into(),
+        item_id: s.id.to_string(),
+        prompt: s.pl.clone(),
+        answer: s.pl.clone(),
+        pl: s.pl.clone(),
+        meaning: s.meaning.clone(),
+        ..Exercise::default()
+    }
+}
+
+/// Say it, for a word already met.
+pub(crate) fn say_word(w: &WordRow) -> Exercise {
+    Exercise {
+        key: format!("w{}-say", w.id),
+        kind: "sayIt".into(),
+        item_kind: "word".into(),
+        item_id: w.id.to_string(),
+        prompt: w.pl.clone(),
+        hint: pretty_pos(&w.pos),
+        answer: w.pl.clone(),
+        pl: w.pl.clone(),
+        meaning: w.meaning.clone(),
+        image: w.image,
+        ..Exercise::default()
+    }
+}
+
+/// A "what comes next" gap made a spoken turn: the learner says the line
+/// rather than picking it, and the other speaker answers — the line after
+/// it, when there is one. The options stay, so that with speaking skipped
+/// it is a choice again.
+pub(crate) fn spoken_turn(gap: Exercise, dialogue: &[DialogueLine]) -> Exercise {
+    let at = dialogue.iter().position(|l| l.pl == gap.answer);
+    let reply = at.and_then(|i| dialogue.get(i + 1)).cloned();
+    Exercise { key: format!("{}-say", gap.key), kind: "dialogueSay".into(), reply, ..gap }
 }
 
 /// Dictation of one line of a lesson's dialogue, said in its speaker's
@@ -588,6 +640,7 @@ pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], lesson_id: LessonId,
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
     })
 }
 
@@ -641,6 +694,7 @@ pub(crate) fn dialogue_gaps(
                 endings: vec![],
                 scene: None,
                 story: None,
+                reply: None,
                 pl: line.pl.clone(),
                 meaning: line.meaning.clone(),
             }
@@ -732,6 +786,7 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rn
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
     })
 }
 
@@ -862,6 +917,7 @@ pub(crate) fn gap_fill(
         endings: vec![],
         scene: None,
         story: None,
+        reply: None,
     }))
 }
 

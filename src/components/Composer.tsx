@@ -1,12 +1,16 @@
 import { useLayoutEffect, useRef } from "react";
 
 import { IconButton } from "../design";
+import { canRecord } from "../lib/mic";
 import { SendIcon } from "./icons";
+import { DictateButton } from "./Speak";
 
 /**
  * The box a chat message is written in, with its send button. Enter makes a
  * new line — on a phone keyboard that is what the return key is for; the
  * button sends. The box grows with what is written, up to a few lines.
+ * With `dictate`, a mic beside it writes what is said into the box, to read
+ * over before sending.
  */
 export function Composer({
   draft,
@@ -14,6 +18,7 @@ export function Composer({
   placeholder,
   disabled,
   canSend = true,
+  dictate = false,
   onSend,
 }: {
   draft: string;
@@ -23,6 +28,8 @@ export function Composer({
   disabled?: boolean;
   /** Writing is fine but sending is not (a reply is still coming). */
   canSend?: boolean;
+  /** A mic that writes what is said into the box. */
+  dictate?: boolean;
   onSend: (text: string) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -44,6 +51,16 @@ export function Composer({
         disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
       />
+      {dictate && canRecord() ? (
+        <DictateButton
+          disabled={disabled}
+          onText={(text) => {
+            const before = ref.current?.value ?? draft;
+            setDraft(before.trim() ? `${before.trimEnd()} ${text}` : text);
+            ref.current?.focus();
+          }}
+        />
+      ) : null}
       <IconButton
         variant="primary"
         icon={<SendIcon />}

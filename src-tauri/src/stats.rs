@@ -44,6 +44,8 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
         "recognise" | "wordPick" | "picturePick" | "sceneFind" => 6,
         "produce" | "sceneName" | "sceneWhere" | "storyQuestion" => 8,
         "dialogueGap" => 10,
+        // Saying it aloud is the hardest step: producing the sounds too.
+        "sayIt" | "dialogueSay" => 14,
         "wordOrder" => 12,
         "type" | "dictation" | "sceneType" => 14,
         "soundPair" => 6,

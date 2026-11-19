@@ -84,7 +84,7 @@ pub struct Exercise {
     /// dialogueGap | gapFill | memory | pictureIntro | wordPick |
     /// picturePick | dictation | soundPair | sceneExplore | sceneFind |
     /// sceneName | sceneType | sceneWhere | storyPanel | storyQuestion |
-    /// storyEnd
+    /// storyEnd | sayIt | dialogueSay
     pub kind: String,
     /// word | sentence | dialogue | set (several items at once, not scheduled)
     pub item_kind: String,
@@ -123,6 +123,9 @@ pub struct Exercise {
     /// Story lessons: the panel to read, what a question is about, or the
     /// story's words at its end (stories.rs).
     pub story: Option<crate::stories::StoryCard>,
+    /// A spoken dialogue turn (dialogueSay): the other speaker's answer to
+    /// the line, said in their voice once it has been said.
+    pub reply: Option<DialogueLine>,
 }
 
 /// One sentence with a word taken out of it.
@@ -286,6 +289,11 @@ pub struct Settings {
     pub image_model: String,
     /// Finds the things in a scene lesson's picture; empty means the default.
     pub vision_model: String,
+    /// The model that hears the learner speak; empty for the default.
+    pub hearing_model: String,
+    /// Speaking cards in lessons (a setting of this device: a phone in a
+    /// quiet room, a computer with no microphone).
+    pub speaking: bool,
     pub has_kie_key: bool,
     /// The Suno version songs are sung with.
     pub suno_model: String,
@@ -375,6 +383,8 @@ pub struct AiModel {
     pub images: bool,
     /// True when the model can read images (finding things in a scene).
     pub vision: bool,
+    /// True when the model takes sound in (hearing the learner speak).
+    pub hears: bool,
 }
 
 /// One clip of generated speech, ready to become a `data:` URI.

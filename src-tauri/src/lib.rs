@@ -50,6 +50,7 @@ mod xplog;
 mod games;
 mod dictation;
 mod sounds;
+mod speaking;
 mod singalong;
 mod scenes;
 mod stories;
@@ -246,6 +247,8 @@ pub fn run() {
             games::quick_game_deal,
             games::quick_game_finish,
             dictation::dictation_check,
+            speaking::speech_hear,
+            speaking::speech_check,
             singalong::song_glossary,
             xplog::xp_history,
             diagnostics::diagnostics_clear,
@@ -2038,6 +2041,100 @@ mod integration {
     }
 
     #[test]
+    fn speaking_cards_take_the_place_of_others_where_the_device_can_hear() {
+        let mut conn = scratch_db("speaking");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let list = lessons::for_course(&mut conn, basics).unwrap();
+        let dialogue = list.iter().find(|b| b.lesson_type == "dialogue").unwrap();
+        let sentences = list.iter().find(|b| b.lesson_type == "sentences").unwrap();
+        let words = list.iter().find(|b| b.lesson_type == "words").unwrap();
+        let kinds = |plan: &models::SessionPlan| plan.exercises.iter().map(|e| e.kind.clone()).collect::<Vec<_>>();
+        let said = |plan: &models::SessionPlan| plan.exercises.iter().filter(|e| crate::speaking::KINDS.contains(&e.kind.as_str())).count();
+
+        // No key to hear with: no speaking cards.
+        assert_eq!(said(&session::build_lesson(&mut conn, dialogue.id).unwrap()), 0);
+
+        db::set_setting(&mut conn, "openrouter_api_key", "sk-test").unwrap();
+        // A dialogue: one of its two lines is said, with the other speaker's
+        // answer to follow and its options kept for when speaking is skipped.
+        let plan = session::build_lesson(&mut conn, dialogue.id).unwrap();
+        let k = kinds(&plan);
+        assert_eq!(k.iter().filter(|k| *k == "dialogueSay").count(), 1, "{k:?}");
+        assert_eq!(k.iter().filter(|k| *k == "dialogueGap" || *k == "dialogueSay").count(), session::DIALOGUE_GAPS);
+        let turn = plan.exercises.iter().find(|e| e.kind == "dialogueSay").unwrap();
+        assert!(turn.options.contains(&turn.answer));
+        let lines = session::lesson_lines(&mut conn, dialogue.id).unwrap();
+        let at = lines.iter().position(|l| l.pl == turn.answer).unwrap();
+        assert_eq!(turn.reply.as_ref().map(|r| r.pl.clone()), lines.get(at + 1).map(|l| l.pl.clone()));
+
+        // Sentences: new ones are never said; once met, a couple are, and
+        // the lesson is no longer.
+        let first = session::build_lesson(&mut conn, sentences.id).unwrap();
+        assert_eq!(said(&first), 0, "new sentences are built first");
+        for e in first.exercises.iter().filter(|e| e.item_kind == "sentence" && e.kind == "wordOrder") {
+            let answer = practice::SubmitAnswer { kind: e.kind.clone(), item_kind: e.item_kind.clone(), item_id: e.item_id.clone(), expected: e.answer.clone(), given: e.answer.clone(), ..Default::default() };
+            practice::submit_answer_in(&mut conn, answer).unwrap();
+        }
+        let plan = session::build_lesson(&mut conn, sentences.id).unwrap();
+        let say: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "sayIt").collect();
+        assert!((1..=crate::speaking::SENTENCE_CARDS).contains(&say.len()), "{:?}", kinds(&plan));
+        assert!(plan.exercises.len() <= first.exercises.len(), "no longer than before");
+
+        // Said right: XP like typing, and a review. Not quite heard: no XP,
+        // a sound tip where one fits, and the sentence comes back sooner
+        // without starting over.
+        let s = say[0];
+        let right = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "sayIt".into(), item_kind: "sentence".into(), item_id: s.item_id.clone(), expected: s.answer.clone(), given: s.answer.to_lowercase(), ..Default::default()
+        }).unwrap();
+        assert!(right.correct);
+        assert_eq!(right.xp_gained, stats::xp_for_answer("sayIt", true, false));
+        assert_eq!(right.xp_gained, 14);
+        let before = crate::srs::load(&mut conn, "sentence", &s.item_id).unwrap().unwrap();
+        let wrong = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "sayIt".into(), item_kind: "sentence".into(), item_id: s.item_id.clone(), expected: "Muszę szyć.".into(), given: "Muszę żyć".into(), ..Default::default()
+        }).unwrap();
+        assert!(!wrong.correct);
+        assert_eq!(wrong.xp_gained, 0);
+        assert_eq!(wrong.tips.len(), 1);
+        assert_eq!(wrong.diff[1].status, "wrong");
+        let after = crate::srs::load(&mut conn, "sentence", &s.item_id).unwrap().unwrap();
+        assert_eq!(after.lapses, before.lapses, "a miss heard is not a lapse");
+        assert!(after.reps > 0);
+
+        // Words: once three are met, one is said instead of practised.
+        let first = session::build_lesson(&mut conn, words.id).unwrap();
+        assert_eq!(said(&first), 0);
+        for e in first.exercises.iter().filter(|e| e.item_kind == "word") {
+            let answer = practice::SubmitAnswer { kind: "recognise".into(), item_kind: "word".into(), item_id: e.item_id.clone(), expected: e.answer.clone(), given: e.answer.clone(), ..Default::default() };
+            practice::submit_answer_in(&mut conn, answer).unwrap();
+        }
+        let plan = session::build_lesson(&mut conn, words.id).unwrap();
+        assert_eq!(said(&plan), crate::speaking::WORD_CARDS, "{:?}", kinds(&plan));
+        let card = plan.exercises.iter().find(|e| e.kind == "sayIt").unwrap();
+        assert_eq!((card.item_kind.as_str(), card.answer.as_str()), ("word", card.pl.as_str()));
+
+        // Speaking turned off on this device: the usual cards again.
+        let settings = commands::read_settings(&mut conn).unwrap();
+        assert!(settings.speaking);
+        db::set_setting(&mut conn, crate::speaking::SETTING, "0").unwrap();
+        assert!(!commands::read_settings(&mut conn).unwrap().speaking);
+        for id in [dialogue.id, sentences.id, words.id] {
+            assert_eq!(said(&session::build_lesson(&mut conn, id).unwrap()), 0);
+        }
+        // A setting of this device: it does not sync.
+        assert!(db::DEVICE_SETTINGS.contains(&crate::speaking::SETTING));
+
+        // The quick game: five sentences met, scored in sentences said right.
+        let game = crate::games::deal(&mut conn, "say", &mut rand::rng()).unwrap();
+        assert!((crate::games::MIN_SENTENCES..=5).contains(&game.sentences.len()));
+        crate::games::finish(&mut conn, "say", 5, 40_000, 2).unwrap();
+        let today = db::today(&mut conn);
+        let day = crate::xplog::day(&mut conn, today).unwrap();
+        assert!(day.runs.iter().flat_map(|r| r.entries.iter()).any(|e| e.label == "Say it: 3 of 5 sentences right"));
+    }
+
+    #[test]
     fn a_song_s_words_have_their_meanings() {
         let mut conn = scratch_db("glossary");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
@@ -3312,10 +3409,14 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let tiles = serde_json::from_value(tiles["_action"]["lessonId"].clone()).unwrap();
         let tile_plan = session::build_lesson(&mut conn, tiles).unwrap();
         assert!(tile_plan.exercises.iter().any(|e| !e.endings.is_empty()));
-        // And the ear's: a dialogue line to write down, a sound pair.
+        // And the ear's: a dialogue line to write down, a sound pair; and
+        // the voice's, with a key to hear with: a line said, a sentence said.
         let mut exercises = tile_plan.exercises.clone();
         let dialogue = all.iter().find(|l| l.lesson_type == "dialogue").unwrap();
+        db::set_setting(&mut conn, "openrouter_api_key", "sk-shapes").unwrap();
         exercises.extend(session::build_lesson(&mut conn, dialogue.id).unwrap().exercises);
+        let sentence = session::lesson_sentences(&mut conn, tiles).unwrap().remove(0).0;
+        exercises.push(session::say_sentence(&sentence));
         let pairs = tutor::run_tool_for_test(
             &mut conn,
             "create_drill_lesson",
@@ -3352,7 +3453,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("StoryInfo", &crate::stories::info(&mut conn, story).unwrap().unwrap());
         write("LessonDetail.list", &[lessons::detail(&mut conn, scene).unwrap(), lessons::detail(&mut conn, story).unwrap()]);
         exercises.extend(session::build_lesson(&mut conn, story).unwrap().exercises);
-        for kind in ["dictation", "soundPair", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere", "storyPanel", "storyQuestion", "storyEnd"] {
+        for kind in ["dictation", "soundPair", "sayIt", "dialogueSay", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere", "storyPanel", "storyQuestion", "storyEnd"] {
             assert!(exercises.iter().any(|e| e.kind == kind), "a {kind} card");
         }
         write("Exercise.list", &exercises);
@@ -3365,6 +3466,18 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             }).unwrap(),
         );
         write("DictationChecked", &crate::dictation::check("Poproszę kawę.", "poprosze kawy"));
+        let said = practice::submit_answer_in(&mut conn, practice::SubmitAnswer {
+            kind: "sayIt".into(), item_kind: "sentence".into(), item_id: sentence.id.to_string(),
+            expected: "Muszę szyć.".into(), given: "muszę żyć".into(), ..Default::default()
+        }).unwrap();
+        assert!(!said.tips.is_empty());
+        write("AnswerResult.list", &[said]);
+        let spoken = crate::speaking::check("Muszę szyć sukienkę.", "Muszę żyć sukienkę");
+        write("Spoken", &spoken);
+        write("Heard.list", &[
+            crate::speaking::Heard { text: "Muszę żyć sukienkę".into(), spoken: Some(spoken.clone()) },
+            crate::speaking::Heard { text: "How do I say this?".into(), spoken: None },
+        ]);
         write("GlossWord.list", &crate::singalong::glossary(&mut conn, song(1)).unwrap());
         // Quick games, once a few words are met.
         let met: Vec<WordId> = crate::schema::words::table.select(crate::schema::words::id).limit(8).load(&mut conn).unwrap();
@@ -3380,7 +3493,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         }
         write(
             "QuickGame.list",
-            &["dictation", "sounds"].map(|game| crate::games::deal(&mut conn, game, &mut rand::rng()).unwrap()),
+            &["dictation", "sounds", "say"].map(|game| crate::games::deal(&mut conn, game, &mut rand::rng()).unwrap()),
         );
         write("GameFinished", &crate::games::finish(&mut conn, "match", 8, 42_000, 1).unwrap());
         write("QuickGames", &crate::games::overview(&mut conn).unwrap());

@@ -4,7 +4,8 @@
 //! picture where it has one, else its English; counted in moves),
 //! *Dictation* (five sentences the learner has met, said aloud, written
 //! down) and *Sound pairs* (the built-in pairs of sounds.rs: which word was
-//! said?). The last two are for the ear and are scored in right answers.
+//! said?) and *Say it* (five sentences met, said aloud: speaking.rs). The
+//! last three are scored in right answers.
 //!
 //! They pay a little XP — a set amount per game finished, up to a cap a day,
 //! so they never stand in for lessons — written to the XP log under a run of
@@ -34,7 +35,7 @@ use crate::sounds::SoundPair;
 use crate::ids::*;
 
 /// The games, by the name the screens use.
-const GAMES: &[&str] = &["match", "flip", "dictation", "sounds"];
+const GAMES: &[&str] = &["match", "flip", "dictation", "sounds", "say"];
 /// Sentences in a game of Dictation…
 const DICTATION_SENTENCES: usize = 5;
 /// …and at least this many met to play it.
@@ -61,13 +62,14 @@ fn title(game: &str) -> &'static str {
         "match" => "Match pairs",
         "dictation" => "Dictation",
         "sounds" => "Sound pairs",
+        "say" => "Say it",
         _ => "Flip and match",
     }
 }
 
 /// Games scored in right answers (out of the rounds), with no best kept.
 fn scored(game: &str) -> bool {
-    matches!(game, "dictation" | "sounds")
+    matches!(game, "dictation" | "sounds" | "say")
 }
 
 fn check(game: &str) -> Result<()> {
@@ -201,7 +203,7 @@ pub struct QuickGame {
     pub game: String,
     /// Match pairs, Flip and match: the cards.
     pub pairs: Vec<Pair>,
-    /// Dictation: the sentences to write down.
+    /// Dictation, Say it: the sentences to write down or say.
     pub sentences: Vec<DictationItem>,
     /// Sound pairs: the rounds.
     pub sounds: Vec<SoundRound>,
@@ -213,10 +215,10 @@ pub struct QuickGame {
 /// contrast before any comes twice.
 pub fn deal(conn: &mut Conn, game: &str, rng: &mut impl rand::Rng) -> Result<QuickGame> {
     check(game)?;
-    if game == "dictation" {
+    if game == "dictation" || game == "say" {
         let mut met = met_sentences(conn)?;
         if met.len() < MIN_SENTENCES {
-            return Err(Error::msg("Meet a few sentences in your lessons first: Dictation uses sentences you know."));
+            return Err(Error::msg(format!("Meet a few sentences in your lessons first: {} uses sentences you know.", title(game))));
         }
         met.shuffle(rng);
         met.truncate(DICTATION_SENTENCES);
@@ -317,7 +319,7 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
             (before_ms, before_moves, better && before_moves.is_some())
         };
         let label = if scored(game) {
-            let what = if game == "dictation" { "sentences" } else { "pairs" };
+            let what = if game == "sounds" { "pairs" } else { "sentences" };
             format!("{}: {} of {pairs} {what} right", title(game), (pairs - moves).max(0))
         } else if game == "match" {
             format!("{}: {pairs} pairs in {}", title(game), clock(ms))

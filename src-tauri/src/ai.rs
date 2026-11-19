@@ -59,6 +59,17 @@ pub fn vision_model(conn: &mut Conn) -> String {
     if model.is_empty() { DEFAULT_VISION_MODEL.to_string() } else { model }
 }
 
+/// Hears the learner speak (speaking cards, the mic in the chat boxes)
+/// unless another model is chosen: Gemini Flash takes sound in the chat API
+/// (an `input_audio` part), knows Polish well, keeps to a JSON schema, and a
+/// few seconds of speech cost a fraction of a cent.
+pub const DEFAULT_HEARING_MODEL: &str = "google/gemini-2.5-flash";
+
+pub fn hearing_model(conn: &mut Conn) -> String {
+    let model = stored_model(conn, "hearing_model");
+    if model.is_empty() { DEFAULT_HEARING_MODEL.to_string() } else { model }
+}
+
 #[derive(Serialize)]
 struct ImageRequest<'a> {
     model: &'a str,
@@ -683,12 +694,20 @@ pub async fn look_at_image(
         },
         "usage": { "include": true },
     });
+    let empty = format!("The model {model} said nothing about the picture. Pick one that reads images in Settings.");
+    post_for_reply(key, &body, &empty).await
+}
+
+/// Posts a ready-made chat request (pictures, sound) and reads its reply:
+/// the text, whether it was cut off, and what it cost. `empty` is the error
+/// when the model says nothing.
+async fn post_for_reply(key: &str, body: &serde_json::Value, empty: &str) -> Result<Reply> {
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
         .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
-        .json(&body)
+        .json(body)
         .send()
         .await?;
     let status = response.status();
@@ -711,8 +730,45 @@ pub async fn look_at_image(
     let truncated = choice.as_ref().and_then(|c| c.finish_reason.as_deref()) == Some("length");
     match choice.and_then(|c| c.message.content).filter(|text| !text.trim().is_empty()) {
         Some(text) => Ok(Reply { text, truncated, cost, tokens }),
-        None => Err(Error::msg(format!("The model {model} said nothing about the picture. Pick one that reads images in Settings."))),
+        None => Err(Error::msg(empty.to_string())),
     }
+}
+
+/// Lets a model that hears listen to a recording (base64, in `format`:
+/// "wav", "mp3", "m4a", …, sent as an `input_audio` part) and answer
+/// `prompt`; the answer must follow `schema`, as with pictures. The
+/// recording goes no further than this request: nothing keeps it.
+pub async fn listen_to_audio(
+    key: &str,
+    model: &str,
+    prompt: &str,
+    format: &str,
+    audio_base64: &str,
+    schema_name: &str,
+    schema: &serde_json::Value,
+) -> Result<Reply> {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": prompt },
+                { "type": "input_audio", "input_audio": { "data": audio_base64, "format": format } },
+            ],
+        }],
+        "temperature": 0.0,
+        // A transcript is short; the room is for a reasoning model's
+        // thinking, kept low so the answer comes quickly.
+        "max_tokens": 2000,
+        "reasoning": { "effort": "low" },
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": { "name": schema_name, "strict": true, "schema": schema },
+        },
+        "usage": { "include": true },
+    });
+    let empty = format!("The model {model} heard nothing. Pick one that takes sound in Settings → AI.");
+    post_for_reply(key, &body, &empty).await
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,6 +1102,7 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
                 .is_some_and(|params| params.iter().any(|p| p == "tools")),
             images: m.architecture.as_ref().is_some_and(|a| a.output_modalities.iter().any(|o| o == "image")),
             vision: m.architecture.as_ref().is_some_and(|a| a.input_modalities.iter().any(|i| i == "image")),
+            hears: m.architecture.as_ref().is_some_and(|a| a.input_modalities.iter().any(|i| i == "audio")),
             id: m.id,
         })
         .collect();

@@ -167,6 +167,8 @@ export const ExerciseKindSchema = z.enum([
   "storyPanel",
   "storyQuestion",
   "storyEnd",
+  "sayIt",
+  "dialogueSay",
 ]);
 export type ExerciseKind = z.infer<typeof ExerciseKindSchema>;
 
@@ -316,6 +318,8 @@ export const ExerciseSchema = z.object({
   scene: SceneCardSchema.nullable(),
   /** Story lessons: the panel, the question's kind, or the words at the end. */
   story: StoryCardSchema.nullable(),
+  /** A spoken dialogue turn: the other speaker's answer, said once the line is. */
+  reply: DialogueLineSchema.nullable(),
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
 
@@ -335,7 +339,7 @@ export const QuickGamesSchema = z.object({
 });
 export type QuickGames = z.infer<typeof QuickGamesSchema>;
 
-export const QuickGameKindSchema = z.enum(["match", "flip", "dictation", "sounds"]);
+export const QuickGameKindSchema = z.enum(["match", "flip", "dictation", "sounds", "say"]);
 export type QuickGameKind = z.infer<typeof QuickGameKindSchema>;
 
 /** A sentence to write down in the Dictation game. */
@@ -648,6 +652,43 @@ export const DictationCheckedSchema = z.object({
 });
 export type DictationChecked = z.infer<typeof DictationCheckedSchema>;
 
+/** A word said that was heard as another, and the sound that likely did it (sounds.rs). */
+export const SoundTipSchema = z.object({
+  word: z.string(),
+  heard: z.string(),
+  /** The contrast: "ż or sz". */
+  label: z.string(),
+  /** What to try. */
+  advice: z.string(),
+  /** A built-in pair of the contrast to hear side by side, when it has one. */
+  pair: z
+    .object({
+      id: z.string().nullable(),
+      label: z.string(),
+      a: z.string(),
+      aEn: z.string(),
+      b: z.string(),
+      bEn: z.string(),
+    })
+    .nullable(),
+});
+export type SoundTip = z.infer<typeof SoundTipSchema>;
+
+/** A spoken attempt compared with what was to be said (speaking.rs). */
+export const SpokenSchema = z.object({
+  correct: z.boolean(),
+  words: z.array(DiffWordSchema),
+  tips: z.array(SoundTipSchema),
+});
+export type Spoken = z.infer<typeof SpokenSchema>;
+
+/** A recording heard: the words, and for a speaking card how they compare. */
+export const HeardSchema = z.object({
+  text: z.string(),
+  spoken: SpokenSchema.nullable(),
+});
+export type Heard = z.infer<typeof HeardSchema>;
+
 export const AnswerResultSchema = z.object({
   correct: z.boolean(),
   expected: z.string(),
@@ -655,8 +696,10 @@ export const AnswerResultSchema = z.object({
   totalXp: z.number(),
   dayXp: z.number(),
   level: z.number(),
-  /** A dictation, word by word; empty for every other kind. */
+  /** A dictation (or a speaking card's best attempt), word by word; empty for every other kind. */
   diff: z.array(DiffWordSchema),
+  /** A speaking card: the sounds to try; empty for every other kind. */
+  tips: z.array(SoundTipSchema),
 });
 export type AnswerResult = z.infer<typeof AnswerResultSchema>;
 
@@ -809,6 +852,10 @@ export const SettingsSchema = z.object({
   imageModel: z.string(),
   /** Finds the things in a scene lesson's picture; empty means the default. */
   visionModel: z.string(),
+  /** Hears the learner speak; empty means the default. */
+  hearingModel: z.string(),
+  /** Speaking cards in lessons (kept on this device). */
+  speaking: z.boolean(),
   hasKieKey: z.boolean(),
   sunoModel: z.string(),
   sunoModels: z.array(z.string()),
@@ -838,6 +885,8 @@ export const SettingsPatchSchema = z.object({
   favoriteModels: z.array(z.string()).optional(),
   imageModel: z.string().optional(),
   visionModel: z.string().optional(),
+  hearingModel: z.string().optional(),
+  speaking: z.boolean().optional(),
   sunoModel: z.string().optional(),
   songLength: SongLengthSchema.optional(),
   theme: z.enum(["system", "light", "dark"]).optional(),
@@ -968,6 +1017,8 @@ export const AiModelSchema = z.object({
   images: z.boolean(),
   /** Can read images — for finding the things in a scene. */
   vision: z.boolean(),
+  /** Takes sound in: can hear the learner speak. */
+  hears: z.boolean(),
 });
 export type AiModel = z.infer<typeof AiModelSchema>;
 

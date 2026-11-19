@@ -4,6 +4,7 @@ import { dialogueRead } from "./dialogueRead";
 import { intro, sentenceIntro } from "./intro";
 import { dictation, soundPair } from "./listen";
 import { pictureIntro, picturePick, wordPick } from "./pictures";
+import { dialogueSay, sayIt } from "./speak";
 import { sceneExplore, sceneFind, sceneName, sceneType, sceneWhere } from "./scene";
 import { gapFill, memory } from "./sets";
 import { storyEnd, storyPanel, storyQuestion } from "./story";
@@ -37,6 +38,8 @@ const MODULES = [
   storyPanel,
   storyQuestion,
   storyEnd,
+  sayIt,
+  dialogueSay,
 ] as const;
 
 /** The kinds no module claims. */

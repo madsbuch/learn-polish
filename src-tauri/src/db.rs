@@ -1585,6 +1585,9 @@ pub(crate) const DEVICE_SETTINGS: &[&str] = &[
     // Whether this phone taps and buzzes with the answers: a phone's
     // preference, not the learner's (a computer has nothing to buzz).
     "haptics",
+    // Speaking cards: whether this device has a microphone worth using (a
+    // phone, not the computer without one), so its own.
+    crate::speaking::SETTING,
     "starter_seeded",
     crate::demo_course::SEEDED,
     crate::starter_retirement::RETIRED,
