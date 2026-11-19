@@ -28,6 +28,7 @@ import type {
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
+import { AchievementScreen } from "./screens/AchievementScreen";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { Memories } from "./screens/Memories";
@@ -90,6 +91,7 @@ type Overlay =
       back: Overlay;
     }
   | { kind: "progress" }
+  | { kind: "achievement"; code: string }
   | { kind: "xpDay"; day: number; back: Overlay }
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
@@ -677,17 +679,25 @@ export default function App() {
       <div className="app">
         <Progress
           stats={stats}
-          courses={courses}
           onBack={() => setOverlay({ kind: "none" })}
-          onOpenCourse={(progress) =>
-            setOverlay({ kind: "course", progress, back: { kind: "progress" } })
-          }
+          onOpenAchievement={(code) => setOverlay({ kind: "achievement", code })}
           onOpenDay={(day) =>
             setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })
           }
         />
       </div>
     );
+  }
+
+  if (overlay.kind === "achievement") {
+    const achievement = stats.achievements.find((a) => a.code === overlay.code);
+    if (achievement) {
+      return (
+        <div className="app">
+          <AchievementScreen achievement={achievement} onBack={() => setOverlay({ kind: "progress" })} />
+        </div>
+      );
+    }
   }
 
   if (overlay.kind === "player") {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { LessonRow } from "../components/LessonRow";
-import { Logo, SearchIcon } from "../components/icons";
+import { ChevronIcon, Logo, SearchIcon } from "../components/icons";
 import { CourseList } from "../components/CourseList";
 import {
   Avatar,
@@ -191,6 +191,19 @@ export function Exercises({
                             ? `About ${estimate(overview.due)} min${doneCount > 0 ? ` · ${doneCount} of ${total} done` : ""}`
                             : "Every lesson is mastered or waiting — ask the tutor for a new course."}
                       </Text>
+                      <button
+                        className="hero-xp"
+                        onClick={() => onOpenXpDay(overview.today)}
+                        aria-label={`${stats.dayXp} XP today: see what earned it`}
+                      >
+                        <span aria-hidden="true">⭐</span>
+                        <span>
+                          <CountUp value={stats.dayXp} memory="xp:today" /> XP today
+                        </span>
+                        <span className="hero-xp__chevron" aria-hidden="true">
+                          <ChevronIcon />
+                        </span>
+                      </button>
                     </div>
                   </Inline>
                   {upNext ? (
@@ -262,17 +275,6 @@ export function Exercises({
                     }
                     chevron
                     onClick={onOpenProgress}
-                  />
-                  <ListItem
-                    leading={<Avatar>⭐</Avatar>}
-                    title={
-                      <>
-                        <CountUp value={stats.dayXp} memory="xp:today" /> XP today
-                      </>
-                    }
-                    subtitle="See exactly what earned it"
-                    chevron
-                    onClick={() => onOpenXpDay(overview.today)}
                   />
                 </List>
               </div>

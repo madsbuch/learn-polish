@@ -1575,7 +1575,11 @@ mod integration {
         assert!(!unlocked("listening_first"));
         assert!(!stats.achievements.iter().any(|a| a.code.starts_with("level_")), "levels are not achievements");
         let every = stats.achievements.iter().find(|a| a.code == "words_all").unwrap();
-        assert!(every.progress > 0.0 && every.progress < 1.0, "measured against the words you have");
+        assert!(every.current > 0 && every.current < every.target, "measured against the words you have");
+        let first = stats.achievements.iter().find(|a| a.code == "checkin_first").unwrap();
+        assert_eq!((first.current, first.target, first.unlocked_day), (1, 1, Some(stats.day)), "unlocked today, and full");
+        let ten = stats.achievements.iter().find(|a| a.code == "writing_10").unwrap();
+        assert_eq!((ten.current, ten.target, ten.unlocked, ten.unlocked_day), (1, 10, false, None), "one of ten");
     }
 
     #[test]
@@ -2474,7 +2478,11 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("LessonDetail", &lessons::detail(&mut conn, drill.id).unwrap());
         write("LessonFinished", &finished);
         write("CourseProgress.list", &stats::course_progress(&mut conn).unwrap());
-        write("Stats", &stats::collect(&mut conn).unwrap());
+        let collected = stats::collect(&mut conn).unwrap();
+        write("Stats", &collected);
+        // The Progress screen's achievements: some earned, some part-way.
+        assert!(collected.achievements.iter().any(|a| a.unlocked) && collected.achievements.iter().any(|a| !a.unlocked));
+        write("Achievement.list", &collected.achievements);
         write("Word.list", &commands::browse_words_in(&mut conn, Some(basics), String::new(), 50).unwrap());
         write("Sentence.list", &commands::browse_sentences_in(&mut conn, basics).unwrap());
         write("CataloguePage", &commands::browse_catalogue_in(&mut conn, None, String::new(), 10).unwrap());

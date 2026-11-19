@@ -98,6 +98,12 @@
   /* A page in two columns on a wide window (a course: about it | lessons). */
   --split-page-width: 1240px;
   --sheet-width: 560px;
+  /* Progress: an achievement tile's narrowest (phone, then tablet up), the
+     badge on its own page, and how wide the practice grid gets. */
+  --achievement-tile-min: 80px;
+  --achievement-tile-wide: 128px;
+  --achievement-badge-size: 96px;
+  --heat-max-width: 520px;
   /* A dialog on a big window stops growing here, so it reads as a dialog. */
   --sheet-max-height: 820px;
   --course-card-width: 280px;

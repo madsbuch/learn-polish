@@ -158,11 +158,20 @@ pub struct SessionPlan {
 pub struct Achievement {
     pub code: String,
     pub title: String,
+    /// What it is about, in a line.
     pub description: String,
+    /// Exactly what to do to earn it, in plain words.
+    pub requirement: String,
     pub icon: String,
     pub unlocked: bool,
-    /// 0.0–1.0 toward unlocking.
-    pub progress: f64,
+    /// How far along: `current` of `target` (in `unit`s), from the same
+    /// numbers the unlock check reads. Full once unlocked.
+    pub current: i64,
+    pub target: i64,
+    /// What is counted, singular: "day", "word", "lesson".
+    pub unit: String,
+    /// The day it was unlocked (a day number, like `Stats::day`).
+    pub unlocked_day: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

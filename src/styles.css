@@ -221,6 +221,48 @@
   font-weight: var(--weight-bold);
   text-align: center;
 }
+/* Home → Today: the day's XP, a chip on the hero that opens what earned it.
+   Pressed, it scales down a touch and springs back like a button. */
+.hero-xp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--on-hero-tint);
+  color: var(--on-hero);
+  font: inherit;
+  font-size: var(--font-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  transition: transform var(--duration) var(--ease-spring), box-shadow var(--duration) var(--ease-out);
+}
+.hero-xp:active {
+  transform: scale(0.96);
+  transition-duration: var(--duration-fast);
+}
+.hero-xp:focus-visible {
+  outline: 2px solid var(--on-hero);
+  outline-offset: 2px;
+}
+.hero-xp__chevron {
+  display: inline-flex;
+  color: var(--on-hero-dim);
+}
+.hero-xp__chevron svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero-xp:hover {
+    box-shadow: inset 0 0 0 1px var(--on-hero-dim);
+  }
+}
+
 /* Progress → XP: one bar per day (or week); thin, rounded at the top,
    anchored to the baseline, a small gap between them. */
 .xp-chart {
@@ -594,54 +636,221 @@ body:has(.conversation-control) .line {
 
 /* ============================================================== progress */
 
+/* Progress: one column on a phone, in the order it matters (stats, then
+   achievements, then the charts). The wrappers place the cards on a wide
+   window (see the media queries below). */
+.progress-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+.progress-board > * {
+  min-width: 0;
+}
+
+/* Achievements as compact tiles, each a button to its own page. */
 .achievement-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--achievement-tile-min), 1fr));
   gap: var(--space-2);
 }
 .achievement {
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-2);
-  text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--control-lg);
+  padding: var(--space-3) var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: transform var(--duration) var(--ease-spring), box-shadow var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
 }
-.achievement[data-locked="true"] {
-  opacity: 0.45;
+.achievement:active {
+  transform: scale(0.96);
+  transition-duration: var(--duration-fast);
 }
 .achievement-icon {
   font-size: var(--font-headline);
   line-height: var(--leading-headline);
 }
+.achievement-title {
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+  font-weight: var(--weight-bold);
+  overflow-wrap: anywhere;
+}
+.achievement-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  margin-top: auto;
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+  color: var(--text-faint);
+  font-weight: var(--weight-medium);
+}
+.achievement-meta[data-done="true"] {
+  color: var(--ok);
+}
+/* Not earned yet: the badge is greyed, the words stay readable. */
+.achievement[data-locked="true"] {
+  background: var(--surface-sunken);
+}
+.achievement[data-locked="true"] .achievement-icon,
+.achievement-badge[data-locked="true"] {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.achievement[data-locked="true"] .achievement-title {
+  color: var(--text-dim);
+}
+@media (hover: hover) and (pointer: fine) {
+  .achievement:hover {
+    box-shadow: var(--hover-shadow);
+    border-color: var(--line);
+  }
+}
 
+/* An achievement's own page: the badge, large, in a soft ring. */
+.achievement-badge {
+  display: grid;
+  place-items: center;
+  width: var(--achievement-badge-size);
+  height: var(--achievement-badge-size);
+  border-radius: var(--radius-full);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  font-size: var(--font-display);
+  line-height: var(--leading-display);
+}
+.achievement-badge:not([data-locked="true"]) {
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  box-shadow: 0 0 var(--space-6) var(--glow-gold);
+}
+
+/* The practice grid: a column per week, Monday at the top; the squares
+   grow with the room there is, up to a comfortable size. */
 .heat {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 13px);
+  grid-template-rows: repeat(7, auto);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--space-1);
+  max-width: var(--heat-max-width);
 }
 .heat i {
-  width: 13px;
-  height: 13px;
-  border-radius: 4px;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: calc(var(--radius-sm) / 2);
   background: var(--tint-strong);
 }
 .heat i[data-level="1"] {
-  background: rgba(124, 92, 255, 0.35);
+  background: color-mix(in srgb, var(--brand) 35%, transparent);
 }
 .heat i[data-level="2"] {
-  background: rgba(124, 92, 255, 0.62);
+  background: color-mix(in srgb, var(--brand) 62%, transparent);
 }
 .heat i[data-level="3"] {
   background: var(--brand);
 }
 /* A missed day a streak freeze covered. */
 .heat i[data-frozen] {
-  background: var(--sky);
-  opacity: 0.6;
+  background: color-mix(in srgb, var(--sky) 60%, transparent);
+}
+.heat--legend {
+  display: inline-flex;
+  max-width: none;
+}
+.heat--legend i {
+  width: var(--space-3);
+}
+
+/* A tablet: the practice grid and the vocabulary side by side under the
+   XP chart. */
+@media (min-width: 768px) {
+  .progress-board {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "stats stats"
+      "achievements achievements"
+      "xp xp"
+      "heat vocab";
+    gap: var(--space-6);
+    align-items: start;
+  }
+  .progress-board__stats {
+    grid-area: stats;
+  }
+  .progress-board__achievements {
+    grid-area: achievements;
+  }
+  .progress-board__xp {
+    grid-area: xp;
+  }
+  .progress-board__heat {
+    grid-area: heat;
+  }
+  .progress-board__vocab {
+    grid-area: vocab;
+  }
+  .progress-board .achievement-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--achievement-tile-wide), 1fr));
+  }
+}
+/* A wide window: the XP chart on the left, as tall as the practice grid
+   and the vocabulary stacked beside it, its bars filling the height. */
+@media (min-width: 1000px) {
+  .progress-board {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas:
+      "stats stats"
+      "achievements achievements"
+      "xp heat"
+      "xp vocab";
+    align-items: stretch;
+  }
+  .progress-board__heat,
+  .progress-board__vocab {
+    align-self: start;
+  }
+  .progress-board__xp,
+  .progress-board__xp > .section,
+  .progress-board__xp .card,
+  .progress-board__xp .card > .stack,
+  .progress-board__xp .xp-chart {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .progress-board__xp .xp-bars {
+    flex: 1 1 auto;
+  }
+  /* Two even rows of ten. */
+  .progress-board .achievement-grid {
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+  }
+  .progress-board .stat b {
+    font-size: var(--font-headline);
+    line-height: var(--leading-headline);
+  }
+}
+/* Room enough: the chart and the side column closer to even. */
+@media (min-width: 1400px) {
+  .progress-board {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
 }
 
 /* ============================================================== markdown */

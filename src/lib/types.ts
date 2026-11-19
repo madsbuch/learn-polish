@@ -413,10 +413,19 @@ export type AnswerResult = z.infer<typeof AnswerResultSchema>;
 export const AchievementSchema = z.object({
   code: z.string(),
   title: z.string(),
+  /** What it is about, in a line. */
   description: z.string(),
+  /** Exactly what to do to earn it. */
+  requirement: z.string(),
   icon: z.string(),
   unlocked: z.boolean(),
-  progress: z.number(),
+  /** `current` of `target` `unit`s, from the numbers the unlock check reads; full once unlocked. */
+  current: z.number(),
+  target: z.number(),
+  /** What is counted, singular: "day", "word". */
+  unit: z.string(),
+  /** The day number it was unlocked on. */
+  unlockedDay: z.number().nullable(),
 });
 export type Achievement = z.infer<typeof AchievementSchema>;
 
