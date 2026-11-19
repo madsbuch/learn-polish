@@ -27,7 +27,10 @@ export interface Tapped {
 }
 
 /** Where a tapped word is inside its box (the popover's offset parent). */
-export function placeUnder(word: Element, box: HTMLElement): Pick<Tapped, "top" | "bottom" | "visibleBottom" | "left"> {
+export function placeUnder(
+  word: Element,
+  box: HTMLElement,
+): Pick<Tapped, "top" | "bottom" | "visibleBottom" | "left"> {
   const at = word.getBoundingClientRect();
   const frame = box.getBoundingClientRect();
   return {
@@ -46,10 +49,15 @@ export function useDismiss(open: boolean, close: () => void, words: string) {
     if (!open) return undefined;
     const outside = (event: PointerEvent) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(`.word-popover, ${words}`)) return;
+      if (
+        target instanceof Element &&
+        target.closest(`.word-popover, ${words}`)
+      )
+        return;
       closeRef.current();
     };
-    const escape = (event: KeyboardEvent) => event.key === "Escape" && closeRef.current();
+    const escape = (event: KeyboardEvent) =>
+      event.key === "Escape" && closeRef.current();
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", escape);
     return () => {
@@ -63,7 +71,15 @@ export function useDismiss(open: boolean, close: () => void, words: string) {
 const GAP_PX = 4;
 
 /** What a tapped word means — or, when nothing is known, the tutor to ask. */
-export function WordPopover({ tapped, gloss, onAsk }: { tapped: Tapped; gloss: GlossWord | null; onAsk: () => void }) {
+export function WordPopover({
+  tapped,
+  gloss,
+  onAsk,
+}: {
+  tapped: Tapped;
+  gloss: GlossWord | null;
+  onAsk: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   // Under the word, or over it when there is no room below in what shows.
   const [top, setTop] = useState(tapped.bottom + GAP_PX);
@@ -71,7 +87,11 @@ export function WordPopover({ tapped, gloss, onAsk }: { tapped: Tapped; gloss: G
     const height = ref.current?.offsetHeight ?? 0;
     const below = tapped.bottom + GAP_PX;
     const fitsBelow = below + height <= tapped.visibleBottom;
-    setTop(fitsBelow || tapped.top - GAP_PX - height < 0 ? below : tapped.top - GAP_PX - height);
+    setTop(
+      fitsBelow || tapped.top - GAP_PX - height < 0
+        ? below
+        : tapped.top - GAP_PX - height,
+    );
   }, [tapped, gloss]);
   return (
     <div

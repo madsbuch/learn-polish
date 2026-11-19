@@ -1,6 +1,12 @@
 import { useRef, useState } from "react";
 
-import { StoryDots, StoryLines, StoryPage, StoryPicture, usePageTurns } from "../components/Story";
+import {
+  StoryDots,
+  StoryLines,
+  StoryPage,
+  StoryPicture,
+  usePageTurns,
+} from "../components/Story";
 import { SpeakButton } from "../components/ui";
 import { Badge, Button, CountUp, Inline, Text } from "../design";
 import { fileUrl } from "../lib/files";
@@ -35,12 +41,22 @@ function Panel(props: ExerciseProps) {
         <StoryDots at={panel.number} total={card.total} />
       </div>
       <StoryPage picture={<StoryPicture panel={panel} />}>
-        <StoryLines panel={panel} glossary={card.glossary} lessonId={lessonId} english={english} />
+        <StoryLines
+          panel={panel}
+          glossary={card.glossary}
+          lessonId={lessonId}
+          english={english}
+        />
         <Inline gap={2} justify="between" wrap>
           <Text variant="caption" tone="faint">
             Tap a word for its meaning.
           </Text>
-          <Button size="sm" variant="plain" onClick={() => setEnglish((on) => !on)} aria-pressed={english}>
+          <Button
+            size="sm"
+            variant="plain"
+            onClick={() => setEnglish((on) => !on)}
+            aria-pressed={english}
+          >
             {english ? "Hide English" : "Show English"}
           </Button>
         </Inline>
@@ -84,7 +100,9 @@ function PictureChoice(props: ExerciseProps) {
             aria-label={`Picture ${i + 1}`}
             onClick={() => setPicked(option)}
           >
-            {image != null ? <img src={fileUrl(image)} alt="" draggable={false} /> : null}
+            {image != null ? (
+              <img src={fileUrl(image)} alt="" draggable={false} />
+            ) : null}
           </button>
         );
       })}
@@ -113,7 +131,9 @@ function Question(props: ExerciseProps) {
   }
   return (
     <>
-      <Text variant="eyebrow">{card.ask === "order" ? exercise.hint : "A question about the story"}</Text>
+      <Text variant="eyebrow">
+        {card.ask === "order" ? exercise.hint : "A question about the story"}
+      </Text>
       {card.panel ? (
         <div className="story-question__picture">
           <StoryPicture panel={card.panel} small />
@@ -122,7 +142,12 @@ function Question(props: ExerciseProps) {
       <Text variant="headline" align="center" as="p" selectable>
         {exercise.prompt}
       </Text>
-      <Options {...props} two={card.ask === "choice" && exercise.options.every((o) => o.length <= 18)} />
+      <Options
+        {...props}
+        two={
+          card.ask === "choice" && exercise.options.every((o) => o.length <= 18)
+        }
+      />
     </>
   );
 }
@@ -166,7 +191,8 @@ function End(props: ExerciseProps) {
       <div className="story-end__stats">
         <div className="stat-chip">
           <Text variant="title" weight="bold">
-            <CountUp value={right} from={0} duration={600} /> of {questions.length}
+            <CountUp value={right} from={0} duration={600} /> of{" "}
+            {questions.length}
           </Text>
           <Text variant="caption" tone="dim">
             questions right
@@ -177,7 +203,7 @@ function End(props: ExerciseProps) {
             {card.words.length}
           </Text>
           <Text variant="caption" tone="dim">
-            words met{fresh > 0 ? `, ${fresh} new` : ""}
+            {fresh > 0 ? `words, ${fresh} new` : "words met"}
           </Text>
         </div>
         <div className="stat-chip">
@@ -203,7 +229,8 @@ function End(props: ExerciseProps) {
             ))}
           </ul>
           <Text variant="small" tone="faint">
-            Next, a quick go at them — then the story stays on the lesson's page to read again.
+            Next, a quick go at them — then the story stays on the lesson's page
+            to read again.
           </Text>
         </div>
       ) : null}
