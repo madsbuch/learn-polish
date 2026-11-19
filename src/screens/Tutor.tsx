@@ -591,7 +591,7 @@ function TutorInfo() {
         <li>Explain grammar, words and phrases</li>
       </ul>
       <p>
-        It needs a model that can use tools (marked 🛠 in Settings). It runs on your own OpenRouter key, which never
+        It needs a model that can use tools (marked 🛠 in Settings → AI). It runs on your own OpenRouter key, which never
         leaves the app's core.
       </p>
     </>

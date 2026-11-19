@@ -71,9 +71,9 @@ export function SongComposer({
   return (
     <Screen title={draft ? "Your song" : "New song"} onBack={onCancel}>
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {!songwriter ? <Banner tone="info">Pick a songwriter model in Settings.</Banner> : null}
+      {!songwriter ? <Banner tone="info">Pick a songwriter model in Settings → AI.</Banner> : null}
       {!settings.hasKieKey ? (
-        <Banner tone="info">Songs need a kie.ai key in Settings. Podcasts work without one.</Banner>
+        <Banner tone="info">Songs need a kie.ai key in Settings → Songs. Podcasts work without one.</Banner>
       ) : null}
 
       {!draft ? (

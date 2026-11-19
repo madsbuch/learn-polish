@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   CalendarIcon,
@@ -113,7 +113,7 @@ function SettingsMenu({
       .catch(() => setOtherDevices(null));
   }, []);
 
-  const row = (page: SettingsPage, leading: React.ReactNode, title: string, subtitle: string) => (
+  const row = (page: SettingsPage, leading: ReactNode, title: string, subtitle: string) => (
     <ListItem
       leading={leading}
       title={title}
@@ -142,21 +142,21 @@ function SettingsMenu({
     otherDevices === null
       ? "Keep your phone and computer in step"
       : otherDevices === 0
-        ? "Only this one — add your phone or computer"
+        ? "Just this one — add another"
         : `${otherDevices + 1} devices in step`;
 
   return (
     <Screen title="Settings">
       <Section title="Getting started">
         <List>
-          {row("howTo", <StudyIcon />, "How to use", "The idea behind the app, and how to get the most from it")}
+          {row("howTo", <StudyIcon />, "How to use", "How the app works, and why")}
         </List>
       </Section>
 
       <Section title="Learning">
         <List>
           {row("practice", <CalendarIcon />, "Practice", practice)}
-          {row("memories", <MemoryIcon />, "Memories", "What the tutor and examiner remember about you")}
+          {row("memories", <MemoryIcon />, "Memories", "What the tutor remembers about you")}
         </List>
       </Section>
 

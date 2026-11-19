@@ -39,7 +39,7 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /**
- * Settings → Diagnostics: what the app noted about itself — how long slow
+ * Settings → Your data → Diagnostics: what the app noted about itself — how long slow
  * screens took, model replies it could not read, background work that
  * failed. Raw lines, newest first, in a box that is easy to select; Copy
  * puts it all on the clipboard to pass on.

@@ -59,7 +59,7 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
       <Part title="Your day">
         <P>
           Open <strong>Exercises</strong>: <strong>today's lessons</strong> are there — the five that matter most (you
-          can change how many in Settings). A lesson that slipped last time comes first, then the ones whose time has
+          can change how many in Settings → Practice). A lesson that slipped last time comes first, then the ones whose time has
           come, then up to two new ones.
         </P>
         <P>
@@ -157,7 +157,7 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           conversation aloud.
         </P>
         <P>
-          The AI features need an OpenRouter key, and songs a kie.ai key, both in Settings. The demo course and
+          The AI features need an OpenRouter key (Settings → AI), and songs a kie.ai key (Settings → Songs). The demo course and
           everything already downloaded work without them, offline.
         </P>
       </Part>

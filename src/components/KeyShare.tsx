@@ -46,7 +46,7 @@ export function KeyShare({ settings, onSettings }: { settings: Settings; onSetti
         <>
           <p>
             Copy your API keys to another device without typing them: show the QR code here and scan it with Polski on
-            the other device (Settings → Other devices → Scan).
+            the other device (Settings → Your data → Other devices → Scan).
           </p>
           <p>The QR code holds the keys themselves, so only show it to a device you own.</p>
         </>
@@ -98,7 +98,7 @@ function ShowQr({ onClose }: { onClose: () => void }) {
           <Loading />
         )}
         <Text variant="small" tone="dim" align="center">
-          On the other device, open Settings → Other devices → Scan. Anyone who sees this code can use your keys.
+          On the other device, open Settings → Your data → Other devices → Scan. Anyone who sees this code can use your keys.
         </Text>
         <Button wide onClick={onClose}>
           Done

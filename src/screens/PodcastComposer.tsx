@@ -98,7 +98,7 @@ export function PodcastComposer({
   return (
     <Screen title="New podcast" onBack={onCancel}>
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {!writer ? <Banner tone="info">Pick a songwriter model in Settings — it writes the podcasts too.</Banner> : null}
+      {!writer ? <Banner tone="info">Pick a songwriter model in Settings → AI — it writes the podcasts too.</Banner> : null}
 
       <Segmented
         value="podcast"

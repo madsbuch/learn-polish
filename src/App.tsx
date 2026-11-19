@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Logo, NavIcon } from "./components/icons";
-import { Banner, markBack, Stack } from "./design";
+import { Banner, markBack, Stack, useWideLayout } from "./design";
 import { Startup, type BootStep } from "./components/Startup";
 import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
@@ -32,13 +32,11 @@ import { AchievementScreen } from "./screens/AchievementScreen";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { Memories } from "./screens/Memories";
-import { SettingsScreen } from "./screens/SettingsScreen";
+import { SettingsPageView, SettingsScreen, type SettingsPage } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
 import { XpDayScreen } from "./screens/XpDayScreen";
-import { HowToUse } from "./screens/HowToUse";
-import { Devices } from "./screens/Devices";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
@@ -95,8 +93,6 @@ type Overlay =
   | { kind: "xpDay"; day: number; back: Overlay }
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
-  | { kind: "howTo" }
-  | { kind: "devices" }
   | { kind: "search" }
   | { kind: "player"; back?: Overlay }
   | {
@@ -151,6 +147,19 @@ export default function App() {
   /** A request for the tutor from a button elsewhere ("Add levels"): starts a new conversation. */
   const [tutorAsk, setTutorAsk] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
+  /**
+   * The Settings sub-screen open (How to use, AI, …). It stays while a
+   * screen opened from it (Downloaded audio) is on top, so back returns to it.
+   */
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
+  /** A wide window shows a Settings sub-screen beside the menu instead of over it. */
+  const wide = useWideLayout();
+  /** Opens Settings at one of its sub-screens (a "set your key" button elsewhere). */
+  const openSettings = useCallback((page: SettingsPage) => {
+    setOverlay({ kind: "none" });
+    setTab("settings");
+    setSettingsPage(page);
+  }, []);
 
   // Studying a lesson — its page, its drill, its check-in — often means pen
   // and paper, not touching the phone: keep the screen on meanwhile.
@@ -631,22 +640,6 @@ export default function App() {
     );
   }
 
-  if (overlay.kind === "howTo") {
-    return (
-      <div className="app">
-        <HowToUse onBack={() => setOverlay({ kind: "none" })} />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "devices") {
-    return (
-      <div className="app">
-        <Devices onBack={() => setOverlay({ kind: "none" })} />
-      </div>
-    );
-  }
-
   if (overlay.kind === "audio") {
     return (
       <div className="app">
@@ -723,6 +716,28 @@ export default function App() {
     );
   }
 
+  const settingsShared = {
+    settings,
+    onSettings: applySettings,
+    onReset: () => void refresh(),
+    onOpenAudio: () => setOverlay({ kind: "audio" }),
+  };
+
+  // A Settings sub-screen on a phone: pushed over the tabs, back to the menu.
+  if (tab === "settings" && settingsPage !== null && !wide) {
+    return (
+      <div className="app">
+        <SettingsPageView
+          key={settingsPage}
+          page={settingsPage}
+          onBack={() => setSettingsPage(null)}
+          onOpenPage={setSettingsPage}
+          {...settingsShared}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app app-tabs">
       {tab === "exercises" ? (
@@ -760,7 +775,9 @@ export default function App() {
           onOpenLesson={(lessonId) =>
             setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })
           }
-          onOpenSettings={() => setTab("settings")}
+          // Songs need the kie.ai key (Settings → Songs); with it, what is
+          // missing is the OpenRouter key (Settings → AI).
+          onOpenSettings={() => openSettings(settings.hasKieKey ? "ai" : "songs")}
           onOpenPlayer={() =>
             setOverlay({ kind: "player", back: { kind: "none" } })
           }
@@ -771,7 +788,7 @@ export default function App() {
         <Tutor
           hasApiKey={settings.hasApiKey}
           hasModel={settings.aiModel.length > 0}
-          onOpenSettings={() => setTab("settings")}
+          onOpenSettings={() => openSettings("ai")}
           onOpenCourse={(courseId) => void openCourseById(courseId)}
           onOpenLesson={(lessonId) =>
             setOverlay({ kind: "lesson", lessonId, back: { kind: "none" } })
@@ -791,15 +808,9 @@ export default function App() {
 
       {tab === "settings" ? (
         <SettingsScreen
-          settings={settings}
-          onSettings={applySettings}
-          onReset={() => void refresh()}
-          onOpenMemories={() =>
-            setOverlay({ kind: "memories", back: { kind: "none" } })
-          }
-          onOpenAudio={() => setOverlay({ kind: "audio" })}
-          onOpenHowTo={() => setOverlay({ kind: "howTo" })}
-          onOpenDevices={() => setOverlay({ kind: "devices" })}
+          page={settingsPage}
+          onPage={setSettingsPage}
+          {...settingsShared}
         />
       ) : null}
 

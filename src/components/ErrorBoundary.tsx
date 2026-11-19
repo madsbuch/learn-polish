@@ -34,7 +34,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
           </Text>
           <Banner tone="error">{this.state.failed}</Banner>
           <Text tone="dim" as="p">
-            It is in the log under Settings → Diagnostics. Try again, or restart the app.
+            It is in the log under Settings → Your data → Diagnostics. Try again, or restart the app.
           </Text>
           <Button variant="primary" wide onClick={() => this.setState({ failed: null })}>
             Try again

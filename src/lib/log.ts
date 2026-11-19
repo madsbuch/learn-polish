@@ -14,7 +14,7 @@ export function describe(cause: unknown): string {
 const recent = new Map<string, number>();
 
 /**
- * Writes an error to the Diagnostics log (Settings → Diagnostics), where it
+ * Writes an error to the Diagnostics log (Settings → Your data → Diagnostics), where it
  * can be copied. The same message twice within a few seconds is noted once;
  * a log that cannot be written is left alone (it must never cause errors of
  * its own).

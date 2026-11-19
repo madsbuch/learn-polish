@@ -64,7 +64,9 @@ puts today's work in a band across the top and the course library below it
 across the full width (course cards are tiles with the picture above the
 text from 768px), and a course's or a lesson's page goes into two columns
 (`page-split` wrappers: about it on the left, its content on the right). From
-1400px Settings flows into two columns. `Screen` defaults to a 760px reading
+1000px Settings keeps its menu on the left and the open sub-screen beside
+it (`SplitView`, like Tutor and Music); below that, each sub-screen is pushed
+over the tabs. `Screen` defaults to a 760px reading
 width; use `width="wide"` for dashboards (capped at `--max-width`). Sheets
 become centered dialogs on tablets. Desktop-only additions (hover states) sit
 under `(hover: hover) and (pointer: fine)` so touch screens are unchanged.

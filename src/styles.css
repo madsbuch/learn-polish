@@ -2029,27 +2029,6 @@ button.id-chip {
   }
 }
 
-/* Settings on a big window: its groups flow into two columns, each the
-   width of a comfortable form, instead of one long narrow strip. */
-.settings-columns {
-  display: contents;
-}
-@media (min-width: 1400px) {
-  .screen:has(.settings-columns) > .screen-header,
-  .screen-body:has(> .settings-columns) {
-    max-width: var(--split-page-width);
-  }
-  .settings-columns {
-    display: block;
-    columns: 2;
-    column-gap: var(--space-7);
-  }
-  .settings-columns > * {
-    break-inside: avoid;
-    margin-bottom: var(--space-6);
-  }
-}
-
 /* The player on a big window: controls and lyrics side by side, kept to a
    width where the lyrics stay near the controls. */
 @media (min-width: 1000px) {
