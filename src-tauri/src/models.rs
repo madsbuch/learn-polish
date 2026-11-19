@@ -83,7 +83,8 @@ pub struct Exercise {
     /// intro | recognise | produce | type | sentenceIntro | wordOrder |
     /// dialogueGap | gapFill | memory | pictureIntro | wordPick |
     /// picturePick | dictation | soundPair | sceneExplore | sceneFind |
-    /// sceneName | sceneType | sceneWhere
+    /// sceneName | sceneType | sceneWhere | storyPanel | storyQuestion |
+    /// storyEnd
     pub kind: String,
     /// word | sentence | dialogue | set (several items at once, not scheduled)
     pub item_kind: String,
@@ -119,6 +120,9 @@ pub struct Exercise {
     pub endings: Vec<crate::tiles::TileEnding>,
     /// Scene lessons: the picture and where each thing is in it (scenes.rs).
     pub scene: Option<crate::scenes::SceneCard>,
+    /// Story lessons: the panel to read, what a question is about, or the
+    /// story's words at its end (stories.rs).
+    pub story: Option<crate::stories::StoryCard>,
 }
 
 /// One sentence with a word taken out of it.

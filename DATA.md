@@ -18,7 +18,7 @@ change to the schema follows these.
   memory, `src_` Wikipedia source, `xp_` XP entry, `cost_` AI cost, `bench_`
   benchmark run, `dev_` device (sync), `sp_` built-in sound pair
   (`sounds.rs`: derived ids, kept in the code, not a table), `spot_` where a
-  thing is in a scene lesson's picture. A new table gets a new prefix, added
+  thing is in a scene lesson's picture, `pnl_` a story lesson's panel. A new table gets a new prefix, added
   to `ids.rs` and here.
 - **Each kind has its own type**: `LessonId`, `CourseId`, … in Rust; branded
   strings (`LessonIdSchema`) in `src/lib/types.ts`. Only a correctly tagged id
@@ -30,7 +30,8 @@ change to the schema follows these.
 - **Tables keyed by something natural keep it**: settings by key, a day's log
   by day and device (each device adds up its own: docs/SYNC.md), a speech
   clip by its cache key, achievements by code, links (a course's lessons) by
-  their pair of ids, a scene lesson's picture (`scenes`) by its lesson.
+  their pair of ids, a scene lesson's picture (`scenes`) and a story lesson's story (`stories`)
+  by its lesson.
 - **No ids inside stored text** unless they are TypeIDs: JSON in a column
   (a tutor message's actions, a song's origin, the day's list) holds TypeIDs
   only, never positions or integers.

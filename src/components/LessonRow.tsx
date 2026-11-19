@@ -4,7 +4,7 @@ import { Avatar, Badge, ListItem } from "../design";
 import { complexityTone, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { Lesson } from "../lib/types";
 import { lessonType } from "../lib/lessonTypes";
-import { DrillIcon, NavIcon, PictureIcon, SceneIcon, StudyIcon, WriteIcon } from "./icons";
+import { DrillIcon, NavIcon, PictureIcon, SceneIcon, StoryIcon, StudyIcon, WriteIcon } from "./icons";
 
 /**
  * A lesson in a list: what kind it is, how long it takes, and when it is due.
@@ -56,6 +56,7 @@ const TYPE_ICONS: Record<string, () => ReactNode> = {
   song: () => <NavIcon.songs />,
   picture: () => <PictureIcon />,
   scene: () => <SceneIcon />,
+  story: () => <StoryIcon />,
 };
 
 /** What type of lesson it is, as an icon. */

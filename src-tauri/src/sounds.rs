@@ -201,6 +201,7 @@ pub fn exercise(pair: &SoundPair, lesson_id: LessonId, rng: &mut impl rand::Rng)
         context: vec![],
         endings: vec![],
         scene: None,
+        story: None,
     }
 }
 

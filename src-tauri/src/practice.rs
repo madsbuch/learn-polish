@@ -95,7 +95,7 @@ pub struct SubmitAnswer {
 
 /// Cards that are only read (a new word, a new sentence, a dialogue to read
 /// through): nothing is answered, so nothing is scored.
-pub const READING_KINDS: &[&str] = &["intro", "sentenceIntro", "dialogueRead", "pictureIntro", "sceneExplore"];
+pub const READING_KINDS: &[&str] = &["intro", "sentenceIntro", "dialogueRead", "pictureIntro", "sceneExplore", "storyPanel", "storyEnd"];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

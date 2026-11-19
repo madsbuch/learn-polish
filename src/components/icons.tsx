@@ -349,6 +349,29 @@ export function SceneIcon() {
   );
 }
 
+/** A story: an open picture book. */
+export function StoryIcon() {
+  return (
+    <Glyph>
+      <path d="M12 6.5c-1.8-1.3-4.6-1.9-8-1.5v13c3.4-.4 6.2.2 8 1.5 1.8-1.3 4.6-1.9 8-1.5V5c-3.4-.4-6.2.2-8 1.5z" />
+      <path d="M12 6.5v13" />
+      <path d="M6 13.5l2-2 2 2" />
+      <circle cx="16.5" cy="10" r="1.3" />
+    </Glyph>
+  );
+}
+
+/** A picture still to be drawn: a pencil. */
+export function PencilIcon() {
+  return (
+    <Glyph>
+      <path d="M4.5 19.5l1-4.2L15.8 5a2 2 0 012.8 0l.4.4a2 2 0 010 2.8L8.7 18.5z" />
+      <path d="M13.8 7l3.2 3.2" />
+      <path d="M4.5 19.5h5" />
+    </Glyph>
+  );
+}
+
 /** Slowly: a tortoise — read at a glance, at any size. */
 export function SlowIcon() {
   return (

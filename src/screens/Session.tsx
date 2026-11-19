@@ -40,6 +40,8 @@ export function Session({
   const [busy, setBusy] = useState(false);
   const [sessionXp, setSessionXp] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  // Every answer of this go, right or not, by card.
+  const [results, setResults] = useState<Record<string, boolean>>({});
 
   // Per-exercise answer state.
   const [picked, setPicked] = useState<string | null>(null);
@@ -129,6 +131,7 @@ export function Session({
       setSessionXp((xp) => xp + answer.xpGained);
       const reading = exerciseModule(exercise.kind).reading;
       if (answer.correct && !reading) setCorrectCount((n) => n + 1);
+      if (!reading) setResults((r) => ({ ...r, [exercise.key]: answer.correct }));
       setPhase("checked");
       if (!reading) {
         if (answer.correct) {
@@ -188,6 +191,15 @@ export function Session({
   const isChecked = phase === "checked";
   const reading = module.reading ?? false;
 
+  /** The foot button: check the answer, or move on once checked; a reading card is recorded and left. */
+  async function next() {
+    if (busy) return;
+    if (isChecked && !reading) await advance();
+    else if (reading) {
+      if (await check()) await advance();
+    } else if (canSubmit && !module?.submitsItself) await check();
+  }
+
   const exerciseProps: ExerciseProps = {
     ...answerState,
     exercise,
@@ -208,6 +220,9 @@ export function Session({
       if (isChecked) void advance();
       else if (canSubmit) void check();
     },
+    onNext: () => void next(),
+    results,
+    sessionXp,
   };
 
   return (
@@ -224,7 +239,7 @@ export function Session({
         </span>
       </div>
 
-      <div className="session-body exercise-in" key={exercise.key} ref={bodyRef}>
+      <div className={`session-body ${module.pageTurn ? "page-turn-in" : "exercise-in"}`} key={exercise.key} ref={bodyRef}>
         {error ? <Banner tone="error">{error}</Banner> : null}
 
         {module.render(exerciseProps)}
@@ -277,12 +292,10 @@ export function Session({
             wide
             loading={busy}
             disabled={!canSubmit || module.submitsItself}
-            onClick={async () => {
-              // Reading cards have nothing to check: record them and move on.
-              if ((await check()) && reading) await advance();
-            }}
+            // Reading cards have nothing to check: record them and move on.
+            onClick={() => void next()}
           >
-            {reading ? "Got it" : (module.checkLabel ?? "Check")}
+            {reading ? (module.checkLabel ?? "Got it") : (module.checkLabel ?? "Check")}
           </Button>
         )}
         <Text variant="caption" tone="faint" align="center" as="div">

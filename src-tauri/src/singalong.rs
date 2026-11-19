@@ -60,24 +60,21 @@ pub fn same_word(form: &str, base: &str) -> bool {
 }
 
 /// One candidate meaning: (Polish, English, word, from the song's course).
-type Known = (String, String, Option<WordId>, bool);
+pub(crate) type Known = (String, String, Option<WordId>, bool);
 
 /// Finds a form's meaning: an exact match first, then a form of a word;
 /// within each, in the order given (the course's words first).
-fn look_up(form: &str, known: &[Known]) -> Option<GlossWord> {
+pub(crate) fn look_up(form: &str, known: &[Known]) -> Option<GlossWord> {
     let single = known.iter().filter(|(pl, ..)| !pl.contains(' '));
     let exact = single.clone().find(|(pl, ..)| pl.to_lowercase() == form);
     let found = exact.or_else(|| single.clone().find(|(pl, ..)| form.chars().count() >= 3 && same_word(form, pl)))?;
     Some(GlossWord { form: form.into(), pl: found.0.clone(), en: found.1.clone(), word_id: found.2, lesson: found.3 })
 }
 
-/// The meanings of a song's words, for every sung form that has one.
-pub fn glossary(conn: &mut Conn, song_id: SongId) -> Result<Vec<GlossWord>> {
-    let song = crate::songs::load_song(conn, song_id)?;
+/// The forms of some lines' words, each once, in order.
+pub fn forms_in<'a>(lines: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut forms: Vec<String> = Vec::new();
-    let sung = song.sections.iter().flat_map(|s| s.lines.iter().map(|l| l.pl.clone()));
-    let timed = song.tracks.iter().flat_map(|t| t.lines.iter().flatten().filter(|l| l.lang == "pl").map(|l| l.text.clone()));
-    for line in sung.chain(timed) {
+    for line in lines {
         for token in line.split_whitespace() {
             let form = form_of(token);
             if !form.is_empty() && !forms.contains(&form) {
@@ -85,6 +82,16 @@ pub fn glossary(conn: &mut Conn, song_id: SongId) -> Result<Vec<GlossWord>> {
             }
         }
     }
+    forms
+}
+
+/// The meanings of a song's words, for every sung form that has one.
+pub fn glossary(conn: &mut Conn, song_id: SongId) -> Result<Vec<GlossWord>> {
+    let song = crate::songs::load_song(conn, song_id)?;
+    let sung: Vec<String> = song.sections.iter().flat_map(|s| s.lines.iter().map(|l| l.pl.clone())).collect();
+    let timed: Vec<String> =
+        song.tracks.iter().flat_map(|t| t.lines.iter().flatten().filter(|l| l.lang == "pl").map(|l| l.text.clone())).collect();
+    let forms = forms_in(sung.iter().chain(&timed).map(String::as_str));
 
     let mut known: Vec<Known> = Vec::new();
     if let Some(course) = song.course_id {
@@ -100,6 +107,13 @@ pub fn glossary(conn: &mut Conn, song_id: SongId) -> Result<Vec<GlossWord>> {
             known.push((pl.trim().into(), en.trim().into(), None, false));
         }
     }
+    meanings(conn, &forms, known)
+}
+
+/// The meanings of the given forms: from `known` first (in its order), then
+/// from every word the learner has. Shared by songs and stories (stories.rs:
+/// the story's own words first, marked `lesson`).
+pub(crate) fn meanings(conn: &mut Conn, forms: &[String], mut known: Vec<Known>) -> Result<Vec<GlossWord>> {
     let rows: Vec<(WordId, String, String)> = words::table.select((words::id, words::pl, words::en)).load(conn)?;
     known.extend(rows.into_iter().map(|(id, pl, en)| (pl, en, Some(id), false)));
 

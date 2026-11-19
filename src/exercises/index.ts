@@ -6,6 +6,7 @@ import { dictation, soundPair } from "./listen";
 import { pictureIntro, picturePick, wordPick } from "./pictures";
 import { sceneExplore, sceneFind, sceneName, sceneType, sceneWhere } from "./scene";
 import { gapFill, memory } from "./sets";
+import { storyEnd, storyPanel, storyQuestion } from "./story";
 import { typeWord } from "./type";
 import type { ExerciseModule } from "./types";
 import { wordOrder } from "./wordOrder";
@@ -33,6 +34,9 @@ const MODULES = [
   sceneName,
   sceneType,
   sceneWhere,
+  storyPanel,
+  storyQuestion,
+  storyEnd,
 ] as const;
 
 /** The kinds no module claims. */

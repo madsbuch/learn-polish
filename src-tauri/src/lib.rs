@@ -52,6 +52,7 @@ mod dictation;
 mod sounds;
 mod singalong;
 mod scenes;
+mod stories;
 
 
 use tauri::{Emitter, Manager};
@@ -163,6 +164,8 @@ pub fn run() {
                 pictures::draw_missing_in_background(app);
                 // Scene lessons whose picture an earlier run did not finish.
                 scenes::resume_pending(app);
+                // Story lessons whose panels an earlier run did not finish drawing.
+                stories::resume_pending(app);
                 files::sync_to_disk(app);
                 // Lessons built on Wikipedia, checked against it every three months.
                 wiki::check_due_in_background(app);
@@ -232,6 +235,7 @@ pub fn run() {
             pictures::course_picture_delete,
             pictures::lesson_add_pictures,
             scenes::scene_make,
+            stories::story_draw,
             lesson_types::lesson_types,
             diagnostics::diagnostics_list,
             resolve::ids_resolve,
@@ -2504,6 +2508,267 @@ mod integration {
         assert_eq!(lessons::detail(&mut db.lock(), lesson_id).unwrap().scene.unwrap().status, scenes::READY);
     }
 
+
+    /// A story lesson as the tutor writes one: Ola looks for her dog Burek,
+    /// in five panels.
+    fn story_args(course: CourseId, complexity: &str) -> serde_json::Value {
+        let q = |prompt: &str, answer: &str, wrong: &[&str]| serde_json::json!({ "prompt": prompt, "answer": answer, "wrong": wrong });
+        let line = |pl: &str, en: &str| serde_json::json!({ "pl": pl, "en": en });
+        let said = |who: &str, pl: &str, en: &str| serde_json::json!({ "pl": pl, "en": en, "speaker": who });
+        serde_json::json!({
+            "title": "Gdzie jest Burek?", "summary": "Ola looks for her dog.", "complexity": complexity,
+            "theme": "A girl looks for her lost dog in the rain and finds him at home.",
+            "setting": "a small Polish town in autumn",
+            "course_id": course,
+            "characters": [
+                { "name": "Ola", "look": "a girl of about ten with a red raincoat and two dark plaits", "gender": "f" },
+                { "name": "Burek", "look": "a small brown dog with one white ear", "gender": "m" },
+                { "name": "Tata", "look": "a tall man with a grey beard and a green jumper", "gender": "m" }
+            ],
+            "panels": [
+                { "picture": "Ola stands at the door of a house in the rain, looking worried.",
+                  "lines": [line("Pada deszcz.", "It is raining."), said("Ola", "Gdzie jest mój pies?", "Where is my dog?")],
+                  "question": q("Who is looking for the dog?", "Ola", &["Tata", "Burek"]) },
+                { "picture": "Ola walks through a park with an umbrella.",
+                  "lines": [line("Ola idzie do parku.", "Ola goes to the park."), said("Ola", "Burek! Burek!", "Burek! Burek!")],
+                  "question": q("Where does Ola go?", "to the park", &["to school", "to the shop"]) },
+                { "picture": "Ola asks a baker in a bakery; bread on the shelves.",
+                  "lines": [line("Ola pyta piekarza.", "Ola asks the baker."), said("Ola", "Czy pan widział psa?", "Have you seen a dog?")],
+                  "question": q("Who does Ola ask?", "the baker", &["a teacher", "her father"]) },
+                { "picture": "Ola comes home sad; Tata opens the door.",
+                  "lines": [line("Ola wraca do domu.", "Ola comes back home."), said("Tata", "Chodź, zobacz!", "Come and see!")],
+                  "question": q("Who opens the door?", "Tata", &["Burek", "the baker"]) },
+                { "picture": "Burek sleeps by the warm stove in the kitchen; Ola laughs.",
+                  "lines": [{ "pl": "Burek śpi w kuchni.", "en": "Burek is sleeping in the kitchen.", "practise": true }, said("Ola", "Mój pies jest w domu!", "My dog is at home!")],
+                  "question": q("Where is Burek?", "in the kitchen", &["in the park", "in the bakery"]) }
+            ],
+            "words": [
+                { "pl": "pies", "en": "dog", "pos": "n-m" },
+                { "pl": "deszcz", "en": "rain", "pos": "n-m" },
+                { "pl": "park", "en": "park", "pos": "n-m" },
+                { "pl": "piekarz", "en": "baker", "pos": "n-m" },
+                { "pl": "kuchnia", "en": "kitchen", "pos": "n-f" },
+                { "pl": "spać", "en": "to sleep", "pos": "v" }
+            ]
+        })
+    }
+
+    /// A stand-in image model: a picture per call, except the calls listed
+    /// in `fail` (counted from 1), which fail.
+    struct Painter {
+        fail: Vec<usize>,
+        prompts: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl stories::Painter for Painter {
+        fn draw(&self, prompt: &str) -> impl std::future::Future<Output = error::Result<(String, Vec<u8>, Option<f64>)>> + Send {
+            let mut prompts = self.prompts.lock().unwrap();
+            prompts.push(prompt.to_string());
+            let fails = self.fail.contains(&prompts.len());
+            let mut png = Vec::new();
+            image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(1600, 1200, image::Rgb([200, 220, 240])))
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .unwrap();
+            async move {
+                if fails {
+                    Err(error::Error::msg("The image model returned no picture."))
+                } else {
+                    Ok(("image/png".to_string(), png, Some(0.04)))
+                }
+            }
+        }
+
+        fn model(&self) -> &str {
+            "stub/image"
+        }
+    }
+
+    fn draw_story(db: &Db, lesson_id: LessonId, painter: &Painter) -> stories::Drawn {
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let seen = std::sync::Mutex::new(Vec::new());
+        let drawn = runtime.block_on(stories::draw_panels(db, lesson_id, painter, &|panel, status| seen.lock().unwrap().push((panel, status.to_string())))).unwrap();
+        assert!(seen.lock().unwrap().iter().any(|(_, s)| s == stories::DRAWING), "every step is reported");
+        drawn
+    }
+
+    #[test]
+    fn story_lessons_are_checked_drawn_panel_by_panel_and_scored() {
+        let mut conn = scratch_db("stories");
+        let course = db::require_course_id(&mut conn, 1).unwrap();
+        let lessons_before = t::lessons::table.count().get_result::<i64>(&mut conn).unwrap();
+
+        // The tutor's mistakes come back to it together, and nothing is made.
+        let mut bad = story_args(course, "low");
+        bad["panels"] = serde_json::Value::Array(bad["panels"].as_array().unwrap()[..3].to_vec());
+        bad["panels"][1]["lines"][1]["speaker"] = "Kasia".into();
+        bad["panels"][2]["question"]["wrong"] = serde_json::json!(["the baker"]);
+        bad["words"][0]["pl"] = "kot".into();
+        bad["words"][1]["pl"] = "szkoła".into();
+        bad["words"][2]["pl"] = "rower".into();
+        bad["characters"][0]["look"] = "".into();
+        let refused = tutor::run_tool_for_test(&mut conn, "create_story_lesson", bad);
+        let error = refused["error"].as_str().unwrap();
+        for problem in ["4–8 panels (got 3)", "said by Kasia", "Panel 3: the question's answers must all differ", "not in the story: kot, szkoła, rower", "how they look"] {
+            assert!(error.contains(problem), "{problem}: {error}");
+        }
+        let mut long = story_args(course, "low");
+        for panel in long["panels"].as_array_mut().unwrap() {
+            panel["lines"][0]["practise"] = true.into();
+        }
+        assert!(tutor::run_tool_for_test(&mut conn, "create_story_lesson", long)["error"].as_str().unwrap().contains("at most 4 sentences"));
+        assert_eq!(t::lessons::table.count().get_result::<i64>(&mut conn).unwrap(), lessons_before);
+        assert_eq!(t::story_panels::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+
+        // Made: six words and one sentence to practise; five panels to read
+        // at once, waiting for their pictures.
+        let made = tutor::run_tool_for_test(&mut conn, "create_story_lesson", story_args(course, "low"));
+        assert!(made["error"].is_null(), "{made}");
+        let lesson_id: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        let lesson = lessons::load(&mut conn, lesson_id).unwrap();
+        assert_eq!((lesson.lesson_type.as_str(), lesson.items, lesson.course_id), ("story", 7, Some(course)));
+        assert_eq!(lesson.period_days, lesson_types::get("story").unwrap().default_period("low"));
+        let detail = lessons::detail(&mut conn, lesson_id).unwrap();
+        assert_eq!(detail.sentences, [("Burek śpi w kuchni.".to_string(), "Burek is sleeping in the kitchen.".to_string())]);
+        let story = detail.story.expect("a story lesson has its story");
+        assert_eq!(story.panels.len(), 5);
+        assert!(story.panels.iter().all(|p| p.status == stories::WAITING && p.image.is_none()));
+        assert_eq!(story.panels[0].lines[1].gender, "f", "Ola's line in her voice");
+        assert_eq!(story.panels[3].lines[1].gender, "m", "Tata's in his");
+        assert_eq!(story.panels[0].lines[0].gender, "", "narration in the narrator's");
+        // Inflected forms find their words: "psa" is "pies", "kuchni" is "kuchnia".
+        let gloss = |form: &str| story.glossary.iter().find(|g| g.form == form).cloned();
+        assert!(gloss("deszcz").is_some_and(|g| g.lesson && g.word_id.is_some()));
+        assert!(gloss("kuchni").is_some_and(|g| g.pl == "kuchnia" && g.lesson), "{:?}", gloss("kuchni"));
+        let other = drill_of(&mut conn, course);
+        assert!(lessons::detail(&mut conn, other).unwrap().story.is_none(), "other lessons have none");
+        let shown = tutor::run_tool_for_test(&mut conn, "get_lesson", serde_json::json!({ "lesson_id": lesson_id }));
+        assert_eq!(shown["story"]["panels"][4]["lines"][0]["pl"], "Burek śpi w kuchni.", "the tutor can read it");
+
+        // Readable before any picture: every panel, then its question — no
+        // picture questions yet — the end, then the words.
+        let screens = include_str!("../../src/lib/types.ts");
+        let plan = session::build_lesson(&mut conn, lesson_id).unwrap();
+        let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(&kinds[..11], ["storyPanel", "storyQuestion", "storyPanel", "storyQuestion", "storyPanel", "storyQuestion",
+            "storyPanel", "storyQuestion", "storyPanel", "storyQuestion", "storyEnd"], "{kinds:?}");
+        assert_eq!(kinds.iter().filter(|k| **k == "recognise").count(), 6, "the new words, recognised: {kinds:?}");
+        assert!(kinds.contains(&"wordOrder"), "the kept sentence is built: {kinds:?}");
+        for exercise in &plan.exercises {
+            assert!(screens.contains(&format!("\"{}\"", exercise.kind)), "the screens know {}", exercise.kind);
+        }
+        let questions: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "storyQuestion").collect();
+        assert!(questions.iter().all(|q| q.story.as_ref().unwrap().ask != "picture"), "no pictures to choose from yet");
+        assert!(questions.iter().all(|q| q.options.contains(&q.answer) && q.options.len() >= 2), "{questions:?}");
+        let first = plan.exercises[0].story.as_ref().unwrap();
+        assert_eq!((first.total, first.panel.as_ref().unwrap().number), (5, 1));
+        assert!(first.glossary.iter().any(|g| g.form == "deszcz") && !first.glossary.iter().any(|g| g.form == "kuchni"), "the panel's own words");
+        let end = plan.exercises.iter().find(|e| e.kind == "storyEnd").unwrap().story.as_ref().unwrap();
+        assert_eq!(end.words.len(), 6);
+        assert!(end.words.iter().all(|w| w.new));
+
+        // Drawn panel by panel: the third fails, the rest are drawn, each
+        // with every character's look and the one style in its prompt.
+        let db = Db::new(conn);
+        let painter = Painter { fail: vec![3], prompts: Default::default() };
+        assert_eq!(draw_story(&db, lesson_id, &painter), stories::Drawn { drawn: 4, failed: 1 });
+        let prompts = painter.prompts.lock().unwrap().clone();
+        assert_eq!(prompts.len(), 5);
+        for (n, prompt) in prompts.iter().enumerate() {
+            assert!(prompt.contains(&format!("picture {} of 5", n + 1)), "{prompt}");
+            assert!(prompt.contains("Ola — a girl of about ten with a red raincoat") && prompt.contains("Burek — a small brown dog"), "{prompt}");
+            assert!(prompt.contains(stories::STORY_STYLE) && prompt.contains("a small Polish town in autumn"), "{prompt}");
+        }
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let story = lessons::detail(conn, lesson_id).unwrap().story.unwrap();
+        let statuses: Vec<&str> = story.panels.iter().map(|p| p.status.as_str()).collect();
+        assert_eq!(statuses, ["ready", "ready", "failed", "ready", "ready"]);
+        let failed = &story.panels[2];
+        assert!(failed.image.is_none() && failed.error.contains("no picture"), "{failed:?}");
+        let drawn = &story.panels[0];
+        assert_eq!((drawn.width, drawn.height), (1024, 768), "kept at a sensible size, as JPEG");
+        assert!(files::referenced(conn).unwrap().contains(&drawn.image.unwrap()), "a panel's picture is kept, not swept as an orphan");
+        let costs: Vec<(String, String)> = t::ai_costs::table.select((t::ai_costs::feature, t::ai_costs::model)).load(conn).unwrap();
+        assert_eq!(costs.iter().filter(|(f, m)| f == costs::PICTURES && m == "stub/image").count(), 4, "every picture is paid for");
+
+        // With pictures: one question asks which picture shows a sentence
+        // (two pictures from the pages read so far), one which came first.
+        let plan = session::build_lesson(conn, lesson_id).unwrap();
+        let asks: Vec<&str> = plan.exercises.iter().filter_map(|e| e.story.as_ref()).filter(|s| !s.ask.is_empty()).map(|s| s.ask.as_str()).collect();
+        assert_eq!(asks.len(), 5);
+        assert_eq!(asks.iter().filter(|a| **a == "picture").count(), 1, "{asks:?}");
+        assert_eq!(asks.iter().filter(|a| **a == "order").count(), 1, "{asks:?}");
+        let picture = plan.exercises.iter().find(|e| e.story.as_ref().is_some_and(|s| s.ask == "picture")).unwrap();
+        assert_eq!(picture.options.len(), 2);
+        assert!(picture.options.contains(&picture.answer) && picture.option_images.iter().all(Option::is_some), "{picture:?}");
+        let order = plan.exercises.iter().find(|e| e.story.as_ref().is_some_and(|s| s.ask == "order")).unwrap();
+        let place = |pl: &str| story.panels.iter().position(|p| p.lines.iter().any(|l| l.pl == pl)).unwrap();
+        let other = order.options.iter().find(|o| **o != order.answer).unwrap();
+        assert!(place(&order.answer) < place(other), "the answer came first: {order:?}");
+        // A panel without its picture still reads, with a placeholder.
+        let third = plan.exercises.iter().filter(|e| e.kind == "storyPanel").nth(2).unwrap();
+        assert_eq!(third.story.as_ref().unwrap().panel.as_ref().unwrap().status, "failed");
+
+        // Scored: reading pays nothing, a right answer 8 XP, a wrong none;
+        // the words are reviewed, the story's questions are not scheduled.
+        let read = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "storyPanel".into(), item_kind: "set".into(), item_id: lesson_id.to_string(), is_new: true, ..Default::default()
+        }).unwrap();
+        assert_eq!((read.correct, read.xp_gained), (true, 0));
+        let q = questions[0];
+        let right = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "storyQuestion".into(), item_kind: "set".into(), item_id: lesson_id.to_string(),
+            expected: q.answer.clone(), given: q.answer.clone(), lesson_id: Some(lesson_id), ..Default::default()
+        }).unwrap();
+        assert!(right.correct && right.xp_gained == 8, "{right:?}");
+        let wrong = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "storyQuestion".into(), item_kind: "set".into(), item_id: lesson_id.to_string(),
+            expected: q.answer.clone(), given: q.options.iter().find(|o| **o != q.answer).unwrap().clone(), ..Default::default()
+        }).unwrap();
+        assert!(!wrong.correct && wrong.xp_gained == 0);
+        let chose = practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "storyQuestion".into(), item_kind: "set".into(), item_id: lesson_id.to_string(),
+            expected: picture.answer.clone(), given: picture.answer.clone(), ..Default::default()
+        }).unwrap();
+        assert!(chose.correct, "a picture is chosen by its panel's id");
+        let word = plan.exercises.iter().find(|e| e.kind == "recognise").unwrap();
+        practice::submit_answer_in(conn, practice::SubmitAnswer {
+            kind: "recognise".into(), item_kind: "word".into(), item_id: word.item_id.clone(), is_new: true,
+            expected: word.answer.clone(), given: word.answer.clone(), ..Default::default()
+        }).unwrap();
+        let reviewed: Vec<String> = t::reviews::table.select(t::reviews::item_id).load(conn).unwrap();
+        assert!(reviewed.contains(&word.item_id) && !reviewed.contains(&lesson_id.to_string()));
+        let scored = plan.exercises.iter().filter(|e| e.kind != "storyPanel" && e.kind != "storyEnd").count();
+        let finished = practice::lesson_finish_in(conn, lesson_id, i64::try_from(scored).unwrap(), i64::try_from(scored).unwrap()).unwrap();
+        assert_eq!(finished.result, "pass");
+        assert!(finished.lesson.due_day.is_some() && finished.lesson.mastery > 0, "scheduled and on its way to mastered");
+        // Met now: the end lists the words as known, and they come back harder.
+        let again = session::build_lesson(conn, lesson_id).unwrap();
+        let end = again.exercises.iter().find(|e| e.kind == "storyEnd").unwrap().story.as_ref().unwrap();
+        assert!(end.words.iter().any(|w| !w.new));
+
+        // Only this device draws what it wrote: a panel another device
+        // wrote is left to that device.
+        stories::redraw(conn, lesson_id, None).unwrap();
+        let third_id = story.panels[2].id;
+        assert_eq!(stories::pending(conn, Some(lesson_id)), [(lesson_id, third_id)]);
+        diesel::update(t::sync_rows::table.filter(t::sync_rows::pk.eq(third_id.to_string())))
+            .set(t::sync_rows::origin.eq(DeviceId::new().to_string()))
+            .execute(conn)
+            .unwrap();
+        assert!(stories::pending(conn, Some(lesson_id)).is_empty(), "another device's panel");
+        drop(guard);
+
+        // Tried again (here: it is ours again): only that panel is drawn.
+        stories::redraw(&mut db.lock(), lesson_id, Some(third_id)).unwrap();
+        assert!(stories::redraw(&mut db.lock(), lesson_id, Some(PanelId::new())).is_err(), "a panel of another story");
+        let painter = Painter { fail: vec![], prompts: Default::default() };
+        assert_eq!(draw_story(&db, lesson_id, &painter), stories::Drawn { drawn: 1, failed: 0 });
+        assert!(painter.prompts.lock().unwrap()[0].contains("picture 3 of 5"));
+        let story = lessons::detail(&mut db.lock(), lesson_id).unwrap().story.unwrap();
+        assert!(story.panels.iter().all(|p| p.status == stories::READY && p.image.is_some() && p.error.is_empty()));
+    }
+
     /// The first word drill of a course.
     fn drill_of(conn: &mut Conn, course: CourseId) -> LessonId {
         lessons::for_course(conn, course).unwrap().into_iter().find(|l| l.lesson_type == "words").unwrap().id
@@ -3076,9 +3341,18 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             [0.05, 0.05, 0.15, 0.30], [0.05, 0.40, 0.25, 0.60], [0.50, 0.38, 0.56, 0.46],
         ]).unwrap();
         write("SceneInfo", &crate::scenes::info(&mut conn, scene).unwrap().unwrap());
-        write("LessonDetail.list", &[lessons::detail(&mut conn, scene).unwrap()]);
         exercises.extend(session::build_lesson(&mut conn, scene).unwrap().exercises);
-        for kind in ["dictation", "soundPair", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere"] {
+        // A story, its panels drawn but one: read it, answer, its words.
+        let made = tutor::run_tool_for_test(&mut conn, "create_story_lesson", story_args(basics, "low"));
+        let story: LessonId = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        crate::stories::ready_for_test(&mut conn, story).unwrap();
+        let last: PanelId = t::story_panels::table.filter(t::story_panels::lesson_id.eq(story)).order(t::story_panels::ord.desc())
+            .select(t::story_panels::id).first(&mut conn).unwrap();
+        diesel::update(t::story_panels::table.find(last)).set((t::story_panels::status.eq("failed"), t::story_panels::error.eq("The model drew nothing."))).execute(&mut conn).unwrap();
+        write("StoryInfo", &crate::stories::info(&mut conn, story).unwrap().unwrap());
+        write("LessonDetail.list", &[lessons::detail(&mut conn, scene).unwrap(), lessons::detail(&mut conn, story).unwrap()]);
+        exercises.extend(session::build_lesson(&mut conn, story).unwrap().exercises);
+        for kind in ["dictation", "soundPair", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere", "storyPanel", "storyQuestion", "storyEnd"] {
             assert!(exercises.iter().any(|e| e.kind == kind), "a {kind} card");
         }
         write("Exercise.list", &exercises);

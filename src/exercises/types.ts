@@ -47,6 +47,14 @@ export interface ExerciseProps extends AnswerState {
   inputRef: RefObject<HTMLInputElement | null>;
   /** Enter in the text box: check the answer, or move on once checked. */
   onEnter: () => void;
+  /** What the foot button does now: check, move on, or (a card only read)
+   *  both — for a card turned by a swipe or an arrow key (a story's page). */
+  onNext: () => void;
+  /** This go's answers so far, right or not, by exercise key (a story's last
+   *  page counts its questions). */
+  results: Readonly<Record<string, boolean>>;
+  /** XP earned so far this go. */
+  sessionXp: number;
 }
 
 /**
@@ -71,9 +79,11 @@ export interface ExerciseModule<K extends ExerciseKind = ExerciseKind> {
   /** Wants the room: a scene, as large as the window allows (the session
    *  widens past the reading width on a big screen). */
   wide?: boolean;
+  /** A page of a story: it comes in turning, like a page, not sliding. */
+  pageTurn?: boolean;
   /** Show "pl — meaning" in the verdict even after a right answer. */
   revealOnRight?: boolean;
-  /** The foot button's label in place of "Check". */
+  /** The foot button's label in place of "Check" ("Got it" on a reading card). */
   checkLabel?: string;
   /** The card's body, between the error banner and the verdict. */
   render: (props: ExerciseProps) => ReactNode;

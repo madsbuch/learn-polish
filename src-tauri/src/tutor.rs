@@ -680,6 +680,84 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
+            "create_story_lesson",
+            "Writing the story…",
+            "Make a story lesson: a short illustrated story told panel by panel (4–8 panels), each a \
+             picture with 1–3 Polish sentences under it, and a quick question after it. The learner reads \
+             (and hears) it panel by panel, taps words for their meanings, answers the questions, then \
+             practises the story's words. Write it at the lesson's level and build it from the course's \
+             words (same Polish and English); list the words it teaches in words — they become the \
+             lesson's words. Give 1–4 characters, each with a short description of how they look \
+             (age, hair, clothes, colours; an animal's colour and markings): it goes into every picture's \
+             prompt so they look the same throughout. A line someone says names its speaker (their \
+             voice reads it); narration has none. Questions: who, what or where about that panel, in \
+             English for a low lesson and in Polish for medium and high, with 1–3 plausible wrong \
+             answers. The pictures are drawn in the background, panel by panel (about 4 cents each); the \
+             story can be read meanwhile. Everything is checked first: if something is wrong, nothing is \
+             made and you get the list to fix.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "theme": { "type": "string", "description": "What the story is about, in English, one or two sentences." },
+                    "setting": { "type": "string", "description": "Where it happens, in English, for the pictures (e.g. \"a small Polish town in autumn\")." },
+                    "complexity": { "type": "string", "enum": ["low", "medium", "high"], "description": "The lesson's level: low — short present-tense sentences and questions in English; medium and high — longer sentences, past tense, questions in Polish. Default low." },
+                    "characters": {
+                        "type": "array",
+                        "description": "1–4 people or animals in the story.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string", "description": "As written in the story, e.g. \"Ola\"" },
+                                "look": { "type": "string", "description": "How they look, in English, short and concrete: \"a girl of about ten with a red raincoat and two dark plaits\"" },
+                                "gender": { "type": "string", "enum": ["f", "m"], "description": "The voice their lines are read in." }
+                            },
+                            "required": ["name", "look", "gender"]
+                        }
+                    },
+                    "panels": {
+                        "type": "array",
+                        "description": "4–8 panels, in story order.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "picture": { "type": "string", "description": "What the picture shows, in English: who is there, doing what, where. No text in it." },
+                                "lines": {
+                                    "type": "array",
+                                    "description": "1–3 sentences under the picture.",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "pl": { "type": "string" },
+                                            "en": { "type": "string" },
+                                            "speaker": { "type": "string", "description": "The character who says it, by name; leave out for narration." },
+                                            "practise": { "type": "boolean", "description": "Also keep it as one of the lesson's sentences to practise (at most 4 in the story)." }
+                                        },
+                                        "required": ["pl", "en"]
+                                    }
+                                },
+                                "question": {
+                                    "type": "object",
+                                    "description": "Asked after this panel: who, what or where.",
+                                    "properties": {
+                                        "prompt": { "type": "string", "description": "e.g. \"Who is looking for the dog?\" or \"Gdzie śpi Burek?\"" },
+                                        "answer": { "type": "string" },
+                                        "wrong": { "type": "array", "items": { "type": "string" }, "description": "1–3 wrong answers, as long as the right one" }
+                                    },
+                                    "required": ["prompt", "answer", "wrong"]
+                                }
+                            },
+                            "required": ["picture", "lines", "question"]
+                        }
+                    },
+                    "words": word_schema(),
+                    "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$", "description": "The course to add it to; leave out only for a one-off that fits no course (it goes in \"Other lessons\")" }
+                },
+                "required": ["title", "theme", "characters", "panels", "words"]
+            }),
+        ),
+        tool(
             "create_listening_lesson",
             "Making the listening lesson…",
             "Make a listening lesson for a song: the learner listens, then the examiner asks about what they heard (meaning, missing words, translation, grammar). One per song.",
@@ -1885,6 +1963,20 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 lesson.id,
             ))
         }
+        "create_story_lesson" => {
+            let args: crate::stories::NewStory = parse(arguments)?;
+            let panels = args.panels.len();
+            let lesson = crate::stories::create(conn, args, "tutor")?;
+            Ok(Outcome::lesson(
+                json!({
+                    "created": lesson_json(&lesson),
+                    "story": "readable now; its pictures are drawn in the background, panel by panel",
+                }),
+                "lessonCreated",
+                format!("Made “{}” — a story in {panels} pictures, {} words", lesson.title, lesson.items),
+                lesson.id,
+            ))
+        }
         "create_listening_lesson" => {
             let args: ListeningArgs = parse(arguments)?;
             let lesson = lessons::create_listening(
@@ -1931,6 +2023,16 @@ fn run_tool(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcome> {
                 "words": detail.words.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
                 "sentences": detail.sentences.iter().map(|(pl, en)| json!({ "pl": pl, "en": en })).collect::<Vec<_>>(),
                 "last_checkin_feedback": detail.last_feedback,
+                // A story lesson's story, page by page.
+                "story": detail.story.as_ref().map(|s| json!({
+                    "theme": s.theme,
+                    "characters": s.characters,
+                    "panels": s.panels.iter().map(|p| json!({
+                        "picture": p.picture,
+                        "drawn": p.status,
+                        "lines": p.lines.iter().map(|l| json!({ "pl": l.pl, "en": l.en, "speaker": l.speaker })).collect::<Vec<_>>(),
+                    })).collect::<Vec<_>>(),
+                })),
                 "sources": crate::wiki::sources_of(conn, args.lesson_id)?
                     .into_iter()
                     .map(|s| json!({ "source_id": s.id, "title": s.title, "lang": s.lang, "url": s.url, "in_polish_too": s.polish_title.is_some() }))
@@ -3201,6 +3303,11 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
                         crate::scenes::resume_pending(app);
                         return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
                     }
+                    if name == "create_story_lesson" {
+                        drop(guard);
+                        crate::stories::resume_pending(app);
+                        return ToolOutput { result: done.result, extra: done.action, ends_turn: false };
+                    }
                     done
                 };
                 ToolOutput { result: done.result, extra: done.action, ends_turn: false }
@@ -3289,9 +3396,9 @@ pub async fn tutor_talk_about(
                 .find(SentenceId::parse(&item_id).map_err(|e| Error::msg(e.to_string()))?)
                 .select((crate::schema::sentences::pl, crate::schema::sentences::en))
                 .first(conn)?,
-            // A line of a conversation, or a word of a song (its line as the
-            // meaning: the word itself is what is not known).
-            "line" | "lyric" => match (polish, meaning) {
+            // A line of a conversation, or a word of a song or a story (its
+            // line as the meaning: the word itself is what is not known).
+            "line" | "lyric" | "story" => match (polish, meaning) {
                 (Some(pl), Some(en)) if !pl.trim().is_empty() => (pl.trim().to_string(), en.trim().to_string()),
                 _ => return Err(Error::msg("A line needs its Polish and meaning.")),
             },
@@ -3317,6 +3424,8 @@ pub async fn tutor_talk_about(
             )
         } else if item_kind == "lyric" {
             format!("What does “{polish}” mean in this line of a song: {meaning}?")
+        } else if item_kind == "story" {
+            format!("What does “{polish}” mean in this sentence of a story I am reading: {meaning}?")
         } else {
             format!("Let's talk about “{polish}”.")
         };

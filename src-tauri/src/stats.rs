@@ -40,9 +40,9 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
         return 0;
     }
     let base = match kind {
-        "intro" | "sentenceIntro" | "pictureIntro" | "sceneExplore" => 2,
+        "intro" | "sentenceIntro" | "pictureIntro" | "sceneExplore" | "storyPanel" | "storyEnd" => 2,
         "recognise" | "wordPick" | "picturePick" | "sceneFind" => 6,
-        "produce" | "sceneName" | "sceneWhere" => 8,
+        "produce" | "sceneName" | "sceneWhere" | "storyQuestion" => 8,
         "dialogueGap" => 10,
         "wordOrder" => 12,
         "type" | "dictation" | "sceneType" => 14,

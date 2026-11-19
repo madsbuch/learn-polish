@@ -64,6 +64,9 @@ export type DeviceId = z.infer<typeof DeviceIdSchema>;
 /** A built-in sound pair (sounds.rs): derived from its words, not a row. */
 export const SoundPairIdSchema = typeId<"SoundPairId">("sp");
 export type SoundPairId = z.infer<typeof SoundPairIdSchema>;
+/** One panel of a story lesson. */
+export const PanelIdSchema = typeId<"PanelId">("pnl");
+export type PanelId = z.infer<typeof PanelIdSchema>;
 
 // Mirrors the serde structs in src-tauri/src/models.rs.
 export const CourseSchema = z.object({
@@ -161,6 +164,9 @@ export const ExerciseKindSchema = z.enum([
   "sceneName",
   "sceneType",
   "sceneWhere",
+  "storyPanel",
+  "storyQuestion",
+  "storyEnd",
 ]);
 export type ExerciseKind = z.infer<typeof ExerciseKindSchema>;
 
@@ -215,6 +221,72 @@ export const SceneCardSchema = z.object({
 });
 export type SceneCard = z.infer<typeof SceneCardSchema>;
 
+/** What a sung word means (singalong.rs), looked up by its sung form. */
+export const GlossWordSchema = z.object({
+  /** As sung: lowercase, no punctuation. */
+  form: z.string(),
+  /** Its dictionary form. */
+  pl: z.string(),
+  en: z.string(),
+  wordId: WordIdSchema.nullable(),
+  /** One of the words of the song's course: Sing along asks these first. */
+  lesson: z.boolean(),
+});
+export type GlossWord = z.infer<typeof GlossWordSchema>;
+
+/** A sentence under a story's panel, with the voice to read it in. */
+export const StoryLineSchema = z.object({
+  pl: z.string(),
+  en: z.string(),
+  /** Who says it; empty for narration. */
+  speaker: z.string(),
+  /** "f" or "m" for a character's line; empty for the narrator. */
+  gender: z.string(),
+});
+export type StoryLine = z.infer<typeof StoryLineSchema>;
+
+/** One panel of a story: its picture (once drawn) and its sentences. */
+export const StoryPanelSchema = z.object({
+  id: PanelIdSchema,
+  /** Its place in the story, from 1. */
+  number: z.number(),
+  /** What the picture shows, in English: for screen readers, and while it is drawn. */
+  picture: z.string(),
+  image: FileIdSchema.nullable(),
+  width: z.number(),
+  height: z.number(),
+  status: z.enum(["waiting", "drawing", "ready", "failed"]),
+  /** Why its picture failed, when it did. */
+  error: z.string(),
+  lines: z.array(StoryLineSchema),
+});
+export type StoryPanel = z.infer<typeof StoryPanelSchema>;
+
+/** A word of a story's lesson, for its last page. */
+export const StoryWordSchema = z.object({
+  wordId: WordIdSchema,
+  pl: z.string(),
+  en: z.string(),
+  /** Met for the first time in this story. */
+  new: z.boolean(),
+});
+export type StoryWord = z.infer<typeof StoryWordSchema>;
+
+/** What a story card shows: a panel to read, what a question is about, or the words at the end. */
+export const StoryCardSchema = z.object({
+  title: z.string(),
+  panel: StoryPanelSchema.nullable(),
+  /** Panels in the story. */
+  total: z.number(),
+  /** A question's kind; empty on a panel or the end. */
+  ask: z.enum(["", "choice", "picture", "order"]),
+  /** The meanings of the panel's words. */
+  glossary: z.array(GlossWordSchema),
+  /** The end: the lesson's words, met in the story. */
+  words: z.array(StoryWordSchema),
+});
+export type StoryCard = z.infer<typeof StoryCardSchema>;
+
 export const ExerciseSchema = z.object({
   key: z.string(),
   kind: ExerciseKindSchema,
@@ -242,6 +314,8 @@ export const ExerciseSchema = z.object({
   endings: z.array(TileEndingSchema),
   /** Scene lessons: the picture and where each thing is in it. */
   scene: SceneCardSchema.nullable(),
+  /** Story lessons: the panel, the question's kind, or the words at the end. */
+  story: StoryCardSchema.nullable(),
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
 
@@ -403,6 +477,26 @@ export const SceneInfoSchema = z.object({
 });
 export type SceneInfo = z.infer<typeof SceneInfoSchema>;
 
+/** Someone in a story, and how they look in every picture. */
+export const CharacterSchema = z.object({
+  name: z.string(),
+  look: z.string(),
+  gender: z.string(),
+});
+export type Character = z.infer<typeof CharacterSchema>;
+
+/** A story lesson's story as its page shows it: the picture book. */
+export const StoryInfoSchema = z.object({
+  theme: z.string(),
+  characters: z.array(CharacterSchema),
+  panels: z.array(StoryPanelSchema),
+  /** The meanings of every word in it. */
+  glossary: z.array(GlossWordSchema),
+  /** Its pictures are being drawn on this device right now. */
+  working: z.boolean(),
+});
+export type StoryInfo = z.infer<typeof StoryInfoSchema>;
+
 export const LessonDetailSchema = LessonSchema.extend({
   content: z.string(),
   objectives: z.array(z.string()),
@@ -421,6 +515,8 @@ export const LessonDetailSchema = LessonSchema.extend({
   wordPictures: z.array(WordPictureSchema),
   /** A scene lesson's scene; null for every other lesson. */
   scene: SceneInfoSchema.nullable(),
+  /** A story lesson's story; null for every other lesson. */
+  story: StoryInfoSchema.nullable(),
 });
 export type LessonDetail = z.infer<typeof LessonDetailSchema>;
 
@@ -1214,19 +1310,6 @@ export const TimedLineSchema = z.object({
   speaker: z.string().nullable().optional(),
 });
 export type TimedLine = z.infer<typeof TimedLineSchema>;
-
-/** What a sung word means (singalong.rs), looked up by its sung form. */
-export const GlossWordSchema = z.object({
-  /** As sung: lowercase, no punctuation. */
-  form: z.string(),
-  /** Its dictionary form. */
-  pl: z.string(),
-  en: z.string(),
-  wordId: WordIdSchema.nullable(),
-  /** One of the words of the song's course: Sing along asks these first. */
-  lesson: z.boolean(),
-});
-export type GlossWord = z.infer<typeof GlossWordSchema>;
 
 export const SongTrackSchema = z.object({
   id: TrackIdSchema,

@@ -1,7 +1,7 @@
 # Adding a lesson type
 
-Every lesson has one **type** — words, pictures, scene, typing, memory,
-sentences, gaps, dialogue, study, listening, writing — and the type says everything
+Every lesson has one **type** — words, pictures, scene, story, typing,
+memory, sentences, gaps, dialogue, study, listening, writing — and the type says everything
 about it. Nothing else in the app branches on a lesson's type: it asks the
 type. Adding one means writing it in one place, and giving the screens
 anything new it needs.
@@ -62,7 +62,8 @@ Check-in period, minutes per lesson and mastery points come with every type.
    set `takes_items: true` and the tutor's `create_drill_lesson` offers it.
    One made from something else gets its own creation function in
    `lessons.rs` (or a module of its own) and its own tutor tool (`tutor.rs`),
-   as pictures, scenes (`scenes.rs`), study, writing and listening have.
+   as pictures, scenes (`scenes.rs`), stories (`stories.rs`), study, writing
+   and listening have.
 5. **Test it:** `every_lesson_type_can_be_made_and_practised` (in
    `src-tauri/src/lib.rs`) makes and practises every registered type, checks
    the tutor knows it, and checks that every exercise it produces is one the

@@ -11,6 +11,7 @@ import type {
   DeviceId,
   EntryId,
   LessonId,
+  PanelId,
   MemoryId,
   PlaylistId,
   SongId,
@@ -306,6 +307,8 @@ export const api = {
   wordPictureDelete: (wordId: WordId) => run("word_picture_delete", { wordId }),
   /** A scene lesson's picture made again: its things found again, or (`redraw`) a new picture. */
   sceneMake: (lessonId: LessonId, redraw: boolean) => run("scene_make", { lessonId, redraw }),
+  /** A story's panel drawn again, or (`panelId` null) every panel that failed. */
+  storyDraw: (lessonId: LessonId, panelId: PanelId | null) => run("story_draw", { lessonId, panelId }),
   coursePictureDelete: (courseId: CourseId) =>
     run("course_picture_delete", { courseId }),
   tutorConversations: () =>

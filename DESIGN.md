@@ -161,6 +161,11 @@ counting and celebrating.
   (one-off) and change colour and glow only — a right find glows green, a
   miss shakes softly where it landed, the answer after two misses glows
   gold.
+  A story's page (`components/Story.tsx`) comes in like a page turned — a
+  short slide with a slight turn, back from the left when going back — in
+  practice and in the picture book; its sentences change colour only (the
+  one being read aloud is tinted), and a picture still being drawn breathes
+  in colour on its dashed edge, never in opacity.
 - **Sing along** (the lyrics, `FollowLyrics`): a blank is the word in
   transparent ink on a dashed line, so filling it moves nothing; it fills
   by colour with a glow (a shadow), or shows in gold when missed. The

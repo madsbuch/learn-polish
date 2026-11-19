@@ -643,6 +643,42 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    stories (lesson_id) {
+        lesson_id -> LessonIdSql,
+        theme -> Text,
+        setting -> Text,
+        characters -> Text,
+        created_at -> BigInt,
+        updated_at -> BigInt,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    story_panels (id) {
+        id -> PanelIdSql,
+        lesson_id -> LessonIdSql,
+        ord -> BigInt,
+        picture -> Text,
+        lines -> Text,
+        question -> Text,
+        prompt -> Text,
+        image_file_id -> Nullable<FileIdSql>,
+        width -> BigInt,
+        height -> BigInt,
+        status -> Text,
+        error -> Text,
+        image_model -> Text,
+        updated_at -> BigInt,
+    }
+}
+
 diesel::joinable!(course_lessons -> courses (course_id));
 diesel::joinable!(scene_spots -> words (word_id));
 diesel::joinable!(course_words -> courses (course_id));
@@ -703,4 +739,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     word_examples,
     scenes,
     scene_spots,
+    stories,
+    story_panels,
 );

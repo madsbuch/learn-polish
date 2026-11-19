@@ -2765,3 +2765,412 @@ button.id-chip {
   gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
+
+/* ------------------------------------------------------------------ stories
+   A story lesson (components/Story.tsx, StoryBook.tsx, exercises/story.tsx):
+   a page is its picture and the sentences under it — beside it on a big
+   screen. A new page comes in like a page turned (one-off, ending
+   untransformed); inside the sentences, only colours change. */
+@keyframes page-turn {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) translateX(calc(var(--enter-shift) * 1.5)) rotateY(-12deg);
+  }
+}
+@keyframes page-turn-back {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) translateX(calc(var(--enter-shift) * -1.5)) rotateY(12deg);
+  }
+}
+.page-turn-in {
+  transform-origin: left center;
+  animation: page-turn var(--duration-slow) var(--ease-out) backwards;
+}
+.page-turn-in[data-dir="back"] {
+  transform-origin: right center;
+  animation-name: page-turn-back;
+}
+
+.story-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  touch-action: pan-y;
+}
+/* On a big screen a story's page takes the room of a split page: the
+   picture beside its sentences, the picture no taller than the window
+   leaves it. */
+.session--wide .session-body > .story-card {
+  max-width: none;
+}
+@media (min-width: 1000px) {
+  .session--wide .session-body:has(> .story-card) {
+    padding-left: max(calc(var(--gutter) + var(--safe-left)), calc((100% - var(--split-page-width)) / 2));
+    padding-right: max(calc(var(--gutter) + var(--safe-right)), calc((100% - var(--split-page-width)) / 2));
+  }
+  .story-page__picture .story-picture {
+    max-width: calc((var(--app-height, 100dvh) - 280px) * 1.3333);
+    margin-inline: auto;
+  }
+}
+.story-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.story-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.story-page__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+@media (min-width: 1000px) {
+  .story-page {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: center;
+    gap: var(--space-6);
+  }
+}
+
+/* The picture: its own shape before it loads; a sketchbook page until drawn. */
+.story-picture {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--story-ratio, 4 / 3);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--card-shadow);
+}
+.story-picture img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--ease-out);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.story-picture[data-loaded] img {
+  opacity: 1;
+}
+.story-picture__sketch {
+  position: absolute;
+  inset: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-dim);
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-md);
+}
+.story-picture[data-status="failed"] .story-picture__sketch {
+  border-color: var(--bad-line);
+}
+.story-picture[data-small] .story-picture__sketch {
+  inset: var(--space-1);
+  padding: var(--space-1);
+}
+.story-picture__what {
+  max-width: 36ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Being drawn: the dashed edge breathes in colour (colour only: it may be
+   inside a scroller). */
+.story-picture[data-status="drawing"] .story-picture__sketch {
+  animation: sketch-pulse 1.6s var(--ease-out) infinite;
+}
+@keyframes sketch-pulse {
+  50% {
+    border-color: var(--brand);
+  }
+}
+
+/* The sentences: Polish large, the speaker above a line they say. */
+.story-lines {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.story-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: background-color var(--duration) var(--ease-out);
+}
+.story-line[data-speaking] {
+  background: var(--brand-tint);
+}
+.story-line__speaker {
+  font-size: var(--font-caption);
+  font-weight: var(--weight-bold);
+  color: var(--brand-ink);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.story-line__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.story-line__pl {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-lead);
+  line-height: var(--leading-lead);
+  font-weight: var(--weight-medium);
+}
+.story-line__pl[data-said] {
+  font-style: italic;
+}
+.story-line__sound {
+  flex: none;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+.story-word {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+/* A word the lesson teaches: underlined, so it is found as it is met. */
+.story-word[data-lesson] {
+  text-decoration: underline dotted var(--brand);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+.story-word[data-open] {
+  background: var(--brand-tint);
+}
+@media (hover: hover) and (pointer: fine) {
+  .story-word:hover {
+    background: var(--tint);
+  }
+}
+
+/* Where in the story: a dot a page, filled up to here. */
+.story-dots {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex: none;
+}
+.story-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--line);
+  transition: background-color var(--duration) var(--ease-out), width var(--duration) var(--ease-out);
+}
+.story-dots span[data-state="read"] {
+  background: var(--brand-tint);
+}
+.story-dots span[data-state="here"] {
+  width: 20px;
+  background: var(--brand);
+}
+
+/* A question: the page's picture, small, above it. */
+.story-question__picture {
+  width: min(100%, 320px);
+  margin-inline: auto;
+}
+.story-picture-options .picture-option img {
+  aspect-ratio: 4 / 3;
+}
+
+/* The last page: how it went, and the words met. */
+.story-end {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.story-end__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+.story-end__head h2 {
+  margin: 0;
+}
+.story-end__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  text-align: center;
+}
+.story-end__words {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.story-words {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.story-words li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.story-words__pl {
+  font-weight: var(--weight-bold);
+}
+.story-words__en {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--font-small);
+}
+@media (min-width: 700px) {
+  .story-words {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* On its lesson's page: the cover, the buttons, every page small. */
+.story-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.story-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+}
+.story-cover:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+.story-cover__label {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--scene-label-bg);
+  color: var(--scene-label-ink);
+  font-size: var(--font-small);
+  font-weight: var(--weight-bold);
+}
+.story-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-2);
+}
+.story-strip li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.story-strip .story-picture {
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .story-cover:hover .story-picture {
+    box-shadow: var(--hover-shadow);
+  }
+}
+
+/* The picture book: over everything, a page at a time. */
+.story-book {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-sheet);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: enter-up var(--duration-slow) var(--ease-out) backwards;
+}
+.story-book__top,
+.story-book__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: var(--split-page-width);
+  margin-inline: auto;
+  padding: calc(var(--safe-top) + var(--space-3)) var(--gutter) var(--space-3);
+}
+.story-book__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.story-book__body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  padding: var(--space-2) var(--gutter) var(--space-5);
+}
+.story-book__page {
+  width: 100%;
+  max-width: var(--split-page-width);
+  margin-inline: auto;
+}
+.story-book__tools {
+  display: flex;
+  justify-content: flex-end;
+}
+.story-book__foot {
+  justify-content: space-between;
+  padding: var(--space-3) var(--gutter) calc(var(--safe-bottom) + var(--space-4));
+  border-top: 1px solid var(--line-soft);
+}

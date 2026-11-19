@@ -8,6 +8,7 @@ import { ArticleReader, Sources } from "../components/Sources";
 import { SongToListen } from "../components/SongToListen";
 import { WordPictures } from "../components/WordPictures";
 import { SceneHeader } from "../components/SceneHeader";
+import { StoryHeader } from "../components/StoryHeader";
 import { LevelInfo } from "../components/LevelInfo";
 import { SlowButton, SpeakButton } from "../components/ui";
 import {
@@ -37,8 +38,8 @@ import { useSyncReload } from "../lib/sync";
 import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { CourseProgress, LessonDetail, LessonId, WikiSource } from "../lib/types";
 
-/** Sections that head the page, above its columns: a scene. */
-const HEADERS = ["scene"];
+/** Sections that head the page, above its columns: a scene, a story. */
+const HEADERS = ["scene", "story"];
 
 const RESULT_TEXT = {
   pass: "Passed",
@@ -249,6 +250,8 @@ export function LessonPage({
         return <WordPictures lesson={lesson} onChanged={reload} />;
       case "scene":
         return <SceneHeader lesson={lesson} onChanged={reload} />;
+      case "story":
+        return <StoryHeader lesson={lesson} onChanged={reload} />;
       case "where":
         return lesson.scene && lesson.scene.statements.length > 0 ? (
           <Section title="Where is it?">

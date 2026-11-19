@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { Button, Switch, Text, useMediaQuery } from "../design";
 import { api } from "../lib/api";
@@ -8,6 +8,7 @@ import { livePosition, seek, usePlayer, type QueueItem } from "../lib/player";
 import { chooseBlanks, fold, LEAD_S, tokens, type Blank } from "../lib/singAlong";
 import type { GlossWord, SongId, TimedLine, TrackId } from "../lib/types";
 import { WordChat } from "./WordChat";
+import { placeUnder, useDismiss, WordPopover, type Tapped } from "./WordPopover";
 
 /**
  * Lyrics that follow the music: the line being sung is highlighted and kept
@@ -60,20 +61,6 @@ function useGlossary(songId: SongId): Map<string, GlossWord> {
     };
   }, [songId]);
   return useMemo(() => (glossary?.id === songId ? glossary.words : new Map<string, GlossWord>()), [glossary, songId]);
-}
-
-/** A word tapped: where its popover goes (inside the box, so it scrolls with the word). */
-interface Tapped {
-  key: string;
-  word: string;
-  form: string;
-  line: string;
-  gloss: string | null;
-  /** The word's top and bottom in the box's content, and the bottom of what shows of it. */
-  top: number;
-  bottom: number;
-  visibleBottom: number;
-  left: number;
 }
 
 type Mark = "right" | "missed";
@@ -189,21 +176,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
   }, [current, trackId]);
 
   // A tap anywhere but a word or its popover closes the popover.
-  useEffect(() => {
-    if (!tapped) return undefined;
-    const close = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest(".word-popover, .lyric-word")) return;
-      setTapped(null);
-    };
-    const escape = (event: KeyboardEvent) => event.key === "Escape" && setTapped(null);
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [tapped]);
+  useDismiss(tapped !== null, () => setTapped(null), ".lyric-word");
 
   function tap(
     event: MouseEvent<HTMLElement>,
@@ -222,19 +195,7 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
       return;
     }
     hapticTick();
-    const at = event.currentTarget.getBoundingClientRect();
-    const frame = container.getBoundingClientRect();
-    setTapped({
-      key,
-      word,
-      form,
-      line,
-      gloss,
-      top: at.top - frame.top + container.scrollTop,
-      bottom: at.bottom - frame.top + container.scrollTop,
-      visibleBottom: container.scrollTop + container.clientHeight,
-      left: Math.max(0, Math.min(at.left - frame.left, frame.width - 240)),
-    });
+    setTapped({ key, word, form, line, gloss, ...placeUnder(event.currentTarget, container) });
   }
 
   function answer(given: string) {
@@ -459,58 +420,5 @@ export function FollowLyrics({ item }: { item: QueueItem }) {
       </div>
       {chat}
     </>
-  );
-}
-
-/** Room between a word and its popover. */
-const GAP_PX = 4;
-
-/** What a tapped word means — or, when nothing is known, the tutor to ask. */
-function WordPopover({ tapped, gloss, onAsk }: { tapped: Tapped; gloss: GlossWord | null; onAsk: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // Under the word, or over it when there is no room below in what shows.
-  const [top, setTop] = useState(tapped.bottom + GAP_PX);
-  useLayoutEffect(() => {
-    const height = ref.current?.offsetHeight ?? 0;
-    const below = tapped.bottom + GAP_PX;
-    const fitsBelow = below + height <= tapped.visibleBottom;
-    setTop(fitsBelow || tapped.top - GAP_PX - height < 0 ? below : tapped.top - GAP_PX - height);
-  }, [tapped, gloss]);
-  return (
-    <div
-      ref={ref}
-      className="word-popover"
-      role="dialog"
-      aria-label={`“${tapped.word}”`}
-      style={{ "--top": `${top}px`, "--left": `${tapped.left}px` }}
-    >
-      <Text variant="lead" weight="bold" tone="polish" selectable>
-        {tapped.word}
-      </Text>
-      {gloss ? (
-        <>
-          {gloss.pl.toLowerCase() !== tapped.form ? (
-            <Text variant="caption" tone="faint">
-              a form of {gloss.pl}
-            </Text>
-          ) : null}
-          <Text variant="small">{gloss.en}</Text>
-          {gloss.wordId ? (
-            <Button size="sm" variant="plain" onClick={onAsk}>
-              Talk about it
-            </Button>
-          ) : null}
-        </>
-      ) : (
-        <>
-          <Text variant="small" tone="dim">
-            No meaning saved for this word yet.
-          </Text>
-          <Button size="sm" onClick={onAsk}>
-            Ask the tutor
-          </Button>
-        </>
-      )}
-    </div>
   );
 }
