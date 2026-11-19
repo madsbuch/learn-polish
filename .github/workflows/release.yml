@@ -109,7 +109,12 @@ jobs:
       # Phones only: 64-bit and 32-bit ARM. x86_64 was for emulators and cost a
       # third of the Rust compile time.
       - name: Build the release APK
-        run: bun run android:build
+        env:
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          export VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node scripts/stamp-version.mjs
+          bun run android:build
 
       - name: Sign the APK with the release key
         if: github.event_name != 'pull_request'
@@ -189,7 +194,11 @@ jobs:
       - name: Build the universal app and DMG
         env:
           APPLE_SIGNING_IDENTITY: "-"
-        run: bun run tauri build --target universal-apple-darwin --bundles dmg --ci
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          export VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node scripts/stamp-version.mjs
+          bun run tauri build --target universal-apple-darwin --bundles dmg --ci
 
       - name: Collect the DMG
         run: |

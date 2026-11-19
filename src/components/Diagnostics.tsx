@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 
-import { Button, Inline, Section, Stack } from "../design";
+import { Button, Inline, Section, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { idsIn, resolveIds, withTitles } from "../lib/ids";
 import { toast } from "../lib/toast";
+import { buildLabel } from "../build-info";
 import type { DiagnosticEntry } from "../lib/types";
 
 /**
@@ -44,6 +46,15 @@ export async function copyText(text: string): Promise<void> {
  */
 export function Diagnostics() {
   const [entries, setEntries] = useState<DiagnosticEntry[] | null>(null);
+  // Which build this is: shown here, and the first line of what Copy gives,
+  // so a pasted log always says which version it came from.
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => setVersion("?"));
+  }, []);
+  const build = `Polski ${version} · ${buildLabel()}`;
 
   const load = useCallback(() => {
     api
@@ -69,6 +80,9 @@ export function Diagnostics() {
       }
     >
       <Stack gap={3}>
+        <Text variant="small" tone="dim" className="selectable">
+          {build}
+        </Text>
         <pre className="diagnostics-log selectable">
           {entries === null
             ? "Loading…"
@@ -82,7 +96,7 @@ export function Diagnostics() {
             disabled={!entries?.length}
             onClick={async () => {
               try {
-                await copyText(asText(entries ?? []));
+                await copyText(`${build}\n${asText(entries ?? [])}`);
                 toast("Copied — paste it into a message.");
               } catch (cause) {
                 toast(errorMessage(cause));
