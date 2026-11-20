@@ -1,0 +1,72 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Check-in schedule",
+  "summary": "Each lesson comes back on its own period; passing spreads it out, failing brings it back tomorrow.",
+  "status": "implemented",
+  "order": 5,
+  "description": "Every lesson has a check-in period. The gap to the next check-in grows from the time that actually passed since the last one, so checking in early is honest and remembering after longer is worth more.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A new lesson's period defaults by kind and complexity: drills 2, 4 and 7 days for low, medium and high; conversations 5, 7 and 10."
+    },
+    {
+      "id": "R2",
+      "text": "The learner can change a lesson's period on its page."
+    },
+    {
+      "id": "R3",
+      "text": "The first pass brings the lesson back after its period; a first ace, after three times its period."
+    },
+    {
+      "id": "R4",
+      "text": "Each later pass sets the next gap to the days since the last check-in times the lesson's ease, never less than its period."
+    },
+    {
+      "id": "R5",
+      "text": "Days since the last check-in count for at most twice the previous gap."
+    },
+    {
+      "id": "R6",
+      "text": "An ace raises the ease by 0.15 and grows the gap by a further 1.3 times."
+    },
+    {
+      "id": "R7",
+      "text": "A partial repeats the period and lowers the ease by 0.15."
+    },
+    {
+      "id": "R8",
+      "text": "A fail brings the lesson back the next day and lowers the ease by 0.2."
+    },
+    {
+      "id": "R9",
+      "text": "Ease starts at 2.5 and stays between 1.3 and 3.0."
+    },
+    {
+      "id": "R10",
+      "text": "No gap is longer than 120 days."
+    },
+    {
+      "id": "R11",
+      "text": "A check-in of four days or more ahead is placed on the lightest day within a tenth of the gap either side of its target, at most a week."
+    },
+    {
+      "id": "R12",
+      "text": "A lesson done before it is due is an early check-in: full XP, and its schedule moves."
+    },
+    {
+      "id": "R13",
+      "text": "Extra practice on a lesson already passed today pays half XP and does not move its schedule."
+    }
+  ],
+  "code": [
+    "src-tauri/src/lessons.rs",
+    "src-tauri/src/plan.rs",
+    "src-tauri/src/practice.rs"
+  ],
+  "related": [
+    "lessons",
+    "today",
+    "lessons/mastery"
+  ]
+}

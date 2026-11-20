@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Polski",
+  "summary": "A Polish learning app for English speakers: small lessons filed in courses, built to order by an AI tutor.",
+  "status": "implemented",
+  "order": 0,
+  "description": "Polski teaches Polish to an adult who speaks English. Everything is a small lesson, a quick drill or a conversation with an examiner, filed in courses. The app starts with one small demo course; every other course is made for what the learner needs the language for, by a tutor that acts in the app through tools.\n\nIt is a native app for Android and macOS (Tauri: a Rust core with SQLite, and a React interface). Everything the learner has is in one database on the device, and the learner's devices keep it in step directly between them, with no server.\n\nThe AI features are optional and use the learner's own keys: OpenRouter for the tutor, the examiner, speech and pictures, and kie.ai for sung songs. Without a key the demo course still works.\n\nDansk (learn-danish) is the same product for Danish in a separate codebase. The two share features, not code.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The app runs as a native Android app and a native macOS app from one codebase."
+    },
+    {
+      "id": "R2",
+      "text": "A fresh install can be practised offline with no API key: the demo course needs neither the network nor a model."
+    },
+    {
+      "id": "R3",
+      "text": "The interface is English; Polish is the content being learnt."
+    },
+    {
+      "id": "R4",
+      "text": "The webview never reaches the network or the database itself: every read, write and outside request is a command in the Rust core."
+    },
+    {
+      "id": "R5",
+      "text": "API keys are kept in the app's database and are read only inside the Rust core, never handed to the interface as text."
+    },
+    {
+      "id": "R6",
+      "text": "No chat model is chosen by default: until the learner picks one in Settings, the features that need it are off and say so."
+    }
+  ],
+  "code": [
+    "README.md",
+    "PRINCIPLES.md",
+    "src-tauri/src/lib.rs",
+    "src-tauri/src/commands.rs",
+    "src/lib/api.ts",
+    "src/App.tsx"
+  ],
+  "related": [
+    "principles",
+    "courses",
+    "lessons",
+    "today",
+    "tutor",
+    "music",
+    "data"
+  ]
+}

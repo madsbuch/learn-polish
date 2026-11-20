@@ -1,0 +1,78 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Governing principles",
+  "summary": "The owner's rules that settle design questions everywhere in the app.",
+  "status": "implemented",
+  "order": 1,
+  "description": "These come from the app's owner and change only on their word. When a change is unclear, or two parts of the app disagree, these decide. Each is stated here as something that can be checked; the parts of the spec that carry them out refer back.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A course is made for what the learner asks for; the app never decides what is worth learning."
+    },
+    {
+      "id": "R2",
+      "text": "A level (CEFR, A1 to C2) describes material and never limits what can be made or practised: a request at any level is made as asked."
+    },
+    {
+      "id": "R3",
+      "text": "Nothing the tutor makes waits for approval: keeping it is approving it, deleting it is rejecting it."
+    },
+    {
+      "id": "R4",
+      "text": "The app does not fill in the learner's existing content by itself at startup. When a new feature needs something existing content lacks, a button asks the tutor to add it, in a conversation the learner can read."
+    },
+    {
+      "id": "R5",
+      "text": "A course can be finished regardless of time: practising a lesson again today always moves it forward."
+    },
+    {
+      "id": "R6",
+      "text": "Mastery is never lost: a mastered lesson stays mastered whatever happens afterwards."
+    },
+    {
+      "id": "R7",
+      "text": "Closing a mastered course is final: nothing is added to it, changed in it or brought back from it."
+    },
+    {
+      "id": "R8",
+      "text": "A mastered subject is revisited through a new course from the tutor, never by reopening the old one."
+    },
+    {
+      "id": "R9",
+      "text": "The day's list is a short way in, not a backlog: what is due never piles up on the home screen."
+    },
+    {
+      "id": "R10",
+      "text": "A lesson that fits no course goes in the single folder Other lessons."
+    },
+    {
+      "id": "R11",
+      "text": "For each song and podcast, enough is kept to rebuild the exact prompt that made it."
+    },
+    {
+      "id": "R12",
+      "text": "A lesson type is declared in one place, and nothing else in the app branches on a lesson's type."
+    },
+    {
+      "id": "R13",
+      "text": "Every row's id is a tagged id that says what it names; screens show the title of the thing instead of the id."
+    }
+  ],
+  "questions": [
+    "Speech stored as WAV by earlier versions is re-encoded to MP3 by itself at startup, with no button. Is that storage housekeeping, which R4 allows, or a change to the learner's content that should wait for the learner to ask?"
+  ],
+  "code": [
+    "PRINCIPLES.md",
+    "DATA.md",
+    "ADDING_A_LESSON_TYPE.md"
+  ],
+  "related": [
+    "lessons/mastery#R8",
+    "courses#R12",
+    "data#R6",
+    "lessons#R2",
+    "today#R1",
+    "progress/insights#R7"
+  ]
+}

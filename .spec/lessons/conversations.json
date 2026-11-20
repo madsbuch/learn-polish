@@ -1,0 +1,73 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Conversation lessons",
+  "summary": "Study, listening and writing lessons: an exchange with an AI that ends in a verdict.",
+  "status": "implemented",
+  "order": 3,
+  "description": "Some things cannot be drilled: a grammar point, a song understood by ear, getting something across in writing. These lessons are conversations. In a study lesson an examiner asks about a short text. A listening lesson ties that to a song. A writing lesson is a situation played out with a partner who only understands Polish.\n\nEach ends with a verdict of pass, partial or fail, and what to review. A conversation lesson coming back on its schedule is a check-in.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A study lesson has a text and objectives; the examiner asks one question at a time and gives a line of feedback after each answer."
+    },
+    {
+      "id": "R2",
+      "text": "The examiner asks more questions the more complex the lesson: 2 to 3 for low, 4 to 6 for medium, 7 to 10 for high."
+    },
+    {
+      "id": "R3",
+      "text": "A conversation ends with a verdict of pass, partial or fail, with what to review."
+    },
+    {
+      "id": "R4",
+      "text": "A listening lesson plays a song with the lyrics hidden unless asked for, then the examiner asks about what was heard; the song can be replayed during the conversation."
+    },
+    {
+      "id": "R5",
+      "text": "Every song the tutor makes gets a listening lesson, and any song's page can start one."
+    },
+    {
+      "id": "R6",
+      "text": "A writing lesson is a situation with goals; the partner writes only Polish and answers anything it does not understand by saying so in Polish."
+    },
+    {
+      "id": "R7",
+      "text": "A writing conversation ends as soon as every goal has been got across, or when the learner ends it."
+    },
+    {
+      "id": "R8",
+      "text": "The writing partner runs on its own model setting, separate from the tutor's."
+    },
+    {
+      "id": "R9",
+      "text": "A writing lesson gives less help after each pass and more after a fail; a partial leaves the help as it is."
+    },
+    {
+      "id": "R10",
+      "text": "A writing lesson is mastered only once it has been passed without help."
+    },
+    {
+      "id": "R11",
+      "text": "A lesson built on Wikipedia keeps the examiner's questions to what the lesson and its sources say."
+    },
+    {
+      "id": "R12",
+      "text": "A check-in pays 30, 80 or 160 XP for low, medium or high complexity, half for a partial and none for a fail; a writing lesson adds 10 per goal."
+    }
+  ],
+  "code": [
+    "src-tauri/src/examiner.rs",
+    "src-tauri/src/lesson_types/study.rs",
+    "src-tauri/src/lesson_types/listening.rs",
+    "src-tauri/src/lesson_types/writing.rs",
+    "src/screens/CheckIn.tsx",
+    "src/components/Listen.tsx"
+  ],
+  "related": [
+    "lessons",
+    "lessons/wikipedia",
+    "music",
+    "tutor/memory",
+    "lessons/mastery#R9"
+  ]
+}

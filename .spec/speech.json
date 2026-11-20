@@ -1,0 +1,83 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Hearing Polish",
+  "summary": "Every Polish line can be read aloud; each clip is made once, stored as MP3 and replayed offline.",
+  "status": "implemented",
+  "order": 8,
+  "description": "Every Polish line has a speaker button, and conversations can be read line by line. The voice is a speech model through OpenRouter, because it is the one option that sounds the same on Android and macOS; the platform's own speech engine stands in where there is no key.\n\nA line is paid for once. Raw speech is nearly 3 MB a minute, so clips are encoded to MP3 before they are stored.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A line's audio is generated once and stored, keyed by its exact text, the model and the voice; after that it replays without the network."
+    },
+    {
+      "id": "R2",
+      "text": "Changing the voice never plays a clip made in another voice."
+    },
+    {
+      "id": "R3",
+      "text": "Dialogue lines are read in a female or a male voice according to the speaker; the learner chooses both voices from 30, each with a preview."
+    },
+    {
+      "id": "R4",
+      "text": "A line has a slow version, stored as a clip of its own."
+    },
+    {
+      "id": "R5",
+      "text": "A clip that came out wrong can be made again, replacing the stored one."
+    },
+    {
+      "id": "R6",
+      "text": "Starting a lesson downloads its lines in the background, in the order they will be heard; this can be switched off per device."
+    },
+    {
+      "id": "R7",
+      "text": "A course's audio can be downloaded in one pass, with progress reported line by line."
+    },
+    {
+      "id": "R8",
+      "text": "Settings shows how many clips are stored and how much space they take per course, and can delete the clips no course uses, or all of them."
+    },
+    {
+      "id": "R9",
+      "text": "Speech is stored as MP3: raw audio from the speech model is encoded before it is stored, at 48 kbit/s for one channel."
+    },
+    {
+      "id": "R10",
+      "text": "A clip that cannot be encoded is stored as it came instead of being lost."
+    },
+    {
+      "id": "R11",
+      "text": "Speech stored as WAV by an earlier version is re-encoded to MP3 in the background at startup, one file at a time, and the database is compacted afterwards."
+    },
+    {
+      "id": "R12",
+      "text": "A re-encoded file gets a new id, and the clip or episode that pointed at the old file points at the new one."
+    },
+    {
+      "id": "R13",
+      "text": "When the same clip is asked for twice at once, it is generated once."
+    },
+    {
+      "id": "R14",
+      "text": "Without an OpenRouter key, the platform's own speech engine is used where the webview has one."
+    }
+  ],
+  "questions": [
+    "The README still describes every speaker in the ten dialogues being tagged female or male in content files. The built-in collection is gone; is the gender of a dialogue line now always set by the tutor when it makes the line?"
+  ],
+  "code": [
+    "src-tauri/src/speech.rs",
+    "src-tauri/src/audio.rs",
+    "src-tauri/src/ai.rs",
+    "src/screens/AudioScreen.tsx",
+    "src/screens/settings/SoundSettings.tsx",
+    "src/components/ReadAloud.tsx"
+  ],
+  "related": [
+    "principles#R4",
+    "data#R3",
+    "music/podcasts#R10",
+    "tutor/models#R10"
+  ]
+}

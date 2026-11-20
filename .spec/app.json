@@ -1,0 +1,73 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "The app shell",
+  "summary": "Four tabs, a back button that walks back through the app, and a layout that follows the window.",
+  "status": "implemented",
+  "order": 10,
+  "description": "The same interface runs on a phone, a tablet and a computer. It is built from a small design system, and its mechanical rules are checked by the build, so a new screen looks like the rest.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The app has four tabs: Exercises, Tutor, Music and Settings."
+    },
+    {
+      "id": "R2",
+      "text": "Exercises is the home screen: today's lessons on top, then the courses."
+    },
+    {
+      "id": "R3",
+      "text": "Android's back button closes a sheet first, then the page, then goes from another tab to Exercises, and leaves the app only from Exercises."
+    },
+    {
+      "id": "R4",
+      "text": "Below 768 px of window width the tabs are at the bottom; from 768 px they form a rail at the left edge."
+    },
+    {
+      "id": "R5",
+      "text": "From 1000 px a course's or a lesson's page is laid out in two columns, and Settings shows its menu beside the open page."
+    },
+    {
+      "id": "R6",
+      "text": "Search lists every word and sentence in the app, met or not, filterable by course and searchable in Polish or English."
+    },
+    {
+      "id": "R7",
+      "text": "On Android the page lays out above the keyboard, and the tab bar is hidden while typing."
+    },
+    {
+      "id": "R8",
+      "text": "Light and dark themes are both supported; the theme is a setting of the device."
+    },
+    {
+      "id": "R9",
+      "text": "Touch targets are at least 44 px, or 36 px in dense rows."
+    },
+    {
+      "id": "R10",
+      "text": "A destructive action asks for confirmation once and says what will be lost."
+    },
+    {
+      "id": "R11",
+      "text": "An empty list says what would be there and offers the action that fills it."
+    },
+    {
+      "id": "R12",
+      "text": "The build fails when a screen breaks the design system's mechanical rules."
+    }
+  ],
+  "code": [
+    "src/App.tsx",
+    "src/design/**",
+    "DESIGN.md",
+    "scripts/check-design.mjs",
+    "src/lib/back.ts",
+    "src/lib/keyboard.ts",
+    "src/screens/Search.tsx",
+    "src/screens/SettingsScreen.tsx",
+    "src-tauri/android/MainActivity.kt"
+  ],
+  "related": [
+    "today",
+    "releases"
+  ]
+}

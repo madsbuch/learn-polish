@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Quick games",
+  "summary": "A minute's play over words already met, outside the daily list, that never moves a schedule.",
+  "status": "implemented",
+  "order": 1,
+  "description": "Sometimes there is a minute and no wish to start a lesson. The quick games are play over what the lessons taught: Match pairs, Flip and match, Dictation, Sound pairs and Say it. They pay a little XP and count as practising, and they leave the schedule alone, because matching from a handful of visible cards is recognition helped by elimination, not recall.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The games draw only on words and sentences the learner has already met."
+    },
+    {
+      "id": "R2",
+      "text": "Match pairs uses 8 Polish and English pairs against the clock; Flip and match uses 6 pairs and counts moves."
+    },
+    {
+      "id": "R3",
+      "text": "The dictation game and Say it use 5 sentences each; Sound pairs plays 8 rounds."
+    },
+    {
+      "id": "R4",
+      "text": "A finished game pays 10 XP, up to 30 XP from games a day."
+    },
+    {
+      "id": "R5",
+      "text": "Playing a game writes no review: no word's or lesson's next check-in moves."
+    },
+    {
+      "id": "R6",
+      "text": "Game XP is listed in the day's XP under the game's own name."
+    },
+    {
+      "id": "R7",
+      "text": "The best result of each game is kept and synced, so a record set on one device is the one to beat on another."
+    },
+    {
+      "id": "R8",
+      "text": "A game played after the day's game XP is used up still counts as having practised that day."
+    }
+  ],
+  "code": [
+    "src-tauri/src/games.rs",
+    "src/screens/QuickGames.tsx",
+    "src/components/EarGames.tsx"
+  ],
+  "related": [
+    "progress#R5",
+    "lessons/speaking"
+  ]
+}

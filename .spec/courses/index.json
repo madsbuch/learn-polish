@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Courses",
+  "summary": "A course is a folder on one theme that lists lessons in order; it can be completed, mastered and closed.",
+  "status": "implemented",
+  "order": 2,
+  "description": "A course gathers the lessons on one theme: a trip, a hobby, the learner's work. The tutor makes courses to order; the learner can rename, edit and delete any of them. A course holds no words of its own: it reaches words and sentences only through the lessons it lists.\n\nGiving a course words, sentences or a dialogue cuts them into drills. A lesson can be listed in several courses and still be one lesson with one schedule.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A course lists its lessons in an order the learner or the tutor can change."
+    },
+    {
+      "id": "R2",
+      "text": "Words given to a course are cut into word drills of at most 8, and sentences into sentence drills of at most 5."
+    },
+    {
+      "id": "R3",
+      "text": "Dialogue lines given to a course join its conversation lesson, or start one if it has none."
+    },
+    {
+      "id": "R4",
+      "text": "Anything a course already teaches is skipped when more is added to it, and the number skipped is reported."
+    },
+    {
+      "id": "R5",
+      "text": "A lesson can be listed in several courses; it keeps one schedule and one mastery, shown in each."
+    },
+    {
+      "id": "R6",
+      "text": "A lesson can be moved from one course to another."
+    },
+    {
+      "id": "R7",
+      "text": "Taking a lesson out of the last course that lists it deletes the lesson, with its words and their history."
+    },
+    {
+      "id": "R8",
+      "text": "Other lessons is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
+    },
+    {
+      "id": "R9",
+      "text": "A course is completed when every core lesson (every lesson that is not a challenge) has been passed once. A course of challenges only counts those as its core."
+    },
+    {
+      "id": "R10",
+      "text": "A course is mastered when it is completed and every lesson in it, challenges included, is mastered."
+    },
+    {
+      "id": "R11",
+      "text": "Reaching completed or mastered is celebrated once for each course."
+    },
+    {
+      "id": "R12",
+      "text": "Only a mastered course can be closed, by the learner's own choice; a closed course is listed under Mastered and can no longer be changed or added to."
+    },
+    {
+      "id": "R13",
+      "text": "A course can carry a CEFR level, shown as a badge and never written into its title."
+    },
+    {
+      "id": "R14",
+      "text": "A course without a level is given one only when the learner asks: the Exercises tab offers a button that asks the tutor."
+    },
+    {
+      "id": "R15",
+      "text": "A course's page lists its lessons, its words and its sentences, each item with the drill it belongs to."
+    },
+    {
+      "id": "R16",
+      "text": "A course can have a picture, drawn by an image model from its title, summary and words."
+    }
+  ],
+  "code": [
+    "src-tauri/src/courses.rs",
+    "src-tauri/src/levels.rs",
+    "src-tauri/src/pictures.rs",
+    "src/screens/CourseDetail.tsx",
+    "src/screens/Exercises.tsx",
+    "src/components/CourseList.tsx",
+    "src/components/CourseClosedCelebration.tsx"
+  ],
+  "related": [
+    "principles#R7",
+    "principles#R10",
+    "lessons",
+    "courses/demo",
+    "lessons/mastery",
+    "tutor"
+  ]
+}

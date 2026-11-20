@@ -1,0 +1,74 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Mastery",
+  "summary": "Points earned by passing, 100 to master, with a ledger of every change.",
+  "status": "implemented",
+  "order": 6,
+  "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting for a check-in: practising now gets there, it only takes more passes than letting the check-ins space them out. Passes further apart are better evidence and earn more.\n\nEvery change is written down, so the learner can see on the lesson's page why its points are what they are.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The first pass of a lesson earns 30 mastery points."
+    },
+    {
+      "id": "R2",
+      "text": "A later pass on the same day as the last go earns 10."
+    },
+    {
+      "id": "R3",
+      "text": "A later pass a day or more after the last go earns 15, plus up to 20 more as the gap grows to 14 days."
+    },
+    {
+      "id": "R4",
+      "text": "An ace earns a quarter more than a pass would."
+    },
+    {
+      "id": "R5",
+      "text": "A partial earns half of what a repeat pass would at the same gap, rounded down, and does not mark the lesson passed."
+    },
+    {
+      "id": "R6",
+      "text": "A fail costs 20 points; a fail on extra practice costs none."
+    },
+    {
+      "id": "R7",
+      "text": "Points stay between 0 and 100, and stop at 90 until the lesson has been passed on two different days."
+    },
+    {
+      "id": "R8",
+      "text": "A lesson is mastered when it has been passed and has 100 points; once mastered it is never due again and nothing takes mastery or points away."
+    },
+    {
+      "id": "R9",
+      "text": "A writing lesson is mastered only when it has also been passed without help."
+    },
+    {
+      "id": "R10",
+      "text": "Every graded go writes one row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing."
+    },
+    {
+      "id": "R11",
+      "text": "Ledger rows are never changed after they are written."
+    },
+    {
+      "id": "R12",
+      "text": "The ledger is shown on the lesson's page as Mastery points and is readable by the tutor."
+    },
+    {
+      "id": "R13",
+      "text": "A lesson's points from before the ledger existed are shown as one starting line; nothing is backfilled."
+    }
+  ],
+  "code": [
+    "src-tauri/src/lessons.rs",
+    "src-tauri/src/masterylog.rs",
+    "src/components/MasteryPoints.tsx"
+  ],
+  "related": [
+    "principles#R6",
+    "principles#R5",
+    "lessons/schedule",
+    "courses#R10",
+    "data/sync#R8"
+  ]
+}

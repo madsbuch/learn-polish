@@ -1,0 +1,64 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Today's lessons",
+  "summary": "Each day the app picks the five lessons that matter most and keeps them for the day.",
+  "status": "implemented",
+  "order": 4,
+  "description": "The home screen answers one question: what should I do today. It gives a short list, chosen once and kept. Doing it is the day done, with a celebration and nothing more. For more, a course's page lists its lessons in the same order of importance.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The day's list is chosen once a day and stays the same for that day."
+    },
+    {
+      "id": "R2",
+      "text": "The list has 5 lessons unless the learner sets another number, from 1 to 20."
+    },
+    {
+      "id": "R3",
+      "text": "Lessons that failed or were partly there last time and are due again come first."
+    },
+    {
+      "id": "R4",
+      "text": "Other due lessons follow, most overdue first."
+    },
+    {
+      "id": "R5",
+      "text": "While there is room, at most 2 new lessons a day are added, taken from the newest courses."
+    },
+    {
+      "id": "R6",
+      "text": "If a place is still free, at most 1 mastered lesson whose words are due for review is added as a light review."
+    },
+    {
+      "id": "R7",
+      "text": "A review of a mastered lesson never takes the place of a due or new lesson, and cannot cost the lesson its mastery."
+    },
+    {
+      "id": "R8",
+      "text": "A mastered lesson, or one listed only by a closed course, is never due."
+    },
+    {
+      "id": "R9",
+      "text": "A course's challenges are offered only once its other lessons are passed."
+    },
+    {
+      "id": "R10",
+      "text": "Finishing the list is the day done, shown with a celebration; lessons due beyond the list are not shown on the home screen."
+    },
+    {
+      "id": "R11",
+      "text": "The day's list is the same on every device in a vault; if two devices chose a list while apart, the later one wins."
+    }
+  ],
+  "code": [
+    "src-tauri/src/plan.rs",
+    "src/screens/Exercises.tsx"
+  ],
+  "related": [
+    "principles#R9",
+    "lessons/schedule",
+    "progress#R5",
+    "data/sync"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Memory",
+  "summary": "Short facts about the learner that the tutor and the examiner share across conversations.",
+  "status": "implemented",
+  "order": 1,
+  "description": "What the examiner notices in a check-in should reach the tutor, and the other way round. Both agents see the same set of short facts about the learner and can save, revise and forget them. The learner can read and change all of it.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A memory is one short fact of a kind: goal, preference, context, strength or struggle."
+    },
+    {
+      "id": "R2",
+      "text": "A memory is at most 400 characters."
+    },
+    {
+      "id": "R3",
+      "text": "The tutor and the examiner both see the current memories in their prompt, and both can save, update and forget memories."
+    },
+    {
+      "id": "R4",
+      "text": "Whatever an agent saves is shown in the conversation as a Remembered line."
+    },
+    {
+      "id": "R5",
+      "text": "Settings lists memories by kind; the learner can edit one, forget one, add their own and forget everything."
+    },
+    {
+      "id": "R6",
+      "text": "With memory switched off, the agents neither read nor save memories."
+    }
+  ],
+  "code": [
+    "src-tauri/src/memories.rs",
+    "src/screens/Memories.tsx"
+  ],
+  "related": [
+    "tutor",
+    "lessons/conversations"
+  ]
+}

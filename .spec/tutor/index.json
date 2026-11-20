@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "The tutor",
+  "summary": "An assistant for the whole app that builds courses and lessons and manages them through tools.",
+  "status": "implemented",
+  "order": 6,
+  "description": "With an OpenRouter key and a model, the Tutor tab is an assistant that acts in the app. Asking it for a programme on the colours produces a course that opens from a button under its reply. It speaks English unless asked to converse in Polish.\n\nIt answers in the background: a message is stored at once and the reply is written by a background task, so the app can be left meanwhile.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The tutor needs a model that supports tool calling; Settings marks the models that do."
+    },
+    {
+      "id": "R2",
+      "text": "The tutor can create a course on a theme as a path: the conversation first, then word and sentence drills with study lessons between, listening after, and a writing lesson last."
+    },
+    {
+      "id": "R3",
+      "text": "The tutor can create single lessons of every type, and list, read, update, delete, move, reorder and reschedule lessons."
+    },
+    {
+      "id": "R4",
+      "text": "The tutor can change and delete any course, the demo included."
+    },
+    {
+      "id": "R5",
+      "text": "The tutor can have songs and podcasts made, and manage songs and playlists."
+    },
+    {
+      "id": "R6",
+      "text": "The tutor replies in English and switches to Polish conversation only when the learner asks."
+    },
+    {
+      "id": "R7",
+      "text": "Replies stream in as they are generated and are rendered as Markdown built from elements, so model output cannot inject markup."
+    },
+    {
+      "id": "R8",
+      "text": "What the tutor did in the app is stored with each message, so later turns know the ids of what it made, and the reply shows buttons that open those things."
+    },
+    {
+      "id": "R9",
+      "text": "The tutor can read the learner's progress, the learning log's analysis and a lesson's mastery ledger through tools."
+    },
+    {
+      "id": "R10",
+      "text": "A reply is written by a background task and survives leaving the screen; one finished off screen arrives as a notification."
+    },
+    {
+      "id": "R11",
+      "text": "A reply cut off by the app closing is marked as interrupted, with a button to ask again."
+    },
+    {
+      "id": "R12",
+      "text": "The learner can keep several conversations, listed newest first, each titled after its first question and with its own history."
+    },
+    {
+      "id": "R13",
+      "text": "Deleting a conversation leaves everything the tutor made in the app in place."
+    },
+    {
+      "id": "R14",
+      "text": "An id of the wrong kind, or a made-up id, passed to a tool fails with a message saying what was expected, instead of acting on another row."
+    },
+    {
+      "id": "R15",
+      "text": "While a reply is being written on Android, the app is kept alive with a quiet notification."
+    }
+  ],
+  "questions": [
+    "The README's table of tools is older than the code: it leaves out the picture, scene, story and podcast tools and the analysis tools. Should the README list every tool, or point to the code?"
+  ],
+  "code": [
+    "src-tauri/src/tutor.rs",
+    "src-tauri/src/tutor_analytics.rs",
+    "src-tauri/src/agent.rs",
+    "src-tauri/src/resolve.rs",
+    "src-tauri/src/work.rs",
+    "src/screens/Tutor.tsx",
+    "src/lib/useAiStream.ts",
+    "src/components/Markdown.tsx"
+  ],
+  "related": [
+    "principles#R3",
+    "principles#R1",
+    "tutor/memory",
+    "tutor/models",
+    "courses",
+    "data#R6"
+  ]
+}

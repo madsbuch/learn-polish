@@ -1,0 +1,84 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Drills",
+  "summary": "Runs of exercises over a lesson's own items, graded by the share answered right.",
+  "status": "implemented",
+  "order": 1,
+  "description": "A drill practises a handful of items: words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, so a brand-new word is shown on a card first, a word seen before is recognised among choices, and one that has held up has to be typed from memory.\n\nInside a drill every word and sentence has its own review history. That history decides how hard the exercise is; when the lesson itself comes back is decided by the lesson's schedule.",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A word never answered is introduced on a card that is only read; one answered at least once is asked by multiple choice; one with three or more successful reviews has to be typed."
+    },
+    {
+      "id": "R2",
+      "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks: `czesc` counts as `cześć`."
+    },
+    {
+      "id": "R3",
+      "text": "A typed answer one letter off a word of four letters or more is almost right."
+    },
+    {
+      "id": "R4",
+      "text": "A dictation or spoken sentence of three words or more with one word wrong is almost right."
+    },
+    {
+      "id": "R5",
+      "text": "An almost-right answer is logged as a mistake, earns half the XP, counts as half right in the drill's score, and brings the item back sooner instead of starting its reviews over."
+    },
+    {
+      "id": "R6",
+      "text": "A drill passes at 85% right; a drill of three to six scored cards also passes with a single miss."
+    },
+    {
+      "id": "R7",
+      "text": "A drill with 60% or more right that does not pass is a partial; less is a fail."
+    },
+    {
+      "id": "R8",
+      "text": "An ace is a pass with every answer fully right."
+    },
+    {
+      "id": "R9",
+      "text": "Cards that are only read (a new word, a dialogue to read, a story panel) are not scored, and a drill with nothing scored is not graded."
+    },
+    {
+      "id": "R10",
+      "text": "A sentence whose words change their ending is built from tiles in dictionary form, and the learner picks the ending on each tile; a sentence without stored endings is built by plain ordering."
+    },
+    {
+      "id": "R11",
+      "text": "A wrong answer on a word shows example sentences for it: made once by a model and kept, or, without a key, taken from the learner's own courses."
+    },
+    {
+      "id": "R12",
+      "text": "A wrong answer can be explained by the AI straight from the exercise, with any chat model."
+    },
+    {
+      "id": "R13",
+      "text": "Each word's and sentence's review interval grows with right answers on different days, to at most 365 days; an item counts once a day."
+    }
+  ],
+  "code": [
+    "src-tauri/src/session.rs",
+    "src-tauri/src/practice.rs",
+    "src-tauri/src/srs.rs",
+    "src-tauri/src/tiles.rs",
+    "src-tauri/src/examples.rs",
+    "src-tauri/src/lesson_types/words.rs",
+    "src-tauri/src/lesson_types/sentences.rs",
+    "src-tauri/src/lesson_types/gaps.rs",
+    "src-tauri/src/lesson_types/typing.rs",
+    "src-tauri/src/lesson_types/memory.rs",
+    "src-tauri/src/lesson_types/dialogue.rs",
+    "src/exercises/**",
+    "src/screens/Session.tsx",
+    "src/screens/SessionSummary.tsx"
+  ],
+  "related": [
+    "lessons",
+    "lessons/schedule",
+    "lessons/speaking",
+    "progress#R1"
+  ]
+}
