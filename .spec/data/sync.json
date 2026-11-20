@@ -68,7 +68,7 @@
     },
     {
       "id": "R16",
-      "text": "An interrupted sync resumes: changes are pulled in batches of at most 500 rows or 4 MB, each applied with its bookmark in one transaction."
+      "text": "An interrupted sync resumes: changes are pulled in batches of at most 500 rows and about 4 MB, applied in small transactions, and the bookmark moves only with a batch's last part."
     },
     {
       "id": "R17",

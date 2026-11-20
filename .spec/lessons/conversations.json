@@ -24,7 +24,7 @@
     },
     {
       "id": "R5",
-      "text": "Every song the tutor makes gets a listening lesson, and any song's page can start one."
+      "text": "A song the tutor makes gets a listening lesson unless the tutor opts out, and any song's page can start one."
     },
     {
       "id": "R6",
@@ -36,7 +36,7 @@
     },
     {
       "id": "R8",
-      "text": "The writing partner runs on its own model setting, separate from the tutor's."
+      "text": "The writing partner has its own model setting and uses the tutor's model when none is chosen."
     },
     {
       "id": "R9",
@@ -52,7 +52,7 @@
     },
     {
       "id": "R12",
-      "text": "A check-in pays 30, 80 or 160 XP for low, medium or high complexity, half for a partial and none for a fail; a writing lesson adds 10 per goal."
+      "text": "A check-in pays 30, 80 or 160 XP for low, medium or high complexity, plus 10 for each goal a writing lesson has; a partial pays half of that and a fail nothing."
     }
   ],
   "code": [

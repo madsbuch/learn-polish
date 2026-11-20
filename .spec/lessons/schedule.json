@@ -20,7 +20,7 @@
     },
     {
       "id": "R4",
-      "text": "Each later pass sets the next gap to the days since the last check-in times the lesson's ease, never less than its period."
+      "text": "Each later pass sets the next gap to the days since the last check-in times the lesson's ease, never less than its period and never less than the days that passed plus one."
     },
     {
       "id": "R5",
@@ -44,11 +44,11 @@
     },
     {
       "id": "R10",
-      "text": "No gap is longer than 120 days."
+      "text": "The gap worked out for a check-in is never longer than 120 days; spreading can then place it up to a week later."
     },
     {
       "id": "R11",
-      "text": "A check-in of four days or more ahead is placed on the lightest day within a tenth of the gap either side of its target, at most a week."
+      "text": "A check-in four days or more ahead is placed on the lightest day within a tenth of the gap either side of its target: at least one day and at most seven."
     },
     {
       "id": "R12",

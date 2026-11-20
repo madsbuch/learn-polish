@@ -16,7 +16,7 @@
     },
     {
       "id": "R3",
-      "text": "The tutor and the examiner both see the current memories in their prompt, and both can save, update and forget memories."
+      "text": "The tutor and the examiner both see the current memories in their prompt, at most the 80 most recently touched of each kind, and both can save, update and forget memories."
     },
     {
       "id": "R4",

@@ -24,11 +24,11 @@
     },
     {
       "id": "R5",
-      "text": "A course can be finished regardless of time: practising a lesson again today always moves it forward."
+      "text": "A course can be finished regardless of time: passing a lesson again the same day always adds mastery points, and no step toward mastery requires waiting for a check-in to come due."
     },
     {
       "id": "R6",
-      "text": "Mastery is never lost: a mastered lesson stays mastered whatever happens afterwards."
+      "text": "Mastery is never lost through practice: a mastered lesson stays mastered whatever its later results. Only the learner's own reset of progress clears it."
     },
     {
       "id": "R7",
@@ -52,15 +52,18 @@
     },
     {
       "id": "R12",
-      "text": "A lesson type is declared in one place, and nothing else in the app branches on a lesson's type."
+      "text": "A lesson type is declared in one place, and the screens and the lesson flow ask the type instead of branching on it."
     },
     {
       "id": "R13",
-      "text": "Every row's id is a tagged id that says what it names; screens show the title of the thing instead of the id."
+      "text": "Every row that names a thing (a course, a lesson, a word, a song, a memory) has a tagged id that says what it is; screens show the title of the thing instead of the id."
     }
   ],
   "questions": [
-    "Speech stored as WAV by earlier versions is re-encoded to MP3 by itself at startup, with no button. Is that storage housekeeping, which R4 allows, or a change to the learner's content that should wait for the learner to ask?"
+    "Speech stored as WAV by earlier versions is re-encoded to MP3 by itself at startup, with no button. Is that storage housekeeping, which R4 allows, or a change to the learner's content that should wait for the learner to ask?",
+    "Three more things change existing content at startup without being asked: lessons built on Wikipedia are corrected by an AI every 90 days (a paid request), unchanged courses from the old built-in collection are removed, and courses mastered under earlier rules are moved to mastered. Are these the ongoing work R4 allows?",
+    "R12 holds for the screens, but the core still names lesson types outside the registry: in statistics (dialogue, writing and listening counts), in a few tutor tools, and when a course's items are cut into drills. Should those move into the types?",
+    "Reset progress clears mastery on every lesson, including the lessons of closed courses, while the courses stay closed. Is a closed course with unmastered lessons intended?"
   ],
   "code": [
     "PRINCIPLES.md",

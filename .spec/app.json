@@ -40,20 +40,23 @@
     },
     {
       "id": "R9",
-      "text": "Touch targets are at least 44 px, or 36 px in dense rows."
+      "text": "The design system's buttons are 44 px high by default and 36 px in their small size."
     },
     {
       "id": "R10",
-      "text": "A destructive action asks for confirmation once and says what will be lost."
+      "text": "Destructive actions use the design system's confirm button, which asks before acting."
     },
     {
       "id": "R11",
-      "text": "An empty list says what would be there and offers the action that fills it."
+      "text": "The design system has an empty state for lists, which says what would be there and can offer the action that fills it."
     },
     {
       "id": "R12",
       "text": "The build fails when a screen breaks the design system's mechanical rules."
     }
+  ],
+  "questions": [
+    "DESIGN.md asks for touch targets of at least 44 px, one confirmation for every destructive action and an explanation in every empty list. The build checks none of the three, and some controls are smaller. Should the design check enforce them?"
   ],
   "code": [
     "src/App.tsx",

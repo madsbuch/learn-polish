@@ -36,7 +36,7 @@
     },
     {
       "id": "R8",
-      "text": "A lesson is mastered when it has been passed and has 100 points; once mastered it is never due again and nothing takes mastery or points away."
+      "text": "A lesson is mastered when it has been passed and has 100 points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in the day's list."
     },
     {
       "id": "R9",
@@ -44,7 +44,7 @@
     },
     {
       "id": "R10",
-      "text": "Every graded go writes one row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing."
+      "text": "Every graded go writes a row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing; the go that masters the lesson adds a second row marking it mastered."
     },
     {
       "id": "R11",

@@ -16,7 +16,7 @@
     },
     {
       "id": "R3",
-      "text": "In the pairs format each sentence is said in English and then in Polish; in the immersion format only Polish is spoken and the English is shown with each line."
+      "text": "In the pairs format each sentence is said in English and then in Polish; in the immersion format only Polish is spoken and the English is shown with each line, except that a line with no Polish is still said in English."
     },
     {
       "id": "R4",
@@ -28,7 +28,7 @@
     },
     {
       "id": "R6",
-      "text": "A news episode is written from the headlines and summaries of Polish news feeds; the outlets' articles are only linked to."
+      "text": "A news episode is written from the headlines and short summaries of Polish news feeds, with Wikipedia for background; where a feed gives no summary, the description the article's page gives of itself is used, and the articles themselves are only linked to."
     },
     {
       "id": "R7",
@@ -40,11 +40,11 @@
     },
     {
       "id": "R9",
-      "text": "Changing how an episode sounds (pauses, repeats, slow speech, English on or off) reuses the clips already made."
+      "text": "Changing an episode's pauses or repeats reuses the clips already made; turning on slow speech or English makes only the clips that are missing."
     },
     {
       "id": "R10",
-      "text": "An episode's audio is stored as MP3."
+      "text": "An episode's audio is stored as MP3, or as it came when it cannot be encoded."
     }
   ],
   "code": [

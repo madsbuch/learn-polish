@@ -12,7 +12,7 @@
     },
     {
       "id": "R2",
-      "text": "Each type is declared once, with its name, icon, description, how it runs, its place in a course's path and the sections its page shows; screens and the tutor read the registry instead of branching on a type."
+      "text": "Each type is declared once, with its name, icon, description, how it runs, its place in a course's path and the sections its page shows; the screens draw a lesson from its registry entry, not from its type."
     },
     {
       "id": "R3",
@@ -50,6 +50,9 @@
       "id": "R11",
       "text": "Every registered type can be made and practised, and every exercise it produces is one the screens can draw; a test fails otherwise."
     }
+  ],
+  "questions": [
+    "The principle says nothing else branches on a lesson's type, but the core still names types in a few places: cutting a course's items into drills, drawing a picture lesson's words, and a check for writing in the tutor. Are those exceptions accepted, or should they move into the types?"
   ],
   "code": [
     "src-tauri/src/lesson_types/**",

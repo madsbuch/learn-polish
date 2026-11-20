@@ -8,7 +8,7 @@
   "requirements": [
     {
       "id": "R1",
-      "text": "A word never answered is introduced on a card that is only read; one answered at least once is asked by multiple choice; one with three or more successful reviews has to be typed."
+      "text": "A word never answered is shown on a card that is only read and then asked by multiple choice; one answered before is asked by multiple choice; one answered right on three different days in a row has to be typed."
     },
     {
       "id": "R2",
@@ -28,7 +28,7 @@
     },
     {
       "id": "R6",
-      "text": "A drill passes at 85% right; a drill of three to six scored cards also passes with a single miss."
+      "text": "A drill passes at 85% right; a drill of three to six scored cards also passes with a single miss, or two almost-right answers."
     },
     {
       "id": "R7",
@@ -36,7 +36,7 @@
     },
     {
       "id": "R8",
-      "text": "An ace is a pass with every answer fully right."
+      "text": "An ace in a drill is a pass with no almost-right answers and at least 95% of the scored cards fully right."
     },
     {
       "id": "R9",
@@ -52,12 +52,15 @@
     },
     {
       "id": "R12",
-      "text": "A wrong answer can be explained by the AI straight from the exercise, with any chat model."
+      "text": "After a word or sentence card is answered, the learner can talk about it with the tutor straight from the exercise; that chat has its own model setting and otherwise uses the tutor's model."
     },
     {
       "id": "R13",
       "text": "Each word's and sentence's review interval grows with right answers on different days, to at most 365 days; an item counts once a day."
     }
+  ],
+  "questions": [
+    "The README says an ace needs every answer fully right; the code gives an ace at 95% fully right with no almost-right answers, so a drill of 20 cards or more can have one miss. Which is meant?"
   ],
   "code": [
     "src-tauri/src/session.rs",

@@ -8,7 +8,7 @@
   "requirements": [
     {
       "id": "R1",
-      "text": "The day's list is chosen once a day and stays the same for that day."
+      "text": "The day's list is chosen once a day and kept for that day; it is chosen again only when the learner changes how many lessons a day they want, or when the kept list names no lesson this device has."
     },
     {
       "id": "R2",
@@ -20,7 +20,7 @@
     },
     {
       "id": "R4",
-      "text": "Other due lessons follow, most overdue first."
+      "text": "Other due lessons follow, those most at risk first: the furthest past their interval, with lessons of lower ease ahead."
     },
     {
       "id": "R5",

@@ -8,7 +8,7 @@
   "requirements": [
     {
       "id": "R1",
-      "text": "A course lists its lessons in an order the learner or the tutor can change."
+      "text": "A course lists its lessons in an order that the tutor can change."
     },
     {
       "id": "R2",
@@ -20,7 +20,7 @@
     },
     {
       "id": "R4",
-      "text": "Anything a course already teaches is skipped when more is added to it, and the number skipped is reported."
+      "text": "Words and sentences a course already teaches are skipped when more is added to it, and the number skipped is reported."
     },
     {
       "id": "R5",
@@ -52,11 +52,11 @@
     },
     {
       "id": "R12",
-      "text": "Only a mastered course can be closed, by the learner's own choice; a closed course is listed under Mastered and can no longer be changed or added to."
+      "text": "Only a mastered course can be closed, by the learner's own choice; a closed course is listed under Mastered and can no longer be renamed, changed or added to. It can still be deleted."
     },
     {
       "id": "R13",
-      "text": "A course can carry a CEFR level, shown as a badge and never written into its title."
+      "text": "A course can carry a CEFR level, stored apart from its title and shown as a badge."
     },
     {
       "id": "R14",
@@ -70,6 +70,11 @@
       "id": "R16",
       "text": "A course can have a picture, drawn by an image model from its title, summary and words."
     }
+  ],
+  "questions": [
+    "Only the tutor can reorder a course's lessons: there is no command for the learner to do it by hand. Is that intended?",
+    "Dialogue lines added to a course are always appended, even when the course already has the same line, while words and sentences are checked for repeats. Should lines be checked too?",
+    "Nothing stops a level being written into a course's title; the tutor is only told not to. Is the instruction enough?"
   ],
   "code": [
     "src-tauri/src/courses.rs",

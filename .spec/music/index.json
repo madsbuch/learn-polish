@@ -32,7 +32,7 @@
     },
     {
       "id": "R7",
-      "text": "Only the device that started a song polls for it and downloads it, so two synced devices never make two copies."
+      "text": "After a restart only the device that started a song resumes polling for it and downloading it; a device where the learner taps retry takes the song over."
     },
     {
       "id": "R8",

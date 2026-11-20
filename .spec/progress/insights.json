@@ -12,7 +12,7 @@
     },
     {
       "id": "R2",
-      "text": "Each wrong answer is given one mistake class, the most telling that fits: a sound contrast or preposition, Polish letters only, order only, an ending, a typo, some words right, or a word not known."
+      "text": "Each wrong answer is given one mistake class, the most telling that fits: a sound contrast or preposition, Polish letters only, order only, an ending, a typo, a look-alike word when it was picked, some words right, or a word not known. A right answer typed without its Polish letters is classed as Polish letters too."
     },
     {
       "id": "R3",

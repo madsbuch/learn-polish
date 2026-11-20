@@ -20,7 +20,7 @@
     },
     {
       "id": "R4",
-      "text": "The interface loads every file by id through the `media` protocol, with byte ranges for seeking; the build fails on any other way of loading a file."
+      "text": "The interface loads pictures, covers and songs by file id through the `media` protocol, with byte ranges for seeking; speech clips are handed over as data; the build fails if a screen loads a file by its path."
     },
     {
       "id": "R5",
@@ -28,7 +28,7 @@
     },
     {
       "id": "R6",
-      "text": "Every row's id is a typed id: a prefix naming its kind, an underscore and 26 characters, made on the device that writes the row; only an id with the right prefix is accepted where that kind is expected."
+      "text": "Every row with an id of its own has a typed id: a prefix naming its kind, an underscore and 26 characters, made on the device that writes the row; only an id with the right prefix is accepted where that kind is expected. Tables keyed by something natural (a setting's key, a day, a pair of ids) keep that key."
     },
     {
       "id": "R7",
@@ -40,15 +40,15 @@
     },
     {
       "id": "R9",
-      "text": "Before a schema upgrade the database is copied to a backups folder; the newest 2 backups are kept."
+      "text": "Before a schema upgrade the database is copied to a backups folder; the newest 2 upgrade backups are kept."
     },
     {
       "id": "R10",
-      "text": "An upgrade keeps the ids of existing rows."
+      "text": "The upgrade to typed ids gave every row a new id and rewrote every reference to it; upgrades since keep the ids of existing rows."
     },
     {
       "id": "R11",
-      "text": "Database access is typed against one schema definition, and a test fails if that definition and the schema the app creates drift apart."
+      "text": "Database access is typed against one schema definition, and a test fails if that definition names a table or column the schema the app creates does not have."
     },
     {
       "id": "R12",

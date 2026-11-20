@@ -28,7 +28,7 @@
     },
     {
       "id": "R6",
-      "text": "A recording larger than 4 MB is refused."
+      "text": "A recording is refused when it is larger than 4 MB once encoded as text, about 3 MB of audio."
     },
     {
       "id": "R7",
@@ -40,7 +40,7 @@
     },
     {
       "id": "R9",
-      "text": "A words lesson ends with a short round of sound pairs when its words have the sounds."
+      "text": "A words lesson has a round of up to two sound pairs before its closing memory round, when its words have the sounds."
     },
     {
       "id": "R10",

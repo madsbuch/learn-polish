@@ -20,11 +20,11 @@
     },
     {
       "id": "R4",
-      "text": "The webview never reaches the network or the database itself: every read, write and outside request is a command in the Rust core."
+      "text": "The webview never reaches the database itself, and makes no outside request of its own except loading the pictures of Wikipedia articles from upload.wikimedia.org; every other read, write and request is a command in the Rust core."
     },
     {
       "id": "R5",
-      "text": "API keys are kept in the app's database and are read only inside the Rust core, never handed to the interface as text."
+      "text": "API keys are kept in the app's database; once saved they are not handed back to the interface as text, only as whether a key is set or as a QR picture."
     },
     {
       "id": "R6",

@@ -20,7 +20,7 @@
     },
     {
       "id": "R4",
-      "text": "The demo course's rows have ids derived from their content, so two devices that install it agree on them."
+      "text": "The demo course's rows have ids derived from the course and each row's place in it, so two devices that install it agree on them."
     },
     {
       "id": "R5",

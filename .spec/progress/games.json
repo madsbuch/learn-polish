@@ -8,15 +8,15 @@
   "requirements": [
     {
       "id": "R1",
-      "text": "The games draw only on words and sentences the learner has already met."
+      "text": "Match pairs, Flip and match, the dictation game and Say it draw only on words and sentences the learner has already met; Sound pairs uses the app's built-in pairs."
     },
     {
       "id": "R2",
-      "text": "Match pairs uses 8 Polish and English pairs against the clock; Flip and match uses 6 pairs and counts moves."
+      "text": "Match pairs uses up to 8 Polish and English pairs against the clock, and Flip and match up to 6 pairs counted in moves; each needs at least 4 words met."
     },
     {
       "id": "R3",
-      "text": "The dictation game and Say it use 5 sentences each; Sound pairs plays 8 rounds."
+      "text": "The dictation game and Say it use up to 5 sentences each and need at least 3 met; Sound pairs plays 8 rounds."
     },
     {
       "id": "R4",
@@ -32,7 +32,7 @@
     },
     {
       "id": "R7",
-      "text": "The best result of each game is kept and synced, so a record set on one device is the one to beat on another."
+      "text": "The best result of Match pairs (fastest time) and of Flip and match (fewest moves) is kept and synced, so a record set on one device is the one to beat on another; the other games keep no record."
     },
     {
       "id": "R8",

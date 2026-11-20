@@ -36,7 +36,7 @@
     },
     {
       "id": "R8",
-      "text": "The app's own code contains no unsafe Rust and no `as` casts; the lints fail the build otherwise."
+      "text": "The app's own code contains no unsafe Rust, and no `as` casts outside the two float conversions in `convert.rs`; the lints fail the build otherwise."
     }
   ],
   "code": [
