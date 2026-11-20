@@ -13,6 +13,21 @@ The rules that settle design questions are in
 
 ---
 
+## The spec
+
+What the app is meant to do is written down in [`.spec`](.spec): one JSON
+file per part of the product, each with requirements that can be checked
+against the code (`MAST-7`, `SYNC-3`). The format is the one described in
+[spec-llms.txt](https://raw.githubusercontent.com/madsbuch/better-github/refs/heads/main/spec-llms.txt);
+read it before changing the spec. A change in behaviour and the change to
+its requirements go in the same commit: new behaviour gets new requirements,
+changed behaviour a new version of its requirement with the reason, and a
+requirement no longer wanted is deprecated with the reason, never deleted.
+`bun run build` checks the spec (`bun run check:spec` alone).
+
+Dansk ([learn-danish](https://github.com/madsbuch/learn-danish)) has the same spec, item for
+item and id for id; a requirement added or changed here is ported there.
+
 ## What's in it
 
 The app starts with one small **First steps / Pierwsze kroki** demo course:

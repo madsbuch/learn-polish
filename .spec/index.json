@@ -13,7 +13,14 @@
     {
       "id": "POL-2",
       "text": "A fresh install can be practised offline with no API key: the demo course needs neither the network nor a model.",
-      "status": "deprecated"
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "Not necessary as a promise of the whole app: working without a connection is asked for course by course, where the learner needs it, and a course kept offline has its assets downloaded.",
+        "replacedBy": [
+          "courses/offline"
+        ],
+        "date": "2026-11-20"
+      }
     },
     {
       "id": "POL-3",
