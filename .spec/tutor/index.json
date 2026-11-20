@@ -52,7 +52,16 @@
     },
     {
       "id": "TUTOR-6",
-      "text": "The tutor is told to reply in the language the learner writes in and to hold a conversation in Polish only when asked."
+      "text": "The tutor is told to reply in the language the learner writes in, in English when that is unclear, and to hold a conversation in Polish only when asked.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The tutor is told to reply in the language the learner writes in and to hold a conversation in Polish only when asked.",
+          "reason": "The owner decided English is the default when the learner's language is not clear.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "TUTOR-7",

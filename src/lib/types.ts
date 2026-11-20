@@ -822,9 +822,12 @@ export const OfflineStatusSchema = z.object({
   courseId: CourseIdSchema,
   /** Whether the learner asked for it to be kept offline. */
   enabled: z.boolean(),
-  /** Everything its lessons say, and how much of it is stored. */
+  /** Everything its lessons say, at normal speed and slowly, and how much is stored. */
   clips: z.number(),
   clipsStored: z.number(),
+  /** Its words, and how many have their example sentences. */
+  examples: z.number(),
+  examplesStored: z.number(),
   /** Every picture its lessons show, and how many are drawn. */
   pictures: z.number(),
   picturesStored: z.number(),
@@ -835,6 +838,8 @@ export const OfflineStatusSchema = z.object({
   working: z.boolean(),
   /** Whether there is a key to download with. */
   canDownload: z.boolean(),
+  /** Example sentences are missing and no chat model is chosen to write them. */
+  needsModel: z.boolean(),
 });
 export type OfflineStatus = z.infer<typeof OfflineStatusSchema>;
 

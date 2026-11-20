@@ -6,8 +6,7 @@
 //! A row is written where mastery is decided (lessons.rs `credit_mastery`
 //! and `stamp_mastered`), in the same transaction as the change, on the
 //! device that made it, and never changed after: append-only and per device,
-//! like the learning log (docs/SYNC.md: nothing to conflict). A reset of
-//! progress deletes it with the points it explains. There is no backfill
+//! like the learning log (docs/SYNC.md: nothing to conflict). There is no backfill
 //! (PRINCIPLES.md): a lesson's points from before the ledger began are shown
 //! as one starting line.
 

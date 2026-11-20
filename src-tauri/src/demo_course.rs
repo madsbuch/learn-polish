@@ -197,11 +197,10 @@ mod tests {
     }
 
     #[test]
-    fn deleting_the_demo_is_respected_after_reset_and_reopen() {
+    fn deleting_the_demo_is_respected_after_reopen() {
         let mut conn = fresh("deleted");
         let id: crate::ids::CourseId = courses_table::table.select(courses_table::id).first(&mut conn).unwrap();
         courses::delete(&mut conn, id).unwrap();
-        crate::commands::reset_progress_in(&mut conn).unwrap();
         drop(conn);
         let mut conn = db::open(&path("deleted")).unwrap();
         assert_eq!(courses_table::table.count().get_result::<i64>(&mut conn).unwrap(), 0);

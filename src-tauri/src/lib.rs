@@ -250,7 +250,6 @@ pub fn run() {
             commands::browse_words,
             commands::browse_sentences,
             commands::browse_catalogue,
-            commands::reset_progress,
             commands::ai_set_key,
             commands::ai_clear_key,
             commands::ai_test_key,
@@ -1090,14 +1089,44 @@ mod integration {
         offline::set(&mut conn, basics, true).unwrap();
         assert_eq!(t::courses::table.find(basics).select(t::courses::offline_at).first::<Option<i64>>(&mut conn).unwrap(), asked);
 
-        // Every line its lessons say, stored in the voice that reads it: ready.
-        let lines = speech::course_audio_lines_in(&mut conn, basics).unwrap();
-        assert_eq!(convert::count(lines.len()), before.clips);
-        for line in &lines {
-            let voice = ai::voice_for(&mut conn, &line.gender);
-            let key = speech::audio_key(ai::SPEECH_MODEL, &voice, &line.text);
-            speech::store_clip(&mut conn, &key, ai::SPEECH_MODEL, &voice, &line.text, "audio/mpeg", b"mp3").unwrap();
+        // Each word's example sentences: what they say is audio to have too.
+        let course_words: Vec<WordId> =
+            t::course_words::table.filter(t::course_words::course_id.eq(basics)).select(t::course_words::id).load(&mut conn).unwrap();
+        assert_eq!((before.examples, before.examples_stored), (convert::count(course_words.len()), 0));
+        assert!(before.needs_model, "no chat model to write them with");
+        for (n, word) in course_words.iter().enumerate() {
+            diesel::insert_into(t::word_examples::table)
+                .values((
+                    t::word_examples::word_id.eq(word),
+                    t::word_examples::examples.eq(format!(r#"[{{"pl":"Przykład numer {n}.","en":"Example number {n}."}}]"#)),
+                    t::word_examples::created_at.eq(0),
+                ))
+                .execute(&mut conn)
+                .unwrap();
         }
+        let with_examples = offline::status(&mut conn, basics).unwrap();
+        assert_eq!(with_examples.examples_stored, with_examples.examples);
+        assert!(!with_examples.needs_model, "nothing left to write");
+        let lines = speech::course_audio_lines_in(&mut conn, basics).unwrap();
+        assert!(lines.iter().any(|line| line.text == "Przykład numer 0."), "the examples are said too");
+        // Every line counts twice: at normal speed and slowly.
+        assert_eq!(with_examples.clips, 2 * convert::count(lines.len()));
+        assert_eq!(with_examples.clips, before.clips + 2 * convert::count(course_words.len()));
+
+        // Every line stored at normal speed, in the voice that reads it: half.
+        let store = |conn: &mut Conn, slow: bool| {
+            for line in &lines {
+                let voice = ai::voice_for(conn, &line.gender);
+                let voice = if slow { format!("{voice}/slow") } else { voice };
+                let key = speech::audio_key(ai::SPEECH_MODEL, &voice, &line.text);
+                speech::store_clip(conn, &key, ai::SPEECH_MODEL, &voice, &line.text, "audio/mpeg", b"mp3").unwrap();
+            }
+        };
+        store(&mut conn, false);
+        let half = offline::status(&mut conn, basics).unwrap();
+        assert_eq!(half.clips_stored * 2, half.clips);
+        assert!(!half.ready, "the slow versions are part of it");
+        store(&mut conn, true);
         let after = offline::status(&mut conn, basics).unwrap();
         assert!(after.enabled && after.ready, "{after:?}");
         assert_eq!((after.clips_stored, after.pictures), (after.clips, 0));
@@ -1111,7 +1140,7 @@ mod integration {
             .unwrap();
         diesel::update(t::words::table.find(word)).set(t::words::near_pl.eq("zzzsąsiad")).execute(&mut conn).unwrap();
         let grown = offline::status(&mut conn, basics).unwrap();
-        assert_eq!(grown.clips, after.clips + 1);
+        assert_eq!(grown.clips, after.clips + 2, "the neighbour, at both speeds");
         assert!(!grown.ready, "a course that grew is not ready until the new audio is there");
         diesel::update(t::lessons::table.find(lesson)).set(t::lessons::lesson_type.eq("pictures")).execute(&mut conn).unwrap();
         let words_in_lesson: i64 = t::words::table.filter(t::words::lesson_id.eq(lesson)).count().get_result(&mut conn).unwrap();
@@ -1423,39 +1452,16 @@ mod integration {
     }
 
     #[test]
-    fn reset_clears_the_xp_log_mastery_and_its_ledger() {
-        let mut conn = scratch_db("reset");
+    fn an_ace_is_every_answer_right() {
+        let mut conn = scratch_db("ace");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
-        let today = db::today(&mut conn);
-        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
-        for _ in 0..3 {
-            practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
-        }
-        let word: WordId = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
-        practice::submit_answer_in(
-            &mut conn,
-            practice::SubmitAnswer { kind: "type".into(), item_kind: "word".into(), item_id: word.to_string(), expected: "a".into(), given: "a".into(), ..Default::default() },
-        )
-        .unwrap();
-        crate::games::finish(&mut conn, "match", 8, 40_000, 0).unwrap();
-        diesel::update(t::lessons::table.find(drill.id)).set((t::lessons::mastered_at.eq(Some(1)), t::lessons::mastery.eq(100))).execute(&mut conn).unwrap();
-        db::set_setting(&mut conn, "streak_freezes", "2").unwrap();
-        assert!(t::xp_log::table.count().get_result::<i64>(&mut conn).unwrap() > 0);
-        assert!(t::mastery_log::table.count().get_result::<i64>(&mut conn).unwrap() > 0);
-
-        commands::reset_progress_in(&mut conn).unwrap();
-        let lesson = lessons::load(&mut conn, drill.id).unwrap();
-        assert_eq!((lesson.mastery, lesson.passed, lesson.mastered, lesson.reps), (0, false, false, 0));
-        assert_eq!(t::xp_log::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
-        assert_eq!(t::mastery_log::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
-        assert_eq!(db::get_setting_i64(&mut conn, "streak_freezes", 0), 0);
-        // The XP log and the day totals agree: nothing in either.
-        assert_eq!(stats::day_xp(&mut conn, today).unwrap(), 0);
-        assert_eq!(stats::total_xp(&mut conn).unwrap(), 0);
-        assert_eq!(crate::masterylog::for_lesson(&mut conn, drill.id).unwrap().before_log, None);
-        // Practice after it adds up again.
-        practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
-        assert_eq!(lessons::load(&mut conn, drill.id).unwrap().mastery, 30);
+        let drills: Vec<_> = lessons::for_course(&mut conn, basics).unwrap().into_iter().filter(|b| b.lesson_type == "words").take(2).collect();
+        // One miss in twenty passes, and is no ace (DRILL-8): a first pass earns 30.
+        practice::lesson_finish_in(&mut conn, drills[0].id, 19, 20).unwrap();
+        assert_eq!(lessons::load(&mut conn, drills[0].id).unwrap().mastery, 30);
+        // Every answer right is: a quarter more.
+        practice::lesson_finish_in(&mut conn, drills[1].id, 20, 20).unwrap();
+        assert_eq!(lessons::load(&mut conn, drills[1].id).unwrap().mastery, 38);
     }
 
     #[test]

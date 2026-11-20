@@ -18,8 +18,10 @@ function plural(count: number, one: string, many: string) {
 /** What is stored and what is still to come, in a sentence. */
 function summary(status: OfflineStatus): string {
   const parts = [`${status.clipsStored} of ${plural(status.clips, "audio clip", "audio clips")}`];
+  if (status.examples > 0) parts.push(`example sentences for ${status.examplesStored} of ${plural(status.examples, "word", "words")}`);
   if (status.pictures > 0) parts.push(`${status.picturesStored} of ${plural(status.pictures, "picture", "pictures")}`);
-  return `${parts.join(" and ")} downloaded.`;
+  const last = parts.pop();
+  return `${parts.length > 0 ? `${parts.join(", ")} and ${last}` : last} downloaded.`;
 }
 
 /**
@@ -60,8 +62,8 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
   }, [watching, reload]);
 
   if (!status) return null;
-  const total = status.clips + status.pictures;
-  const stored = status.clipsStored + status.picturesStored;
+  const total = status.clips + status.examples + status.pictures;
+  const stored = status.clipsStored + status.examplesStored + status.picturesStored;
 
   async function act(action: () => Promise<OfflineStatus>) {
     setError(null);
@@ -79,7 +81,8 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
         <Stack gap={2}>
           <p>
             A course kept offline has everything its lessons play and show downloaded: the audio of every word,
-            sentence and line, and every picture. New lessons are downloaded as they are added.
+            sentence and line, at normal speed and slowly; the example sentences shown after a wrong answer; and
+            every picture. New lessons are downloaded as they are added.
           </p>
           <p>
             Downloading uses your OpenRouter key, like tapping each speaker button would. Switching it off deletes
@@ -95,7 +98,9 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
       <Stack gap={2}>
         <SettingRow
           label="Keep this course offline"
-          description={status.enabled && status.ready ? "Ready to use without a connection" : "Download its audio and pictures"}
+          description={
+            status.enabled && status.ready ? "Ready to use without a connection" : "Download its audio, examples and pictures"
+          }
           control={
             <Switch
               label="Keep this course offline"
@@ -115,6 +120,9 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
         ) : null}
         {status.enabled && !status.ready && !status.canDownload ? (
           <Banner>Add an OpenRouter key in Settings to download what is missing.</Banner>
+        ) : null}
+        {status.enabled && status.canDownload && status.needsModel ? (
+          <Banner>Choose a chat model in Settings to have the example sentences written.</Banner>
         ) : null}
         {status.enabled && !status.ready && status.canDownload && !status.working ? (
           <Button wide onClick={() => void act(() => api.courseOfflineDownload(courseId))}>

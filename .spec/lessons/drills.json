@@ -59,7 +59,16 @@
     },
     {
       "id": "DRILL-8",
-      "text": "An ace in a drill is a pass with no almost-right answers and at least 95% of the scored cards fully right."
+      "text": "An ace in a drill is a pass with every scored card fully right.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "An ace in a drill is a pass with no almost-right answers and at least 95% of the scored cards fully right.",
+          "reason": "The owner decided an ace means every answer right: at 95%, a long drill could have a miss and still be an ace.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "DRILL-9",

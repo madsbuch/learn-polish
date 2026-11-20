@@ -97,8 +97,7 @@ this file says why.
    the change, in the same transaction, never updated. A lesson's own row
    (its points, `passed`, `mastered_at`) still settles row by row, the later
    write winning; the ledger keeps both devices' rows, so its account shows
-   what each did. A reset of progress deletes the ledger, the XP log and the
-   day log together, as tombstones, so every device's totals agree.
+   what each did.
 7. **The day's five** (`daily_ids`, `daily_day`) sync: both devices show the
    same lessons; if both chose a list while apart, the later wins.
 8. **No backfill of the learner's content.** Schema 8 records the rows already

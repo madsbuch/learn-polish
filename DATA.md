@@ -62,8 +62,7 @@ change to the schema follows these.
   and a reason key (`masterylog::REASONS`) with versioned `details`. Written
   in the same transaction as the change (`lessons::credit_mastery`,
   `stamp_mastered`), by the device that made it, never updated: append-only
-  and per device like `attempts`, with no foreign keys. A reset of progress
-  deletes it with the points. Not backfilled: a lesson's points from before
+  and per device like `attempts`, with no foreign keys. Not backfilled: a lesson's points from before
   it are shown as one starting line.
 - **No ids inside stored text** unless they are TypeIDs: JSON in a column
   (a tutor message's actions, a song's origin, the day's list) holds TypeIDs

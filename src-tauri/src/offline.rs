@@ -1,25 +1,27 @@
 //! Courses kept offline: a course the learner marks is made ready for use
 //! without a connection, and kept ready as it grows.
 //!
-//! Ready means every asset its lessons use is in the database: the audio of
-//! everything they say (speech.rs: words, sentences, dialogue lines, a
-//! story's sentences, a scene's, the sound pairs' words) and every picture
-//! they show (a picture lesson's words, a scene, a story's panels). Songs
-//! and Wikipedia sources are stored when they are made, so they are there
-//! already. What cannot be had offline is said, not hidden: a conversation
-//! lesson (study, listening, writing) talks to a model, and making audio or
-//! pictures takes the learner's key.
+//! Ready means everything its lessons use that is not a conversation is in
+//! the database: the audio of everything they say (speech.rs: words,
+//! sentences, dialogue lines, a story's sentences, a scene's, the sound
+//! pairs' words, the example sentences), each at normal speed and slowly;
+//! the example sentences a wrong answer shows for each word (examples.rs);
+//! and every picture they show (a picture lesson's words, a scene, a
+//! story's panels). Songs and Wikipedia sources are stored when they are
+//! made, so they are there already. What cannot be had offline is said, not
+//! hidden: a conversation lesson (study, listening, writing) talks to a
+//! model, and making audio, examples or pictures takes the learner's key.
 //!
 //! The mark is the course's `offline_at` and syncs with it; the assets are
 //! files, which sync too, so a course made ready on one device is ready on
 //! the others once they have synced.
 //!
-//! Downloading is asked for, never silent: switching it on, or "Download
-//! now", fetches everything and tries again what failed before. By itself
-//! — at startup, and after the tutor adds to a course — the app only
-//! fetches missing audio; pictures are drawn by the device that made the
-//! lesson (pictures.rs, scenes.rs, stories.rs), as they always were, so two
-//! synced devices never both pay for one.
+//! Switching it on, or "Download now", fetches everything and tries again
+//! what failed before. By itself — at startup, and after the tutor adds to
+//! a course — the app fetches missing example sentences and audio; pictures
+//! are drawn by the device that made the lesson (pictures.rs, scenes.rs,
+//! stories.rs), as they always were, so two synced devices never both pay
+//! for one.
 
 use diesel::prelude::*;
 use serde::Serialize;
@@ -37,9 +39,13 @@ pub struct OfflineStatus {
     pub course_id: CourseId,
     /// Whether the learner asked for it to be kept offline.
     pub enabled: bool,
-    /// Everything its lessons say, and how much of it is stored.
+    /// Everything its lessons say, at normal speed and slowly, and how
+    /// much of it is stored.
     pub clips: i64,
     pub clips_stored: i64,
+    /// Its words, and how many have their example sentences.
+    pub examples: i64,
+    pub examples_stored: i64,
     /// Every picture its lessons show, and how many are drawn.
     pub pictures: i64,
     pub pictures_stored: i64,
@@ -52,6 +58,9 @@ pub struct OfflineStatus {
     pub working: bool,
     /// Whether there is a key to download with.
     pub can_download: bool,
+    /// Example sentences are missing and no chat model is chosen to write
+    /// them with.
+    pub needs_model: bool,
 }
 
 /// Sent as `offline://changed` when a course's download starts or ends.
@@ -60,6 +69,9 @@ pub struct OfflineStatus {
 pub struct OfflineChanged {
     pub course_id: CourseId,
 }
+
+/// How many words' example sentences are written at once.
+const PARALLEL_EXAMPLES: usize = 3;
 
 /// Courses being downloaded right now, so one is never downloaded twice at once.
 static WORKING: std::sync::Mutex<Vec<CourseId>> = std::sync::Mutex::new(Vec::new());
@@ -127,27 +139,59 @@ fn pictures_of(conn: &mut Conn, course_id: CourseId) -> Result<Pictures> {
     Ok(found)
 }
 
+/// What a course still lacks in example sentences and audio.
+struct Lacking {
+    words: i64,
+    /// Words without example sentences.
+    examples: Vec<WordId>,
+    clips: i64,
+    /// Lines with no clip at normal speed, and with no slow one.
+    normal: Vec<crate::speech::SpeechLine>,
+    slow: Vec<crate::speech::SpeechLine>,
+}
+
+fn lacking(conn: &mut Conn, course_id: CourseId) -> Result<Lacking> {
+    let lesson_ids: Vec<LessonId> = lessons_of(conn, course_id)?.into_iter().map(|(id, _)| id).collect();
+    let words: i64 = words::table.filter(words::lesson_id.eq_any(&lesson_ids)).count().get_result(conn)?;
+    let examples = crate::examples::missing(conn, &lesson_ids)?;
+    let normal = crate::speech::course_audio_in(conn, course_id)?;
+    let slow = crate::speech::course_slow_audio_in(conn, course_id)?;
+    let missing = |items: Vec<crate::speech::AudioItem>| -> Vec<crate::speech::SpeechLine> {
+        items.into_iter().filter(|item| !item.stored).map(|item| crate::speech::SpeechLine { text: item.text, gender: item.gender }).collect()
+    };
+    Ok(Lacking {
+        words,
+        examples,
+        clips: crate::convert::count(normal.len() + slow.len()),
+        normal: missing(normal),
+        slow: missing(slow),
+    })
+}
+
 pub fn status(conn: &mut Conn, course_id: CourseId) -> Result<OfflineStatus> {
     let enabled: Option<i64> = courses::table.find(course_id).select(courses::offline_at).first(conn)?;
-    let audio = crate::speech::course_audio_in(conn, course_id)?;
+    let lacking = lacking(conn, course_id)?;
     let pictures = pictures_of(conn, course_id)?;
     let online_lessons = lessons_of(conn, course_id)?
         .iter()
         .filter(|(_, lesson_type)| crate::lesson_types::get(lesson_type).is_ok_and(|t| !t.is_drill()))
         .count();
-    let clips = crate::convert::count(audio.len());
-    let clips_stored = crate::convert::count(audio.iter().filter(|item| item.stored).count());
+    let clips_stored = lacking.clips - crate::convert::count(lacking.normal.len() + lacking.slow.len());
+    let examples_stored = lacking.words - crate::convert::count(lacking.examples.len());
     Ok(OfflineStatus {
         course_id,
         enabled: enabled.is_some(),
-        clips,
+        clips: lacking.clips,
         clips_stored,
+        examples: lacking.words,
+        examples_stored,
         pictures: pictures.total,
         pictures_stored: pictures.stored,
         online_lessons: crate::convert::count(online_lessons),
-        ready: clips_stored == clips && pictures.stored == pictures.total,
+        ready: clips_stored == lacking.clips && examples_stored == lacking.words && pictures.stored == pictures.total,
         working: is_working(course_id),
         can_download: crate::ai::api_key(conn).is_ok(),
+        needs_model: !lacking.examples.is_empty() && crate::ai::partner_model(conn).is_err(),
     })
 }
 
@@ -171,29 +215,27 @@ pub fn kept(conn: &mut Conn) -> Result<Vec<CourseId>> {
 }
 
 /// Downloads what a course lacks, in the background, unless that is going
-/// on already. Its audio always; with `everything` (the learner asked) its
+/// on already: its example sentences, then its audio (the examples' too),
+/// at normal speed and slowly. With `everything` (the learner asked) its
 /// pictures too, those that failed before included. Without a key there is
 /// nothing to download with, and nothing happens.
 pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: bool) {
     let db = app.state::<Db>();
-    let (lines, pictures) = {
+    let (needed, pictures) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         if crate::ai::api_key(conn).is_err() {
             return;
         }
-        let lines: Vec<crate::speech::SpeechLine> = crate::speech::course_audio_in(conn, course_id)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|item| !item.stored)
-            .map(|item| crate::speech::SpeechLine { text: item.text, gender: item.gender })
-            .collect();
+        let needed = lacking(conn, course_id).is_ok_and(|l| {
+            !l.normal.is_empty() || !l.slow.is_empty() || (!l.examples.is_empty() && crate::ai::partner_model(conn).is_ok())
+        });
         let pictures = if everything { pictures_of(conn, course_id).unwrap_or_default() } else { Pictures::default() };
         // Panels that failed are set to be drawn again: the learner asked.
         for lesson_id in &pictures.stories {
             let _ = crate::stories::redraw(conn, *lesson_id, None);
         }
-        (lines, pictures)
+        (needed, pictures)
     };
     // Each of these is its own piece of background work, announced as it
     // lands; none holds the database while it draws.
@@ -206,7 +248,7 @@ pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: 
     for lesson_id in pictures.stories {
         crate::stories::draw_in_background(app, lesson_id);
     }
-    if lines.is_empty() {
+    if !needed {
         let _ = app.emit("offline://changed", OfflineChanged { course_id });
         return;
     }
@@ -223,14 +265,34 @@ pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: 
         let _busy = busy;
         let _ = app.emit("offline://changed", OfflineChanged { course_id });
         let db = app.state::<Db>();
-        crate::speech::fill(&app, &db, lines, false).await;
+        let db: &Db = &db;
+        // Example sentences first: what they say is audio to fetch too.
+        let words = lacking(&mut db.lock(), course_id).map(|l| l.examples).unwrap_or_default();
+        let can_write = crate::ai::partner_model(&mut db.lock()).is_ok();
+        if !words.is_empty() && can_write {
+            use futures_util::stream::{self, StreamExt};
+            stream::iter(words)
+                .for_each_concurrent(PARALLEL_EXAMPLES, |word_id| async move {
+                    if let Err(error) = crate::examples::make(db, word_id).await {
+                        crate::diagnostics::note("background", format!("Example sentences for {word_id} failed: {error}"));
+                    }
+                })
+                .await;
+        }
+        // Read on its own line: the database is not held while downloading.
+        let audio = lacking(&mut db.lock(), course_id);
+        if let Ok(lacking) = audio {
+            crate::speech::fill(&app, db, lacking.normal, false, false).await;
+            crate::speech::fill(&app, db, lacking.slow, false, true).await;
+        }
         WORKING.lock().unwrap_or_else(|e| e.into_inner()).retain(|id| *id != course_id);
         let _ = app.emit("offline://changed", OfflineChanged { course_id });
     });
 }
 
-/// Fetches the audio the courses kept offline have gained since they were
-/// last complete — at startup, and after the tutor adds to a course.
+/// Fetches the example sentences and audio the courses kept offline have
+/// gained since they were last complete — at startup, and after the tutor
+/// adds to a course.
 pub fn keep_up_in_background(app: &AppHandle) {
     let courses = kept(&mut app.state::<Db>().lock()).unwrap_or_default();
     for course_id in courses {

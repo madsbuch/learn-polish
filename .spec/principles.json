@@ -52,7 +52,16 @@
     },
     {
       "id": "PRIN-6",
-      "text": "Mastery is never lost through practice: a mastered lesson stays mastered whatever its later results. Only the learner's own reset of progress clears it."
+      "text": "Mastery is never lost: a mastered lesson stays mastered whatever its later results.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Mastery is never lost through practice: a mastered lesson stays mastered whatever its later results. Only the learner's own reset of progress clears it.",
+          "reason": "Reset progress, the one thing that cleared mastery, was removed.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "PRIN-7",

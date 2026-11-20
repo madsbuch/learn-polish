@@ -3,7 +3,7 @@ import { useState } from "react";
 import { PlayerIcon } from "../../components/icons";
 import { Diagnostics } from "../../components/Diagnostics";
 import { KeyShare } from "../../components/KeyShare";
-import { Button, ConfirmButton, List, Screen, Section, SettingRow, Switch } from "../../design";
+import { Button, List, Screen, Section, SettingRow, Switch } from "../../design";
 import { api } from "../../lib/api";
 import { toast } from "../../lib/toast";
 import { useSettingsActions, type SettingsPageProps } from "./actions";
@@ -16,11 +16,7 @@ export function DataSettings({
   settings,
   onSettings,
   onBack,
-  onReset,
-}: SettingsPageProps & {
-  /** Progress was erased: the screens reload. */
-  onReset: () => void;
-}) {
+}: SettingsPageProps) {
   const { busy, run } = useSettingsActions(onSettings);
   const [includeKeys, setIncludeKeys] = useState(false);
 
@@ -63,21 +59,6 @@ export function DataSettings({
       <KeyShare settings={settings} onSettings={onSettings} />
 
       <Diagnostics />
-
-      <Section title="Reset">
-        <ConfirmButton
-          label="Reset progress"
-          confirmLabel="Erase progress"
-          question="Erase every review, streak and achievement, the daily focus and the tutor conversation? Courses, memories and songs stay."
-          wide
-          onConfirm={() =>
-            run("reset", async () => {
-              await api.resetProgress();
-              onReset();
-            })
-          }
-        />
-      </Section>
     </Screen>
   );
 }

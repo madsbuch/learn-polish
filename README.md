@@ -202,16 +202,15 @@ It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
   ("Words that stick"); an item counts once a day, so only answers on
   different days grow it, and a near miss never lengthens it. *Mastered* is
   kept for lessons and courses.
-- **Reset progress** (Settings) erases reviews, days, the XP log, the mastery
-  ledger, passes, mastery and streak freezes together, so the totals agree.
 - **Achievements** for showing up, words that stick, and the deeper work:
   check-ins, writing lessons, listening, songs, a finished course.
 
 ## The tutor (optional)
 
 Add an [OpenRouter](https://openrouter.ai/keys) API key in Settings and pick a
-model, and the **Tutor** tab becomes an assistant for the whole app. It speaks
-English (it only switches to Polish conversation if you ask it to) and acts in
+model, and the **Tutor** tab becomes an assistant for the whole app. It replies in
+the language you write in — English when that is unclear — (it only switches
+to Polish conversation if you ask it to) and acts in
 the app through tools, implemented in `src-tauri/src/tutor.rs`:
 
 The tutor answers in the background: a message is stored at once and the
@@ -427,11 +426,12 @@ instantly, for free, offline. Changing voice does not serve stale audio.
 ### Courses kept offline
 
 A course's page has **Keep this course offline**. Switched on, the app
-downloads everything the course's lessons play and show — the audio of every
-word, sentence and line (a story's and a scene's too, and the words of its
-sound pairs) and every picture — and shows how much is there. A course that
-grows is topped up: missing audio is fetched at startup and after the tutor
-adds to it; *Download now* fetches the rest, pictures that failed before
+downloads everything in the course that is not a conversation — the audio of
+every word, sentence and line (a story's and a scene's too, and the words of
+its sound pairs), at normal speed and slowly; the example sentences a wrong
+answer shows for each word; and every picture — and shows how much is there.
+A course that grows is topped up: missing examples and audio are fetched at
+startup and after the tutor adds to it; *Download now* fetches the rest, pictures that failed before
 included (`src-tauri/src/offline.rs`). Conversation lessons talk to a model
 and need a connection whatever is downloaded; the page says how many there
 are. Switching it off deletes nothing.
@@ -447,7 +447,7 @@ OpenRouter for usage accounting and store the `usage.cost` it reports (also on
 streamed answers). Suno songs store the `creditsConsumed` kie.ai reports,
 converted at about $0.005 a credit, once per task. OpenRouter's speech endpoint
 reports no price, so speech is counted in clips (with the characters spoken)
-and shown as unpriced. Costs survive a progress reset.
+and shown as unpriced.
 
 ## Your data
 
@@ -544,7 +544,7 @@ src-tauri/src/
   cast.rs        Sonos/UPnP casting
   http.rs        the HTTP clients (OpenRouter, downloads, home network)
   text.rs        shared text helpers
-  commands.rs    app-level commands: settings, keys, browsing, explain, reset, export
+  commands.rs    app-level commands: settings, keys, browsing, explain, export
 
 src/
   design/                  the design system: tokens, components (see DESIGN.md)

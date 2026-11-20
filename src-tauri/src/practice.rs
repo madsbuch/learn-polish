@@ -508,9 +508,10 @@ fn lesson_finish_steps(
     // push the next check-in further out — three quick replays would
     // otherwise send it months away.
     let extra = lessons::is_extra_practice(&current, today);
-    // Nearly all right is an ace: the gap grows faster. Only answers fully
-    // right count toward it: an almost is a slip, however small.
-    let ace = almost == 0 && correct * 100 >= total * 95;
+    // Every answer fully right is an ace: the gap grows faster. An almost
+    // is a slip, however small, and one miss is a miss, however long the
+    // drill (DRILL-8).
+    let ace = almost == 0 && correct >= total;
     let go = lessons::Go { via: "drill", run, score: Some((correct, almost, total)), extra };
     let (lesson, entry) = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.

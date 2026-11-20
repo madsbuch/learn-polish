@@ -394,7 +394,6 @@ export const api = {
     call(CataloguePageSchema, "browse_catalogue", { courseId, query, limit }),
   browseSentences: (courseId: CourseId) =>
     call(z.array(SentenceSchema), "browse_sentences", { courseId }),
-  resetProgress: () => run("reset_progress"),
 
   aiSetKey: (key: string) => call(SettingsSchema, "ai_set_key", { key }),
   aiClearKey: () => call(SettingsSchema, "ai_clear_key"),

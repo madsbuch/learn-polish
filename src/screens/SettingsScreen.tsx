@@ -33,8 +33,6 @@ const FIRST_PAGE: SettingsPage = "practice";
 interface Shared {
   settings: Settings;
   onSettings: (settings: Settings) => void;
-  /** Progress was erased: the screens reload. */
-  onReset: () => void;
   /** The downloaded-audio page (under Voices & sound). */
   onOpenAudio: () => void;
 }

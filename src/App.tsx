@@ -812,7 +812,6 @@ export default function App() {
   const settingsShared = {
     settings,
     onSettings: applySettings,
-    onReset: () => void refresh(),
     onOpenAudio: () => setOverlay({ kind: "audio" }),
   };
 

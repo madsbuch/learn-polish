@@ -36,11 +36,29 @@
     },
     {
       "id": "OFF-2",
-      "text": "Switching it on starts downloading everything the course lacks: the audio of everything its lessons say and every picture they show."
+      "text": "Switching it on starts downloading everything the course lacks that is not a conversation: audio, example sentences and pictures.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Switching it on starts downloading everything the course lacks: the audio of everything its lessons say and every picture they show.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "OFF-3",
-      "text": "The audio counted for a course is every word, sentence and dialogue line of its lessons, a story's sentences in each speaker's voice, a scene's sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have."
+      "text": "The audio counted for a course is everything its lessons say, each at normal speed and slowly: words, sentences, dialogue lines, a story's sentences in each speaker's voice, a scene's sentences, its words' example sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The audio counted for a course is every word, sentence and dialogue line of its lessons, a story's sentences in each speaker's voice, a scene's sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "OFF-4",
@@ -48,7 +66,16 @@
     },
     {
       "id": "OFF-5",
-      "text": "A course is ready offline when every counted clip and picture is stored; its page shows how many of each are downloaded."
+      "text": "A course is ready offline when every counted clip, every word's example sentences and every picture are stored; its page shows how many of each are downloaded.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A course is ready offline when every counted clip and picture is stored; its page shows how many of each are downloaded.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "OFF-6",
@@ -56,7 +83,16 @@
     },
     {
       "id": "OFF-7",
-      "text": "For courses kept offline, missing audio is fetched by itself at startup and after the tutor adds to a course."
+      "text": "For courses kept offline, missing example sentences and audio are fetched by itself at startup and after the tutor adds to a course.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "For courses kept offline, missing audio is fetched by itself at startup and after the tutor adds to a course.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "OFF-8",
@@ -85,6 +121,14 @@
     {
       "id": "OFF-14",
       "text": "While a course downloads on Android, the app is kept alive with a quiet notification."
+    },
+    {
+      "id": "OFF-15",
+      "text": "Every word of a course kept offline has its example sentences written ahead and stored."
+    },
+    {
+      "id": "OFF-16",
+      "text": "Without a chosen chat model no example sentences are written, and the page says a model is needed."
     }
   ],
   "related": [
