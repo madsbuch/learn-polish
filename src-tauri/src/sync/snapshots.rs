@@ -26,8 +26,10 @@ use crate::error::Result;
 /// Days kept one per day. Fewer than Tally keeps: Polski's database holds
 /// song audio, so each copy can be large — a week of daily copies and a few
 /// weekly ones still cover noticing a sync mistake weeks later.
+// Spec: SYNC-17
 pub const DAILY: i64 = 7;
 /// Beyond those, one per week back to this many days.
+// Spec: SYNC-17
 pub const WEEKLY_UNTIL: i64 = 28;
 /// How often the app looks whether today's is taken yet (it's taken once a
 /// day; the app may run for days, or start just before midnight).

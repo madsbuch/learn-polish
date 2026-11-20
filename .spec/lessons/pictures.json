@@ -25,7 +25,7 @@
     },
     {
       "id": "PIC-2",
-      "text": "A word's picture is stored as a JPEG at most 512 pixels on a side."
+      "text": "A word's picture is stored as a JPEG at most `picture.word-side` on a side."
     },
     {
       "id": "PIC-3",
@@ -33,7 +33,7 @@
     },
     {
       "id": "PIC-4",
-      "text": "Where a thing is in a scene uses only the prepositions pod, na, nad, obok, przy and w."
+      "text": "Where a thing is in a scene uses only the prepositions in `scene.prepositions`."
     },
     {
       "id": "PIC-5",
@@ -50,6 +50,27 @@
     {
       "id": "PIC-8",
       "text": "A scene or story whose drawing failed says so on its page and can be tried again; a picture lesson offers to draw the pictures still missing."
+    }
+  ],
+  "values": [
+    {
+      "id": "picture.word-side",
+      "type": "dimension",
+      "value": "512px",
+      "description": "The longest side of a word's stored picture."
+    },
+    {
+      "id": "scene.prepositions",
+      "type": "list",
+      "value": [
+        "pod",
+        "na",
+        "nad",
+        "obok",
+        "przy",
+        "w"
+      ],
+      "description": "The prepositions a scene's sentences use to say where something is."
     }
   ],
   "related": [

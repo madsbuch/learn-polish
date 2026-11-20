@@ -163,6 +163,7 @@ pub fn require_open_course(conn: &mut Conn, course_id: CourseId) -> Result<Strin
 }
 
 /// The one folder for lessons that belong to no course (see [`other_course`]).
+// Spec: CRS-8, PRIN-10
 pub const OTHER: &str = "other";
 /// Built-in courses that never end: just the Other lessons folder.
 pub const OPEN_ENDED: [&str; 1] = [OTHER];
@@ -197,6 +198,7 @@ pub struct CourseClosed {
 /// (PRINCIPLES.md: closed is closed). It moves to the Mastered section as a
 /// trophy, stays readable, and its lessons leave play. Only a mastered course, and not the Other lessons
 /// folder, can be closed. To revisit its theme, the tutor makes a new course.
+// Spec: CRS-12, PRIN-7
 pub fn close(conn: &mut Conn, course_id: CourseId) -> Result<CourseClosed> {
     let title = require_open_course(conn, course_id)?;
     let current = status(conn, course_id)?;

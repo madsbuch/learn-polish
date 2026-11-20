@@ -22,6 +22,7 @@ pub(crate) const MEMORY_PAIRS: usize = 6;
 pub(crate) const GAP_SENTENCES: usize = 4;
 /// Once an item has survived this many correct reps we stop showing multiple
 /// choice and make the learner produce it from memory.
+// Spec: DRILL-1
 const TYPING_THRESHOLD: i64 = 3;
 
 pub struct WordRow {

@@ -29,8 +29,10 @@ use crate::mistakes::WordResult;
 use crate::schema::{attempt_items, attempts, conversation_lines, courses, learning_events, lessons, sentence_tokens, sentences, words};
 
 /// The most rows a page holds.
+// Spec: LOG-6
 pub const PAGE_MAX: i64 = 200;
 /// The most rows an export writes.
+// Spec: LOG-9
 pub const EXPORT_MAX: usize = 100_000;
 
 /// A drill-down from a contextual breakdown: the answers in one group.

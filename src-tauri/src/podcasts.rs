@@ -39,8 +39,10 @@ pub const DEFAULT_FORMAT: &str = "pairs";
 /// The most of the articles the writer reads, shared between them.
 const READING_LIMIT: usize = 16_000;
 /// The most articles an episode is written from.
+// Spec: POD-1
 pub const ARTICLE_LIMIT: usize = 5;
 /// The most sentence pairs an episode holds.
+// Spec: POD-2
 const LINE_LIMIT: usize = 120;
 /// How many clips are made at once.
 const PARALLEL_CLIPS: usize = 4;
@@ -92,6 +94,7 @@ pub struct CastMember {
 }
 
 /// The most people in a cast.
+// Spec: POD-4
 const CAST_LIMIT: usize = 4;
 
 /// Voices for the English when the cast speaks the Polish: calm, clear

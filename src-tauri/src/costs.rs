@@ -17,6 +17,7 @@ use crate::schema::ai_costs;
 use crate::error::Result;
 
 /// kie.ai sells credits at roughly $0.005 each.
+// Spec: AI-9
 pub const KIE_USD_PER_CREDIT: f64 = 0.005;
 
 /// Features as they are stored and shown.

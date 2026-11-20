@@ -41,7 +41,7 @@
     },
     {
       "id": "CRS-2",
-      "text": "Words given to a course are cut into word drills of at most 8, and sentences into sentence drills of at most 5."
+      "text": "Words given to a course are cut into word drills of at most `drill.words-max`, and sentences into sentence drills of at most `drill.sentences-max`."
     },
     {
       "id": "CRS-3",
@@ -91,7 +91,7 @@
     },
     {
       "id": "CRS-8",
-      "text": "Other lessons is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
+      "text": "`course.other-title` is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
     },
     {
       "id": "CRS-9",
@@ -137,6 +137,26 @@
     {
       "id": "CRS-19",
       "text": "Upgrading takes a lesson listed in several courses off every course but the one it was first added to."
+    }
+  ],
+  "values": [
+    {
+      "id": "drill.words-max",
+      "type": "number",
+      "value": 8,
+      "description": "The most words in one word drill."
+    },
+    {
+      "id": "drill.sentences-max",
+      "type": "number",
+      "value": 5,
+      "description": "The most sentences in one sentence drill."
+    },
+    {
+      "id": "course.other-title",
+      "type": "text",
+      "value": "Other lessons",
+      "description": "The folder for lessons that fit no course."
     }
   ],
   "related": [

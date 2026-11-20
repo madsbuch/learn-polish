@@ -18,6 +18,7 @@ const MIN_EASE: f64 = 1.3;
 const MAX_EASE: f64 = 2.8;
 const START_EASE: f64 = 2.5;
 /// Beyond this the interval stops being useful for a daily-practice app.
+// Spec: DRILL-13
 const MAX_INTERVAL: i64 = 365;
 
 /// One item's review state: a `reviews` row without its key.

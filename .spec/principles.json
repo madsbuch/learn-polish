@@ -77,7 +77,7 @@
     },
     {
       "id": "PRIN-10",
-      "text": "A lesson that fits no course goes in the single folder Other lessons."
+      "text": "A lesson that fits no course goes in the single folder `course.other-title`."
     },
     {
       "id": "PRIN-11",

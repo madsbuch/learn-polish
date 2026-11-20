@@ -38,11 +38,11 @@
     },
     {
       "id": "SONG-3",
-      "text": "A song's length is short, medium or long (the default), each a lyric structure the songwriter follows."
+      "text": "A song's length is one of `song.lengths`, long by default, each a lyric structure the songwriter follows."
     },
     {
       "id": "SONG-4",
-      "text": "Songs are sung by Suno through kie.ai with the learner's kie.ai key, in the model chosen in Settings: V6, V6 Mini or V6 Wild."
+      "text": "Songs are sung by Suno through kie.ai with the learner's kie.ai key, in the model chosen in Settings from `song.models`."
     },
     {
       "id": "SONG-5",
@@ -75,6 +75,28 @@
     {
       "id": "SONG-12",
       "text": "Many songs can be deleted at once from the song list."
+    }
+  ],
+  "values": [
+    {
+      "id": "song.lengths",
+      "type": "list",
+      "value": [
+        "short",
+        "medium",
+        "long"
+      ],
+      "description": "The lengths a song can be asked for in."
+    },
+    {
+      "id": "song.models",
+      "type": "list",
+      "value": [
+        "V6",
+        "V6 Mini",
+        "V6 Wild"
+      ],
+      "description": "The Suno models a song can be sung with."
     }
   ],
   "related": [

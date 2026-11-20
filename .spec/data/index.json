@@ -61,7 +61,7 @@
     },
     {
       "id": "DATA-9",
-      "text": "Before a schema upgrade the database is copied to a backups folder; the newest 2 upgrade backups are kept."
+      "text": "Before a schema upgrade the database is copied to a backups folder; the newest `backup.kept` upgrade backups are kept."
     },
     {
       "id": "DATA-10",
@@ -74,6 +74,14 @@
     {
       "id": "DATA-12",
       "text": "Writes that belong together (a lesson's grade and its schedule, a check-in's verdict, each tutor tool call) are made in one transaction."
+    }
+  ],
+  "values": [
+    {
+      "id": "backup.kept",
+      "type": "number",
+      "value": 2,
+      "description": "How many backups from before upgrades are kept."
     }
   ],
   "related": [

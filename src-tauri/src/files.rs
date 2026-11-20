@@ -78,6 +78,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Stores a file and returns its id.
+// Spec: DATA-2, DATA-3
 pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<FileId> {
     Ok(diesel::insert_into(files::table)
         .values((
@@ -207,6 +208,7 @@ pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> 
 /// arrived before the row that uses it, in a sync that was cut off, and
 /// deleting it would delete it on every device. The device that stored it
 /// collects it once the row that used it is gone there too.
+// Spec: DATA-7
 pub fn collect_orphans(conn: &mut Conn) -> Result<usize> {
     let used = referenced(conn)?;
     let orphans: Vec<FileId> = files::table
@@ -316,6 +318,7 @@ pub fn slice(size: u64, range: Option<(u64, Option<u64>)>) -> Slice {
 
 /// Answers a `media://<id>` request from the webview: the file, or the
 /// requested range of it (audio seeks this way).
+// Spec: DATA-4
 pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{header, Response, StatusCode};
     let not_found = || Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()).unwrap();

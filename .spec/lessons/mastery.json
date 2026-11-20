@@ -31,11 +31,11 @@
   "requirements": [
     {
       "id": "MAST-1",
-      "text": "The first pass of a lesson earns 30 mastery points."
+      "text": "The first pass of a lesson earns `mastery.first-pass` mastery points."
     },
     {
       "id": "MAST-2",
-      "text": "A later pass on the same day as the last go earns 10."
+      "text": "A later pass on the same day as the last go earns `mastery.same-day`."
     },
     {
       "id": "MAST-3",
@@ -51,15 +51,15 @@
     },
     {
       "id": "MAST-6",
-      "text": "A fail costs 20 points; a fail on extra practice costs none."
+      "text": "A fail costs `mastery.fail-cost` points; a fail on extra practice costs none."
     },
     {
       "id": "MAST-7",
-      "text": "Points stay between 0 and 100, and stop at 90 until the lesson has been passed on two different days."
+      "text": "Points stay between 0 and `mastery.full`, and stop at `mastery.held-at` until the lesson has been passed on two different days."
     },
     {
       "id": "MAST-8",
-      "text": "A lesson is mastered when it has been passed and has 100 points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in the day's list."
+      "text": "A lesson is mastered when it has been passed and has `mastery.full` points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in the day's list."
     },
     {
       "id": "MAST-9",
@@ -80,6 +80,38 @@
     {
       "id": "MAST-13",
       "text": "A lesson's points from before the ledger existed are shown as one starting line; nothing is backfilled."
+    }
+  ],
+  "values": [
+    {
+      "id": "mastery.full",
+      "type": "number",
+      "value": 100,
+      "description": "The points at which a lesson is mastered."
+    },
+    {
+      "id": "mastery.held-at",
+      "type": "number",
+      "value": 90,
+      "description": "Where points stop until a lesson has passes on two days."
+    },
+    {
+      "id": "mastery.first-pass",
+      "type": "number",
+      "value": 30,
+      "description": "What the first pass earns."
+    },
+    {
+      "id": "mastery.same-day",
+      "type": "number",
+      "value": 10,
+      "description": "What a later pass on the same day earns."
+    },
+    {
+      "id": "mastery.fail-cost",
+      "type": "number",
+      "value": 20,
+      "description": "What a fail costs."
     }
   ],
   "related": [

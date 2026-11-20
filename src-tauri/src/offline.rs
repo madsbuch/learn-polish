@@ -102,6 +102,7 @@ struct Pictures {
     stories: Vec<LessonId>,
 }
 
+// Spec: OFF-4
 fn pictures_of(conn: &mut Conn, course_id: CourseId) -> Result<Pictures> {
     let mut found = Pictures::default();
     for (lesson_id, lesson_type) in lessons_of(conn, course_id)? {
@@ -150,6 +151,7 @@ struct Lacking {
     slow: Vec<crate::speech::SpeechLine>,
 }
 
+// Spec: OFF-3, OFF-15
 fn lacking(conn: &mut Conn, course_id: CourseId) -> Result<Lacking> {
     let lesson_ids: Vec<LessonId> = lessons_of(conn, course_id)?.into_iter().map(|(id, _)| id).collect();
     let words: i64 = words::table.filter(words::lesson_id.eq_any(&lesson_ids)).count().get_result(conn)?;
@@ -168,6 +170,7 @@ fn lacking(conn: &mut Conn, course_id: CourseId) -> Result<Lacking> {
     })
 }
 
+// Spec: OFF-5, OFF-9, OFF-10, OFF-16
 pub fn status(conn: &mut Conn, course_id: CourseId) -> Result<OfflineStatus> {
     let enabled: Option<i64> = courses::table.find(course_id).select(courses::offline_at).first(conn)?;
     let lacking = lacking(conn, course_id)?;
@@ -198,6 +201,7 @@ pub fn status(conn: &mut Conn, course_id: CourseId) -> Result<OfflineStatus> {
 /// Marks a course to be kept offline, or takes the mark away. Taking it
 /// away deletes nothing: what was downloaded stays (Settings → Audio clears
 /// audio no course uses).
+// Spec: OFF-1, OFF-11
 pub fn set(conn: &mut Conn, course_id: CourseId, on: bool) -> Result<()> {
     let already: Option<i64> = courses::table.find(course_id).select(courses::offline_at).first(conn)?;
     if already.is_some() == on {
@@ -219,6 +223,7 @@ pub fn kept(conn: &mut Conn) -> Result<Vec<CourseId>> {
 /// at normal speed and slowly. With `everything` (the learner asked) its
 /// pictures too, those that failed before included. Without a key there is
 /// nothing to download with, and nothing happens.
+// Spec: OFF-2, OFF-8, OFF-13, OFF-14
 pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: bool) {
     let db = app.state::<Db>();
     let (needed, pictures) = {
@@ -293,6 +298,7 @@ pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: 
 /// Fetches the example sentences and audio the courses kept offline have
 /// gained since they were last complete — at startup, and after the tutor
 /// adds to a course.
+// Spec: OFF-7
 pub fn keep_up_in_background(app: &AppHandle) {
     let courses = kept(&mut app.state::<Db>().lock()).unwrap_or_default();
     for course_id in courses {

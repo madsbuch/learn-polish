@@ -25,7 +25,7 @@
     },
     {
       "id": "TODAY-2",
-      "text": "The list has 5 lessons unless the learner sets another number, from 1 to 20."
+      "text": "The list has `daily.default` lessons unless the learner sets another number, from 1 to 20."
     },
     {
       "id": "TODAY-3",
@@ -37,11 +37,11 @@
     },
     {
       "id": "TODAY-5",
-      "text": "While there is room, at most 2 new lessons a day are added, taken from the newest courses."
+      "text": "While there is room, at most `daily.max-new` new lessons a day are added, taken from the newest courses."
     },
     {
       "id": "TODAY-6",
-      "text": "If a place is still free, at most 1 mastered lesson whose words are due for review is added as a light review."
+      "text": "If a place is still free, at most `daily.max-reviews` mastered lesson whose words are due for review is added as a light review."
     },
     {
       "id": "TODAY-7",
@@ -71,6 +71,26 @@
     {
       "id": "TODAY-11",
       "text": "The day's list is the same on every device in a vault; if two devices chose a list while apart, the later one wins."
+    }
+  ],
+  "values": [
+    {
+      "id": "daily.default",
+      "type": "number",
+      "value": 5,
+      "description": "Lessons in the day's list unless the learner sets another number."
+    },
+    {
+      "id": "daily.max-new",
+      "type": "number",
+      "value": 2,
+      "description": "The most new lessons in a day's list."
+    },
+    {
+      "id": "daily.max-reviews",
+      "type": "number",
+      "value": 1,
+      "description": "The most mastered lessons that come back as a review in a day."
     }
   ],
   "related": [

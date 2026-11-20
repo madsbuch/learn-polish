@@ -30,7 +30,7 @@
   "requirements": [
     {
       "id": "SHELL-1",
-      "text": "The app has four tabs: Exercises, Tutor, Music and Settings."
+      "text": "The app's tabs are `nav.tabs`."
     },
     {
       "id": "SHELL-2",
@@ -42,11 +42,11 @@
     },
     {
       "id": "SHELL-4",
-      "text": "Below 768 px of window width the tabs are at the bottom; from 768 px they form a rail at the left edge."
+      "text": "Below `layout.rail-from` of window width the tabs are at the bottom; from `layout.rail-from` they form a rail at the left edge."
     },
     {
       "id": "SHELL-5",
-      "text": "From 1000 px a course's or a lesson's page is laid out in two columns, and Settings shows its menu beside the open page."
+      "text": "From `layout.split-from` a course's or a lesson's page is laid out in two columns, and Settings shows its menu beside the open page."
     },
     {
       "id": "SHELL-6",
@@ -62,7 +62,7 @@
     },
     {
       "id": "SHELL-9",
-      "text": "The design system's buttons are 44 px high by default and 36 px in their small size."
+      "text": "The design system's buttons are `control.md` high by default and `control.sm` in their small size."
     },
     {
       "id": "SHELL-10",
@@ -75,6 +75,96 @@
     {
       "id": "SHELL-12",
       "text": "The build fails when a screen breaks the design system's mechanical rules."
+    },
+    {
+      "id": "SHELL-13",
+      "text": "The brand colour is `color.brand`, the background `color.bg` and body text `color.text`, each with its own value in the dark theme."
+    },
+    {
+      "id": "SHELL-14",
+      "text": "A right answer is shown in `color.ok` and a wrong one in `color.bad`."
+    },
+    {
+      "id": "SHELL-15",
+      "text": "All text is set in `font.family`."
+    }
+  ],
+  "values": [
+    {
+      "id": "nav.tabs",
+      "type": "list",
+      "value": [
+        "Exercises",
+        "Tutor",
+        "Music",
+        "Settings"
+      ],
+      "description": "The app's tabs, in order."
+    },
+    {
+      "id": "layout.rail-from",
+      "type": "dimension",
+      "value": "768px",
+      "description": "The window width from which the tabs are a rail at the left."
+    },
+    {
+      "id": "layout.split-from",
+      "type": "dimension",
+      "value": "1000px",
+      "description": "The window width from which pages are laid out in two columns."
+    },
+    {
+      "id": "control.md",
+      "type": "dimension",
+      "value": "44px",
+      "description": "The height of a button."
+    },
+    {
+      "id": "control.sm",
+      "type": "dimension",
+      "value": "36px",
+      "description": "The height of a small button, for dense rows."
+    },
+    {
+      "id": "color.bg",
+      "type": "color",
+      "value": "#f6f5fb",
+      "dark": "#0c0b16",
+      "description": "The app's background."
+    },
+    {
+      "id": "color.text",
+      "type": "color",
+      "value": "#16132d",
+      "dark": "#f2f0fb",
+      "description": "Body text."
+    },
+    {
+      "id": "color.brand",
+      "type": "color",
+      "value": "#5b3df5",
+      "dark": "#7c5cff",
+      "description": "The brand colour: primary buttons and what is selected."
+    },
+    {
+      "id": "color.ok",
+      "type": "color",
+      "value": "#16a34a",
+      "dark": "#22c55e",
+      "description": "A right answer."
+    },
+    {
+      "id": "color.bad",
+      "type": "color",
+      "value": "#e11d48",
+      "dark": "#f43f5e",
+      "description": "A wrong answer."
+    },
+    {
+      "id": "font.family",
+      "type": "font",
+      "value": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", system-ui, sans-serif",
+      "description": "The typeface of all text."
     }
   ],
   "related": [

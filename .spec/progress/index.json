@@ -56,7 +56,7 @@
     },
     {
       "id": "PROG-7",
-      "text": "Every seventh day of a run earns a streak freeze; at most 2 are kept."
+      "text": "Every seventh day of a run earns a streak freeze; at most `streak.freezes-max` are kept."
     },
     {
       "id": "PROG-8",
@@ -64,7 +64,7 @@
     },
     {
       "id": "PROG-9",
-      "text": "A word sticks once its review interval reaches 21 days."
+      "text": "A word sticks once its review interval reaches `word.sticks-at`."
     },
     {
       "id": "PROG-10",
@@ -103,6 +103,20 @@
     {
       "id": "PROG-16",
       "text": "The Progress screen shows stats, what has been met, achievements, XP by day, an 18-week activity map and vocabulary totals."
+    }
+  ],
+  "values": [
+    {
+      "id": "streak.freezes-max",
+      "type": "number",
+      "value": 2,
+      "description": "The most streak freezes kept."
+    },
+    {
+      "id": "word.sticks-at",
+      "type": "duration",
+      "value": "21d",
+      "description": "The review interval at which a word sticks."
     }
   ],
   "related": [

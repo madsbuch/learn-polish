@@ -24,6 +24,11 @@ read it before changing the spec. The spec comes first: a change to what the
 app does starts as a new requirement, a new version of one with the reason,
 or a deprecation with the reason — never a deletion. It does not record
 whether something is built.
+
+Numbers, colours and lists the app decides once are **named values** in the
+spec (`mastery.full`, `color.brand`); the constants and tokens in the code
+follow them. Code that meets a requirement says which, in a comment above it
+(`// Spec: MAST-7`), and so does a test that proves one.
 `bun run build` checks the spec (`bun run check:spec` alone).
 
 Dansk ([learn-danish](https://github.com/madsbuch/learn-danish)) has the same spec, item for

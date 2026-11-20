@@ -53,6 +53,7 @@ pub fn missing(conn: &mut Conn, lesson_ids: &[LessonId]) -> Result<Vec<WordId>> 
 /// A word's examples: the stored ones, or made now by the AI and stored.
 /// `None` when they cannot be made (no key or model, or the reply could not
 /// be read): nothing is stored then, so the AI can try next time.
+// Spec: DRILL-11, OFF-15
 pub async fn make(db: &Db, word_id: WordId) -> Result<Option<Vec<Example>>> {
     let (word, kept, ai) = {
         let mut guard = db.lock();

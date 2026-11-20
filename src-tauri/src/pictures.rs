@@ -270,6 +270,7 @@ pub const WORD_STYLE: &str = "Style: a flat, colourful vector illustration with 
 
 /// The side, in pixels, a word picture is shrunk to: sharp on a phone,
 /// small in the database.
+// Spec: PIC-2
 const WORD_IMAGE_SIDE: u32 = 512;
 
 /// How many word pictures are drawn at once.

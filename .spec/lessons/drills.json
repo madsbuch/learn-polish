@@ -51,11 +51,11 @@
     },
     {
       "id": "DRILL-6",
-      "text": "A drill passes at 85% right; a drill of three to six scored cards also passes with a single miss, or two almost-right answers."
+      "text": "A drill passes at `drill.pass-share` right; a drill of three to six scored cards also passes with a single miss, or two almost-right answers."
     },
     {
       "id": "DRILL-7",
-      "text": "A drill with 60% or more right that does not pass is a partial; less is a fail."
+      "text": "A drill with `drill.partial-share` or more right that does not pass is a partial; less is a fail."
     },
     {
       "id": "DRILL-8",
@@ -88,7 +88,29 @@
     },
     {
       "id": "DRILL-13",
-      "text": "Each word's and sentence's review interval grows with right answers on different days, to at most 365 days; an item counts once a day."
+      "text": "Each word's and sentence's review interval grows with right answers on different days, to at most `review.max-interval`; an item counts once a day."
+    }
+  ],
+  "values": [
+    {
+      "id": "drill.pass-share",
+      "type": "number",
+      "value": 85,
+      "unit": "%",
+      "description": "The share of a drill answered right that passes it."
+    },
+    {
+      "id": "drill.partial-share",
+      "type": "number",
+      "value": 60,
+      "unit": "%",
+      "description": "The share that is a partial."
+    },
+    {
+      "id": "review.max-interval",
+      "type": "duration",
+      "value": "365d",
+      "description": "The longest a word or sentence waits for its next review."
     }
   ],
   "related": [
