@@ -51,7 +51,12 @@
     },
     {
       "id": "POL-4",
-      "text": "The webview never reaches the database itself, and makes no outside request of its own except loading the pictures of Wikipedia articles from upload.wikimedia.org; every other read, write and request is a command in the Rust core."
+      "text": "The webview never reaches the database itself, and makes no outside request of its own except loading the pictures of Wikipedia articles from upload.wikimedia.org; every other read, write and request is a command in the Rust core.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "Not applicable, there is no reason it should be",
+        "date": "2026-11-20"
+      }
     },
     {
       "id": "POL-5",

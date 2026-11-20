@@ -29,7 +29,16 @@
   "requirements": [
     {
       "id": "DEMO-1",
-      "text": "A fresh install has exactly one course, First steps, with 12 words, 4 sentences and a 6-line dialogue."
+      "text": "A fresh install has exactly one course.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A fresh install has exactly one course, First steps, with 12 words, 4 sentences and a 6-line dialogue.",
+          "reason": "Requirement too broad",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "DEMO-2",
@@ -58,6 +67,10 @@
     {
       "id": "DEMO-8",
       "text": "The former built-in courses are not part of production builds; they exist only as test fixtures."
+    },
+    {
+      "id": "DEMO-9",
+      "text": "The course should show case all different lesson types."
     }
   ],
   "related": [

@@ -15,7 +15,12 @@
         "#CRS-1",
         "#CRS-2",
         "#CRS-15"
-      ]
+      ],
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "Too specific",
+        "date": "2026-11-20"
+      }
     },
     {
       "id": "US-CRS-2",
@@ -48,11 +53,21 @@
     },
     {
       "id": "CRS-5",
-      "text": "A lesson can be listed in several courses; it keeps one schedule and one mastery, shown in each."
+      "text": "A lesson can be listed in several courses; it keeps one schedule and one mastery, shown in each.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "It can not, a lesson van be in a single course as that makes integrity easier.",
+        "date": "2026-11-20"
+      }
     },
     {
       "id": "CRS-6",
-      "text": "A lesson can be moved from one course to another."
+      "text": "A lesson can be moved from one course to another.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "It can not. A new lesson can be created in the other course.",
+        "date": "2026-11-20"
+      }
     },
     {
       "id": "CRS-7",
@@ -93,6 +108,11 @@
     {
       "id": "CRS-16",
       "text": "A course can have a picture, drawn by an image model from its title, summary and words."
+    },
+    {
+      "id": "CRS-17",
+      "text": "A new course should strive for diversity of lesson types",
+      "level": "should"
     }
   ],
   "related": [
