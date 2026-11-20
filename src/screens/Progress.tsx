@@ -20,7 +20,7 @@ import { achievementProgress, unlockedOnShort } from "../lib/achievements";
 import { logEvent } from "../lib/learnLog";
 import { dayLabel, REPORT_ASK } from "../lib/insights";
 import { useMetOverview, type InsightPage } from "./Insights";
-import type { Achievement, DayPoint, Stats } from "../lib/types";
+import type { Achievement, DayPoint, DayStat, Stats } from "../lib/types";
 
 /** Weeks in the practice grid. */
 const WEEKS = 18;
@@ -184,14 +184,17 @@ function recentBars(daily: DayPoint[], today: number): Bar[] {
 
 function Met({
   today,
+  history,
   onOpen,
   onAskTutor,
 }: {
   today: number;
+  history: DayStat[];
   onOpen: (page: InsightPage) => void;
   onAskTutor: (ask: string) => void;
 }) {
   const { data } = useMetOverview();
+  const daily: DayPoint[] = history.map((d) => ({ day: d.day, attempts: d.answered, correct: d.correct }));
   const cards: {
     page: InsightPage;
     value: number;
@@ -256,14 +259,16 @@ function Met({
             </Card>
           ))}
         </div>
-        {data && data.attempts > 0 ? (
+        {/* The day totals, not the answer log: they go back to the first
+            day, the log only to the release that started it. */}
+        {daily.some((d) => d.attempts > 0) ? (
           <Card>
             <Stack gap={2}>
               <Text variant="small" tone="dim">
                 Right answers, last 30 days
               </Text>
               <BarChart
-                bars={recentBars(data.daily, today)}
+                bars={recentBars(daily, today)}
                 top="100%"
                 start="30 days ago"
                 end="Today"
@@ -389,6 +394,7 @@ export function Progress({
         <div className="progress-board__met">
           <Met
             today={stats.day}
+            history={stats.history}
             onOpen={onOpenInsights}
             onAskTutor={onAskTutor}
           />
