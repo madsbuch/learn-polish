@@ -338,8 +338,9 @@ export const api = {
   lessonSession: (lessonId: LessonId, context?: PracticeContext) =>
     call(SessionPlanSchema, "lesson_session", { lessonId, context: context ?? null }),
   /** A drill is done: its score schedules the next check-in. */
-  lessonFinish: (lessonId: LessonId, correct: number, total: number, context?: PracticeContext) =>
-    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, total, context: context ?? null }),
+  /** `almost`: answers one letter off, each counted as half right. */
+  lessonFinish: (lessonId: LessonId, correct: number, almost: number, total: number, context?: PracticeContext) =>
+    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, almost, total, context: context ?? null }),
   lessonSetPeriod: (lessonId: LessonId, periodDays: number) =>
     call(LessonSchema, "lesson_set_period", { lessonId, periodDays }),
   lessonDelete: (lessonId: LessonId) => run("lesson_delete", { lessonId }),

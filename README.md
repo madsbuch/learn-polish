@@ -113,6 +113,7 @@ A course is **completed** when its core lessons are passed once, and
 **mastered** when every lesson — challenges too — has full mastery points
 (writing: passed once without help). Mastery is earned by passing, never by
 waiting: spaced passes earn more, but a lesson can be mastered in one sitting.
+A partial (60–84% right) earns half what a pass would, without passing it.
 Mastery is for good — a mastered lesson never comes back and never loses it.
 A mastered course is **ready to close**: *Close as mastered* is the learner's
 own celebration, and final — the course becomes a trophy in **Mastered**. To
@@ -151,7 +152,11 @@ lesson page. Check now does it on demand. Wikipedia needs no key.
 It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
 
 - **XP** per answer — harder exercise types pay more, wrong answers nothing,
-  and cards that are only read (a new word, a dialogue) nothing either.
+  and cards that are only read (a new word, a dialogue) nothing either. A
+  typed answer one letter off a word of four letters or more is **almost**:
+  still a mistake in the log, but half XP, its review comes back sooner
+  rather than starting over, and it counts as half right in the drill's
+  score (85% passes, 60% is a partial).
   Conversations pay by effort: 30/80/160 for low/medium/high (half for
   partial), plus 10 per goal in a writing lesson.
 - **Extra practice**: a lesson already passed today can always be done again,

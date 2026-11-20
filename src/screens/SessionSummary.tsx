@@ -25,7 +25,7 @@ import type { LessonResult, SessionResult } from "../lib/types";
 
 const OUTCOME = {
   pass: "Passed",
-  partial: "Partly there — 85% right passes; try again now, or it comes back at its usual pace",
+  partial: "Partly there — some mastery earned, and 85% right passes; try again now, or it comes back at its usual pace",
   fail: "Not yet — 85% right passes; try again now, or it comes back tomorrow",
 } as const;
 
@@ -50,7 +50,8 @@ export function SessionSummary({
     /** Extra practice: the schedule did not move. */
     extra?: boolean;
     /** A drill's score; a check-in has none. */
-    score?: { correct: number; total: number };
+    /** `almost`: one letter off, each half right. */
+    score?: { correct: number; almost: number; total: number };
   };
   onDone: () => void;
 }) {
@@ -63,7 +64,9 @@ export function SessionSummary({
   }, []);
   const { stats, newlyUnlocked } = result;
   const score = outcome?.score;
-  const scoreText = score ? ` — ${score.correct} of ${score.total} right` : "";
+  const scoreText = score
+    ? ` — ${score.correct} of ${score.total} right${score.almost > 0 ? `, ${score.almost} almost` : ""}`
+    : "";
   // The day is done: the goal reached, or everything due cleared.
   const goalMet = stats.completedToday;
   // The day done, or a new level: confetti, once, as the summary appears.
@@ -134,7 +137,7 @@ export function SessionSummary({
         <Stat value={<CountUp value={stats.dayXp} memory="xp:today" />} label="XP today" />
         {score ? (
           <Stat
-            value={<CountUp value={Math.round((score.correct / score.total) * 100)} from={0} format={percent} />}
+            value={<CountUp value={Math.round(((score.correct + score.almost / 2) / score.total) * 100)} from={0} format={percent} />}
             label="this lesson"
           />
         ) : (

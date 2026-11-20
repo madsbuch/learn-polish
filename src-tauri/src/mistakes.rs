@@ -35,7 +35,7 @@ pub fn label(class: &str) -> &'static str {
 
 /// Exercises where the answer is picked from options, not typed: a pick that
 /// looks like the answer is a look-alike, never a typo.
-const PICKED: &[&str] = &[
+pub(crate) const PICKED: &[&str] = &[
     "recognise", "produce", "wordPick", "picturePick", "dialogueGap", "storyQuestion", "sceneFind", "sceneName", "sceneWhere",
     "soundPair", "game:sounds", "game:match", "memory", "gapFill",
 ];

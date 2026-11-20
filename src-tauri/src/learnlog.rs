@@ -367,6 +367,9 @@ pub struct EventDetails {
     pub answered: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correct: Option<i64>,
+    /// A drill's answers one letter off (each half right), when any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub almost: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// The Polish it was about (a tapped word, a word played).

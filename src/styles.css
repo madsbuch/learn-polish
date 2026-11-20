@@ -555,7 +555,13 @@
   background: var(--bad-bg);
   border-color: var(--bad-line);
 }
-/* Right: it pops in glowing. Wrong: it pops in, then shakes its head. */
+/* Almost (one letter off): warm, not red — nearly there. */
+.verdict[data-almost="true"] {
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+}
+/* Right: it pops in glowing. Wrong: it pops in, then shakes its head;
+   almost, only pops in. */
 .verdict.pop[data-correct="true"] {
   --glow-colour: var(--glow-ok);
   animation:
@@ -566,6 +572,9 @@
   animation:
     pop var(--duration-slow) var(--ease-spring) backwards,
     shake 0.36s var(--ease-out) var(--duration-slow);
+}
+.verdict.pop[data-almost="true"] {
+  animation: pop var(--duration-slow) var(--ease-spring) backwards;
 }
 /* Holds an element that swells as a number in it grows (useBump). */
 .bump-target {

@@ -472,13 +472,14 @@ const MASTERY_SPACED_DAYS: i64 = 14;
 /// attempt earns 10; one a day or more later earns 15, plus up to 20 more
 /// as the gap grows to two weeks — remembering it after a while is better
 /// evidence than getting it right twice in a row. An ace earns a quarter
-/// more; a partial earns nothing; a fail costs 20.
+/// more; a partial (nearly there: 60–84%) earns half what a pass would have,
+/// rounded down — it still does not mark the lesson passed; a fail costs 20.
 ///
 /// Spaced out, that is three passes (30 + 35 + 35); a day apart, six; all
 /// in one sitting, eight.
 pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
     let base = match grade {
-        Grade::Partial => return 0,
+        Grade::Partial => return mastery_gain(Grade::Pass, passed_before, elapsed) / 2,
         Grade::Fail => return -20,
         Grade::Ace | Grade::Pass if !passed_before => 30,
         Grade::Ace | Grade::Pass if elapsed <= 0 => 10,
@@ -1065,7 +1066,11 @@ mod tests {
         assert_eq!(mastery_gain(Pass, true, 14), 35);
         assert_eq!(mastery_gain(Pass, true, 60), 35);
         assert_eq!(mastery_gain(Ace, true, 14), 44);
-        assert_eq!(mastery_gain(Partial, true, 14), 0);
+        // A partial: half a pass's points, rounded down.
+        assert_eq!(mastery_gain(Partial, true, 14), 17);
+        assert_eq!(mastery_gain(Partial, true, 0), 5);
+        assert_eq!(mastery_gain(Partial, true, 1), 8);
+        assert_eq!(mastery_gain(Partial, false, 0), 15);
         assert_eq!(mastery_gain(Fail, true, 14), -20);
         let passes = |gap: i64| {
             let (mut points, mut n) = (mastery_gain(Pass, false, 0), 1);

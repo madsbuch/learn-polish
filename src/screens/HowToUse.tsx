@@ -67,7 +67,8 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           lessons are a way in, not the whole day: browse your courses and take what you find interesting — each lists
           its lessons by what matters most. Done days build your streak; every seven days in a row earns a streak freeze
           that covers a missed day by itself. XP is only paid for real work: harder exercises pay more, wrong answers
-          and cards you only read pay nothing.
+          and cards you only read pay nothing. A typed answer one letter off is <strong>almost</strong>: half the XP,
+          and it counts as half right — 85% right passes a lesson.
         </P>
         <P>
           Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, flip memory cards,
@@ -122,7 +123,8 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           a level up; once the rest is passed, today's lessons offer them), and writing passed once without help.
         </P>
         <P>
-          Every pass earns mastery points; a fail costs some, until the lesson is mastered. You never have to wait:
+          Every pass earns mastery points, and a near miss (60–84% right) half as many; a fail costs some, until the
+          lesson is mastered. You never have to wait:
           practise a lesson as often as you like, today, and you get there. Passes spread out over days are better
           evidence, so they earn more — letting check-ins bring lessons back gets there in fewer passes.
         </P>

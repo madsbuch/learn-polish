@@ -96,7 +96,7 @@ export interface ExerciseModule<K extends ExerciseKind = ExerciseKind> {
   given: (exercise: Exercise, state: AnswerState) => string;
   /** Whether there is enough of an answer to check. */
   canSubmit: (exercise: Exercise, state: AnswerState) => boolean;
-  /** An extra line in the verdict, under "Dobrze!" / "Not quite". */
+  /** An extra line in the verdict, under "Dobrze!" / "Almost!" / "Not quite". */
   verdictNote?: (exercise: Exercise, state: AnswerState) => ReactNode;
 }
 

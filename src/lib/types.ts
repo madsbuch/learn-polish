@@ -703,6 +703,8 @@ export type Heard = z.infer<typeof HeardSchema>;
 
 export const AnswerResultSchema = z.object({
   correct: z.boolean(),
+  /** Wrong, but a typed answer one letter off: half XP, and it comes back sooner rather than over. */
+  almost: z.boolean(),
   expected: z.string(),
   xpGained: z.number(),
   totalXp: z.number(),
@@ -929,8 +931,9 @@ export const LessonFinishedSchema = SessionResultSchema.extend({
   result: LessonResultSchema,
   /** Extra practice: the schedule did not move. */
   extra: z.boolean(),
-  /** This drill's score: right answers out of the scored cards. */
+  /** This drill's score: right answers out of the scored cards, and those one letter off (each half right). */
   correct: z.number(),
+  almost: z.number(),
   total: z.number(),
 });
 export type LessonFinished = z.infer<typeof LessonFinishedSchema>;
@@ -1779,6 +1782,7 @@ export const EventDetailsSchema = z.object({
   ofCards: z.number().optional(),
   answered: z.number().optional(),
   correct: z.number().optional(),
+  almost: z.number().optional(),
   reason: z.string().optional(),
   word: z.string().optional(),
   slow: z.boolean().optional(),

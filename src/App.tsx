@@ -94,7 +94,7 @@ type Overlay =
         nextDueDay: number | null;
         extra?: boolean;
         /** A drill's score; a check-in has none. */
-        score?: { correct: number; total: number };
+        score?: { correct: number; almost: number; total: number };
       };
       /** Where Done goes: wherever the lesson was started from. */
       back: Overlay;
@@ -539,7 +539,7 @@ export default function App() {
                 extra: result.extra,
                 score:
                   result.total > 0
-                    ? { correct: result.correct, total: result.total }
+                    ? { correct: result.correct, almost: result.almost, total: result.total }
                     : undefined,
               },
               back: startedFrom(overlay.back),

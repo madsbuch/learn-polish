@@ -68,6 +68,25 @@ fn answers_match(expected: &str, given: &str) -> bool {
         .any(|alternative| !alternative.is_empty() && alternative == given)
 }
 
+/// A typed answer one letter off a word of four letters or more ("wolno"
+/// for "wolny"): wrong, but nearly there. It is still a mistake in the log,
+/// but earns half XP and is not started over (see [`submit_steps`]). Short
+/// words are left out: one letter off "kot" is another word ("kod"), not a
+/// slip. Checked like [`answers_match`]: the whole answer, or any one of its
+/// listed alternatives.
+fn almost_matches(expected: &str, given: &str) -> bool {
+    let given = normalize(given);
+    if given.is_empty() {
+        return false;
+    }
+    // Letters are counted as written, before folding (which can spell one
+    // letter as two).
+    std::iter::once(expected)
+        .chain(expected.split(','))
+        .filter(|candidate| candidate.chars().filter(|c| c.is_alphabetic()).count() >= 4)
+        .any(|candidate| crate::mistakes::distance(&normalize(candidate), &given) <= 1)
+}
+
 // ---------------------------------------------------------------------------
 // Answers and results
 // ---------------------------------------------------------------------------
@@ -120,6 +139,9 @@ pub const READING_KINDS: &[&str] = &["intro", "sentenceIntro", "dialogueRead", "
 #[serde(rename_all = "camelCase")]
 pub struct AnswerResult {
     pub correct: bool,
+    /// Wrong, but one letter off a typed answer (see [`almost_matches`]):
+    /// half XP, and the review comes back sooner rather than starting over.
+    pub almost: bool,
     pub expected: String,
     pub xp_gained: i64,
     pub total_xp: i64,
@@ -171,6 +193,7 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         let day_xp = stats::day_xp(conn, today)?;
         return Ok(AnswerResult {
             correct: true,
+            almost: false,
             expected: answer.expected,
             xp_gained: 0,
             total_xp,
@@ -191,6 +214,7 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     // compared like a dictation (speaking.rs).
     let mut diff = vec![];
     let mut tips = vec![];
+    let mut almost = false;
     let correct = match answer.kind.as_str() {
         "wordOrder" => crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given),
         "dictation" => {
@@ -205,12 +229,19 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
             tips = spoken.tips;
             spoken.correct
         }
-        _ => answers_match(&answer.expected, &answer.given),
+        _ => {
+            let right = answers_match(&answer.expected, &answer.given);
+            // Only what was typed can be a slip: a pick one letter off the
+            // answer is a look-alike, a real confusion (mistakes.rs).
+            almost = !right && !crate::mistakes::PICKED.contains(&answer.kind.as_str()) && almost_matches(&answer.expected, &answer.given);
+            right
+        }
     };
     // A sentence not quite heard is not a sentence forgotten: the learner
     // knew what to say, and the ear (a model's, in a room) is fallible. It
     // comes back sooner, but is not started over.
-    let missed = if crate::speaking::KINDS.contains(&answer.kind.as_str()) { srs::HARD } else { srs::AGAIN };
+    // A slip of one letter is the same: known, nearly — sooner, not over.
+    let missed = if almost || crate::speaking::KINDS.contains(&answer.kind.as_str()) { srs::HARD } else { srs::AGAIN };
     let grade = answer
         .grade
         .unwrap_or(if correct { srs::GOOD } else { missed })
@@ -225,12 +256,17 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         srs::save(conn, &answer.item_kind, &answer.item_id, &next)?;
     }
 
-    let mut xp = stats::xp_for_answer(&answer.kind, correct, answer.is_new);
+    let mut xp = stats::xp_for_answer(&answer.kind, correct || almost, answer.is_new);
+    if almost {
+        // Nearly right is worth something: half, rounded up.
+        xp = (xp + 1) / 2;
+    }
     if answer.extra {
         xp = (xp + 1) / 2;
     }
     stats::record_answer(conn, today, xp, correct)?;
     let note = match (correct, answer.extra, answer.is_new) {
+        (false, _, _) if almost => "almost: half XP",
         (false, _, _) => "a mistake: no XP",
         (true, true, _) => "extra practice: half XP",
         (true, false, true) => "new: +2",
@@ -290,6 +326,7 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
 
     Ok(AnswerResult {
         correct,
+        almost,
         expected: answer.expected,
         xp_gained: xp,
         total_xp,
@@ -350,8 +387,10 @@ pub struct LessonFinished {
     pub result: String,
     /// Extra practice on a lesson that was not due: its schedule is unchanged.
     pub extra: bool,
-    /// This drill's score: right answers out of the scored cards.
+    /// This drill's score: right answers out of the scored cards, and the
+    /// answers one letter off (each counts as half right).
     pub correct: i64,
+    pub almost: i64,
     pub total: i64,
     #[serde(flatten)]
     pub session: SessionResult,
@@ -364,10 +403,11 @@ pub async fn lesson_finish(
     db: State<'_, Db>,
     lesson_id: LessonId,
     correct: i64,
+    almost: Option<i64>,
     total: i64,
     context: Option<crate::learnlog::PracticeContext>,
 ) -> Result<LessonFinished> {
-    lesson_finish_with(&mut db.lock(), lesson_id, correct, total, context.as_ref())
+    lesson_finish_with(&mut db.lock(), lesson_id, Score { correct, almost: almost.unwrap_or(0), total }, context.as_ref())
 }
 
 /// The work behind [`lesson_finish`], callable without Tauri (tests).
@@ -375,22 +415,33 @@ pub async fn lesson_finish(
 /// nothing (one transaction).
 #[cfg(test)]
 pub fn lesson_finish_in(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64) -> Result<LessonFinished> {
-    lesson_finish_with(conn, lesson_id, correct, total, None)
+    lesson_finish_with(conn, lesson_id, Score { correct, almost: 0, total }, None)
+}
+
+/// A drill's score: right answers, answers one letter off, and the cards
+/// scored.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Score {
+    pub correct: i64,
+    pub almost: i64,
+    pub total: i64,
 }
 
 /// A drill finished, where it was practised from (for its event).
 pub fn lesson_finish_with(
     conn: &mut Conn,
     lesson_id: LessonId,
-    correct: i64,
-    total: i64,
+    score: Score,
     context: Option<&crate::learnlog::PracticeContext>,
 ) -> Result<LessonFinished> {
     let context = crate::learnlog::resolve(conn, context, Some(lesson_id), "")?;
-    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, correct, total, &context))
+    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, score, &context))
 }
 
-fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total: i64, context: &crate::learnlog::PracticeContext) -> Result<LessonFinished> {
+fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, score: Score, context: &crate::learnlog::PracticeContext) -> Result<LessonFinished> {
+    let Score { correct, total, .. } = score;
+    // Never more almosts than misses: the screen's count is trusted only so far.
+    let almost = score.almost.clamp(0, (total - correct).max(0));
     let before = unlocked_codes(conn)?;
     crate::learnlog::note(
         conn,
@@ -399,10 +450,17 @@ fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total
         &lesson_id.to_string(),
         Some(lesson_id),
         "",
-        crate::learnlog::EventDetails { answered: Some(total), correct: Some(correct), ..Default::default() },
+        crate::learnlog::EventDetails {
+            answered: Some(total),
+            correct: Some(correct),
+            almost: (almost > 0).then_some(almost),
+            ..Default::default()
+        },
         context,
     )?;
-    let result = lessons::result_from_score(correct, total);
+    // An almost counts as half right: graded in half points.
+    let half_points = correct * 2 + almost;
+    let result = lessons::result_from_score(half_points, total * 2);
     let today = db::today(conn);
     // Only a lesson that is due (or new) moves its schedule. Practising one
     // early is extra practice: it counts for the day, but a pass must not
@@ -411,7 +469,7 @@ fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total
     let current = lessons::load(conn, lesson_id)?;
     let extra = lessons::is_extra_practice(&current, today);
     // Nearly all right is an ace: the gap grows faster.
-    let ace = total > 0 && correct * 100 >= total * 95;
+    let ace = total > 0 && half_points * 100 >= total * 2 * 95;
     let lesson = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
         lessons::credit_mastery(conn, &current, result, ace, today)?;
@@ -420,7 +478,7 @@ fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, correct: i64, total
         lessons::record_graded(conn, lesson_id, result, ace)?
     };
     let first = stats::mark_practised(conn, today)?;
-    Ok(LessonFinished { lesson, result: result.into(), extra, correct, total, session: finish_up(conn, &before, first)? })
+    Ok(LessonFinished { lesson, result: result.into(), extra, correct, almost, total, session: finish_up(conn, &before, first)? })
 }
 
 /// Stats after a check-in, for the summary screen. What counts as newly

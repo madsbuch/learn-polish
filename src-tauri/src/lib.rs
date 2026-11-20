@@ -1201,6 +1201,84 @@ mod integration {
     }
 
     #[test]
+    fn a_typed_answer_one_letter_off_is_almost() {
+        let mut conn = scratch_db("almost");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        let words: Vec<WordId> = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).limit(4).load(&mut conn).unwrap();
+        let answer = |word: WordId, kind: &str, expected: &str, given: &str, extra: bool| practice::SubmitAnswer {
+            kind: kind.into(),
+            item_kind: "word".into(),
+            item_id: word.to_string(),
+            expected: expected.into(),
+            given: given.into(),
+            extra,
+            lesson_id: Some(drill.id),
+            ..Default::default()
+        };
+        let lapses = |conn: &mut db::Conn, word: WordId| srs::load(conn, "word", &word.to_string()).unwrap().unwrap().lapses;
+
+        // "wolno" for "wolny": wrong, but almost — half XP, back sooner, not over.
+        let slip = practice::submit_answer_in(&mut conn, answer(words[0], "type", "wolny", "wolno", false)).unwrap();
+        assert!(!slip.correct && slip.almost);
+        assert_eq!(slip.xp_gained, (stats::xp_for_answer("type", true, false) + 1) / 2);
+        assert_eq!(lapses(&mut conn, words[0]), 0, "graded HARD, not AGAIN");
+        let note: String = t::xp_log::table.order(t::xp_log::at.desc()).select(t::xp_log::note).first(&mut conn).unwrap();
+        assert_eq!(note, "almost: half XP");
+        let logged: i64 = t::attempts::table.filter(t::attempts::correct.eq(0)).count().get_result(&mut conn).unwrap();
+        assert_eq!(logged, 1, "still a mistake in the learning log");
+        // Extra practice halves it again; an alternative gloss counts too.
+        let extra = practice::submit_answer_in(&mut conn, answer(words[0], "type", "free, wolny", "wolni", true)).unwrap();
+        assert!(extra.almost);
+        assert_eq!(extra.xp_gained, ((stats::xp_for_answer("type", true, false) + 1) / 2 + 1) / 2);
+
+        // Too short: one letter off "kot" is another word.
+        let short = practice::submit_answer_in(&mut conn, answer(words[1], "type", "kot", "kod", false)).unwrap();
+        assert!(!short.correct && !short.almost);
+        assert_eq!(short.xp_gained, 0);
+        assert_eq!(lapses(&mut conn, words[1]), 1, "started over");
+        // A pick is never a slip, however close.
+        let picked = practice::submit_answer_in(&mut conn, answer(words[2], "recognise", "wolny", "wolno", false)).unwrap();
+        assert!(!picked.correct && !picked.almost);
+        assert_eq!(picked.xp_gained, 0);
+        // A blank is not almost anything.
+        let blank = practice::submit_answer_in(&mut conn, answer(words[3], "type", "wolny", "", false)).unwrap();
+        assert!(!blank.correct && !blank.almost);
+        assert_eq!(lapses(&mut conn, words[3]), 1);
+
+        // The drill's score counts an almost as half right: 8 right and 2
+        // almost of 10 is 90%, a pass; 8 of 10 alone would be a partial.
+        let score = |almost| practice::Score { correct: 8, almost, total: 10 };
+        let finished = practice::lesson_finish_with(&mut conn, drill.id, score(2), None).unwrap();
+        assert_eq!((finished.result.as_str(), finished.almost), ("pass", 2));
+        let other = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.reps == 0 && b.id != drill.id).unwrap();
+        let partial = practice::lesson_finish_with(&mut conn, other.id, score(0), None).unwrap();
+        assert_eq!(partial.result, "partial");
+        let details: String = t::learning_events::table
+            .filter(t::learning_events::kind.eq("lesson_finished"))
+            .filter(t::learning_events::lesson_id.eq(drill.id))
+            .select(t::learning_events::details)
+            .first(&mut conn)
+            .unwrap();
+        assert!(details.contains("\"almost\":2"), "{details}");
+    }
+
+    #[test]
+    fn a_partial_earns_half_a_pass_of_mastery() {
+        let mut conn = scratch_db("partial-mastery");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        // A partial moves mastery, without passing the lesson.
+        let first = practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
+        assert_eq!(first.result, "partial");
+        assert!(!first.lesson.passed, "a partial does not pass the lesson");
+        assert_eq!(first.lesson.mastery, 15, "half of a first pass's 30");
+        let pass = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        assert!(pass.lesson.passed);
+        assert_eq!(pass.lesson.mastery, 45);
+    }
+
+    #[test]
     fn gamification_counts_only_what_was_really_done() {
         let mut conn = scratch_db("game-integrity");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
@@ -3551,6 +3629,21 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("Lesson.list", &all);
         write("LessonDetail", &lessons::detail(&mut conn, drill.id).unwrap());
         write("LessonFinished", &finished);
+        let word: WordId = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
+        let almost = practice::submit_answer_in(
+            &mut conn,
+            practice::SubmitAnswer {
+                kind: "type".into(),
+                item_kind: "word".into(),
+                item_id: word.to_string(),
+                expected: "wolny".into(),
+                given: "wolno".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(almost.almost);
+        write("AnswerResult.almost", &almost);
         write("CourseProgress.list", &stats::course_progress(&mut conn).unwrap());
         write("CoursePictureStatus", &pictures::PictureStatus { course_id: basics, drawing: false, error: Some("No API key".into()) });
         let collected = stats::collect(&mut conn).unwrap();
@@ -4682,7 +4775,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let game: (Option<CourseId>, String, String) = t::attempts::table.order(t::attempts::id.desc()).select((t::attempts::course_id, t::attempts::source, t::attempts::direction)).first(&mut conn).unwrap();
         assert_eq!(game, (None, "game".into(), "audio→pl typed".into()));
         // A drill's end, with its context.
-        practice::lesson_finish_with(&mut conn, lesson, 3, 4, Some(&from_second)).unwrap();
+        practice::lesson_finish_with(&mut conn, lesson, practice::Score { correct: 3, almost: 0, total: 4 }, Some(&from_second)).unwrap();
         let finished: (Option<CourseId>, String) = t::learning_events::table.filter(t::learning_events::kind.eq("lesson_finished"))
             .select((t::learning_events::course_id, t::learning_events::source)).first(&mut conn).unwrap();
         assert_eq!(finished, (Some(second), "course".into()));

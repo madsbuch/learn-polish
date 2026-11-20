@@ -40,6 +40,8 @@ export function Session({
   const [busy, setBusy] = useState(false);
   const [sessionXp, setSessionXp] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  // Typed answers one letter off: each counts as half right in the score.
+  const [almostCount, setAlmostCount] = useState(0);
   // Every answer of this go, right or not, by card.
   const [results, setResults] = useState<Record<string, boolean>>({});
 
@@ -183,6 +185,7 @@ export function Session({
       setSessionXp((xp) => xp + answer.xpGained);
       const reading = exerciseModule(exercise.kind).reading;
       if (answer.correct && !reading) setCorrectCount((n) => n + 1);
+      if (answer.almost && !reading) setAlmostCount((n) => n + 1);
       if (!reading) setResults((r) => ({ ...r, [exercise.key]: answer.correct }));
       setPhase("checked");
       if (!reading) {
@@ -223,7 +226,7 @@ export function Session({
     flushLog();
     try {
       const scored = played.filter((e) => !exerciseModule(e.kind).reading).length;
-      onFinished(await api.lessonFinish(plan.lessonId, correctCount, scored, plan.context), sessionXp);
+      onFinished(await api.lessonFinish(plan.lessonId, correctCount, almostCount, scored, plan.context), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
@@ -346,11 +349,16 @@ export function Session({
         {module.render(exerciseProps)}
 
         {isChecked && result && !reading ? (
-          <div className="verdict pop" data-correct={result.correct}>
+          <div className="verdict pop" data-correct={result.correct} data-almost={result.almost || undefined}>
             <Text weight="bold">
-              {result.correct ? "Dobrze! ✓" : "Not quite"}
+              {result.correct ? "Dobrze! ✓" : result.almost ? "Almost!" : "Not quite"}
               {result.xpGained > 0 ? `  +${result.xpGained} XP` : ""}
             </Text>
+            {result.almost ? (
+              <Text variant="small" tone="dim">
+                One letter off — half XP, and half a point.
+              </Text>
+            ) : null}
             {module.verdictNote?.(exercise, answerState)}
             {exercise.explanation ? (
               <Text variant="small" tone="dim" selectable>
@@ -405,7 +413,7 @@ export function Session({
           </Button>
         )}
         <Text variant="caption" tone="faint" align="center" as="div">
-          {index + 1} of {total} · {correctCount} correct
+          {index + 1} of {total} · {correctCount} correct{almostCount > 0 ? ` · ${almostCount} almost` : ""}
         </Text>
       </div>
     </div>
