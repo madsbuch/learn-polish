@@ -183,6 +183,8 @@ pub fn run() {
                 scenes::resume_pending(app);
                 // Story lessons whose panels an earlier run did not finish drawing.
                 stories::resume_pending(app);
+                // The demo's pictures and episode, once there is a key for them.
+                demo_course::make_media_in_background(app);
                 files::sync_to_disk(app);
                 // Courses kept offline: audio their lessons have gained since.
                 offline::keep_up_in_background(app);
@@ -302,8 +304,6 @@ pub fn run() {
             tutor::tutor_delete,
             courses::commands::course_delete,
             courses::commands::course_close,
-            courses::commands::lesson_add_to_course,
-            courses::commands::lesson_remove_from_course,
             courses::commands::course_rename,
             commands::export_database,
             costs::commands::costs_summary,
@@ -759,9 +759,8 @@ mod integration {
     fn the_old_built_in_folders_merge_into_other_lessons() {
         let mut conn = scratch_db("other-lessons");
         let real = db::require_course_id(&mut conn, 1).unwrap();
-        let shared = lessons::for_course(&mut conn, real).unwrap()[0].id;
-        // The three folders of before, each with a lesson; one lesson is in a
-        // real course too.
+        let kept = lessons::for_course(&mut conn, real).unwrap()[0].id;
+        // The three folders of before, each with a lesson.
         let mut moved = Vec::new();
         for (n, slug) in courses::OLD_FOLDERS.iter().enumerate() {
             let folder = courses::ensure(&mut conn, slug, slug, slug, "").unwrap();
@@ -770,15 +769,12 @@ mod integration {
             })).unwrap(), "tutor").unwrap();
             moved.push(lesson.id);
         }
-        let first_folder: CourseId = t::courses::table.filter(t::courses::slug.eq("lessons")).select(t::courses::id).first(&mut conn).unwrap();
-        courses::add_lesson(&mut conn, first_folder, shared).unwrap();
-
         courses::merge_old_folders(&mut conn).unwrap();
         courses::merge_old_folders(&mut conn).unwrap();
         let other = courses::other_course(&mut conn).unwrap();
         let in_other: Vec<LessonId> = lessons::for_course(&mut conn, other).unwrap().iter().map(|l| l.id).collect();
         assert!(moved.iter().all(|id| in_other.contains(id)), "every lesson moves, in order: {in_other:?}");
-        assert!(lessons::load(&mut conn, shared).unwrap().course_ids.contains(&real), "a lesson keeps its real course");
+        assert_eq!(lessons::load(&mut conn, kept).unwrap().course_ids, vec![real], "a real course keeps its lessons");
         let left: i64 = t::courses::table.filter(t::courses::slug.eq_any(courses::OLD_FOLDERS)).count().get_result(&mut conn).unwrap();
         assert_eq!(left, 0, "the old folders are gone");
         assert!(courses::status(&mut conn, other).unwrap().open_ended, "a folder that never ends");
@@ -1567,6 +1563,82 @@ mod integration {
     }
 
     #[test]
+    fn an_install_at_version_17_keeps_a_shared_lesson_in_the_course_it_was_first_added_to() {
+        #[derive(diesel::QueryableByName)]
+        struct N {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            n: i64,
+        }
+        let count = |conn: &mut Conn, sql: &str| diesel::sql_query(sql).get_result::<N>(conn).unwrap().n;
+        let path = std::env::temp_dir().join("learn-polish-tests").join(format!("v17-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let tables = ["lessons", "words", "sentences", "reviews", "xp_log", "mastery_log", "attempts", "courses", "checkins", "settings"];
+        let counts = |conn: &mut Conn| -> Vec<i64> { tables.iter().map(|t| count(conn, &format!("SELECT count(*) AS n FROM {t}"))).collect() };
+        let (before, listings, lesson, first, later, progress) = {
+            let mut conn = db::open(&path).unwrap();
+            db::seed_test_courses(&mut conn).unwrap();
+            db::unify_courses(&mut conn).unwrap();
+            // Three courses, made at 100, 200 and 300; the lesson made at 250
+            // in the second, then listed in the first and the third too, as
+            // version 17 allowed.
+            let made: Vec<CourseId> = [("Older", 100), ("Its own", 200), ("Newer", 300)]
+                .iter()
+                .map(|(title, at)| {
+                    let id = courses::create_empty(&mut conn, title, "").unwrap();
+                    diesel::update(t::courses::table.find(id)).set(t::courses::created_at.eq(*at)).execute(&mut conn).unwrap();
+                    id
+                })
+                .collect();
+            let items = courses::Items {
+                words: vec![courses::NewWord { pl: "dzień dobry".into(), en: "good morning".into(), pos: "phr".into(), ..Default::default() }],
+                ..Default::default()
+            };
+            let (lesson, _) = lessons::create_drill(&mut conn, made[1], "Shared", "", "words", "low", &items, None, "tutor").unwrap();
+            diesel::update(t::lessons::table.find(lesson.id)).set(t::lessons::created_at.eq(250)).execute(&mut conn).unwrap();
+            conn.batch_execute("DROP INDEX course_lessons_one_course; PRAGMA user_version = 17;").unwrap();
+            for (n, course) in [made[0], made[2]].iter().enumerate() {
+                diesel::insert_into(t::course_lessons::table)
+                    .values((t::course_lessons::course_id.eq(course), t::course_lessons::lesson_id.eq(lesson.id), t::course_lessons::ord.eq(crate::convert::count(n) + 1)))
+                    .execute(&mut conn)
+                    .unwrap();
+            }
+            // Practised: a schedule, mastery points and their ledger.
+            practice::lesson_finish_in(&mut conn, lesson.id, 10, 10).unwrap();
+            let progress: (i64, i64) = t::lessons::table.find(lesson.id).select((t::lessons::reps, t::lessons::mastery)).first(&mut conn).unwrap();
+            assert!(progress.1 > 0);
+            let listings = count(&mut conn, "SELECT count(*) AS n FROM course_lessons");
+            (counts(&mut conn), listings, lesson.id, made[1], [made[0], made[2]], progress)
+        };
+        let mut conn = db::open(&path).unwrap();
+        #[derive(diesel::QueryableByName)]
+        struct V {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            user_version: i64,
+        }
+        assert_eq!(diesel::sql_query("PRAGMA user_version").get_result::<V>(&mut conn).unwrap().user_version, db::SCHEMA_VERSION);
+        // Only the course it was first added to keeps it.
+        assert_eq!(lessons::load(&mut conn, lesson).unwrap().course_ids, vec![first]);
+        assert_eq!(count(&mut conn, "SELECT count(*) AS n FROM course_lessons"), listings - 2, "only the extra listings go");
+        assert_eq!(counts(&mut conn), before, "every other row kept, the ledger too");
+        let after: (i64, i64) = t::lessons::table.find(lesson).select((t::lessons::reps, t::lessons::mastery)).first(&mut conn).unwrap();
+        assert_eq!(after, progress, "its schedule and mastery stay");
+        for course in later {
+            assert!(lessons::for_course(&mut conn, course).unwrap().is_empty());
+        }
+        // The listings that went are deletes other devices hear of.
+        let tombstones = count(
+            &mut conn,
+            &format!("SELECT count(*) AS n FROM sync_rows WHERE tbl = 'course_lessons' AND deleted = 1 AND pk LIKE '%{lesson}'"),
+        );
+        assert_eq!(tombstones, 2);
+        // And it stays so.
+        assert!(courses::add_lesson(&mut conn, later[0], lesson).is_err());
+        assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
+        let backups = std::fs::read_dir(path.parent().unwrap().join("backups")).unwrap().filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().starts_with(&format!("before-v{}", db::SCHEMA_VERSION)));
+        assert!(backups, "backed up before upgrading");
+    }
+
+    #[test]
     fn a_partial_earns_half_a_pass_of_mastery() {
         let mut conn = scratch_db("partial-mastery");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
@@ -1839,18 +1911,20 @@ mod integration {
 
         // A course of challenges only can be completed.
         let hard = courses::create_empty(&mut conn, "Hard things", "").unwrap();
-        courses::add_lesson(&mut conn, hard, *challenge).unwrap();
+        let tough = lessons::create_study(&mut conn, serde_json::from_value(serde_json::json!({
+            "title": "Aspect", "complexity": "high", "content": "x", "objectives": ["y"], "course_id": hard
+        })).unwrap(), "tutor").unwrap().id;
+        diesel::update(t::lessons::table.find(tough)).set(t::lessons::challenge.eq(1)).execute(&mut conn).unwrap();
         assert_eq!(courses::status(&mut conn, hard).unwrap().status, "active");
-        diesel::update(t::lessons::table.find(*challenge)).set(t::lessons::passed.eq(1)).execute(&mut conn).unwrap();
+        diesel::update(t::lessons::table.find(tough)).set(t::lessons::passed.eq(1)).execute(&mut conn).unwrap();
         assert_eq!(courses::status(&mut conn, hard).unwrap().status, "completed");
 
         // Closed is closed: nothing about it changes.
         diesel::update(t::courses::table.find(hard)).set(t::courses::closed_at.eq(Some(db::now_secs()))).execute(&mut conn).unwrap();
         assert!(courses::rename(&mut conn, hard, Some("New name"), None, None).is_err());
         assert!(levels::set_course_level(&mut conn, hard, "B2").is_err());
-        assert!(courses::remove_lesson(&mut conn, hard, *challenge).is_err());
-        assert!(courses::move_lesson(&mut conn, *challenge, hard, course).is_err());
-        assert!(lessons::detail(&mut conn, *challenge).is_ok());
+        assert!(courses::remove_lesson(&mut conn, hard, tough).is_err());
+        assert!(lessons::detail(&mut conn, tough).is_ok());
     }
 
     #[test]
@@ -1959,7 +2033,6 @@ mod integration {
     fn a_mastered_course_closes_into_a_trophy_and_leaves_the_check_ins() {
         let mut conn = scratch_db("course-close");
         let course = db::require_course_id(&mut conn, 1).unwrap();
-        let other = db::require_course_id(&mut conn, 2).unwrap();
         let ids: Vec<LessonId> = lessons::for_course(&mut conn, course).unwrap().iter().map(|l| l.id).collect();
         let today = db::today(&mut conn);
         let hold = |conn: &mut db::Conn, id: LessonId, gap: i64| {
@@ -1985,10 +2058,8 @@ mod integration {
         for id in &ids {
             hold(&mut conn, *id, 40);
         }
-        // Mastered lessons are out of play at once — before the course is
-        // closed, and when another course lists them too.
+        // Mastered lessons are out of play at once, before the course is closed.
         let shared = ids[0];
-        courses::add_lesson(&mut conn, other, shared).unwrap();
         db::delete_setting(&mut conn, "daily_day").unwrap();
         assert_eq!(plan::remaining(&mut conn, today + 1).unwrap(), 0, "mastered lessons never come back");
         assert!(plan::out_of_play(&mut conn).unwrap().contains(&shared));
@@ -1997,8 +2068,7 @@ mod integration {
         let status = courses::status(&mut conn, course).unwrap();
         assert!(status.closed_at.is_some());
         let retired = courses::retired_lessons(&mut conn).unwrap();
-        assert!(!retired.contains(&shared), "an open course lists it too");
-        assert!(ids[1..].iter().all(|id| retired.contains(id)));
+        assert!(ids.iter().all(|id| retired.contains(id)), "a closed course's lessons are retired");
         let after = plan::plan(&mut conn, today).unwrap();
         assert!(ids.iter().all(|id| !after.left.contains(id)), "none of them is asked for");
 
@@ -2015,9 +2085,9 @@ mod integration {
 
         // The built-in courses that never end are never completed or closed.
         let grammar = courses::other_course(&mut conn).unwrap();
-        let essentials = grammar_course(&mut conn);
-        let study = lessons::for_course(&mut conn, essentials).unwrap()[0].id;
-        courses::add_lesson(&mut conn, grammar, study).unwrap();
+        let study = lessons::create_study(&mut conn, serde_json::from_value(serde_json::json!({
+            "title": "A one-off", "complexity": "low", "content": "x", "objectives": ["y"]
+        })).unwrap(), "tutor").unwrap().id;
         hold(&mut conn, study, 40);
         let open = courses::status(&mut conn, grammar).unwrap();
         assert!(open.open_ended);
@@ -3663,77 +3733,58 @@ mod integration {
     }
 
     #[test]
-    fn lessons_move_and_are_shared_between_courses() {
+    fn a_lesson_is_in_one_course_and_leaves_it_only_by_being_deleted() {
         let mut conn = scratch_db("membership");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let family = db::require_course_id(&mut conn, 2).unwrap();
         let lesson = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
-        let words = lessons::detail(&mut conn, lesson.id).unwrap().words;
 
-        // Shared: one lesson, listed in both, with one schedule.
-        let shared = tutor::run_tool_for_test(
-            &mut conn,
-            "add_lesson_to_course",
-            serde_json::json!({ "lesson_id": lesson.id, "course_id": family }),
-        );
-        assert!(shared.get("error").is_none(), "{shared}");
-        assert!(lessons::for_course(&mut conn, family).unwrap().iter().any(|b| b.id == lesson.id));
-        assert_eq!(lessons::load(&mut conn, lesson.id).unwrap().course_ids, vec![basics, family]);
-        lessons::record(&mut conn, lesson.id, "pass").unwrap();
-        assert!(lessons::for_course(&mut conn, family).unwrap().iter().any(|b| b.id == lesson.id && b.reps == 1));
-        // The family course now reaches the lesson's words too.
-        let reach: i64 = t::course_words::table
-            .filter(t::course_words::course_id.eq(family))
-            .filter(t::course_words::lesson_id.eq(lesson.id))
-            .count()
-            .get_result(&mut conn)
-            .unwrap();
-        assert_eq!(crate::convert::index(reach), words.len());
+        // A second course is refused, naming the rule, and nothing changes.
+        let err = courses::add_lesson(&mut conn, family, lesson.id).unwrap_err().to_string();
+        assert!(err.contains("one course only"), "{err}");
+        assert_eq!(lessons::load(&mut conn, lesson.id).unwrap().course_ids, vec![basics]);
+        // Listing it again where it is changes nothing.
+        courses::add_lesson(&mut conn, basics, lesson.id).unwrap();
+        // The database refuses it too, whatever writes it.
+        let raw = diesel::sql_query(format!("INSERT INTO course_lessons (course_id, lesson_id, ord) VALUES ('{family}', '{}', 99)", lesson.id))
+            .execute(&mut conn);
+        assert!(raw.is_err(), "the unique index holds");
+        // The tools to share or move a lesson are gone.
+        for gone in ["add_lesson_to_course", "move_lesson"] {
+            let out = tutor::run_tool_for_test(
+                &mut conn,
+                gone,
+                serde_json::json!({ "lesson_id": lesson.id, "course_id": family, "from_course_id": basics, "to_course_id": family }),
+            );
+            assert!(out.get("error").is_some(), "{gone}: {out}");
+        }
 
-        // Out of one course, it stays; out of the last, it goes with its words.
-        let out = tutor::run_tool_for_test(
-            &mut conn,
-            "remove_lesson_from_course",
-            serde_json::json!({ "lesson_id": lesson.id, "course_id": basics }),
-        );
-        assert_eq!(out["lesson_deleted"], false);
-        assert_eq!(lessons::load(&mut conn, lesson.id).unwrap().course_id, Some(family));
+        // Out of its course, it goes with its words.
         let word_id: WordId =
             t::words::table.filter(t::words::lesson_id.eq(lesson.id)).select(t::words::id).first(&mut conn).unwrap();
         let gone = tutor::run_tool_for_test(
             &mut conn,
             "remove_lesson_from_course",
-            serde_json::json!({ "lesson_id": lesson.id, "course_id": family }),
+            serde_json::json!({ "lesson_id": lesson.id, "course_id": basics }),
         );
         assert_eq!(gone["lesson_deleted"], true);
         assert!(lessons::load(&mut conn, lesson.id).is_err());
         let left: i64 = t::words::table.find(word_id).count().get_result(&mut conn).unwrap();
         assert_eq!(left, 0, "its words went with it");
 
-        // Moving takes it out of one course and into another, at the end.
-        let starter = starter_lesson(&mut conn);
-        let grammar = grammar_course(&mut conn);
-        tutor::run_tool_for_test(
-            &mut conn,
-            "move_lesson",
-            serde_json::json!({ "lesson_id": starter.id, "from_course_id": grammar, "to_course_id": basics }),
-        );
-        assert_eq!(lessons::load(&mut conn, starter.id).unwrap().course_ids, vec![basics]);
-        assert_eq!(lessons::for_course(&mut conn, basics).unwrap().last().unwrap().id, starter.id);
-
-        // Reordering puts it first.
+        // Reordering puts a lesson first.
+        let last = lessons::for_course(&mut conn, basics).unwrap().last().unwrap().id;
         tutor::run_tool_for_test(
             &mut conn,
             "order_course_lessons",
-            serde_json::json!({ "course_id": basics, "lesson_ids": [starter.id] }),
+            serde_json::json!({ "course_id": basics, "lesson_ids": [last] }),
         );
-        assert_eq!(lessons::for_course(&mut conn, basics).unwrap()[0].id, starter.id);
+        assert_eq!(lessons::for_course(&mut conn, basics).unwrap()[0].id, last);
 
-        // Deleting a course keeps lessons another course still lists.
+        // Deleting a course deletes its lessons.
         let kept = lessons::for_course(&mut conn, family).unwrap()[0].id;
-        crate::courses::add_lesson(&mut conn, basics, kept).unwrap();
         crate::courses::delete(&mut conn, family).unwrap();
-        assert!(lessons::load(&mut conn, kept).is_ok());
+        assert!(lessons::load(&mut conn, kept).is_err());
     }
 
     #[test]
@@ -4376,11 +4427,14 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         assert!(got["filed"]["written_from_course"].is_null());
         let travel = db::require_course_id(&mut conn, 5).unwrap();
         let listening = lesson.course_id.unwrap();
+        // A lesson is never moved: the one in Other lessons goes, and a new
+        // one is made in the course.
         tutor::run_tool_for_test(
             &mut conn,
-            "move_lesson",
-            serde_json::json!({ "lesson_id": lesson.id, "from_course_id": listening, "to_course_id": travel }),
+            "remove_lesson_from_course",
+            serde_json::json!({ "lesson_id": lesson.id, "course_id": listening }),
         );
+        tutor::run_tool_for_test(&mut conn, "create_listening_lesson", serde_json::json!({ "song_id": song(4), "course_id": travel }));
         let got = tutor::run_tool_for_test(&mut conn, "get_song", serde_json::json!({ "song_id": song(4) }));
         assert_eq!(got["filed"]["written_from_course"]["course_id"], serde_json::json!(travel), "the song now knows its course");
         songs::delete_song(&mut conn, song(1)).unwrap();
@@ -4600,13 +4654,11 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         assert_eq!(study.content, "**Mam** — I have", "a study lesson keeps its text");
         assert!(study.lesson.passed);
         // The old built-in folder (course 1, Grammar & culture) is merged
-        // into Other lessons; the lesson stays in both of its courses.
+        // into Other lessons. The lesson was in two courses: it stays in one
+        // of them (version 18), with its history.
         let other: CourseId = t::courses::table.filter(t::courses::slug.eq(courses::OTHER)).select(t::courses::id).first(&mut conn).unwrap();
-        let mut shared = study.lesson.course_ids.clone();
-        shared.sort();
-        let mut expected = vec![bakery, other];
-        expected.sort();
-        assert_eq!(shared, expected, "a lesson stays in every course that listed it");
+        assert_eq!(study.lesson.course_ids.len(), 1, "a lesson is in one course");
+        assert!([bakery, other].contains(&study.lesson.course_ids[0]), "{:?}", study.lesson.course_ids);
         let bread: i64 = t::course_words::table
             .filter(t::course_words::course_id.eq(bakery))
             .filter(t::course_words::pl.eq("chleb"))
@@ -5097,9 +5149,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let mut conn = scratch_db("log-context");
         let (lesson, kawa, ..) = context_lesson(&mut conn);
         let basics = db::require_course_id(&mut conn, 1).unwrap();
-        // The same lesson in a second course: opened from that course's page.
+        // Opened from a course's page: the course the screen says.
         let second = db::require_course_id(&mut conn, 2).unwrap();
-        crate::courses::add_lesson(&mut conn, second, lesson).unwrap();
         let from_second = PracticeContext { source: "course".into(), course_id: Some(second) };
         let plan = practice::session_with(&mut conn, lesson, Some(&from_second)).unwrap();
         assert_eq!(plan.context, from_second, "the plan carries its context back to the screen");

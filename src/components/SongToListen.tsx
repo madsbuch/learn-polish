@@ -18,9 +18,11 @@ import { Lyrics } from "./Lyrics";
 import type { SongId } from "../lib/types";
 
 /** The take of a song to listen to: its favourite take, once it is ready. */
-export function useSongItem(songId: SongId | null): { item: QueueItem | null; loading: boolean } {
+export function useSongItem(songId: SongId | null): { item: QueueItem | null; loading: boolean; listed: boolean } {
   const [item, setItem] = useState<QueueItem | null>(null);
   const [loading, setLoading] = useState(songId !== null);
+  /** In the library: made, or being made (a script not yet recorded is not). */
+  const [listed, setListed] = useState(false);
   useEffect(() => {
     if (songId === null) return;
     let cancelled = false;
@@ -30,6 +32,7 @@ export function useSongItem(songId: SongId | null): { item: QueueItem | null; lo
         if (cancelled) return;
         const song = songs.find((entry) => entry.id === songId);
         const track = song && song.status === "ready" ? preferredTake(song) : null;
+        setListed(song !== undefined);
         setItem(song && track ? { song, track } : null);
       })
       .catch(() => setItem(null))
@@ -38,7 +41,7 @@ export function useSongItem(songId: SongId | null): { item: QueueItem | null; lo
       cancelled = true;
     };
   }, [songId]);
-  return { item, loading };
+  return { item, loading, listed };
 }
 
 /** Plays or pauses one song, starting it if something else is playing. */
@@ -52,14 +55,18 @@ export function playSong(item: QueueItem, isCurrent: boolean) {
  * the point is to understand it by ear.
  */
 export function SongToListen({ songId }: { songId: SongId }) {
-  const { item, loading } = useSongItem(songId);
+  const { item, loading, listed } = useSongItem(songId);
   const player = usePlayer();
   const [showLyrics, setShowLyrics] = useState(false);
   if (loading) return null;
   if (!item) {
     return (
       <Card>
-        <Text tone="dim">The song is still being made — Suno usually needs 2–4 minutes.</Text>
+        <Text tone="dim">
+          {listed
+            ? "It is still being made — a song usually needs 2–4 minutes."
+            : "Not recorded yet: it is made once an OpenRouter key is set in Settings → AI."}
+        </Text>
       </Card>
     );
   }

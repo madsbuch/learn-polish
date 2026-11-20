@@ -49,7 +49,16 @@
     },
     {
       "id": "TODAY-8",
-      "text": "A mastered lesson, or one listed only by a closed course, is never due."
+      "text": "A mastered lesson, or one in a closed course, is never due.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A mastered lesson, or one listed only by a closed course, is never due.",
+          "reason": "A lesson is in one course now, so no other course can keep it in play.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "TODAY-9",

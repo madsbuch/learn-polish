@@ -31,10 +31,12 @@ item and id for id; a requirement added or changed here is ported there.
 
 ## What's in it
 
-The app starts with one small **First steps / Pierwsze kroki** demo course:
-12 essential words and phrases, four simple sentences, and a six-line
-introduction dialogue, arranged into four short drills. It works offline
-without an API key.
+The app starts with one small **First steps / Pierwsze kroki** demo course
+with a lesson of every type: a dialogue, words, typing, memory cards,
+pictures, a scene, sentences, gaps, a story, a study lesson, a listening
+lesson and a writing lesson, on saying hello and introducing yourself. The
+drills work offline without an API key; the lessons that need pictures, a
+recording or an AI model say so until a key is set, and then make them.
 
 The demo is installed once and belongs to you: rename, edit or delete it.
 Deleting it is permanent; the app never refills it. Ask the tutor for more
@@ -103,10 +105,11 @@ Three levels:
 
 Giving a course words, sentences or a dialogue cuts them into drills — the
 dialogue, words in eights, sentences in fives — skipping anything the course
-already teaches. A lesson can be listed in **several courses** (one lesson, one
-schedule, shown in each); it can be moved between courses, and taking it out
-of its last course deletes it, with its words and their history. On a lesson's
-page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it.
+already teaches. A lesson is in **exactly one course** (*Other lessons* counts
+as one) and is never moved: for the same practice elsewhere, the tutor makes a
+new lesson there. Taking a lesson out of its course deletes it, with its words
+and their history. (Before version 18 a lesson could be listed in several
+courses; upgrading keeps it in the course it was first added to.)
 Grammar, culture, listening and writing lessons belong in the course whose
 material they use; one that fits no course goes in *Other lessons*, a single
 folder at the bottom of the course list that never ends. A song remembers the course whose words it uses, and
@@ -221,12 +224,12 @@ button to ask again.
 
 | Tool | What it does |
 |---|---|
-| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), study lessons on the grammar it uses, sentence drills, and a writing lesson last |
+| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), study lessons on the grammar it uses, sentence drills, and a writing lesson last; the tutor then mixes in other lesson types where they fit |
 | `create_study_lesson`, `create_drill_lesson`, `create_listening_lesson`, `create_writing_lesson` | Writes a study lesson with objectives, one drill in a chosen format, a listening lesson for a song, or a writing situation with goals |
 | `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study lessons (new or existing) |
 | `list_lessons`, `get_lesson`, `update_lesson`, `delete_lesson`, `schedule_lesson`, `suggest_lesson` | Sees and manages lessons, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, the demo included |
-| `move_lesson`, `add_lesson_to_course`, `remove_lesson_from_course`, `order_course_lessons` | Rearranges lessons between and within courses |
+| `remove_lesson_from_course`, `order_course_lessons` | Takes a lesson out of its course (deleting it) and orders a course's lessons |
 | `update_practice_settings` | Lessons a day |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `get_song`, `delete_songs` | Has a song written and sung (filed in the course it fits); reads a song's lyrics to file it; tidies up songs |
@@ -607,7 +610,7 @@ never overwrites edits or returns after deletion.
 
 The former collection is kept under `src-tauri/test-fixtures/retired-courses/`
 only for regression tests. Production builds exclude it. Tests verify that
-fresh installs have exactly one demo, deleting it is respected, and upgrading
+fresh installs have exactly one demo with a lesson of every type, deleting it is respected, and upgrading
 removes only unchanged default courses while preserving customized data.
 
 ---

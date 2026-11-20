@@ -348,14 +348,9 @@ export const api = {
   lessonSetPeriod: (lessonId: LessonId, periodDays: number) =>
     call(LessonSchema, "lesson_set_period", { lessonId, periodDays }),
   lessonDelete: (lessonId: LessonId) => run("lesson_delete", { lessonId }),
-  /** A challenge: needed to master its courses, not to complete them. */
+  /** A challenge: needed to master its course, not to complete it. */
   lessonSetChallenge: (lessonId: LessonId, challenge: boolean) =>
     call(LessonSchema, "lesson_set_challenge", { lessonId, challenge }),
-  lessonAddToCourse: (lessonId: LessonId, courseId: CourseId) =>
-    run("lesson_add_to_course", { lessonId, courseId }),
-  /** True when it was the lesson's last course, so the lesson was deleted. */
-  lessonRemoveFromCourse: (lessonId: LessonId, courseId: CourseId) =>
-    call(z.boolean(), "lesson_remove_from_course", { lessonId, courseId }),
   /** The listening lesson for a song, made on first ask. */
   lessonForSong: (songId: SongId) =>
     call(LessonSchema, "lesson_for_song", { songId }),

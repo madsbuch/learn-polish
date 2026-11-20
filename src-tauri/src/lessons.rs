@@ -71,7 +71,8 @@ pub struct Lesson {
     pub course_id: Option<CourseId>,
     /// That course's title.
     pub course_title: Option<String>,
-    /// Every course that lists it.
+    /// The course that lists it, as a list (a lesson is in one course; none
+    /// only while it is being made or deleted).
     pub course_ids: Vec<CourseId>,
     /// Who made it: "starter" (came with the app) | "tutor" | "you".
     /// Informational only — every lesson can be edited and deleted.
@@ -144,7 +145,7 @@ pub struct LessonDetail {
     pub sentences: Vec<(String, String)>,
     /// The last check-in's feedback, if any.
     pub last_feedback: Option<String>,
-    /// The courses that list it: (id, English title, Polish title).
+    /// Its course, as a list: (id, English title, Polish title).
     pub courses: Vec<(CourseId, String, String)>,
     /// A conversation drill's dialogue.
     pub lines: Vec<crate::models::DialogueLine>,
@@ -225,8 +226,8 @@ fn insert(conn: &mut Conn, lesson: NewLesson) -> Result<LessonId> {
         .get_result(conn)?)
 }
 
-/// Completes lesson rows with what lives elsewhere: the courses that list
-/// them (the first one also by title) and how many items they own.
+/// Completes lesson rows with what lives elsewhere: the course that lists
+/// them (also by title) and how many items they own.
 fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
     let ids: Vec<LessonId> = rows.iter().map(|r| r.id).collect();
     let today = db::today(conn);
@@ -917,7 +918,7 @@ pub fn create_writing(conn: &mut Conn, input: NewWriting, origin: &str) -> Resul
 /// A listening lesson: listen to a song, then the examiner asks about it.
 /// One per song — asking again returns the existing lesson.
 /// It is filed in `course` if given, else in the course the song was written
-/// for, else in "Other lessons". Like any lesson, it can be moved or shared later.
+/// for, else in "Other lessons".
 pub fn create_listening(
     conn: &mut Conn,
     song_id: SongId,

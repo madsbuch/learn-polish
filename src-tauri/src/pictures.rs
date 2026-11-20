@@ -420,6 +420,10 @@ pub fn draw_missing_in_background(app: &tauri::AppHandle) {
     let lessons: Vec<LessonId> = {
         let mut guard = db.lock();
         let conn = &mut *guard;
+        // Without a key nothing can be drawn: the lessons wait and say so.
+        if crate::ai::api_key(conn).is_err() {
+            return;
+        }
         let all: Vec<LessonId> =
             lessons::table.filter(lessons::lesson_type.eq("pictures")).select(lessons::id).load(conn).unwrap_or_default();
         all.into_iter().filter(|id| crate::sync::written_here(conn, "lessons", &id.to_string())).collect()

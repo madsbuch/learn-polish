@@ -40,7 +40,16 @@
     },
     {
       "id": "TUTOR-3",
-      "text": "The tutor can create a single lesson of every type except a dialogue, which is made as part of a course, and can list, read, update, delete, move, reorder and reschedule lessons."
+      "text": "The tutor can create a single lesson of every type except a dialogue, which is made as part of a course, and can list, read, update, delete, reorder and reschedule lessons.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The tutor can create a single lesson of every type except a dialogue, which is made as part of a course, and can list, read, update, delete, move, reorder and reschedule lessons.",
+          "reason": "A lesson can no longer be moved to another course.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "TUTOR-4",

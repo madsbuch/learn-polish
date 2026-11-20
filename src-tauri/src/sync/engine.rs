@@ -1160,7 +1160,8 @@ pub fn digest_differences(a: &Digest, b: &Digest) -> Vec<String> {
 /// The rule: settings and the vault's own lists never count (a fresh
 /// install has preferences, and API keys are re-shared by the vault), and
 /// neither does the demo course as it was installed — its course row, its
-/// built-in lessons, and their words, sentences, lines and course links.
+/// built-in lessons, and their words, sentences, lines, scene, story and
+/// course links, and its episode while unrecorded.
 /// Everything else does: any course, lesson or word the learner or the
 /// tutor made, and any practice at all — of the demo too, since that lives
 /// in reviews, the XP log and the day log, which always count.
@@ -1177,6 +1178,9 @@ fn join_exempt(table: &str) -> Option<String> {
         "lessons" => format!("id IN ({lessons})"),
         "words" | "sentences" | "conversation_lines" => format!("lesson_id IN ({lessons})"),
         "course_lessons" => format!("course_id IN ({course}) AND lesson_id IN ({lessons})"),
+        "scenes" | "scene_spots" | "stories" | "story_panels" => format!("lesson_id IN ({lessons})"),
+        // Its episode, while it is still the unrecorded script it came with.
+        "songs" => format!("status = 'draft' AND id IN (SELECT song_id FROM lessons WHERE id IN ({lessons}))"),
         _ => return None,
     })
 }

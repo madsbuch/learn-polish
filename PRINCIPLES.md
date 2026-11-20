@@ -63,6 +63,8 @@ app's owner; change them only on their word.
 10. **One-off lessons live in one place.** A lesson belongs in the course whose
    material it uses — grammar and culture included. One that fits no course
    goes in *Other lessons*, a single folder at the bottom of the course list.
+   A lesson is in exactly one course and is never moved: the same practice
+   elsewhere is a new lesson there.
 
 11. **Everything made is recreatable.** For each song or podcast, enough is
     kept to rebuild the exact prompt that made it.

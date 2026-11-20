@@ -169,7 +169,7 @@ mod tests {
         let mut conn = db::open(&path("released")).unwrap();
         assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
         assert_eq!(courses::table.select(courses::slug).first::<String>(&mut conn).unwrap(), crate::demo_course::SLUG);
-        assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 12);
+        assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 31, "the demo's words");
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
     }
 
@@ -186,7 +186,13 @@ mod tests {
         let shared = course(&mut conn, "shopping");
         let shared_lesson = practice_lessons::for_course(&mut conn, shared).unwrap()[0].id;
         let own = crate::courses::create_empty(&mut conn, "My practice", "Made by me").unwrap();
-        crate::courses::add_lesson(&mut conn, own, shared_lesson).unwrap();
+        // Shared, as a lesson could be before version 18 (which runs this
+        // before it takes a lesson off all but one of its courses).
+        diesel::sql_query("DROP INDEX course_lessons_one_course").execute(&mut conn).unwrap();
+        diesel::insert_into(course_lessons::table)
+            .values((course_lessons::course_id.eq(own), course_lessons::lesson_id.eq(shared_lesson), course_lessons::ord.eq(1)))
+            .execute(&mut conn)
+            .unwrap();
         let changed_word = course(&mut conn, "travel");
         let word = schema::course_words::table.filter(schema::course_words::course_id.eq(changed_word)).select(schema::course_words::id).first::<WordId>(&mut conn).unwrap();
         diesel::update(words::table.find(word)).set(words::en.eq("my edited translation")).execute(&mut conn).unwrap();
@@ -209,5 +215,8 @@ mod tests {
         let mut conn = db::open(&path("custom")).unwrap();
         assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 8);
         assert_eq!(courses::table.filter(courses::slug.eq(crate::demo_course::SLUG)).count().get_result::<i64>(&mut conn).unwrap(), 1);
+        // Opening it again upgrades it: the shared lesson keeps one of its courses.
+        assert_eq!(course_lessons::table.filter(course_lessons::lesson_id.eq(shared_lesson)).count().get_result::<i64>(&mut conn).unwrap(), 1);
+        assert!(practice_lessons::load(&mut conn, shared_lesson).is_ok());
     }
 }

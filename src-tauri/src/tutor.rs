@@ -82,7 +82,10 @@ The app:
   to hear the theme, where each line answers or reacts to the one before (the learner is asked \
   what comes next); 15–30 words and 8–12 short sentences; one or two short study lessons on the \
   grammar the dialogue uses; and a writing lesson where the learner plays out the course's \
-  situation. The app orders and varies it. Afterwards, offer a song — don't make one unasked. \
+  situation. The app orders and varies it. Then mix in other lesson types where the theme \
+  suits them (pictures or a scene for a place full of things, a story, gaps, memory cards), \
+  made with their own tools and the course's course_id: a course should practise in varied \
+  ways, with no set number of each. Afterwards, offer a song — don't make one unasked. \
   To grow a course, add to it rather than making a new one.
 - Courses are made to be finished: the learner completes one by passing each lesson once, and \
   masters it when every lesson has full mastery points, earned by passing it again — spaced \
@@ -109,7 +112,8 @@ The app:
 - Grammar, culture, listening and writing lessons belong in the course whose material they \
   explain or use: the accusative in the bakery course, a logician's podcast in the logic course. \
   Give their course_id. Only a lesson that truly fits no course goes in \"Other lessons\" (the \
-  folder for one-offs, which never ends); offer to move those to a course when one fits.
+  folder for one-offs, which never ends). A lesson is in one course only and is never moved: \
+  for one in another course, make a new lesson there.
 - Culture and facts (cities, history, customs): write the study lesson from Wikipedia — wiki_search, \
   wiki_read — and attach the article to the lesson with attach_source (existing lessons too). \
   Keep to lasting facts; name current officeholders only \"as of <year>\". Give the lesson a \
@@ -138,8 +142,7 @@ The app:
 - Songs cost the learner credits: one per request. Give a new song or podcast the course it \
   fits (course_id): it is filed there, with its listening lesson. Put the course's level and the \
   words it should use in requirements — the songwriter writes at the level it is given (a \
-  beginner's when none is). To sort older ones, read their lyrics with get_song and move their \
-  lesson with move_lesson.
+  beginner's when none is).
 - You have full control over songs and podcasts. make_song and make_podcast write and make one \
   in one go. When it has to meet something — words from a course (get_course for them), \
   grammar, line length, a structure — draft it first (draft_song, draft_podcast) with those \
@@ -296,8 +299,7 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
         unsorted = match unsorted {
             0 => String::new(),
             n => format!(
-                "; {n} lesson{} in \"Other lessons\" with no course — when it fits the \
-                 conversation, offer to file them in the course they belong to",
+                "; {n} lesson{} in \"Other lessons\" with no course",
                 if n == 1 { " is" } else { "s are" }
             ),
         },
@@ -871,37 +873,13 @@ pub fn tool_definitions() -> Vec<Tool> {
             }),
         ),
         tool(
-            "add_lesson_to_course",
-            "Rearranging your courses…",
-            "List a lesson in another course too. It stays one lesson — one schedule, one history — shown in each course.",
-            json!({
-                "type": "object",
-                "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" }, "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
-                "required": ["lesson_id", "course_id"]
-            }),
-        ),
-        tool(
             "remove_lesson_from_course",
             "Rearranging your courses…",
-            "Take a lesson out of a course. If no other course lists it, the lesson is deleted with its words, sentences and history — only after the learner confirmed that.",
+            "Take a lesson out of its course. A lesson is in one course only, so this deletes it with its words, sentences and history — only after the learner confirmed that.",
             json!({
                 "type": "object",
                 "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" }, "course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["lesson_id", "course_id"]
-            }),
-        ),
-        tool(
-            "move_lesson",
-            "Rearranging your courses…",
-            "Move a lesson from one course to another; its words and history go with it.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
-                    "from_course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
-                    "to_course_id": { "type": "string", "pattern": "^crs_[0-7][0-9a-hjkmnp-tv-z]{25}$" }
-                },
-                "required": ["lesson_id", "from_course_id", "to_course_id"]
             }),
         ),
         tool(
@@ -1372,13 +1350,6 @@ struct LessonArg {
 struct MembershipArgs {
     lesson_id: LessonId,
     course_id: CourseId,
-}
-
-#[derive(Deserialize)]
-struct MoveArgs {
-    lesson_id: LessonId,
-    from_course_id: CourseId,
-    to_course_id: CourseId,
 }
 
 #[derive(Deserialize)]
@@ -2182,44 +2153,16 @@ fn run_tool_steps(conn: &mut Conn, name: &str, arguments: &str) -> Result<Outcom
             let title = lessons::delete(conn, args.lesson_id)?;
             Ok(Outcome::acted(json!({ "deleted": title }), "lessonDeleted", format!("Deleted “{title}”"), None))
         }
-        "add_lesson_to_course" => {
-            let args: MembershipArgs = parse(arguments)?;
-            courses::add_lesson(conn, args.course_id, args.lesson_id)?;
-            let lesson = lessons::load(conn, args.lesson_id)?;
-            let course = courses::require_course(conn, args.course_id)?;
-            Ok(Outcome::acted(
-                json!({ "lesson": lesson_json(&lesson) }),
-                "courseUpdated",
-                format!("“{}” is now also in “{course}”", lesson.title),
-                Some(args.course_id),
-            ))
-        }
         "remove_lesson_from_course" => {
             let args: MembershipArgs = parse(arguments)?;
             let title = lessons::load(conn, args.lesson_id)?.title;
             let course = courses::require_course(conn, args.course_id)?;
-            let deleted = courses::remove_lesson(conn, args.course_id, args.lesson_id)?;
+            courses::remove_lesson(conn, args.course_id, args.lesson_id)?;
             Ok(Outcome::acted(
-                json!({ "removed": title, "lesson_deleted": deleted }),
-                if deleted { "lessonDeleted" } else { "courseUpdated" },
-                if deleted {
-                    format!("Deleted “{title}” (it was only in “{course}”)")
-                } else {
-                    format!("Took “{title}” out of “{course}”")
-                },
-                if deleted { None } else { Some(args.course_id) },
-            ))
-        }
-        "move_lesson" => {
-            let args: MoveArgs = parse(arguments)?;
-            courses::move_lesson(conn, args.lesson_id, args.from_course_id, args.to_course_id)?;
-            let lesson = lessons::load(conn, args.lesson_id)?;
-            let course = courses::require_course(conn, args.to_course_id)?;
-            Ok(Outcome::acted(
-                json!({ "lesson": lesson_json(&lesson) }),
-                "courseUpdated",
-                format!("Moved “{}” to “{course}”", lesson.title),
-                Some(args.to_course_id),
+                json!({ "removed": title, "lesson_deleted": true }),
+                "lessonDeleted",
+                format!("Deleted “{title}” from “{course}”"),
+                None,
             ))
         }
         "order_course_lessons" => {

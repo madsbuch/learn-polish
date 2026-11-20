@@ -211,7 +211,9 @@ fn random_edit(rng: &mut StdRng, d: &mut Device, n: usize) {
             exec(d, &format!("INSERT OR IGNORE INTO achievements (code, unlocked_day, unlocked_at) VALUES ('{code}', {n}, {now})"));
         }
         12 => {
-            // A lesson listed in a second course, or taken out of one.
+            // A lesson listed in a course (ignored where it is in one already:
+            // the unique index; two devices listing it apart clash when they
+            // sync, and the lower key stays), or taken out of one.
             let course = pick(rng, &ids(d, "SELECT id FROM courses"));
             let lesson = pick(rng, &ids(d, "SELECT id FROM lessons"));
             if let (Some(course), Some(lesson)) = (course, lesson) {
@@ -399,11 +401,14 @@ fn two_fresh_installs_converge_without_duplicates() {
     assert_identical(&mut devices);
     for d in devices.iter_mut() {
         assert_eq!(courses(d), 1);
-        assert_eq!(count(d, "SELECT count(*) AS n FROM lessons"), 4);
-        assert_eq!(count(d, "SELECT count(*) AS n FROM words"), 12);
-        assert_eq!(count(d, "SELECT count(*) AS n FROM sentences"), 4);
+        let types = crate::convert::count(crate::lesson_types::REGISTRY.len());
+        assert_eq!(count(d, "SELECT count(*) AS n FROM lessons"), types);
+        assert_eq!(count(d, "SELECT count(*) AS n FROM words"), 31);
+        assert_eq!(count(d, "SELECT count(*) AS n FROM sentences"), 10);
         assert_eq!(count(d, "SELECT count(*) AS n FROM conversation_lines"), 6);
-        assert_eq!(count(d, "SELECT count(*) AS n FROM course_lessons"), 4);
+        assert_eq!(count(d, "SELECT count(*) AS n FROM course_lessons"), types);
+        assert_eq!(count(d, "SELECT count(*) AS n FROM story_panels"), 4);
+        assert_eq!(count(d, "SELECT count(*) AS n FROM songs"), 1);
         // Each kept its own seeding marks: they are about the install.
         assert_eq!(db::get_setting(&mut d.conn, crate::demo_course::SEEDED).unwrap().as_deref(), Some("1"));
         // And neither counts the demo as the learner's data.
@@ -449,14 +454,14 @@ fn the_same_word_added_on_two_devices_ends_up_as_one() {
     let (mut a, mut b) = (device(), device());
     let lesson: LessonId = words::table.select(words::lesson_id).first(&mut a.conn).unwrap();
     let (low, high) = (WordId::at(1, 0), WordId::at(2, 0));
-    exec(&mut a, &format!("INSERT INTO words (id, lesson_id, ord, pl, en, pos) VALUES ('{high}', '{lesson}', 99, 'kot', 'cat', 'n')"));
-    exec(&mut b, &format!("INSERT INTO words (id, lesson_id, ord, pl, en, pos) VALUES ('{low}', '{lesson}', 99, 'kot', 'a cat', 'n')"));
+    exec(&mut a, &format!("INSERT INTO words (id, lesson_id, ord, pl, en, pos) VALUES ('{high}', '{lesson}', 99, 'pies', 'dog', 'n')"));
+    exec(&mut b, &format!("INSERT INTO words (id, lesson_id, ord, pl, en, pos) VALUES ('{low}', '{lesson}', 99, 'pies', 'a dog', 'n')"));
     // A's word has history, which goes with it.
     exec(&mut a, &format!("INSERT INTO reviews VALUES ('word', '{high}', 1, 1, 2.5, 1, 0, 1)"));
     let mut devices = [a, b];
     settle(&mut devices);
     assert_identical(&mut devices);
-    let kept: Vec<WordId> = words::table.filter(words::pl.eq("kot")).select(words::id).load(&mut devices[0].conn).unwrap();
+    let kept: Vec<WordId> = words::table.filter(words::pl.eq("pies")).select(words::id).load(&mut devices[0].conn).unwrap();
     assert_eq!(kept, vec![low], "the lower id keeps its place");
     assert_eq!(count(&mut devices[0], "SELECT count(*) AS n FROM reviews"), 0);
 }

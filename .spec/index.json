@@ -22,7 +22,6 @@
       "want": "my keys and my data to stay on my devices",
       "soThat": "nobody else holds them",
       "requirements": [
-        "#POL-4",
         "#POL-5",
         "#DATA-1"
       ]

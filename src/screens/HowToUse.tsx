@@ -94,7 +94,8 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
         <P>
           A <strong>course</strong> is a theme, and lists its lessons in order. A <strong>lesson</strong> is one thing
           to do, of one of the types below: a <em>drill</em> you tap through, or a <em>conversation</em> with the
-          examiner (or, for writing, a partner).
+          examiner (or, for writing, a partner). Each lesson is in one course; the first course, First steps, has one
+          of every type.
         </P>
         <P>
           Every lesson comes back now and then, so you meet it again before you forget it: that return is its{" "}
@@ -186,8 +187,9 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           conversation aloud.
         </P>
         <P>
-          The AI features need an OpenRouter key (Settings → AI), and songs a kie.ai key (Settings → Songs). The demo course and
-          everything already downloaded work without them, offline.
+          The AI features need an OpenRouter key (Settings → AI), and songs a kie.ai key (Settings → Songs). Lessons
+          that need them say so until they are set; the drills, and everything already downloaded, work without them,
+          offline.
         </P>
       </Part>
     </Screen>

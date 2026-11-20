@@ -42,7 +42,12 @@ this file says why.
 - **Unique columns** (a word's `(lesson_id, da/pl)`): a clash keeps the lower
   id; the other row is deleted everywhere. So a unique column must never be
   made from something two devices can make alike by chance (a time, a
-  position): a learner's course's slug is its id.
+  position): a learner's course's slug is its id. A lesson's course
+  (`course_lessons(lesson_id)`, schema 18) is unique as well: the app never
+  lists a lesson a second time, so a clash needs two devices to list one
+  lesson in two courses before they sync; the listing with the lower key
+  (course id first) stays and the other is dropped. That is acceptable: only
+  the listing goes, never the lesson or its history.
 - **Same schema only.** Peers sync only when their `SCHEMA_VERSION` is equal,
   and debug and release builds never sync with each other.
 

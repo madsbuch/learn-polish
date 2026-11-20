@@ -57,7 +57,11 @@
       "status": "deprecated",
       "deprecation": {
         "reason": "It can not, a lesson van be in a single course as that makes integrity easier.",
-        "date": "2026-11-20"
+        "date": "2026-11-20",
+        "replacedBy": [
+          "#CRS-18",
+          "#CRS-19"
+        ]
       }
     },
     {
@@ -66,12 +70,24 @@
       "status": "deprecated",
       "deprecation": {
         "reason": "It can not. A new lesson can be created in the other course.",
-        "date": "2026-11-20"
+        "date": "2026-11-20",
+        "replacedBy": [
+          "#CRS-18"
+        ]
       }
     },
     {
       "id": "CRS-7",
-      "text": "Taking a lesson out of the last course that lists it deletes the lesson, with its words and their history."
+      "text": "Taking a lesson out of its course deletes the lesson, with its words and their history.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Taking a lesson out of the last course that lists it deletes the lesson, with its words and their history.",
+          "reason": "A lesson is in one course now, so its course is always its last.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "CRS-8",
@@ -113,6 +129,14 @@
       "id": "CRS-17",
       "text": "A new course should strive for diversity of lesson types",
       "level": "should"
+    },
+    {
+      "id": "CRS-18",
+      "text": "Every lesson is in exactly one course; Other lessons counts as one."
+    },
+    {
+      "id": "CRS-19",
+      "text": "Upgrading takes a lesson listed in several courses off every course but the one it was first added to."
     }
   ],
   "related": [

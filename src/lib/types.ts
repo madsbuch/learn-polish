@@ -441,10 +441,10 @@ export const LessonSchema = z.object({
   title: z.string(),
   summary: z.string(),
   complexity: ComplexitySchema,
-  /** The first course it was listed in, for display. */
+  /** Its course. */
   courseId: CourseIdSchema.nullable(),
   courseTitle: z.string().nullable(),
-  /** Every course that lists it. */
+  /** Its course, as a list (a lesson is in one course). */
   courseIds: z.array(CourseIdSchema),
   /** Who made it; informational — every lesson can be edited and deleted. */
   origin: z.enum(["starter", "tutor", "you"]),
@@ -528,7 +528,7 @@ export const LessonDetailSchema = LessonSchema.extend({
   words: z.array(z.tuple([z.string(), z.string()])),
   sentences: z.array(z.tuple([z.string(), z.string()])),
   lastFeedback: z.string().nullable(),
-  /** The courses that list it: [id, English title, Polish title]. */
+  /** Its course, as a list: [id, English title, Polish title]. */
   courses: z.array(z.tuple([CourseIdSchema, z.string(), z.string()])),
   /** A conversation drill's dialogue. */
   lines: z.array(DialogueLineSchema),

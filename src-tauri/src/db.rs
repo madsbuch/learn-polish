@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 17;
+pub(crate) const SCHEMA_VERSION: i64 = 18;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -776,6 +776,8 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     // Version 17: a course kept ready offline (offline.rs). No course is
     // marked: the learner switches it on, course by course.
     add_column(conn, "courses", "offline_at", "INTEGER")?;
+    // Version 18: a lesson is in exactly one course (courses::add_lesson).
+    one_course_per_lesson(conn)?;
     // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
     conn.batch_execute(
         "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);
@@ -792,6 +794,54 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     // a bump of SCHEMA_VERSION) gets its triggers re-made by this.
     conn.transaction::<_, Error, _>(crate::sync::init)?;
     conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+    Ok(())
+}
+
+/// A lesson listed in several courses (allowed before version 18) keeps the
+/// course it was first added to and is taken off the others, with ordinary
+/// deletes, so sync carries them as tombstones; its schedule, mastery and
+/// history are the lesson's own and stay. Then a unique index keeps it so.
+///
+/// No row records when a lesson was listed (sync keeps only a row's latest
+/// version, and reordering a course rewrites it), so "first added" is read
+/// from what every device has alike: a lesson is made in a course that
+/// exists when it is made, so the course made last at or before the lesson
+/// is taken; failing that (a lesson older than all its courses) the course
+/// made first; ties by the lower course id. Every device decides the same.
+///
+/// Retiring the old built-in courses looks at whether their lessons are
+/// shared (starter_retirement.rs): a database that has not had that done yet
+/// has it done first, so a lesson shared with the learner's own course is
+/// still seen as theirs.
+fn one_course_per_lesson(conn: &mut Conn) -> Result<()> {
+    let shared = diesel::sql_query(
+        "SELECT count(*) AS n FROM (SELECT lesson_id FROM course_lessons GROUP BY lesson_id HAVING count(*) > 1)",
+    )
+    .get_result::<legacy::Count>(conn)?
+    .n;
+    if shared > 0 {
+        crate::starter_retirement::run(conn)?;
+        conn.transaction::<_, Error, _>(|conn| {
+            conn.batch_execute(
+                "DELETE FROM course_lessons WHERE (course_id, lesson_id) IN (
+                     SELECT course_id, lesson_id FROM (
+                         SELECT cl.course_id, cl.lesson_id, row_number() OVER (
+                             PARTITION BY cl.lesson_id
+                             ORDER BY coalesce(c.created_at, 0) > coalesce(l.created_at, 0),
+                                      CASE WHEN coalesce(c.created_at, 0) <= coalesce(l.created_at, 0)
+                                           THEN -coalesce(c.created_at, 0) ELSE coalesce(c.created_at, 0) END,
+                                      cl.course_id
+                         ) AS n
+                         FROM course_lessons cl
+                         LEFT JOIN courses c ON c.id = cl.course_id
+                         LEFT JOIN lessons l ON l.id = cl.lesson_id
+                     ) WHERE n > 1
+                 );",
+            )?;
+            Ok(())
+        })?;
+    }
+    conn.batch_execute("CREATE UNIQUE INDEX IF NOT EXISTS course_lessons_one_course ON course_lessons(lesson_id);")?;
     Ok(())
 }
 
@@ -1157,7 +1207,7 @@ fn flatten_lesson_types(conn: &mut Conn) -> Result<()> {
     Ok(())
 }
 
-fn table_exists(conn: &mut Conn, table: &str) -> Result<bool> {
+pub(crate) fn table_exists(conn: &mut Conn, table: &str) -> Result<bool> {
     let found = diesel::sql_query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
         .bind::<Text, _>(table)
         .load::<legacy::Name>(conn)?;

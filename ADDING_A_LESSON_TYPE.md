@@ -69,6 +69,9 @@ Check-in period, minutes per lesson and mastery points come with every type.
    the tutor knows it, and checks that every exercise it produces is one the
    screens know. A new check-in type needs a sample there, or the test says
    so.
+6. **Put one in the demo course** (`demo_course.rs`, for new installs only):
+   it has a lesson of every type, and its test fails until the new one is
+   there. Anything it needs a key for waits, saying so, until one is set.
 
 The tutor learns about the type on its own: its rules list every type in the
 registry with its description.

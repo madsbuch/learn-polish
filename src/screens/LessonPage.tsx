@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { LessonIcon } from "../components/LessonRow";
-import { CloseIcon, PlayerIcon, PlusIcon } from "../components/icons";
+import { PlayerIcon } from "../components/icons";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
 import { ArticleReader, Sources } from "../components/Sources";
@@ -19,7 +19,6 @@ import {
   Choice,
   ChoiceRow,
   ConfirmButton,
-  IconButton,
   Inline,
   List,
   ListItem,
@@ -27,7 +26,6 @@ import {
   Section,
   SettingRow,
   Switch,
-  Sheet,
   Spinner,
   Stack,
   Text,
@@ -38,10 +36,12 @@ import { lessonType } from "../lib/lessonTypes";
 import { useSyncReload } from "../lib/sync";
 import { MasteryPoints } from "../components/MasteryPoints";
 import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
-import type { CourseProgress, LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/types";
+import type { LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/types";
 
 /** Sections that head the page, above its columns: a scene, a story. */
 const HEADERS = ["scene", "story"];
+/** Sections whose pictures or recording a model makes, with the learner's key. */
+const MEDIA_SECTIONS = ["pictures", "scene", "story", "song"];
 
 const RESULT_TEXT = {
   pass: "Passed",
@@ -76,23 +76,26 @@ export function LessonPage({
   const [revealAll, setRevealAll] = useState(false);
   /** The level's explanation, open. */
   const [levelInfo, setLevelInfo] = useState(false);
-  /** The course picker: add the lesson to one, or move it there. */
-  const [picking, setPicking] = useState<{
-    mode: "add" | "move";
-    courses: CourseProgress[];
-  } | null>(null);
   /** A source being read, in the app's reader. */
   const [reading, setReading] = useState<WikiSource | null>(null);
   /** Adding audio players to the lesson's Polish. */
   const [addingPlayers, setAddingPlayers] = useState(false);
   /** Bumped when a source goes, so the list reloads. */
   const [sourcesVersion, setSourcesVersion] = useState(0);
+  /** Whether a key and a chat model are set, for what this lesson needs. */
+  const [ai, setAi] = useState<{ key: boolean; model: boolean } | null>(null);
 
   const reload = () =>
     api
       .lessonDetail(lessonId)
       .then(setLesson)
       .catch((cause) => setError(errorMessage(cause)));
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((settings) => setAi({ key: settings.hasApiKey, model: settings.aiModel !== "" }))
+      .catch(() => setAi(null));
+  }, []);
   useEffect(() => {
     void reload();
     // Everything done from this page is logged as practised from where it was opened.
@@ -117,25 +120,6 @@ export function LessonPage({
     ];
     if (lines.length) void api.prefetchAudio(lines).catch(() => {});
   }, [lesson]);
-
-  async function openPicker(mode: "add" | "move") {
-    try {
-      setPicking({ mode, courses: await api.getCourseProgress() });
-    } catch (cause) {
-      setError(errorMessage(cause));
-    }
-  }
-
-  async function changeCourses(action: () => Promise<unknown>) {
-    setError(null);
-    try {
-      await action();
-      setPicking(null);
-      await reload();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    }
-  }
 
   if (!lesson) {
     return (
@@ -166,6 +150,22 @@ export function LessonPage({
   const periodOptions = PERIOD_CHOICES.some((choice) => choice.value === period)
     ? PERIOD_CHOICES
     : [...PERIOD_CHOICES, { value: period, label: `${period} days` }].sort((a, b) => Number(a.value) - Number(b.value));
+
+  // What the lesson needs that is not set yet, from what its type is (a
+  // conversation talks with a model) and shows (pictures, a recording): it
+  // says so until then (DEMO-10).
+  const makesMedia = type.sections.some((name) => MEDIA_SECTIONS.includes(name));
+  const needs: string[] = [];
+  if (ai && !ai.key && makesMedia) {
+    needs.push(
+      type.sections.includes("song")
+        ? "Its recording is made once an OpenRouter key is set in Settings → AI."
+        : "Its pictures are drawn once an OpenRouter key is set in Settings → AI.",
+    );
+  }
+  if (ai && type.engine === "conversation" && (!ai.key || !ai.model)) {
+    needs.push("Its check-in is a conversation with an AI model: set an OpenRouter key and pick a model in Settings → AI.");
+  }
 
   /** One part of the page, by the name a type lists it under. */
   function section(name: string): ReactNode {
@@ -309,6 +309,7 @@ export function LessonPage({
   return (
     <Screen title={lesson.title} subtitle={lesson.courseTitle ?? undefined} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {needs.length > 0 ? <Banner>{needs.join(" ")}</Banner> : null}
 
       {/* A picture that is the lesson (a scene) heads the page, across it. */}
       {type.sections
@@ -430,74 +431,22 @@ export function LessonPage({
             </List>
           </Section>
 
-          <Section
-            title={lesson.courses.length === 1 ? "Course" : "Courses"}
-            info={
-              <p>
-                A lesson can be in several courses: it stays one lesson, with one schedule, shown in each. Its words and
-                sentences belong to the lesson and go wherever it goes. Taking it out of its last course deletes it —
-                use Delete lesson for that.
-              </p>
-            }
-          >
-            <Stack gap={2}>
+          {lesson.courses.length > 0 ? (
+            <Section
+              title="Course"
+              info={
+                <p>
+                  A lesson is in one course, and its words and sentences belong to it. For the same practice in another
+                  course, ask the tutor for a new lesson there.
+                </p>
+              }
+            >
               <List>
                 {lesson.courses.map(([id, title, titlePl]) => (
-                  <ListItem
-                    key={id}
-                    title={titlePl}
-                    subtitle={title}
-                    trailing={
-                      lesson.courses.length > 1 ? (
-                        <IconButton
-                          icon={<CloseIcon />}
-                          label={`Take it out of ${title}`}
-                          onClick={() => changeCourses(() => api.lessonRemoveFromCourse(lesson.id, id))}
-                        />
-                      ) : undefined
-                    }
-                  />
+                  <ListItem key={id} title={titlePl} subtitle={title} />
                 ))}
               </List>
-              <Inline gap={2}>
-                <div className="grow">
-                  <Button wide icon={<PlusIcon />} onClick={() => openPicker("add")}>
-                    Also in…
-                  </Button>
-                </div>
-                {lesson.courses.length === 1 ? (
-                  <div className="grow">
-                    <Button wide onClick={() => openPicker("move")}>
-                      Move to…
-                    </Button>
-                  </div>
-                ) : null}
-              </Inline>
-            </Stack>
-          </Section>
-
-          {picking ? (
-            <Sheet title={picking.mode === "add" ? "Also show it in" : "Move it to"} onClose={() => setPicking(null)}>
-              <List>
-                {picking.courses
-                  .filter((entry) => !lesson.courses.some(([id]) => id === entry.course.id))
-                  .map((entry) => (
-                    <ListItem
-                      key={entry.course.id}
-                      title={entry.course.titlePl}
-                      subtitle={entry.course.title}
-                      onClick={() =>
-                        changeCourses(async () => {
-                          await api.lessonAddToCourse(lesson.id, entry.course.id);
-                          if (picking.mode === "move") {
-                            await api.lessonRemoveFromCourse(lesson.id, lesson.courses[0][0]);
-                          }
-                        })
-                      }
-                    />
-                  ))}
-              </List>
-            </Sheet>
+            </Section>
           ) : null}
 
           <Section title="Manage">
@@ -524,7 +473,7 @@ export function LessonPage({
             <ConfirmButton
               label="Delete lesson"
               confirmLabel="Delete"
-              question="Delete this lesson, its words and its check-in history, from every course it is in?"
+              question="Delete this lesson, its words and its check-in history?"
               wide
               onConfirm={async () => {
                 try {

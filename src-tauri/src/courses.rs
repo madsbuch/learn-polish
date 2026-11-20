@@ -2,8 +2,9 @@
 //!
 //! Three levels: a **course** lists **lessons**; a drill lesson owns the
 //! **words**, sentences or dialogue lines it practises. A course reaches its
-//! words only through its lessons. A lesson may be listed in several courses;
-//! taking it out of the last one deletes it, with everything it owns.
+//! words only through its lessons. A lesson is in exactly one course (a
+//! unique index on `course_lessons(lesson_id)`; Other lessons counts as one);
+//! taking it out of its course deletes it, with everything it owns.
 //!
 //! Giving a course words, sentences or a dialogue cuts them into drills: the
 //! dialogue, words in eights, sentences in fives. Courses are created by the
@@ -168,15 +169,15 @@ pub const OPEN_ENDED: [&str; 1] = [OTHER];
 /// The built-in folders there were before Other lessons, merged into it.
 pub const OLD_FOLDERS: [&str; 3] = ["lessons", "listening", "writing"];
 
-/// Lessons only closed courses list: retired, so check-ins no longer bring
-/// them back. A lesson an open course lists too stays.
+/// Lessons in closed courses: retired, so check-ins no longer bring them back.
 pub fn retired_lessons(conn: &mut Conn) -> Result<std::collections::HashSet<LessonId>> {
-    let listed: Vec<(LessonId, Option<i64>)> = course_lessons::table
+    Ok(course_lessons::table
         .inner_join(courses::table)
-        .select((course_lessons::lesson_id, courses::closed_at))
-        .load(conn)?;
-    let open: std::collections::HashSet<LessonId> = listed.iter().filter(|(_, closed)| closed.is_none()).map(|(id, _)| *id).collect();
-    Ok(listed.into_iter().filter(|(id, closed)| closed.is_some() && !open.contains(id)).map(|(id, _)| id).collect())
+        .filter(courses::closed_at.is_not_null())
+        .select(course_lessons::lesson_id)
+        .load::<LessonId>(conn)?
+        .into_iter()
+        .collect())
 }
 
 /// A course just closed, for its celebration.
@@ -194,8 +195,7 @@ pub struct CourseClosed {
 
 /// Closes a mastered course — the learner's own celebration, and final
 /// (PRINCIPLES.md: closed is closed). It moves to the Mastered section as a
-/// trophy, stays readable, and its lessons leave play (unless an open course
-/// lists them too). Only a mastered course, and not the Other lessons
+/// trophy, stays readable, and its lessons leave play. Only a mastered course, and not the Other lessons
 /// folder, can be closed. To revisit its theme, the tutor makes a new course.
 pub fn close(conn: &mut Conn, course_id: CourseId) -> Result<CourseClosed> {
     let title = require_open_course(conn, course_id)?;
@@ -341,6 +341,8 @@ pub fn merge_old_folders(conn: &mut Conn) -> Result<()> {
                 .load(conn)?;
             for lesson in lessons {
                 ord += 1;
+                // Off the folder first: a lesson is in one course only.
+                diesel::delete(course_lessons::table.find((folder, lesson))).execute(conn)?;
                 diesel::insert_or_ignore_into(course_lessons::table)
                     .values((
                         course_lessons::course_id.eq(other),
@@ -384,9 +386,24 @@ pub fn create_empty(conn: &mut Conn, title: &str, summary: &str) -> Result<Cours
 // Membership
 // ---------------------------------------------------------------------------
 
-/// Lists a lesson in a course, at the end. Listing it again changes nothing.
+/// Lists a lesson in a course, at the end: a lesson just made, or one in no
+/// course yet. Listing it again changes nothing. A lesson is in one course
+/// only, so one already in another course is refused.
 pub fn add_lesson(conn: &mut Conn, course_id: CourseId, lesson_id: LessonId) -> Result<()> {
     require_open_course(conn, course_id)?;
+    let listed: Option<CourseId> =
+        course_lessons::table.filter(course_lessons::lesson_id.eq(lesson_id)).select(course_lessons::course_id).first(conn).optional()?;
+    match listed {
+        Some(listed) if listed == course_id => return Ok(()),
+        Some(listed) => {
+            let lesson: String = lessons::table.find(lesson_id).select(lessons::title).first(conn)?;
+            let course = require_course(conn, listed)?;
+            return Err(Error::msg(format!(
+                "A lesson is in one course only: “{lesson}” is in “{course}”. Make a new lesson in the other course instead."
+            )));
+        }
+        None => {}
+    }
     let ord = course_lessons::table
         .filter(course_lessons::course_id.eq(course_id))
         .select(max(course_lessons::ord))
@@ -412,15 +429,16 @@ pub fn add_lesson(conn: &mut Conn, course_id: CourseId, lesson_id: LessonId) -> 
     Ok(())
 }
 
-/// Takes a lesson out of a course. Out of its last course, the lesson is
-/// deleted with its words, sentences and history; returns true then.
-pub fn remove_lesson(conn: &mut Conn, course_id: CourseId, lesson_id: LessonId) -> Result<bool> {
+/// Takes a lesson out of its course: a lesson is in one course only, so this
+/// deletes it, with its words, sentences and history.
+pub fn remove_lesson(conn: &mut Conn, course_id: CourseId, lesson_id: LessonId) -> Result<()> {
     require_open_course(conn, course_id)?;
-    let removed = diesel::delete(course_lessons::table.find((course_id, lesson_id))).execute(conn)?;
-    if removed == 0 {
+    let listed: i64 = course_lessons::table.find((course_id, lesson_id)).count().get_result(conn)?;
+    if listed == 0 {
         return Err(Error::msg("That lesson is not in that course."));
     }
-    delete_if_orphaned(conn, lesson_id)
+    diesel::delete(lessons::table.find(lesson_id)).execute(conn)?;
+    Ok(())
 }
 
 fn delete_if_orphaned(conn: &mut Conn, lesson_id: LessonId) -> Result<bool> {
@@ -430,19 +448,6 @@ fn delete_if_orphaned(conn: &mut Conn, lesson_id: LessonId) -> Result<bool> {
         return Ok(true);
     }
     Ok(false)
-}
-
-/// Moves a lesson from one course to another (its words go with it).
-pub fn move_lesson(conn: &mut Conn, lesson_id: LessonId, from: CourseId, to: CourseId) -> Result<()> {
-    if from == to {
-        return Ok(());
-    }
-    require_open_course(conn, from)?;
-    conn.transaction::<_, Error, _>(|conn| {
-        add_lesson(conn, to, lesson_id)?;
-        remove_lesson(conn, from, lesson_id)?;
-        Ok(())
-    })
 }
 
 /// Puts a course's lessons in this order. Lessons left out keep their relative
@@ -847,14 +852,19 @@ pub fn arrange_path(conn: &mut Conn, course_id: CourseId) -> Result<()> {
     order_lessons(conn, course_id, &path)
 }
 
-/// Deletes a course. Its lessons go with it — and their words and history —
-/// unless another course also lists them. Returns its title.
+/// Deletes a course. Its lessons go with it, and their words and history.
+/// Returns its title.
 pub fn delete(conn: &mut Conn, course_id: CourseId) -> Result<String> {
     let title = require_course(conn, course_id)?;
     conn.transaction::<_, Error, _>(|conn| {
         let lessons: Vec<LessonId> =
             course_lessons::table.filter(course_lessons::course_id.eq(course_id)).select(course_lessons::lesson_id).load(conn)?;
         let image: Option<FileId> = courses::table.find(course_id).select(courses::image_file_id).first(conn)?;
+        // A listening lesson's episode that was never recorded (the demo's,
+        // before a key) is nothing without the lesson: it goes too.
+        let scripts: Vec<SongId> =
+            lessons::table.filter(lessons::id.eq_any(&lessons)).filter(lessons::song_id.is_not_null()).select(lessons::song_id.assume_not_null()).load(conn)?;
+        diesel::delete(songs::table.filter(songs::id.eq_any(&scripts)).filter(songs::status.eq("draft"))).execute(conn)?;
         diesel::delete(courses::table.find(course_id)).execute(conn)?;
         crate::files::delete(conn, &image.into_iter().collect::<Vec<_>>())?;
         for lesson in lessons {
@@ -912,18 +922,6 @@ pub mod commands {
         super::close(&mut db.lock(), course_id)
     }
 
-    /// Lists a lesson in another course too.
-    #[tauri::command]
-    pub async fn lesson_add_to_course(db: State<'_, Db>, lesson_id: LessonId, course_id: CourseId) -> Result<()> {
-        super::add_lesson(&mut db.lock(), course_id, lesson_id)
-    }
-
-    /// Takes a lesson out of a course; true when that was its last course and
-    /// the lesson was deleted.
-    #[tauri::command]
-    pub async fn lesson_remove_from_course(db: State<'_, Db>, lesson_id: LessonId, course_id: CourseId) -> Result<bool> {
-        super::remove_lesson(&mut db.lock(), course_id, lesson_id)
-    }
 }
 
 #[cfg(test)]

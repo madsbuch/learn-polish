@@ -1,18 +1,20 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The demo course",
-  "summary": "First steps: one small course installed once, which then belongs to the learner.",
+  "summary": "First steps: one small course with a lesson of every type, installed once, which then belongs to the learner.",
   "status": "accepted",
   "order": 1,
-  "description": "First steps / Pierwsze kroki gives a fresh install something to practise before any key is set up. Earlier versions shipped a larger built-in collection, which upgrading retires.",
+  "description": "First steps / Pierwsze kroki shows a fresh install every kind of lesson. Earlier versions shipped a larger built-in collection, which upgrading retires.",
   "stories": [
     {
       "id": "US-DEMO-1",
       "as": "someone who has just installed the app",
-      "want": "something to practise straight away",
-      "soThat": "I can try it before setting up a key",
+      "want": "a first course with every kind of lesson",
+      "soThat": "I see what the app can do",
       "requirements": [
-        "#DEMO-1"
+        "#DEMO-1",
+        "#DEMO-9",
+        "#DEMO-10"
       ]
     },
     {
@@ -70,7 +72,11 @@
     },
     {
       "id": "DEMO-9",
-      "text": "The course should show case all different lesson types."
+      "text": "The demo course has a lesson of every lesson type."
+    },
+    {
+      "id": "DEMO-10",
+      "text": "A demo lesson that needs a model or a key says so until one is set, and then works like any other lesson."
     }
   ],
   "related": [

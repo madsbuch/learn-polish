@@ -241,7 +241,7 @@ pub async fn get_course_progress(db: State<'_, Db>) -> Result<Vec<CourseProgress
 }
 
 /// Words in one course, or in all of them, whose Polish or English contains
-/// `needle`, in course order. A word in a lesson two courses list is one word.
+/// `needle`, in course order, each once.
 fn matching_words(conn: &mut Conn, course_id: Option<CourseId>, needle: &str) -> Result<Vec<Word>> {
     let mut query = course_words::table
         .inner_join(lessons::table)
@@ -344,15 +344,20 @@ pub async fn browse_sentences(db: State<'_, Db>, course_id: CourseId) -> Result<
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn ai_set_key(db: State<'_, Db>, key: String) -> Result<Settings> {
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    let key = key.trim();
-    if key.is_empty() {
-        return Err(Error::msg("The API key cannot be empty."));
-    }
-    db::set_setting(conn, "openrouter_api_key", key)?;
-    read_settings(conn)
+pub async fn ai_set_key(app: tauri::AppHandle, db: State<'_, Db>, key: String) -> Result<Settings> {
+    let settings = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(Error::msg("The API key cannot be empty."));
+        }
+        db::set_setting(conn, "openrouter_api_key", key)?;
+        read_settings(conn)?
+    };
+    // The demo's lessons were waiting for a key (DEMO-10).
+    crate::demo_course::make_media_in_background(&app);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -384,11 +389,15 @@ pub async fn keys_share_qr(db: State<'_, Db>) -> Result<String> {
 
 /// Saves the API keys from a QR code scanned off another device.
 #[tauri::command]
-pub async fn keys_import(db: State<'_, Db>, payload: String) -> Result<Settings> {
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    keyshare::import(conn, &payload)?;
-    read_settings(conn)
+pub async fn keys_import(app: tauri::AppHandle, db: State<'_, Db>, payload: String) -> Result<Settings> {
+    let settings = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        keyshare::import(conn, &payload)?;
+        read_settings(conn)?
+    };
+    crate::demo_course::make_media_in_background(&app);
+    Ok(settings)
 }
 
 #[tauri::command]

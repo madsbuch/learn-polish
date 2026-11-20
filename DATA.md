@@ -33,7 +33,10 @@ change to the schema follows these.
 - **Tables keyed by something natural keep it**: settings by key, a day's log
   by day and device (each device adds up its own: docs/SYNC.md), a speech
   clip by its cache key, achievements by code, links (a course's lessons) by
-  their pair of ids, a scene lesson's picture (`scenes`) and a story lesson's story (`stories`)
+  their pair of ids — a lesson is in exactly one course, so
+  `course_lessons(lesson_id)` is unique too (schema 18; a lesson listed in
+  several courses before kept the one it was first added to: db.rs,
+  `one_course_per_lesson`) — a scene lesson's picture (`scenes`) and a story lesson's story (`stories`)
   by its lesson.
 - **The learning log** (`attempts`, `learning_events`, schema 14) is
   append-only and per device: each row is written once, on the device that
