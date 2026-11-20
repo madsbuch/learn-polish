@@ -1,3 +1,3 @@
 [default]
-description = "Scheduling the background sync. The app's Rust code calls it; the web view never needs to."
-permissions = ["allow-schedule", "allow-cancel"]
+description = "Scheduling the background sync, and the job that finishes downloading courses kept offline. The app's Rust code calls it; the web view never needs to."
+permissions = ["allow-schedule", "allow-cancel", "allow-schedule-offline"]

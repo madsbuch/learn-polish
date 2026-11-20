@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Banner, Button, Progress, Section, SettingRow, Stack, Switch, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { onEvent } from "../lib/events";
+import { askForNotificationsToFollowDownloads } from "../lib/notifications";
 import { useSyncReload } from "../lib/sync";
 import { z } from "zod";
 import { CourseIdSchema } from "../lib/types";
@@ -65,8 +66,11 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
   const total = status.clips + status.examples + status.pictures;
   const stored = status.clipsStored + status.examplesStored + status.picturesStored;
 
-  async function act(action: () => Promise<OfflineStatus>) {
+  async function act(action: () => Promise<OfflineStatus>, downloads: boolean) {
     setError(null);
+    // The download's progress shows in a notification (Android): asked for
+    // as the learner starts one, never in the way of it.
+    if (downloads) void askForNotificationsToFollowDownloads();
     try {
       setStatus(await action());
     } catch (cause) {
@@ -105,7 +109,7 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
             <Switch
               label="Keep this course offline"
               checked={status.enabled}
-              onChange={(on) => void act(() => api.courseOfflineSet(courseId, on))}
+              onChange={(on) => void act(() => api.courseOfflineSet(courseId, on), on)}
             />
           }
         />
@@ -125,7 +129,7 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
           <Banner>Choose a chat model in Settings to have the example sentences written.</Banner>
         ) : null}
         {status.enabled && !status.ready && status.canDownload && !status.working ? (
-          <Button wide onClick={() => void act(() => api.courseOfflineDownload(courseId))}>
+          <Button wide onClick={() => void act(() => api.courseOfflineDownload(courseId), true)}>
             Download now
           </Button>
         ) : null}

@@ -27,6 +27,17 @@
         "#OFF-9",
         "#OFF-10"
       ]
+    },
+    {
+      "id": "US-OFF-3",
+      "as": "a learner downloading a course before a trip",
+      "want": "to see how far the download has come, and have it go on with the app closed",
+      "soThat": "I can put the phone away while it downloads",
+      "requirements": [
+        "#OFF-14",
+        "#OFF-17",
+        "#OFF-18"
+      ]
     }
   ],
   "requirements": [
@@ -120,7 +131,16 @@
     },
     {
       "id": "OFF-14",
-      "text": "While a course downloads on Android, the app is kept alive with a quiet notification."
+      "text": "While a course downloads on Android, the app is kept alive with a notification, so leaving the app or turning the screen off does not stop the download.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "While a course downloads on Android, the app is kept alive with a quiet notification.",
+          "reason": "The owner wants to follow a download's progress and have it go on when the app is not open.",
+          "date": "2026-11-20"
+        }
+      ]
     },
     {
       "id": "OFF-15",
@@ -129,6 +149,14 @@
     {
       "id": "OFF-16",
       "text": "Without a chosen chat model no example sentences are written, and the page says a model is needed."
+    },
+    {
+      "id": "OFF-17",
+      "text": "The notification names the course and shows how many of its items are downloaded out of how many; when the download ends it says the course is ready offline, or how many items could not be downloaded."
+    },
+    {
+      "id": "OFF-18",
+      "text": "If Android stops the app before a download ends, the course's example sentences and audio go on downloading without the app being opened, once there is a connection."
     }
   ],
   "related": [

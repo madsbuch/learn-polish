@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -16,6 +17,8 @@ import android.os.PowerManager
  * writing a reply, a song being made — so turning the screen off does not
  * freeze it half-way. A foreground service with a quiet notification, and a
  * partial wake lock so the network requests carry on with the screen off.
+ * A course downloading shows its progress there (work.rs counts it).
+ * Not stopped with the task: swiping the app away leaves the work running.
  * The app stops it as soon as the work is done.
  */
 class WorkService : Service() {
@@ -25,11 +28,13 @@ class WorkService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val label = intent?.getStringExtra(EXTRA_LABEL) ?: "Working…"
+        val done = intent?.getLongExtra(EXTRA_DONE, 0L) ?: 0L
+        val total = intent?.getLongExtra(EXTRA_TOTAL, 0L) ?: 0L
         // A service started with startForegroundService must call
         // startForeground — even when it is only being told to stop (work
         // that ended at once); otherwise Android kills the app.
         try {
-            startForegroundWith(notification(label))
+            startForegroundWith(notification(this, label, done, total))
         } catch (error: Exception) {
             // Not allowed from the background on newer Android: the work
             // runs as long as Android lets it, without the service. Said
@@ -63,31 +68,6 @@ class WorkService : Service() {
         }
     }
 
-    private fun notification(label: String): Notification {
-        val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
-            PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        }
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Working in the background", NotificationManager.IMPORTANCE_LOW)
-            )
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-        return builder
-            // A plain system icon: launcher icons (adaptive) can be refused
-            // as a notification icon, which crashes the app.
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setContentTitle("Polski")
-            .setContentText(label)
-            .setOngoing(true)
-            .setContentIntent(open)
-            .build()
-    }
-
     private fun finish() {
         running = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -113,6 +93,8 @@ class WorkService : Service() {
 
     companion object {
         const val EXTRA_LABEL = "label"
+        const val EXTRA_DONE = "done"
+        const val EXTRA_TOTAL = "total"
         const val ACTION_STOP = "com.polski.songplayer.WORK_STOP"
 
         /** In the foreground right now. */
@@ -128,5 +110,67 @@ class WorkService : Service() {
         var lastFailure: String? = null
         private const val CHANNEL_ID = "polski-work"
         private const val NOTIFICATION_ID = 7301
+        private const val RESULT_ID = 7302
+
+        /** Redraws the notification of the service running: new words, a progress bar moving. */
+        fun redraw(context: Context, label: String, done: Long, total: Long) {
+            try {
+                context.getSystemService(NotificationManager::class.java)
+                    .notify(NOTIFICATION_ID, notification(context, label, done, total))
+            } catch (error: Exception) {
+                // Notifications off: the work goes on without being seen.
+            }
+        }
+
+        /** How finished work went (a course ready offline), until it is seen. */
+        fun showResult(context: Context, text: String) {
+            try {
+                val notification = builder(context)
+                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle("Polski")
+                    .setContentText(text)
+                    .setAutoCancel(true)
+                    .setContentIntent(openApp(context))
+                    .build()
+                context.getSystemService(NotificationManager::class.java).notify(RESULT_ID, notification)
+            } catch (error: Exception) {
+                // Notifications off: the course page says the same.
+            }
+        }
+
+        fun notification(context: Context, label: String, done: Long, total: Long): Notification {
+            val builder = builder(context)
+                // A plain system icon: launcher icons (adaptive) can be refused
+                // as a notification icon, which crashes the app.
+                .setSmallIcon(android.R.drawable.ic_popup_sync)
+                .setContentTitle("Polski")
+                .setContentText(label)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(openApp(context))
+            if (total > 0) {
+                // Notifications take an Int; a course is far smaller.
+                builder.setProgress(total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), done.coerceIn(0L, total).toInt(), false)
+            }
+            return builder.build()
+        }
+
+        /** Tapping a notification opens the app where the learner left it. */
+        private fun openApp(context: Context): PendingIntent? =
+            context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
+                PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            }
+
+        private fun builder(context: Context): Notification.Builder =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val manager = context.getSystemService(NotificationManager::class.java)
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "Working in the background", NotificationManager.IMPORTANCE_LOW)
+                )
+                Notification.Builder(context, CHANNEL_ID)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(context)
+            }
     }
 }

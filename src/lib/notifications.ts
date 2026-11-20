@@ -7,6 +7,7 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { platform } from "@tauri-apps/plugin-os";
 import { z } from "zod";
 
 import { onEvent } from "./events";
@@ -134,4 +135,36 @@ export function askForNotificationsWhenWorking(): Promise<UnlistenFn> {
       await ensurePermission();
     })();
   });
+}
+
+const ASKED_FOR_DOWNLOADS = "polski.notifications.askedForDownloads";
+
+/**
+ * When the learner starts a course downloading (switching it to offline,
+ * Download now), notifications are asked for on Android, once: the
+ * download's progress shows in one, hidden on Android 13 and later without
+ * them. The download runs either way. Elsewhere nothing: a computer
+ * downloads while the app is open, with no notification.
+ */
+export async function askForNotificationsToFollowDownloads(): Promise<void> {
+  try {
+    if (platform() !== "android") return;
+  } catch {
+    return;
+  }
+  try {
+    if (localStorage.getItem(ASKED_FOR_DOWNLOADS)) return;
+    localStorage.setItem(ASKED_FOR_DOWNLOADS, "1");
+    // Asked now: not again when the download's work begins.
+    localStorage.setItem(ASKED_FOR_WORK, "1");
+  } catch {
+    // No storage: ask anyway; the system asks only once by itself.
+  }
+  try {
+    if (await isPermissionGranted()) return;
+  } catch {
+    return;
+  }
+  toast("Allow notifications to follow the download, even with Polski closed.", "info");
+  await ensurePermission();
 }

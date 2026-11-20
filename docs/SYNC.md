@@ -154,7 +154,9 @@ this file says why.
   device is in a vault with another, the instance check and one round —
   otherwise it writes nothing. The app may be open in the same process: both
   wait out the other's writes (`busy_timeout`), no transaction spans network
-  IO, and one sync runs per device at a time.
+  IO, and one sync runs per device at a time. The plugin also holds the job
+  that finishes a course kept offline downloading (`offline/background.rs`),
+  which opens the database the same way; it changes nothing for sync.
 - `snapshots.rs`: on a computer in a vault, a copy of the database a day
   (`VACUUM INTO`, marked as a copy for `instance.rs`) in `snapshots/` beside
   `backups/`: one a day for a week, then one a week to four weeks (fewer

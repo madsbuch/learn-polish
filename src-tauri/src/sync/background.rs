@@ -39,11 +39,12 @@ pub fn run_blocking(db_path: &str) -> String {
 /// app's own: the background has nobody waiting on it.
 const BUSY_TIMEOUT_MS: u32 = 15_000;
 
-/// Opens the database for a background run: a plain connection with the
+/// Opens the database for a background run (a sync, or a course kept
+/// offline finishing its download: offline/background.rs): a plain connection with the
 /// app's settings, and nothing else. Not `db::open`, which is the app's
 /// start — upgrade, courses, clean-ups, an integrity check, timings in the
 /// log — far too much to do every half hour, and all of it writes.
-fn open_light(path: &Path) -> Result<db::Conn> {
+pub(crate) fn open_light(path: &Path) -> Result<db::Conn> {
     let mut conn = db::Conn::establish(&path.to_string_lossy())?;
     conn.batch_execute(&format!(
         "PRAGMA journal_mode = WAL;

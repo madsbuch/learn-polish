@@ -319,10 +319,22 @@
           "markdownDescription": "Denies the schedule command without any pre-configured scope."
         },
         {
-          "description": "Scheduling the background sync. The app's Rust code calls it; the web view never needs to.\n#### This default permission set includes:\n\n- `allow-schedule`\n- `allow-cancel`",
+          "description": "Enables the schedule_offline command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-schedule-offline",
+          "markdownDescription": "Enables the schedule_offline command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schedule_offline command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-schedule-offline",
+          "markdownDescription": "Denies the schedule_offline command without any pre-configured scope."
+        },
+        {
+          "description": "Scheduling the background sync, and the job that finishes downloading courses kept offline. The app's Rust code calls it; the web view never needs to.\n#### This default permission set includes:\n\n- `allow-schedule`\n- `allow-cancel`\n- `allow-schedule-offline`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Scheduling the background sync. The app's Rust code calls it; the web view never needs to.\n#### This default permission set includes:\n\n- `allow-schedule`\n- `allow-cancel`"
+          "markdownDescription": "Scheduling the background sync, and the job that finishes downloading courses kept offline. The app's Rust code calls it; the web view never needs to.\n#### This default permission set includes:\n\n- `allow-schedule`\n- `allow-cancel`\n- `allow-schedule-offline`"
         }
       ]
     }

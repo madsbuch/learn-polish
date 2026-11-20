@@ -22,6 +22,13 @@
 //! are drawn by the device that made the lesson (pictures.rs, scenes.rs,
 //! stories.rs), as they always were, so two synced devices never both pay
 //! for one.
+//!
+//! On Android a download shows its course and progress in the notification
+//! that keeps the app working (work.rs), and leaving the app does not stop
+//! it. Should Android stop the app anyway, a job carries on where it left
+//! off without the app being opened (background.rs).
+
+mod background;
 
 use diesel::prelude::*;
 use serde::Serialize;
@@ -73,11 +80,53 @@ pub struct OfflineChanged {
 /// How many words' example sentences are written at once.
 const PARALLEL_EXAMPLES: usize = 3;
 
-/// Courses being downloaded right now, so one is never downloaded twice at once.
+/// Courses being downloaded right now, so one is never downloaded twice at
+/// once — by the app or by the job in the background (background.rs), which
+/// run in the same process.
 static WORKING: std::sync::Mutex<Vec<CourseId>> = std::sync::Mutex::new(Vec::new());
+
+/// Courses whose latest download in this process ran to its end, failures
+/// and all: the job in the background leaves them be. A new process (the
+/// app was stopped mid-download) has none, so it carries on with them.
+static FINISHED: std::sync::Mutex<Vec<CourseId>> = std::sync::Mutex::new(Vec::new());
 
 fn is_working(course_id: CourseId) -> bool {
     WORKING.lock().unwrap_or_else(|e| e.into_inner()).contains(&course_id)
+}
+
+fn any_working() -> bool {
+    !WORKING.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+}
+
+/// Takes a course to download; false if a download of it runs already.
+fn claim(course_id: CourseId) -> bool {
+    let mut working = WORKING.lock().unwrap_or_else(|e| e.into_inner());
+    if working.contains(&course_id) {
+        return false;
+    }
+    working.push(course_id);
+    FINISHED.lock().unwrap_or_else(|e| e.into_inner()).retain(|id| *id != course_id);
+    true
+}
+
+/// A course's download has run to its end.
+fn release(course_id: CourseId) {
+    WORKING.lock().unwrap_or_else(|e| e.into_inner()).retain(|id| *id != course_id);
+    let mut finished = FINISHED.lock().unwrap_or_else(|e| e.into_inner());
+    if !finished.contains(&course_id) {
+        finished.push(course_id);
+    }
+}
+
+fn finished(course_id: CourseId) -> bool {
+    FINISHED.lock().unwrap_or_else(|e| e.into_inner()).contains(&course_id)
+}
+
+/// The database's path, for the job in the background. Set at startup.
+static DB_PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+pub fn set_db_path(path: &std::path::Path) {
+    let _ = DB_PATH.set(path.to_path_buf());
 }
 
 /// A course's lessons with their types.
@@ -168,6 +217,19 @@ fn lacking(conn: &mut Conn, course_id: CourseId) -> Result<Lacking> {
     })
 }
 
+/// Whether a course lacks example sentences or audio there is a way to
+/// fetch: audio always (with a key), example sentences only with a chat model.
+fn needs_fetching(conn: &mut Conn, course_id: CourseId) -> bool {
+    lacking(conn, course_id).is_ok_and(|l| {
+        !l.normal.is_empty() || !l.slow.is_empty() || (!l.examples.is_empty() && crate::ai::partner_model(conn).is_ok())
+    })
+}
+
+/// A course's name, as its page shows it: for the notification.
+fn title(conn: &mut Conn, course_id: CourseId) -> String {
+    courses::table.find(course_id).select(courses::title_pl).first(conn).unwrap_or_else(|_| "A course".to_string())
+}
+
 pub fn status(conn: &mut Conn, course_id: CourseId) -> Result<OfflineStatus> {
     let enabled: Option<i64> = courses::table.find(course_id).select(courses::offline_at).first(conn)?;
     let lacking = lacking(conn, course_id)?;
@@ -214,6 +276,148 @@ pub fn kept(conn: &mut Conn) -> Result<Vec<CourseId>> {
     Ok(courses::table.filter(courses::offline_at.is_not_null()).order(courses::ord).select(courses::id).load(conn)?)
 }
 
+/// How far one step of a download has come.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+struct Step {
+    done: i64,
+    failed: i64,
+    total: i64,
+}
+
+impl Step {
+    /// Items finished either way: what the progress bar shows.
+    fn finished(&self) -> i64 {
+        self.done + self.failed
+    }
+}
+
+/// How far a course's download has come, step by step: example sentences,
+/// audio, slow audio. A step's total is what it found missing when it
+/// started (the audio's grows by what the example sentences say).
+#[derive(Debug, Default)]
+struct Tally {
+    steps: std::sync::Mutex<[Step; 3]>,
+}
+
+const EXAMPLES: usize = 0;
+const AUDIO: usize = 1;
+const SLOW_AUDIO: usize = 2;
+
+impl Tally {
+    fn set(&self, step: usize, now: Step) {
+        self.steps.lock().unwrap_or_else(|e| e.into_inner())[step] = now;
+    }
+
+    fn count(&self, step: usize, ok: bool) {
+        let mut steps = self.steps.lock().unwrap_or_else(|e| e.into_inner());
+        if ok {
+            steps[step].done += 1;
+        } else {
+            steps[step].failed += 1;
+        }
+    }
+
+    /// All steps together.
+    fn sum(&self) -> Step {
+        self.steps.lock().unwrap_or_else(|e| e.into_inner()).iter().fold(Step::default(), |sum, step| Step {
+            done: sum.done + step.done,
+            failed: sum.failed + step.failed,
+            total: sum.total + step.total,
+        })
+    }
+}
+
+/// What the learner is told when a download ends: the course is ready, or
+/// how much could not be downloaded. Nothing when neither (its pictures are
+/// still being drawn).
+fn result_line(title: &str, ready: bool, sum: Step) -> Option<String> {
+    let missing = sum.total - sum.done;
+    if ready {
+        Some(format!("{title} is ready offline"))
+    } else if missing > 0 {
+        Some(format!("{title}: {missing} couldn't be downloaded. Try again from its page."))
+    } else {
+        None
+    }
+}
+
+/// Fetches what a course lacks in example sentences and audio — its
+/// examples first, as what they say is audio to fetch too — counting in
+/// `tally` and telling `told` after each item. The database is never held
+/// while waiting on the network.
+async fn fetch(db: &Db, course_id: CourseId, tally: &Tally, told: &(dyn Fn(Step) + Sync)) {
+    let audio_of = |lacking: &Lacking| {
+        (Step { total: crate::convert::count(lacking.normal.len()), ..Step::default() }, Step {
+            total: crate::convert::count(lacking.slow.len()),
+            ..Step::default()
+        })
+    };
+    let (words, can_write) = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let Ok(lacking) = lacking(conn, course_id) else { return };
+        let (audio, slow) = audio_of(&lacking);
+        tally.set(AUDIO, audio);
+        tally.set(SLOW_AUDIO, slow);
+        (lacking.examples, crate::ai::partner_model(conn).is_ok())
+    };
+    if can_write {
+        tally.set(EXAMPLES, Step { total: crate::convert::count(words.len()), ..Step::default() });
+    }
+    told(tally.sum());
+    if !words.is_empty() && can_write {
+        use futures_util::stream::{self, StreamExt};
+        stream::iter(words)
+            .for_each_concurrent(PARALLEL_EXAMPLES, |word_id| async move {
+                let made = crate::examples::make(db, word_id).await;
+                if let Err(error) = &made {
+                    crate::diagnostics::note("background", format!("Example sentences for {word_id} failed: {error}"));
+                }
+                tally.count(EXAMPLES, matches!(made, Ok(Some(_))));
+                told(tally.sum());
+            })
+            .await;
+    }
+    // Read on its own line: the database is not held while downloading.
+    let Ok(lacking) = lacking(&mut db.lock(), course_id) else { return };
+    let (audio, slow) = audio_of(&lacking);
+    tally.set(AUDIO, audio);
+    tally.set(SLOW_AUDIO, slow);
+    told(tally.sum());
+    for (step, lines, slow) in [(AUDIO, lacking.normal, false), (SLOW_AUDIO, lacking.slow, true)] {
+        crate::speech::fill_with(db, lines, false, slow, |progress| {
+            tally.set(step, Step { done: progress.done, failed: progress.failed, total: progress.total });
+            told(tally.sum());
+        })
+        .await;
+    }
+}
+
+/// On Android, makes sure the job in the background (background.rs) would
+/// carry on with this download if the app were stopped before it ends.
+/// Tried a few times: the plugin is ready only once the screens are.
+fn keep_going_without_the_app(app: &AppHandle) {
+    if !cfg!(target_os = "android") {
+        return;
+    }
+    let Some(path) = DB_PATH.get().cloned() else { return };
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut tries = 0;
+        loop {
+            match tauri_plugin_sync_background::schedule_offline(&app, &path.to_string_lossy()) {
+                Ok(()) => return,
+                Err(error) if tries >= 10 => {
+                    crate::diagnostics::note("background", format!("Could not make sure a course's download finishes without the app: {error}"));
+                    return;
+                }
+                Err(_) => tries += 1,
+            }
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+    });
+}
+
 /// Downloads what a course lacks, in the background, unless that is going
 /// on already: its example sentences, then its audio (the examples' too),
 /// at normal speed and slowly. With `everything` (the learner asked) its
@@ -221,21 +425,19 @@ pub fn kept(conn: &mut Conn) -> Result<Vec<CourseId>> {
 /// nothing to download with, and nothing happens.
 pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: bool) {
     let db = app.state::<Db>();
-    let (needed, pictures) = {
+    let (needed, pictures, title) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         if crate::ai::api_key(conn).is_err() {
             return;
         }
-        let needed = lacking(conn, course_id).is_ok_and(|l| {
-            !l.normal.is_empty() || !l.slow.is_empty() || (!l.examples.is_empty() && crate::ai::partner_model(conn).is_ok())
-        });
+        let needed = needs_fetching(conn, course_id);
         let pictures = if everything { pictures_of(conn, course_id).unwrap_or_default() } else { Pictures::default() };
         // Panels that failed are set to be drawn again: the learner asked.
         for lesson_id in &pictures.stories {
             let _ = crate::stories::redraw(conn, *lesson_id, None);
         }
-        (needed, pictures)
+        (needed, pictures, title(conn, course_id))
     };
     // Each of these is its own piece of background work, announced as it
     // lands; none holds the database while it draws.
@@ -252,40 +454,21 @@ pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: 
         let _ = app.emit("offline://changed", OfflineChanged { course_id });
         return;
     }
-    {
-        let mut working = WORKING.lock().unwrap_or_else(|e| e.into_inner());
-        if working.contains(&course_id) {
-            return;
-        }
-        working.push(course_id);
+    if !claim(course_id) {
+        return;
     }
-    let busy = crate::work::begin(app, "Downloading a course…");
+    let busy = crate::work::begin_counted(app, &title);
+    keep_going_without_the_app(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let _busy = busy;
         let _ = app.emit("offline://changed", OfflineChanged { course_id });
         let db = app.state::<Db>();
         let db: &Db = &db;
-        // Example sentences first: what they say is audio to fetch too.
-        let words = lacking(&mut db.lock(), course_id).map(|l| l.examples).unwrap_or_default();
-        let can_write = crate::ai::partner_model(&mut db.lock()).is_ok();
-        if !words.is_empty() && can_write {
-            use futures_util::stream::{self, StreamExt};
-            stream::iter(words)
-                .for_each_concurrent(PARALLEL_EXAMPLES, |word_id| async move {
-                    if let Err(error) = crate::examples::make(db, word_id).await {
-                        crate::diagnostics::note("background", format!("Example sentences for {word_id} failed: {error}"));
-                    }
-                })
-                .await;
-        }
-        // Read on its own line: the database is not held while downloading.
-        let audio = lacking(&mut db.lock(), course_id);
-        if let Ok(lacking) = audio {
-            crate::speech::fill(&app, db, lacking.normal, false, false).await;
-            crate::speech::fill(&app, db, lacking.slow, false, true).await;
-        }
-        WORKING.lock().unwrap_or_else(|e| e.into_inner()).retain(|id| *id != course_id);
+        let tally = Tally::default();
+        fetch(db, course_id, &tally, &|step| busy.progress(step.finished(), step.total)).await;
+        release(course_id);
+        let ready = status(&mut db.lock(), course_id).is_ok_and(|s| s.ready);
+        busy.finish(result_line(&title, ready, tally.sum()));
         let _ = app.emit("offline://changed", OfflineChanged { course_id });
     });
 }
@@ -320,4 +503,36 @@ pub async fn course_offline_set(app: AppHandle, db: State<'_, Db>, course_id: Co
 pub async fn course_offline_download(app: AppHandle, db: State<'_, Db>, course_id: CourseId) -> Result<OfflineStatus> {
     download_in_background(&app, course_id, true);
     status(&mut db.lock(), course_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_download_counts_its_steps_together() {
+        let tally = Tally::default();
+        tally.set(EXAMPLES, Step { total: 4, ..Step::default() });
+        tally.set(AUDIO, Step { total: 10, ..Step::default() });
+        tally.count(EXAMPLES, true);
+        tally.count(EXAMPLES, false);
+        // The audio step says where it is itself.
+        tally.set(AUDIO, Step { done: 6, failed: 1, total: 12 });
+        let sum = tally.sum();
+        assert_eq!(sum, Step { done: 7, failed: 2, total: 16 });
+        assert_eq!(sum.finished(), 9);
+    }
+
+    #[test]
+    fn a_download_ends_saying_how_it_went() {
+        let all = Step { done: 5, failed: 0, total: 5 };
+        assert_eq!(result_line("Pierwsze kroki", true, all).as_deref(), Some("Pierwsze kroki is ready offline"));
+        let some = Step { done: 3, failed: 1, total: 5 };
+        assert_eq!(
+            result_line("Pierwsze kroki", false, some).as_deref(),
+            Some("Pierwsze kroki: 2 couldn't be downloaded. Try again from its page.")
+        );
+        // Everything fetched, pictures still being drawn: nothing to say yet.
+        assert_eq!(result_line("Pierwsze kroki", false, all), None);
+    }
 }

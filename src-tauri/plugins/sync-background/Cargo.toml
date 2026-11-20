@@ -2,7 +2,7 @@
 name = "tauri-plugin-sync-background"
 version = "0.1.0"
 edition = "2021"
-description = "Polski's background sync on Android: a WorkManager job every half hour on Wi-Fi, calling back into the app's Rust sync."
+description = "Polski's background sync on Android: a WorkManager job every half hour on Wi-Fi, calling back into the app's Rust sync; and a job that finishes downloading courses kept offline."
 publish = false
 links = "tauri-plugin-sync-background"
 

@@ -332,8 +332,19 @@ fn missing_lines(conn: &mut Conn, lines: &[SpeechLine]) -> Vec<SpeechLine> {
         .collect()
 }
 
-/// Makes every missing clip among `lines`, a few at a time, in order.
+/// Makes every missing clip among `lines`, a few at a time, in order,
+/// telling the screens how far it has come (`tts://progress`).
 pub(crate) async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>, force: bool, slow: bool) -> CacheProgress {
+    fill_with(db, lines, force, slow, |progress| {
+        let _ = app.emit("tts://progress", progress.clone());
+    })
+    .await
+}
+
+/// [`fill`], telling `told` instead: after each clip, and once at the end.
+/// Needs no app: a course kept offline downloads with the app closed too
+/// (offline/background.rs).
+pub(crate) async fn fill_with(db: &Db, lines: Vec<SpeechLine>, force: bool, slow: bool, told: impl Fn(&CacheProgress)) -> CacheProgress {
     use futures_util::StreamExt;
     // Drop duplicates and, unless forced, anything already stored before
     // spending a request. A line in two voices is two clips.
@@ -355,6 +366,7 @@ pub(crate) async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>
     };
     let total = crate::convert::count(pending.len());
     let (mut done, mut failed, mut first_error) = (0, 0, None::<String>);
+    told(&CacheProgress { done, total, failed, finished: false, error: None });
     // Three at a time: much faster than one by one, gentle on the API.
     let mut results = futures_util::stream::iter(pending)
         .map(|line| async move { clip(db, &line.text, &line.gender, force, slow).await })
@@ -372,10 +384,10 @@ pub(crate) async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>
                 }
             }
         }
-        let _ = app.emit("tts://progress", CacheProgress { done, total, failed, finished: false, error: None });
+        told(&CacheProgress { done, total, failed, finished: false, error: None });
     }
     let progress = CacheProgress { done, total, failed, finished: true, error: first_error };
-    let _ = app.emit("tts://progress", progress.clone());
+    told(&progress);
     progress
 }
 

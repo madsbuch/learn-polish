@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-schedule-offline"
+description = "Enables the schedule_offline command without any pre-configured scope."
+commands.allow = ["schedule_offline"]
+
+[[permission]]
+identifier = "deny-schedule-offline"
+description = "Denies the schedule_offline command without any pre-configured scope."
+commands.deny = ["schedule_offline"]

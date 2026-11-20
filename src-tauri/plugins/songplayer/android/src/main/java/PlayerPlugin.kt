@@ -81,6 +81,11 @@ class ShareArgs {
 class KeepWorkingArgs {
     var on: Boolean = false
     var label: String = "Working…"
+    /** A progress bar: done of total; none when total is 0. */
+    var done: Long = 0
+    var total: Long = 0
+    /** How the work went, said in a notification of its own. */
+    var result: String? = null
 }
 
 @InvokeArg
@@ -345,15 +350,25 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
 
     /**
      * Starts or stops [WorkService], which keeps the app alive with the screen
-     * off while the tutor writes or a song is made. Called from Rust.
+     * off while the tutor writes, a song is made or a course downloads, or
+     * redraws its notification while it runs. Called from Rust.
      */
     @Command
     fun keepWorking(invoke: Invoke) {
         val args = invoke.parseArgs(KeepWorkingArgs::class.java)
         val context = activity.applicationContext
-        val intent = Intent(context, WorkService::class.java).putExtra(WorkService.EXTRA_LABEL, args.label)
+        val intent = Intent(context, WorkService::class.java)
+            .putExtra(WorkService.EXTRA_LABEL, args.label)
+            .putExtra(WorkService.EXTRA_DONE, args.done)
+            .putExtra(WorkService.EXTRA_TOTAL, args.total)
+        args.result?.let { WorkService.showResult(context, it) }
         try {
-            if (args.on) {
+            if (args.on && WorkService.running) {
+                // Running already: only its notification changes (a course's
+                // download counting up). Starting it again from the
+                // background would be refused.
+                WorkService.redraw(context, args.label, args.done, args.total)
+            } else if (args.on) {
                 WorkService.stopRequested = false
                 ContextCompat.startForegroundService(context, intent)
             } else if (WorkService.running) {

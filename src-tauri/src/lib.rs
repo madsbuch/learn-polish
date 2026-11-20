@@ -149,6 +149,8 @@ pub fn run() {
             // Work anywhere (every AI request) keeps the app alive (work.rs).
             work::set_app(app.handle());
             let path = data.join("learn-polish.db");
+            // For the job that finishes a course's download without the app.
+            offline::set_db_path(&path);
 
             let mut connection = db::open(&path).map_err(|e| e.to_string())?;
             // Replies that were being written when the app last closed.
