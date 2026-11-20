@@ -7,47 +7,47 @@
   "description": "The home screen answers one question: what should I do today. It gives a short list, chosen once and kept. Doing it is the day done, with a celebration and nothing more. For more, a course's page lists its lessons in the same order of importance.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "TODAY-1",
       "text": "The day's list is chosen once a day and kept for that day; it is chosen again only when the learner changes how many lessons a day they want, or when the kept list names no lesson this device has."
     },
     {
-      "id": "R2",
+      "id": "TODAY-2",
       "text": "The list has 5 lessons unless the learner sets another number, from 1 to 20."
     },
     {
-      "id": "R3",
+      "id": "TODAY-3",
       "text": "Lessons that failed or were partly there last time and are due again come first."
     },
     {
-      "id": "R4",
+      "id": "TODAY-4",
       "text": "Other due lessons follow, those most at risk first: the furthest past their interval, with lessons of lower ease ahead."
     },
     {
-      "id": "R5",
+      "id": "TODAY-5",
       "text": "While there is room, at most 2 new lessons a day are added, taken from the newest courses."
     },
     {
-      "id": "R6",
+      "id": "TODAY-6",
       "text": "If a place is still free, at most 1 mastered lesson whose words are due for review is added as a light review."
     },
     {
-      "id": "R7",
+      "id": "TODAY-7",
       "text": "A review of a mastered lesson never takes the place of a due or new lesson, and cannot cost the lesson its mastery."
     },
     {
-      "id": "R8",
+      "id": "TODAY-8",
       "text": "A mastered lesson, or one listed only by a closed course, is never due."
     },
     {
-      "id": "R9",
+      "id": "TODAY-9",
       "text": "A course's challenges are offered only once its other lessons are passed."
     },
     {
-      "id": "R10",
+      "id": "TODAY-10",
       "text": "Finishing the list is the day done, shown with a celebration; lessons due beyond the list are not shown on the home screen."
     },
     {
-      "id": "R11",
+      "id": "TODAY-11",
       "text": "The day's list is the same on every device in a vault; if two devices chose a list while apart, the later one wins."
     }
   ],
@@ -56,9 +56,9 @@
     "src/screens/Exercises.tsx"
   ],
   "related": [
-    "principles#R9",
+    "principles#PRIN-9",
     "lessons/schedule",
-    "progress#R5",
+    "progress#PROG-5",
     "data/sync"
   ]
 }

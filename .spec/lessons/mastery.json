@@ -7,55 +7,55 @@
   "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting for a check-in: practising now gets there, it only takes more passes than letting the check-ins space them out. Passes further apart are better evidence and earn more.\n\nEvery change is written down, so the learner can see on the lesson's page why its points are what they are.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "MAST-1",
       "text": "The first pass of a lesson earns 30 mastery points."
     },
     {
-      "id": "R2",
+      "id": "MAST-2",
       "text": "A later pass on the same day as the last go earns 10."
     },
     {
-      "id": "R3",
+      "id": "MAST-3",
       "text": "A later pass a day or more after the last go earns 15, plus up to 20 more as the gap grows to 14 days."
     },
     {
-      "id": "R4",
+      "id": "MAST-4",
       "text": "An ace earns a quarter more than a pass would."
     },
     {
-      "id": "R5",
+      "id": "MAST-5",
       "text": "A partial earns half of what a repeat pass would at the same gap, rounded down, and does not mark the lesson passed."
     },
     {
-      "id": "R6",
+      "id": "MAST-6",
       "text": "A fail costs 20 points; a fail on extra practice costs none."
     },
     {
-      "id": "R7",
+      "id": "MAST-7",
       "text": "Points stay between 0 and 100, and stop at 90 until the lesson has been passed on two different days."
     },
     {
-      "id": "R8",
+      "id": "MAST-8",
       "text": "A lesson is mastered when it has been passed and has 100 points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in the day's list."
     },
     {
-      "id": "R9",
+      "id": "MAST-9",
       "text": "A writing lesson is mastered only when it has also been passed without help."
     },
     {
-      "id": "R10",
+      "id": "MAST-10",
       "text": "Every graded go writes a row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing; the go that masters the lesson adds a second row marking it mastered."
     },
     {
-      "id": "R11",
+      "id": "MAST-11",
       "text": "Ledger rows are never changed after they are written."
     },
     {
-      "id": "R12",
+      "id": "MAST-12",
       "text": "The ledger is shown on the lesson's page as Mastery points and is readable by the tutor."
     },
     {
-      "id": "R13",
+      "id": "MAST-13",
       "text": "A lesson's points from before the ledger existed are shown as one starting line; nothing is backfilled."
     }
   ],
@@ -65,10 +65,10 @@
     "src/components/MasteryPoints.tsx"
   ],
   "related": [
-    "principles#R6",
-    "principles#R5",
+    "principles#PRIN-6",
+    "principles#PRIN-5",
     "lessons/schedule",
-    "courses#R10",
-    "data/sync#R8"
+    "courses#CRS-10",
+    "data/sync#SYNC-8"
   ]
 }

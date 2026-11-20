@@ -7,43 +7,43 @@
   "description": "Knowing how often the learner is wrong is not much use; knowing what they find hard is. Every graded answer is logged with the kind of mistake it was, the words it involved and how it was reached. The Progress pages and the tutor read the same analysis, so what the tutor can see, the learner can browse.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "LOG-1",
       "text": "Every graded answer is written to the learning log in the same transaction as its grade."
     },
     {
-      "id": "R2",
+      "id": "LOG-2",
       "text": "Each wrong answer is given one mistake class, the most telling that fits: a sound contrast or preposition, Polish letters only, order only, an ending, a typo, a look-alike word when it was picked, some words right, or a word not known. A right answer typed without its Polish letters is classed as Polish letters too."
     },
     {
-      "id": "R3",
+      "id": "LOG-3",
       "text": "An answer's log row records the words it involved, including the words of a sentence and the wrong options shown beside it."
     },
     {
-      "id": "R4",
+      "id": "LOG-4",
       "text": "Log rows are append-only: never updated after they are written."
     },
     {
-      "id": "R5",
+      "id": "LOG-5",
       "text": "The Insights pages and the tutor's analysis tools use the same queries."
     },
     {
-      "id": "R6",
+      "id": "LOG-6",
       "text": "The raw log lists every answer and event, newest first, in pages of at most 200 rows, and can be filtered by item, course, lesson, exercise, mistake, topic, grammar, right or wrong, and period."
     },
     {
-      "id": "R7",
+      "id": "LOG-7",
       "text": "Words and sentences can be tagged with grammar structures and topics from lists built into the app; the tutor tags what it makes, and older content is tagged only when the learner asks."
     },
     {
-      "id": "R8",
+      "id": "LOG-8",
       "text": "A topic's numbers count toward its domain too."
     },
     {
-      "id": "R9",
+      "id": "LOG-9",
       "text": "The raw log can be exported as CSV or JSON, up to 100,000 rows."
     },
     {
-      "id": "R10",
+      "id": "LOG-10",
       "text": "A word's statistics can be broken down by context: the course, the role the word had, its grammatical context, the topic and the exercise."
     }
   ],
@@ -60,8 +60,8 @@
     "src/screens/Insights.tsx"
   ],
   "related": [
-    "principles#R4",
-    "tutor#R9",
-    "data/sync#R8"
+    "principles#PRIN-4",
+    "tutor#TUTOR-9",
+    "data/sync#SYNC-8"
   ]
 }

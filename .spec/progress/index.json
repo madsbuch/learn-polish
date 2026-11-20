@@ -7,67 +7,67 @@
   "description": "The rewards exist to make daily practice a habit, and they reward what was really done. Harder exercises pay more, wrong answers pay nothing, and cards that are only read pay close to nothing.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "PROG-1",
       "text": "A wrong answer earns no XP."
     },
     {
-      "id": "R2",
+      "id": "PROG-2",
       "text": "XP per right answer depends on the kind of exercise: recognising among choices pays 6, typing or dictation 14, filling a gap 16; an item answered for the first time pays 2 more."
     },
     {
-      "id": "R3",
+      "id": "PROG-3",
       "text": "Extra practice on a lesson already passed today pays half XP."
     },
     {
-      "id": "R4",
+      "id": "PROG-4",
       "text": "A day is done when the day's lessons are all done and something was practised; on a day with no lessons to give, having practised at all."
     },
     {
-      "id": "R5",
+      "id": "PROG-5",
       "text": "A failed check-in or a quick game counts as having practised, even when it earned no XP."
     },
     {
-      "id": "R6",
+      "id": "PROG-6",
       "text": "The streak counts done days in a row and still shows as alive on the day after the last done day."
     },
     {
-      "id": "R7",
+      "id": "PROG-7",
       "text": "Every seventh day of a run earns a streak freeze; at most 2 are kept."
     },
     {
-      "id": "R8",
+      "id": "PROG-8",
       "text": "Missed days are covered by freezes automatically when there are enough freezes for all of them."
     },
     {
-      "id": "R9",
+      "id": "PROG-9",
       "text": "A word sticks once its review interval reaches 21 days."
     },
     {
-      "id": "R10",
+      "id": "PROG-10",
       "text": "Achievements are earned for done days and streaks (3, 7, 30 and 100 days), words met and words that stick, sentences, dialogues, check-ins, writing, listening, a first song, a lesson made by the tutor and a completed course."
     },
     {
-      "id": "R11",
+      "id": "PROG-11",
       "text": "An achievement's progress and its unlock come from the same count, so the number shown and the unlock always agree."
     },
     {
-      "id": "R12",
+      "id": "PROG-12",
       "text": "Reset progress erases reviews, days, the XP log, the mastery ledger, passes, mastery, streak freezes, achievements, check-ins and the tutor's conversations together; courses and their content are kept, closed courses stay closed, and the learning log is kept."
     },
     {
-      "id": "R13",
+      "id": "PROG-13",
       "text": "AI costs survive a reset of progress."
     },
     {
-      "id": "R14",
+      "id": "PROG-14",
       "text": "A reminder is scheduled once a day for the week ahead at a time the learner chooses; today's is skipped once the day is done."
     },
     {
-      "id": "R15",
+      "id": "PROG-15",
       "text": "Reminders are scheduled again on every launch."
     },
     {
-      "id": "R16",
+      "id": "PROG-16",
       "text": "The Progress screen shows stats, what has been met, achievements, XP by day, an 18-week activity map and vocabulary totals."
     }
   ],
@@ -80,7 +80,7 @@
     "src/lib/notifications.ts"
   ],
   "related": [
-    "today#R10",
+    "today#TODAY-10",
     "lessons/drills",
     "progress/games",
     "progress/insights"

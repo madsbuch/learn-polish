@@ -7,55 +7,55 @@
   "description": "Every lesson has a check-in period. The gap to the next check-in grows from the time that actually passed since the last one, so checking in early is honest and remembering after longer is worth more.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "SCHED-1",
       "text": "A new lesson's period defaults by kind and complexity: drills 2, 4 and 7 days for low, medium and high; conversations 5, 7 and 10."
     },
     {
-      "id": "R2",
+      "id": "SCHED-2",
       "text": "The learner can change a lesson's period on its page."
     },
     {
-      "id": "R3",
+      "id": "SCHED-3",
       "text": "The first pass brings the lesson back after its period; a first ace, after three times its period."
     },
     {
-      "id": "R4",
+      "id": "SCHED-4",
       "text": "Each later pass sets the next gap to the days since the last check-in times the lesson's ease, never less than its period and never less than the days that passed plus one."
     },
     {
-      "id": "R5",
+      "id": "SCHED-5",
       "text": "Days since the last check-in count for at most twice the previous gap."
     },
     {
-      "id": "R6",
+      "id": "SCHED-6",
       "text": "An ace raises the ease by 0.15 and grows the gap by a further 1.3 times."
     },
     {
-      "id": "R7",
+      "id": "SCHED-7",
       "text": "A partial repeats the period and lowers the ease by 0.15."
     },
     {
-      "id": "R8",
+      "id": "SCHED-8",
       "text": "A fail brings the lesson back the next day and lowers the ease by 0.2."
     },
     {
-      "id": "R9",
+      "id": "SCHED-9",
       "text": "Ease starts at 2.5 and stays between 1.3 and 3.0."
     },
     {
-      "id": "R10",
+      "id": "SCHED-10",
       "text": "The gap worked out for a check-in is never longer than 120 days; spreading can then place it up to a week later."
     },
     {
-      "id": "R11",
+      "id": "SCHED-11",
       "text": "A check-in four days or more ahead is placed on the lightest day within a tenth of the gap either side of its target: at least one day and at most seven."
     },
     {
-      "id": "R12",
+      "id": "SCHED-12",
       "text": "A lesson done before it is due is an early check-in: full XP, and its schedule moves."
     },
     {
-      "id": "R13",
+      "id": "SCHED-13",
       "text": "Extra practice on a lesson already passed today pays half XP and does not move its schedule."
     }
   ],

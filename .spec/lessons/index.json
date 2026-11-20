@@ -7,47 +7,47 @@
   "description": "Learning happens in lessons. Every lesson has one type, and the type says everything about it: how it is practised, what its page shows, where it goes in a course and what mastering it takes. There are two ways a lesson runs: a drill is a run of exercises tapped through; a conversation is an exchange with an examiner or a writing partner that ends in a verdict.\n\nA lesson owns what it practises. A word or a sentence belongs to exactly one lesson.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "LSN-1",
       "text": "Every lesson has exactly one type from the registry: words, pictures, scene, story, typing, memory, sentences, gaps, dialogue, study, listening or writing."
     },
     {
-      "id": "R2",
+      "id": "LSN-2",
       "text": "Each type is declared once, with its name, icon, description, how it runs, its place in a course's path and the sections its page shows; the screens draw a lesson from its registry entry, not from its type."
     },
     {
-      "id": "R3",
+      "id": "LSN-3",
       "text": "A drill owns its words, sentences or dialogue lines; a study lesson owns its text and objectives."
     },
     {
-      "id": "R4",
+      "id": "LSN-4",
       "text": "A word or sentence belongs to exactly one lesson."
     },
     {
-      "id": "R5",
+      "id": "LSN-5",
       "text": "Every lesson has a complexity of low, medium or high (shown as quick, medium, deep), which says how long it takes and how deep it goes, not its level."
     },
     {
-      "id": "R6",
+      "id": "LSN-6",
       "text": "A lesson's minutes come from one table: drills 2, 4 and 8 for low, medium and high; conversations 5, 10 and 20."
     },
     {
-      "id": "R7",
+      "id": "LSN-7",
       "text": "A lesson can carry its own CEFR level; without one it has its course's."
     },
     {
-      "id": "R8",
+      "id": "LSN-8",
       "text": "A lesson can be marked a challenge: it does not count toward completing its course, and the daily list offers it only once the course's other lessons are passed."
     },
     {
-      "id": "R9",
+      "id": "LSN-9",
       "text": "A lesson already passed today can be practised again at any time as extra practice."
     },
     {
-      "id": "R10",
+      "id": "LSN-10",
       "text": "A new lesson type added to the registry is described to the tutor automatically, from its registry entry."
     },
     {
-      "id": "R11",
+      "id": "LSN-11",
       "text": "Every registered type can be made and practised, and every exercise it produces is one the screens can draw; a test fails otherwise."
     }
   ],
@@ -63,7 +63,7 @@
     "src/components/LessonRow.tsx"
   ],
   "related": [
-    "principles#R12",
+    "principles#PRIN-12",
     "lessons/drills",
     "lessons/conversations",
     "lessons/schedule",

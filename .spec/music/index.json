@@ -7,51 +7,51 @@
   "description": "Songs get Polish stuck in the head. The Music tab makes them to order: a songwriter model drafts title, style and lyrics from the learner's words, and Suno sings the result. Each verse pairs a short English line with the same line in Polish; the chorus is a single Polish sentence, sung only in Polish, so it is what ends up being hummed.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "SONG-1",
       "text": "A song is written from a theme, a vocabulary topic and, optionally, the exact chorus sentence."
     },
     {
-      "id": "R2",
+      "id": "SONG-2",
       "text": "The lyrics can be edited by hand, or revised by the songwriter, before anything is sung."
     },
     {
-      "id": "R3",
+      "id": "SONG-3",
       "text": "A song's length is short, medium or long (the default), each a lyric structure the songwriter follows."
     },
     {
-      "id": "R4",
+      "id": "SONG-4",
       "text": "Songs are sung by Suno through kie.ai with the learner's kie.ai key, in the model chosen in Settings: V6, V6 Mini or V6 Wild."
     },
     {
-      "id": "R5",
+      "id": "SONG-5",
       "text": "Each song comes in two takes."
     },
     {
-      "id": "R6",
+      "id": "SONG-6",
       "text": "Generation runs in the background and carries on after leaving the screen or restarting the app."
     },
     {
-      "id": "R7",
+      "id": "SONG-7",
       "text": "After a restart only the device that started a song resumes polling for it and downloading it; a device where the learner taps retry takes the song over."
     },
     {
-      "id": "R8",
+      "id": "SONG-8",
       "text": "Both takes and their cover art are downloaded and stored in the database, and play offline."
     },
     {
-      "id": "R9",
+      "id": "SONG-9",
       "text": "When a song is ready the app fetches Suno's word timings and stores them with each take."
     },
     {
-      "id": "R10",
+      "id": "SONG-10",
       "text": "A song remembers the course whose words it uses, and its listening lesson is filed there."
     },
     {
-      "id": "R11",
+      "id": "SONG-11",
       "text": "Enough of what a song was made from is kept to rebuild the prompt that made it."
     },
     {
-      "id": "R12",
+      "id": "SONG-12",
       "text": "Many songs can be deleted at once from the song list."
     }
   ],
@@ -62,11 +62,11 @@
     "src/screens/settings/SongSettings.tsx"
   ],
   "related": [
-    "principles#R11",
+    "principles#PRIN-11",
     "music/player",
     "music/podcasts",
     "music/sonos",
-    "lessons/conversations#R4",
-    "data#R3"
+    "lessons/conversations#CONV-4",
+    "data#DATA-3"
   ]
 }

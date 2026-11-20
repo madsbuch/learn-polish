@@ -7,23 +7,23 @@
   "description": "Songs learnt at the kitchen speaker stick as well as any. Play on a speaker finds Sonos rooms and groups on the network and hands the queue over. The app serves the stored songs over HTTP on the local network and loads them into the speaker's own queue over UPnP.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "SONOS-1",
       "text": "Sonos rooms and groups on the same network are found automatically; a speaker can also be given by IP address."
     },
     {
-      "id": "R2",
+      "id": "SONOS-2",
       "text": "No Sonos account is involved."
     },
     {
-      "id": "R3",
+      "id": "SONOS-3",
       "text": "The queue is loaded into the speaker's own queue, so the speaker handles next and repeat itself."
     },
     {
-      "id": "R4",
+      "id": "SONOS-4",
       "text": "The speaker streams each song from the app, whole or by byte range."
     },
     {
-      "id": "R5",
+      "id": "SONOS-5",
       "text": "While a speaker plays, the phone's lock screen, notification and volume keys control the speaker."
     }
   ],
@@ -33,6 +33,6 @@
   ],
   "related": [
     "music/player",
-    "data#R4"
+    "data#DATA-4"
   ]
 }

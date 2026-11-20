@@ -7,27 +7,27 @@
   "description": "The learner can take their data with them. Export writes one file that opens in any SQLite tool. Because the file may be passed on, secrets are left out unless asked for.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "EXP-1",
       "text": "Export writes a consistent, compacted copy of the whole database to a file chosen in the system's save dialog."
     },
     {
-      "id": "R2",
+      "id": "EXP-2",
       "text": "The suggested file name carries the calendar date: `polski-YYYY-MM-DD.sqlite`."
     },
     {
-      "id": "R3",
+      "id": "EXP-3",
       "text": "API keys are removed from the copy unless the learner chooses to include them, and removed so that they are not left in the file's free pages."
     },
     {
-      "id": "R4",
+      "id": "EXP-4",
       "text": "This device's sync keys are removed from a copy exported without keys."
     },
     {
-      "id": "R5",
+      "id": "EXP-5",
       "text": "An exported copy is marked as a copy, so a device opened from it takes a new sync identity."
     },
     {
-      "id": "R6",
+      "id": "EXP-6",
       "text": "Cancelling the save dialog writes nothing and leaves no temporary copy behind."
     }
   ],
@@ -38,6 +38,6 @@
   ],
   "related": [
     "data",
-    "data/sync#R13"
+    "data/sync#SYNC-13"
   ]
 }

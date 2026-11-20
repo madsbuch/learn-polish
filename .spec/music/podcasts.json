@@ -7,43 +7,43 @@
   "description": "A podcast is listening practice on a subject the learner cares about. A writer model writes every sentence as a pair, Polish and English, from Wikipedia articles, from today's Polish news, or as a short made-up story. The speech model reads each line, and the clips are joined into one episode with pauses. An episode is stored as a song, so the player, playlists, casting and listening lessons all work on it.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "POD-1",
       "text": "An episode is written from 1 to 5 Wikipedia articles, from today's news, or from none as a made-up story."
     },
     {
-      "id": "R2",
+      "id": "POD-2",
       "text": "An episode holds at most 120 sentences."
     },
     {
-      "id": "R3",
+      "id": "POD-3",
       "text": "In the pairs format each sentence is said in English and then in Polish; in the immersion format only Polish is spoken and the English is shown with each line, except that a line with no Polish is still said in English."
     },
     {
-      "id": "R4",
+      "id": "POD-4",
       "text": "An episode can have a cast of up to 4 speakers, each keeping the same voice when the audio is made again."
     },
     {
-      "id": "R5",
+      "id": "POD-5",
       "text": "The app can suggest subjects for an episode from what the learner is interested in."
     },
     {
-      "id": "R6",
+      "id": "POD-6",
       "text": "A news episode is written from the headlines and short summaries of Polish news feeds, with Wikipedia for background; where a feed gives no summary, the description the article's page gives of itself is used, and the articles themselves are only linked to."
     },
     {
-      "id": "R7",
+      "id": "POD-7",
       "text": "The articles an episode was written from are kept as its sources and open in the app's reader."
     },
     {
-      "id": "R8",
+      "id": "POD-8",
       "text": "Each sentence of an episode has its start and end time, so the player follows it like a song's lyrics."
     },
     {
-      "id": "R9",
+      "id": "POD-9",
       "text": "Changing an episode's pauses or repeats reuses the clips already made; turning on slow speech or English makes only the clips that are missing."
     },
     {
-      "id": "R10",
+      "id": "POD-10",
       "text": "An episode's audio is stored as MP3, or as it came when it cannot be encoded."
     }
   ],
@@ -55,8 +55,8 @@
   ],
   "related": [
     "music",
-    "speech#R9",
+    "speech#SPEECH-9",
     "lessons/wikipedia",
-    "principles#R11"
+    "principles#PRIN-11"
   ]
 }

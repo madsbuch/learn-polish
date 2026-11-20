@@ -7,55 +7,55 @@
   "description": "A drill practises a handful of items: words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, so a brand-new word is shown on a card first, a word seen before is recognised among choices, and one that has held up has to be typed from memory.\n\nInside a drill every word and sentence has its own review history. That history decides how hard the exercise is; when the lesson itself comes back is decided by the lesson's schedule.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "DRILL-1",
       "text": "A word never answered is shown on a card that is only read and then asked by multiple choice; one answered before is asked by multiple choice; one answered right on three different days in a row has to be typed."
     },
     {
-      "id": "R2",
+      "id": "DRILL-2",
       "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks: `czesc` counts as `cześć`."
     },
     {
-      "id": "R3",
+      "id": "DRILL-3",
       "text": "A typed answer one letter off a word of four letters or more is almost right."
     },
     {
-      "id": "R4",
+      "id": "DRILL-4",
       "text": "A dictation or spoken sentence of three words or more with one word wrong is almost right."
     },
     {
-      "id": "R5",
+      "id": "DRILL-5",
       "text": "An almost-right answer is logged as a mistake, earns half the XP, counts as half right in the drill's score, and brings the item back sooner instead of starting its reviews over."
     },
     {
-      "id": "R6",
+      "id": "DRILL-6",
       "text": "A drill passes at 85% right; a drill of three to six scored cards also passes with a single miss, or two almost-right answers."
     },
     {
-      "id": "R7",
+      "id": "DRILL-7",
       "text": "A drill with 60% or more right that does not pass is a partial; less is a fail."
     },
     {
-      "id": "R8",
+      "id": "DRILL-8",
       "text": "An ace in a drill is a pass with no almost-right answers and at least 95% of the scored cards fully right."
     },
     {
-      "id": "R9",
+      "id": "DRILL-9",
       "text": "Cards that are only read (a new word, a dialogue to read, a story panel) are not scored, and a drill with nothing scored is not graded."
     },
     {
-      "id": "R10",
+      "id": "DRILL-10",
       "text": "A sentence whose words change their ending is built from tiles in dictionary form, and the learner picks the ending on each tile; a sentence without stored endings is built by plain ordering."
     },
     {
-      "id": "R11",
+      "id": "DRILL-11",
       "text": "A wrong answer on a word shows example sentences for it: made once by a model and kept, or, without a key, taken from the learner's own courses."
     },
     {
-      "id": "R12",
+      "id": "DRILL-12",
       "text": "After a word or sentence card is answered, the learner can talk about it with the tutor straight from the exercise; that chat has its own model setting and otherwise uses the tutor's model."
     },
     {
-      "id": "R13",
+      "id": "DRILL-13",
       "text": "Each word's and sentence's review interval grows with right answers on different days, to at most 365 days; an item counts once a day."
     }
   ],
@@ -82,6 +82,6 @@
     "lessons",
     "lessons/schedule",
     "lessons/speaking",
-    "progress#R1"
+    "progress#PROG-1"
   ]
 }

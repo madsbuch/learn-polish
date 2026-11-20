@@ -7,43 +7,43 @@
   "description": "Reading and tapping do not train the ear or the mouth. Dictation has the app say a sentence for the learner to write. Speaking cards have the learner say it, and a model that takes sound writes down what it heard. Sound pairs play two real words that differ in one sound (sz and ś, y and i, ł and l) and ask which was said.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "SPK-1",
       "text": "A dictation answer is compared word by word: right words, wrong ones with the right form, words left out, and words that were not said."
     },
     {
-      "id": "R2",
+      "id": "SPK-2",
       "text": "In dictation a Polish letter typed without its mark is accepted, and pointed out."
     },
     {
-      "id": "R3",
+      "id": "SPK-3",
       "text": "A spoken answer is written down by the model chosen as Hearing you speak and compared word by word as a dictation is."
     },
     {
-      "id": "R4",
+      "id": "SPK-4",
       "text": "When a spoken word is heard as another that differs by a known sound contrast, the card says which sound and what to try."
     },
     {
-      "id": "R5",
+      "id": "SPK-5",
       "text": "Recordings are never stored or synced: they are passed to the model and dropped."
     },
     {
-      "id": "R6",
+      "id": "SPK-6",
       "text": "A recording is refused when it is larger than 4 MB once encoded as text, about 3 MB of audio."
     },
     {
-      "id": "R7",
+      "id": "SPK-7",
       "text": "Speaking cards take the place of a lesson's usual practice cards, so a lesson with them is no longer than before."
     },
     {
-      "id": "R8",
+      "id": "SPK-8",
       "text": "Speaking cards are a setting of the device, so a computer without a microphone can leave them off while the phone keeps them."
     },
     {
-      "id": "R9",
+      "id": "SPK-9",
       "text": "A words lesson has a round of up to two sound pairs before its closing memory round, when its words have the sounds."
     },
     {
-      "id": "R10",
+      "id": "SPK-10",
       "text": "The built-in sound pairs ship with the app; nothing is written to the database for them."
     }
   ],
@@ -57,8 +57,8 @@
     "src/components/EarGames.tsx"
   ],
   "related": [
-    "lessons/drills#R4",
+    "lessons/drills#DRILL-4",
     "progress/games",
-    "tutor/models#R6"
+    "tutor/models#AI-6"
   ]
 }

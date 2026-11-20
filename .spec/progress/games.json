@@ -7,35 +7,35 @@
   "description": "Sometimes there is a minute and no wish to start a lesson. The quick games are play over what the lessons taught: Match pairs, Flip and match, Dictation, Sound pairs and Say it. They pay a little XP and count as practising, and they leave the schedule alone, because matching from a handful of visible cards is recognition helped by elimination, not recall.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "GAME-1",
       "text": "Match pairs, Flip and match, the dictation game and Say it draw only on words and sentences the learner has already met; Sound pairs uses the app's built-in pairs."
     },
     {
-      "id": "R2",
+      "id": "GAME-2",
       "text": "Match pairs uses up to 8 Polish and English pairs against the clock, and Flip and match up to 6 pairs counted in moves; each needs at least 4 words met."
     },
     {
-      "id": "R3",
+      "id": "GAME-3",
       "text": "The dictation game and Say it use up to 5 sentences each and need at least 3 met; Sound pairs plays 8 rounds."
     },
     {
-      "id": "R4",
+      "id": "GAME-4",
       "text": "A finished game pays 10 XP, up to 30 XP from games a day."
     },
     {
-      "id": "R5",
+      "id": "GAME-5",
       "text": "Playing a game writes no review: no word's or lesson's next check-in moves."
     },
     {
-      "id": "R6",
+      "id": "GAME-6",
       "text": "Game XP is listed in the day's XP under the game's own name."
     },
     {
-      "id": "R7",
+      "id": "GAME-7",
       "text": "The best result of Match pairs (fastest time) and of Flip and match (fewest moves) is kept and synced, so a record set on one device is the one to beat on another; the other games keep no record."
     },
     {
-      "id": "R8",
+      "id": "GAME-8",
       "text": "A game played after the day's game XP is used up still counts as having practised that day."
     }
   ],
@@ -45,7 +45,7 @@
     "src/components/EarGames.tsx"
   ],
   "related": [
-    "progress#R5",
+    "progress#PROG-5",
     "lessons/speaking"
   ]
 }

@@ -7,35 +7,35 @@
   "description": "A lesson about a city, a custom or a piece of history should be right. The tutor can search and read Wikipedia, write the lesson from an article and attach the article as its source. The article is kept, so it reads offline, and the lesson is checked against it again as the article changes.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "WIKI-1",
       "text": "The tutor can attach Wikipedia articles to a study lesson, new or existing, and remove them."
     },
     {
-      "id": "R2",
+      "id": "WIKI-2",
       "text": "A lesson's page lists its sources; each opens in the app's reader from the stored copy, without the network."
     },
     {
-      "id": "R3",
+      "id": "WIKI-3",
       "text": "The reader offers the Polish article when Polish Wikipedia has one."
     },
     {
-      "id": "R4",
+      "id": "WIKI-4",
       "text": "The reader shows the credit the licence (CC BY-SA 4.0) asks for."
     },
     {
-      "id": "R5",
+      "id": "WIKI-5",
       "text": "A lesson with sources is checked every 90 days: each source's current revision is compared with the stored one."
     },
     {
-      "id": "R6",
+      "id": "WIKI-6",
       "text": "An article that changed is fetched again and an AI corrects only what the lesson now gets wrong, noting what changed on the lesson's page."
     },
     {
-      "id": "R7",
+      "id": "WIKI-7",
       "text": "The learner can run the check on demand from the lesson's page."
     },
     {
-      "id": "R8",
+      "id": "WIKI-8",
       "text": "Reading Wikipedia needs no key."
     }
   ],
@@ -45,7 +45,7 @@
     "src/components/Sources.tsx"
   ],
   "related": [
-    "lessons/conversations#R11",
+    "lessons/conversations#CONV-11",
     "tutor",
     "music/podcasts"
   ]

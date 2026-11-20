@@ -7,35 +7,35 @@
   "description": "A fresh install needs something to practise before any key is set up. First steps / Pierwsze kroki is that: a handful of words, sentences and a short introduction dialogue. It is installed once and is the learner's from then on.\n\nEarlier versions shipped a larger collection of built-in courses. Upgrading removes those, but only where the learner left them exactly as shipped.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "DEMO-1",
       "text": "A fresh install has exactly one course, First steps, with 12 words, 4 sentences and a 6-line dialogue."
     },
     {
-      "id": "R2",
+      "id": "DEMO-2",
       "text": "The demo course is seeded once per install: after the learner deletes it, it does not come back."
     },
     {
-      "id": "R3",
+      "id": "DEMO-3",
       "text": "Edits to the demo course are never overwritten by the app."
     },
     {
-      "id": "R4",
+      "id": "DEMO-4",
       "text": "The demo course's rows have ids derived from the course and each row's place in it, so two devices that install it agree on them."
     },
     {
-      "id": "R5",
+      "id": "DEMO-5",
       "text": "A device that joins another device's data does not seed the demo course into it again."
     },
     {
-      "id": "R6",
+      "id": "DEMO-6",
       "text": "Upgrading removes a course from the previous built-in collection only when its content still matches what was shipped; practice progress does not count as a change."
     },
     {
-      "id": "R7",
+      "id": "DEMO-7",
       "text": "A formerly built-in course that was edited, extended, shared with another course, or has songs or sources is kept on upgrade."
     },
     {
-      "id": "R8",
+      "id": "DEMO-8",
       "text": "The former built-in courses are not part of production builds; they exist only as test fixtures."
     }
   ],
@@ -47,7 +47,7 @@
   ],
   "related": [
     "courses",
-    "data/sync#R11",
-    "data#R6"
+    "data/sync#SYNC-11",
+    "data#DATA-6"
   ]
 }

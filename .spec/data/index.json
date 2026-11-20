@@ -7,51 +7,51 @@
   "description": "The learner's data lives on the learner's devices. One database file holds all of it, the audio and pictures included, so the database alone is a complete backup and can be opened with any SQLite tool.\n\nThe rules for ids exist so the database can sync between devices and so that an agent cannot quietly use the wrong row.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "DATA-1",
       "text": "Progress, courses, tutor conversations, settings, cached speech, pictures and songs are all stored in one SQLite database."
     },
     {
-      "id": "R2",
+      "id": "DATA-2",
       "text": "Every file the app keeps is a row in one files table, with its bytes, type, size and SHA-256; other tables refer to it by id."
     },
     {
-      "id": "R3",
+      "id": "DATA-3",
       "text": "A file's bytes never change: a new picture or clip is a new file with a new id."
     },
     {
-      "id": "R4",
+      "id": "DATA-4",
       "text": "The interface loads pictures, covers and songs by file id through the `media` protocol, with byte ranges for seeking; speech clips are handed over as data; the build fails if a screen loads a file by its path."
     },
     {
-      "id": "R5",
+      "id": "DATA-5",
       "text": "Song audio and cover art also have a copy on disk for Android's native player; a missing copy is written again from the database."
     },
     {
-      "id": "R6",
+      "id": "DATA-6",
       "text": "Every row with an id of its own has a typed id: a prefix naming its kind, an underscore and 26 characters, made on the device that writes the row; only an id with the right prefix is accepted where that kind is expected. Tables keyed by something natural (a setting's key, a day, a pair of ids) keep that key."
     },
     {
-      "id": "R7",
+      "id": "DATA-7",
       "text": "A file that nothing refers to is deleted at startup, but only by the device that stored it."
     },
     {
-      "id": "R8",
+      "id": "DATA-8",
       "text": "A file a take still plays cannot be deleted from under it."
     },
     {
-      "id": "R9",
+      "id": "DATA-9",
       "text": "Before a schema upgrade the database is copied to a backups folder; the newest 2 upgrade backups are kept."
     },
     {
-      "id": "R10",
+      "id": "DATA-10",
       "text": "The upgrade to typed ids gave every row a new id and rewrote every reference to it; upgrades since keep the ids of existing rows."
     },
     {
-      "id": "R11",
+      "id": "DATA-11",
       "text": "Database access is typed against one schema definition, and a test fails if that definition names a table or column the schema the app creates does not have."
     },
     {
-      "id": "R12",
+      "id": "DATA-12",
       "text": "Writes that belong together (a lesson's grade and its schedule, a check-in's verdict, each tutor tool call) are made in one transaction."
     }
   ],
@@ -68,9 +68,9 @@
     "src/lib/files.ts"
   ],
   "related": [
-    "principles#R13",
+    "principles#PRIN-13",
     "data/export",
     "data/sync",
-    "speech#R12"
+    "speech#SPEECH-12"
   ]
 }

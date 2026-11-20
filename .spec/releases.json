@@ -7,35 +7,35 @@
   "description": "There is one release channel. A merge to main replaces the latest release, so installing the newest build is always the same download.",
   "requirements": [
     {
-      "id": "R1",
+      "id": "REL-1",
       "text": "Every merge to `main` runs the tests, builds an Android APK and a macOS disk image, and replaces the rolling `latest` release."
     },
     {
-      "id": "R2",
+      "id": "REL-2",
       "text": "A pull request runs the tests and compiles the Android and macOS apps, and publishes nothing."
     },
     {
-      "id": "R3",
+      "id": "REL-3",
       "text": "Publishing waits for the tests to pass."
     },
     {
-      "id": "R4",
+      "id": "REL-4",
       "text": "The Android APK is built for 64-bit and 32-bit ARM."
     },
     {
-      "id": "R5",
+      "id": "REL-5",
       "text": "The macOS app is one universal build for Apple Silicon and Intel, ad-hoc signed and not notarized."
     },
     {
-      "id": "R6",
+      "id": "REL-6",
       "text": "A release with any of the four Android signing secrets missing stops instead of publishing an APK that could not upgrade an installed app."
     },
     {
-      "id": "R7",
+      "id": "REL-7",
       "text": "Pull request builds never use the release signing key."
     },
     {
-      "id": "R8",
+      "id": "REL-8",
       "text": "The app's own code contains no unsafe Rust, and no `as` casts outside the two float conversions in `convert.rs`; the lints fail the build otherwise."
     }
   ],
