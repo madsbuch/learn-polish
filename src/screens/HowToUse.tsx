@@ -60,21 +60,26 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
         <P>
           Open <strong>Exercises</strong>: <strong>today's lessons</strong> are there — the five that matter most (you
           can change how many in Settings → Practice). A lesson that slipped last time comes first, then the ones whose time has
-          come, then up to two new ones.
+          come, then up to two new ones — and, when there is room, now and then a mastered lesson whose words are due,
+          as a light review (one a day at most; it stays mastered whatever happens).
         </P>
         <P>
-          Do them — pass or not, each one you do counts — and the day is done. That's it, nothing piles up. Today's
+          Do them — pass or not, each one you do counts, a quick game too on a day with none to do — and the day is
+          done. That's it, nothing piles up. Today's
           lessons are a way in, not the whole day: browse your courses and take what you find interesting — each lists
           its lessons by what matters most. Done days build your streak; every seven days in a row earns a streak freeze
           that covers a missed day by itself. XP is only paid for real work: harder exercises pay more, wrong answers
-          and cards you only read pay nothing. A typed answer one letter off is <strong>almost</strong>: half the XP,
-          and it counts as half right — 85% right passes a lesson.
+          and cards you only read pay nothing. A typed answer one letter off, or a sentence written or said with one word
+          off (of three or more), is <strong>almost</strong>: half the XP, and it counts as half right. 85% right
+          passes a lesson — or, in a short one of up to six cards, all but one. A drill with nothing to score is not
+          graded at all.
         </P>
         <P>
           Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, flip memory cards,
           write down sentences you hear, tell near sounds apart (proszę or prosię?), or say sentences out loud — play
-          with what you have already met. They earn a little XP (up to 30 a day) and don&apos;t change when a
-          word comes back: that stays the lessons&apos; job.
+          with what you have already met. They earn a little XP (up to 30 a day), count toward your day, and don&apos;t
+          change when a word comes back: that stays the lessons&apos; job. A word counts once a day: answering it right
+          five times today doesn&apos;t make it stick — coming back on another day does.
         </P>
         <P>
           Now and then a lesson asks you to <strong>say it</strong>: a sentence or word you know, or your line in a
@@ -123,13 +128,17 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           a level up; once the rest is passed, today's lessons offer them), and writing passed once without help.
         </P>
         <P>
-          Every pass earns mastery points, and a near miss (60–84% right) half as many; a fail costs some, until the
-          lesson is mastered. You never have to wait:
-          practise a lesson as often as you like, today, and you get there. Passes spread out over days are better
-          evidence, so they earn more — letting check-ins bring lessons back gets there in fewer passes.
+          Every pass earns mastery points — 30 for the first, 10 for another the same day, 16 to 35 for one a day to two
+          weeks later — and a near miss (60–84% right) half what a pass would; a fail costs 20, except on extra
+          practice, which never costs anything. You don&apos;t have to wait for a check-in: practise a lesson as often as
+          you like and you get most of the way today — up to 90 points. The last stretch takes a pass on another day,
+          any day: mastering is remembering, not cramming. Passes spread out over days are better evidence, so they
+          earn more — letting check-ins bring lessons back gets there in fewer passes. Tap a lesson&apos;s mastery on
+          its page to see every point and why.
         </P>
         <P>
-          <strong>Mastery is for good.</strong> A mastered lesson never comes back and never loses it. When every lesson
+          <strong>Mastery is for good.</strong> A mastered lesson is never due again and never loses it; its words may
+          come back now and then as a light review, so they don&apos;t fade. When every lesson
           of a course is mastered, the course is <strong>ready to close</strong>: tap <em>Close as mastered</em> for
           your celebration, and it moves to <strong>Mastered</strong> — your trophies. Closing is final.
         </P>

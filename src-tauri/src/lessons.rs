@@ -102,6 +102,19 @@ pub struct Lesson {
     pub items: i64,
     /// A listening lesson's song.
     pub song_id: Option<SongId>,
+    /// About how many more passes it needs to be mastered (see [`passes_left`]).
+    pub passes_left: PassesLeft,
+}
+
+/// About how many more passes a lesson needs to be mastered: `spaced`,
+/// passing each check-in when it comes back; `now`, practising in one
+/// sitting from now (with one more pass on another day when the last
+/// stretch needs it: see [`MASTERY_HELD_AT`]). Both 0 once mastered.
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PassesLeft {
+    pub spaced: i64,
+    pub now: i64,
 }
 
 /// A word of a lesson, with its picture if it has one.
@@ -216,6 +229,8 @@ fn insert(conn: &mut Conn, lesson: NewLesson) -> Result<LessonId> {
 /// them (the first one also by title) and how many items they own.
 fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
     let ids: Vec<LessonId> = rows.iter().map(|r| r.id).collect();
+    let today = db::today(conn);
+    let first_today = crate::masterylog::first_passed_on(conn, today)?;
     let mut listed: HashMap<LessonId, Vec<(CourseId, String)>> = HashMap::new();
     for (lesson, course, title) in course_lessons::table
         .inner_join(courses::table)
@@ -273,9 +288,70 @@ fn assemble(conn: &mut Conn, rows: Vec<LessonRow>) -> Result<Vec<Lesson>> {
                 level: row.level,
                 song_id: row.song_id,
                 mastered: row.mastered_at.is_some(),
+                passes_left: PassesLeft::default(),
             }
         })
+        .map(|mut lesson| {
+            lesson.passes_left = passes_left(&lesson, first_today.contains(&lesson.id));
+            lesson
+        })
         .collect())
+}
+
+/// Lessons by id (in no particular order).
+pub fn load_many(conn: &mut Conn, ids: &[LessonId]) -> Result<Vec<Lesson>> {
+    let rows = lessons::table.filter(lessons::id.eq_any(ids)).select(LessonRow::as_select()).load(conn)?;
+    assemble(conn, rows)
+}
+
+/// About how many more passes a lesson needs to be mastered, by the rules
+/// as they are (`first_passed_today`: its first pass was today, so the last
+/// stretch needs another day). Spaced: each pass when the check-in comes
+/// back, its gap following [`next_gap`] from the lesson's own period, gap
+/// and ease, and earning [`mastery_gain`] for that gap. Now: one sitting at
+/// 10 a pass (30 for a first pass), up to [`MASTERY_HELD_AT`] when it is
+/// held, then one pass on another day. A lesson mastered only without help
+/// (writing) needs at least a pass per help level left.
+pub fn passes_left(lesson: &Lesson, first_passed_today: bool) -> PassesLeft {
+    if lesson.mastered {
+        return PassesLeft::default();
+    }
+    let unaided = crate::lesson_types::get(&lesson.lesson_type).is_ok_and(|t| t.unaided_to_master);
+    let steps = if unaided { (3 - lesson.support_level).max(0) } else { 0 };
+    let start = lesson.mastery.clamp(0, MASTERY_FULL);
+
+    let (mut points, mut passed, mut reps, mut interval, mut ease) = (start, lesson.passed, lesson.reps, lesson.interval_days, lesson.ease);
+    let mut spaced = 0;
+    while (points < MASTERY_FULL || spaced < steps) && spaced < 40 {
+        let elapsed = if reps == 0 { 0 } else { interval.max(1) };
+        if passed {
+            points = (points + mastery_gain(Grade::Pass, true, elapsed)).min(MASTERY_FULL);
+        } else {
+            // The first pass, on its own day: held until another.
+            points = (points + mastery_gain(Grade::Pass, false, elapsed)).min(MASTERY_HELD_AT.max(start));
+            passed = true;
+        }
+        let (gap, next_ease) = next_gap(Grade::Pass, reps, interval, lesson.period_days, ease, elapsed);
+        (reps, interval, ease) = (reps + 1, gap, next_ease);
+        spaced += 1;
+    }
+
+    let held = !lesson.passed || first_passed_today;
+    let (mut points, mut now) = (start, 0);
+    if !lesson.passed {
+        points += mastery_gain(Grade::Pass, false, 0);
+        now += 1;
+    }
+    let limit = if held { MASTERY_HELD_AT.max(start) } else { MASTERY_FULL };
+    while points < limit.min(MASTERY_FULL) {
+        points += mastery_gain(Grade::Pass, true, 0);
+        now += 1;
+    }
+    if points < MASTERY_FULL {
+        // The last stretch, on another day.
+        now += 1;
+    }
+    PassesLeft { spaced: spaced.max(steps), now: now.max(steps) }
 }
 
 pub fn load(conn: &mut Conn, id: LessonId) -> Result<Lesson> {
@@ -383,15 +459,33 @@ fn load_in_order(conn: &mut Conn, ids: &[LessonId]) -> Result<Vec<Lesson>> {
 // Scheduling
 // ---------------------------------------------------------------------------
 
-/// Turns a drill score into a result: most right is a pass.
-pub fn result_from_score(correct: i64, total: i64) -> &'static str {
+/// The share of a drill that passes it.
+pub const PASS_SHARE: f64 = 0.85;
+/// The share that is partly there.
+const PARTIAL_SHARE: f64 = 0.6;
+/// A drill this small (or smaller) passes with one miss: 85% of six cards
+/// is more than five, so otherwise a single slip would cost the pass.
+pub const SMALL_DRILL: i64 = 6;
+
+/// Turns a drill's score into a result: right answers and answers almost
+/// right (each half right) out of the cards scored. A pass is 85% — or, in
+/// a drill of three to six scored cards, at most one miss (two almosts are
+/// one miss); 60% is partly there; less is a fail. A drill with nothing
+/// scored is not graded at all (see `practice::lesson_finish`), so it never
+/// gets here with `total` 0 — if it does, it is a fail, never a free pass.
+pub fn result_from_score(correct: i64, almost: i64, total: i64) -> &'static str {
     if total <= 0 {
-        return "pass";
+        return "fail";
     }
-    let share = crate::convert::real(correct) / crate::convert::real(total);
-    if share >= 0.85 {
+    let correct = correct.clamp(0, total);
+    let almost = almost.clamp(0, total - correct);
+    // In half points: a miss is 2, an almost 1.
+    let (points, out_of) = (correct * 2 + almost, total * 2);
+    let share = crate::convert::real(points) / crate::convert::real(out_of);
+    let one_miss = (3..=SMALL_DRILL).contains(&total) && out_of - points <= 2;
+    if share >= PASS_SHARE || one_miss {
         "pass"
-    } else if share >= 0.6 {
+    } else if share >= PARTIAL_SHARE {
         "partial"
     } else {
         "fail"
@@ -422,6 +516,8 @@ impl Grade {
 
 const MIN_EASE: f64 = 1.3;
 const MAX_EASE: f64 = 3.0;
+/// A new lesson's ease (the schema's default).
+pub const START_EASE: f64 = 2.5;
 
 /// The next gap and ease after a check-in.
 ///
@@ -472,14 +568,17 @@ const MASTERY_SPACED_DAYS: i64 = 14;
 /// attempt earns 10; one a day or more later earns 15, plus up to 20 more
 /// as the gap grows to two weeks — remembering it after a while is better
 /// evidence than getting it right twice in a row. An ace earns a quarter
-/// more; a partial (nearly there: 60–84%) earns half what a pass would have,
-/// rounded down — it still does not mark the lesson passed; a fail costs 20.
+/// more; a partial (nearly there) earns half what a repeat pass would at the
+/// same gap, rounded down (5 the same day, 17 at two weeks) — it never
+/// out-earns a pass, and does not mark the lesson passed; a fail costs 20
+/// (nothing on extra practice: see [`credit_mastery`]).
 ///
-/// Spaced out, that is three passes (30 + 35 + 35); a day apart, six; all
-/// in one sitting, eight.
+/// The last stretch takes two days: see [`MASTERY_HELD_AT`].
 pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
     let base = match grade {
-        Grade::Partial => return mastery_gain(Grade::Pass, passed_before, elapsed) / 2,
+        // Half a repeat pass at the same gap, passed before or not: a
+        // partial never earns more than a pass would.
+        Grade::Partial => return mastery_gain(Grade::Pass, true, elapsed) / 2,
         Grade::Fail => return -20,
         Grade::Ace | Grade::Pass if !passed_before => 30,
         Grade::Ace | Grade::Pass if elapsed <= 0 => 10,
@@ -500,10 +599,25 @@ pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level:
     passed && mastery >= MASTERY_FULL && (!unaided || support_level >= 3)
 }
 
+/// Where a lesson's points stop until it has been passed on two different
+/// days: 90. Mastering takes more than one sitting — a lesson first passed
+/// today can reach 90 today, and the last stretch comes with a pass on
+/// another day (any later day: no waiting for a check-in). Before its first
+/// pass, partials stop there too. A lesson passed before the mastery ledger
+/// began counts as passed on an earlier day.
+pub const MASTERY_HELD_AT: i64 = 90;
+
 /// Marks a lesson mastered once it has earned it. Mastery is for good
 /// (PRINCIPLES.md): once stamped, nothing — a fail included — takes it
-/// away, and nothing changes its points or help level again.
+/// away, and nothing changes its points or help level again. The stamp is
+/// a row of its own in the mastery ledger.
+#[cfg(test)]
 pub fn stamp_mastered(conn: &mut Conn, lesson_id: LessonId) -> Result<bool> {
+    stamp_mastered_for(conn, lesson_id, &Go::default())
+}
+
+/// [`stamp_mastered`], for a go (its row in the ledger names it).
+pub fn stamp_mastered_for(conn: &mut Conn, lesson_id: LessonId, go: &Go) -> Result<bool> {
     let (passed, mastery, lesson_type, support, at): (i64, i64, String, i64, Option<i64>) = lessons::table
         .find(lesson_id)
         .select((lessons::passed, lessons::mastery, lessons::lesson_type, lessons::support_level, lessons::mastered_at))
@@ -512,21 +626,91 @@ pub fn stamp_mastered(conn: &mut Conn, lesson_id: LessonId) -> Result<bool> {
         return Ok(false);
     }
     diesel::update(lessons::table.find(lesson_id)).set(lessons::mastered_at.eq(crate::db::now_secs())).execute(conn)?;
+    crate::masterylog::write(
+        conn,
+        &crate::masterylog::NewEntry {
+            lesson_id,
+            before: mastery,
+            after: mastery,
+            grade: "",
+            days_since: None,
+            go,
+            reason: "mastered",
+            details: crate::masterylog::Details { v: crate::masterylog::DETAILS_VERSION, ..Default::default() },
+        },
+    )?;
     Ok(true)
 }
 
-/// Adds a check-in's mastery points to a lesson, as it stood before the
-/// check-in. Every check-in counts, extra practice too.
-pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64) -> Result<()> {
+pub use crate::masterylog::Go;
+
+/// Adds a go's mastery points to a lesson, as it stood before the go, and
+/// writes why in the mastery ledger (one row, every graded go: a go that
+/// changes nothing says so). Every go counts, extra practice too — but a
+/// fail on extra practice costs nothing: playing a passed lesson again for
+/// fun must not be a risk. Points stay within 0–100, and at
+/// [`MASTERY_HELD_AT`] until the lesson has passes on two different days.
+pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64, go: &Go) -> Result<crate::masterylog::MasteryEntry> {
+    let grade = Grade::of(result, ace);
+    let days_since = before.last_day.map(|last| (today - last).max(0));
+    let elapsed = days_since.unwrap_or(0);
+    let grade_key = match grade {
+        Grade::Ace => "ace",
+        Grade::Pass => "pass",
+        Grade::Partial => "partial",
+        Grade::Fail => "fail",
+    };
+    let mut details = crate::masterylog::Details { v: crate::masterylog::DETAILS_VERSION, ..Default::default() };
+    let passing = matches!(grade, Grade::Ace | Grade::Pass);
+    let entry = |details, after, reason| crate::masterylog::NewEntry {
+        lesson_id: before.id,
+        before: before.mastery,
+        after,
+        grade: grade_key,
+        days_since,
+        go,
+        reason,
+        details,
+    };
     if before.mastered {
-        return Ok(());
+        return crate::masterylog::write(conn, &entry(details, before.mastery, "after_mastered"));
     }
-    let elapsed = before.last_day.map_or(0, |last| today - last);
-    let gain = mastery_gain(Grade::of(result, ace), before.passed, elapsed);
-    let mastery = (before.mastery + gain).clamp(0, MASTERY_FULL);
+    let first_pass = passing && !before.passed;
+    if first_pass {
+        details.first_pass_day = Some(today);
+    }
+    let (gain, mut reason) = match grade {
+        Grade::Fail if go.extra => (0, "fail_extra"),
+        Grade::Fail => (mastery_gain(grade, before.passed, elapsed), "fail"),
+        Grade::Partial => (mastery_gain(grade, before.passed, elapsed), "partial"),
+        _ if first_pass => (mastery_gain(grade, false, elapsed), "first_pass"),
+        _ if elapsed <= 0 => (mastery_gain(grade, true, elapsed), "pass_same_day"),
+        _ => (mastery_gain(grade, true, elapsed), "pass_spaced"),
+    };
+    details.gain = Some(gain);
+    let mut mastery = (before.mastery + gain).clamp(0, MASTERY_FULL);
+    // Held until passes on two different days (see MASTERY_HELD_AT).
+    let held = if !before.passed {
+        true
+    } else {
+        match crate::masterylog::first_pass_day(conn, before.id)? {
+            None => false,
+            Some(day) if day >= today => true,
+            Some(day) => !passing && !crate::masterylog::passed_after(conn, before.id, day)?,
+        }
+    };
+    if held && mastery > MASTERY_HELD_AT {
+        mastery = MASTERY_HELD_AT.max(before.mastery);
+        details.cap = Some(MASTERY_HELD_AT);
+        reason = "capped";
+    }
+    if gain > 0 && before.mastery >= MASTERY_FULL {
+        reason = "full";
+    }
     diesel::update(lessons::table.find(before.id)).set(lessons::mastery.eq(mastery)).execute(conn)?;
-    stamp_mastered(conn, before.id)?;
-    Ok(())
+    let written = crate::masterylog::write(conn, &entry(details, mastery, reason))?;
+    stamp_mastered_for(conn, before.id, go)?;
+    Ok(written)
 }
 
 /// Doing a lesson again on a day it was already passed is extra practice:
@@ -548,19 +732,26 @@ pub fn record(conn: &mut Conn, lesson_id: LessonId, result: &str) -> Result<Less
     record_graded(conn, lesson_id, result, false)
 }
 
-/// Records a go at a lesson — mastery, schedule, passed, minutes — all or
-/// nothing (one transaction; inside another, a savepoint).
+/// Records a go at a lesson with no more said about it (tests).
+#[cfg(test)]
 pub fn record_graded(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: bool) -> Result<Lesson> {
-    conn.transaction(|tx| record_graded_steps(tx, lesson_id, result, ace))
+    Ok(record_go(conn, lesson_id, result, ace, &Go { via: "drill", ..Default::default() })?.0)
 }
 
-fn record_graded_steps(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: bool) -> Result<Lesson> {
+/// Records a go at a lesson — mastery (and its ledger row), schedule,
+/// passed, minutes — all or nothing (one transaction; inside another, a
+/// savepoint).
+pub fn record_go(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: bool, go: &Go) -> Result<(Lesson, crate::masterylog::MasteryEntry)> {
+    conn.transaction(|tx| record_graded_steps(tx, lesson_id, result, ace, go))
+}
+
+fn record_graded_steps(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: bool, go: &Go) -> Result<(Lesson, crate::masterylog::MasteryEntry)> {
     if !["pass", "partial", "fail"].contains(&result) {
         return Err(Error::msg(format!("Unknown result '{result}'.")));
     }
     let lesson = load(conn, lesson_id)?;
     let today = db::today(conn);
-    credit_mastery(conn, &lesson, result, ace, today)?;
+    let entry = credit_mastery(conn, &lesson, result, ace, today, go)?;
     let grade = Grade::of(result, ace);
     let elapsed = lesson.last_day.map_or(0, |last| today - last);
     let (gap, ease) = next_gap(grade, lesson.reps, lesson.interval_days, lesson.period_days, lesson.ease, elapsed);
@@ -583,8 +774,8 @@ fn record_graded_steps(conn: &mut Conn, lesson_id: LessonId, result: &str, ace: 
         diesel::update(lessons::table.find(lesson_id)).set(lessons::passed.eq(1)).execute(conn)?;
     }
     crate::plan::log_minutes(conn, today, crate::lesson_types::minutes(&lesson.lesson_type, &lesson.complexity), early)?;
-    stamp_mastered(conn, lesson_id)?;
-    load(conn, lesson_id)
+    stamp_mastered_for(conn, lesson_id, go)?;
+    Ok((load(conn, lesson_id)?, entry))
 }
 
 /// Makes a lesson due today (the learner or the tutor wants it now).
@@ -1066,11 +1257,17 @@ mod tests {
         assert_eq!(mastery_gain(Pass, true, 14), 35);
         assert_eq!(mastery_gain(Pass, true, 60), 35);
         assert_eq!(mastery_gain(Ace, true, 14), 44);
-        // A partial: half a pass's points, rounded down.
+        // A partial: half a repeat pass's points, rounded down — passed
+        // before or not, so it never out-earns a pass in the same spot.
         assert_eq!(mastery_gain(Partial, true, 14), 17);
         assert_eq!(mastery_gain(Partial, true, 0), 5);
         assert_eq!(mastery_gain(Partial, true, 1), 8);
-        assert_eq!(mastery_gain(Partial, false, 0), 15);
+        assert_eq!(mastery_gain(Partial, false, 0), 5);
+        for gap in 0..30 {
+            for passed in [false, true] {
+                assert!(mastery_gain(Partial, passed, gap) < mastery_gain(Pass, passed, gap), "gap {gap}, passed {passed}");
+            }
+        }
         assert_eq!(mastery_gain(Fail, true, 14), -20);
         let passes = |gap: i64| {
             let (mut points, mut n) = (mastery_gain(Pass, false, 0), 1);
@@ -1109,10 +1306,82 @@ mod tests {
 
     #[test]
     fn drill_scores_become_results() {
-        assert_eq!(result_from_score(9, 10), "pass");
-        assert_eq!(result_from_score(7, 10), "partial");
-        assert_eq!(result_from_score(3, 10), "fail");
-        assert_eq!(result_from_score(0, 0), "pass");
+        assert_eq!(result_from_score(9, 0, 10), "pass");
+        assert_eq!(result_from_score(8, 1, 10), "pass", "85% with an almost as half");
+        assert_eq!(result_from_score(8, 0, 10), "partial");
+        assert_eq!(result_from_score(7, 0, 10), "partial");
+        assert_eq!(result_from_score(3, 0, 10), "fail");
+        // A small drill absorbs one miss (or two almosts)...
+        assert_eq!(result_from_score(5, 0, 6), "pass");
+        assert_eq!(result_from_score(4, 2, 6), "pass");
+        assert_eq!(result_from_score(3, 0, 4), "pass");
+        assert_eq!(result_from_score(2, 0, 3), "pass");
+        // ...but not two.
+        assert_eq!(result_from_score(4, 0, 6), "partial");
+        assert_eq!(result_from_score(4, 1, 6), "partial");
+        assert_eq!(result_from_score(3, 1, 6), "fail");
+        assert_eq!(result_from_score(2, 0, 4), "fail");
+        // Two cards or one: all right, or an almost at most partly.
+        assert_eq!(result_from_score(1, 0, 2), "fail");
+        assert_eq!(result_from_score(1, 1, 2), "partial");
+        // Seven and up: 85% as before (6 of 7 is 86%).
+        assert_eq!(result_from_score(6, 0, 7), "pass");
+        assert_eq!(result_from_score(11, 0, 13), "partial");
+        // Nothing scored is never a free pass; more right than asked is capped.
+        assert_eq!(result_from_score(0, 0, 0), "fail");
+        assert_eq!(result_from_score(12, 3, 10), "pass");
+    }
+
+    fn lesson(passed: bool, mastery: i64, reps: i64, interval: i64, period: i64) -> Lesson {
+        Lesson {
+            id: LessonId::new(),
+            lesson_type: "words".into(),
+            engine: "exercises",
+            title: String::new(),
+            summary: String::new(),
+            complexity: "low".into(),
+            course_id: None,
+            course_title: None,
+            course_ids: vec![],
+            origin: "you".into(),
+            period_days: period,
+            interval_days: interval,
+            due_day: None,
+            last_day: None,
+            last_result: None,
+            reps,
+            ease: 2.5,
+            support_level: 0,
+            challenge: false,
+            passed,
+            mastery,
+            mastered: false,
+            level: None,
+            items: 0,
+            song_id: None,
+            passes_left: PassesLeft::default(),
+        }
+    }
+
+    #[test]
+    fn passes_left_follow_the_real_schedule() {
+        // New, checked in weekly: 30 + 25 + 25 + 25 (the gap is the period, then grows).
+        assert_eq!(passes_left(&lesson(false, 0, 0, 0, 7), false), PassesLeft { spaced: 4, now: 8 });
+        // New, daily: gaps 1, 3, 8, 20 — 30, 16, 19, 26, 35 is five passes. Now:
+        // 30 and six tens reach the 90 it is held at, then one on another day.
+        assert_eq!(passes_left(&lesson(false, 0, 0, 0, 1), false).spaced, 5);
+        // Passed on an earlier day: one sitting can finish it.
+        assert_eq!(passes_left(&lesson(true, 70, 2, 7, 7), false), PassesLeft { spaced: 2, now: 3 });
+        // First passed today: up to 90 today, the rest another day.
+        assert_eq!(passes_left(&lesson(true, 70, 1, 7, 7), true), PassesLeft { spaced: 2, now: 3 });
+        assert_eq!(passes_left(&lesson(true, 90, 1, 7, 7), true), PassesLeft { spaced: 1, now: 1 });
+        let mut writing = lesson(true, 100, 3, 7, 7);
+        writing.lesson_type = "writing".into();
+        writing.support_level = 1;
+        assert_eq!(passes_left(&writing, false), PassesLeft { spaced: 2, now: 2 }, "a pass per help level left");
+        let mut done = lesson(true, 100, 3, 7, 7);
+        done.mastered = true;
+        assert_eq!(passes_left(&done, false), PassesLeft::default());
     }
 
     #[test]

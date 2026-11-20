@@ -118,10 +118,30 @@ pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Resul
 
 /// Whether a day is done: today's lessons all done (see plan.rs) — or, on a
 /// day with none to give, having practised at all. One definition for the
-/// ring, the streak and the reminder.
+/// ring, the streak and the reminder. Practising is doing the work, not
+/// earning XP: a check-in that failed (no XP) counts, and so does a quick
+/// game played after the day's game XP is used up.
 pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
-    let practised = day_xp(conn, day)?;
-    Ok(practised > 0 && crate::plan::remaining(conn, day)? == 0)
+    Ok(practised_on(conn, day)? && crate::plan::remaining(conn, day)? == 0)
+}
+
+/// Whether anything was practised on a day, on any device: XP or an answer
+/// counted, a lesson gone through (its last go that day), an answer in the
+/// learning log, or a drill or a quick game finished.
+pub fn practised_on(conn: &mut Conn, day: i64) -> Result<bool> {
+    use crate::schema::{attempts, learning_events, lessons};
+    let counted: Option<(i64, i64)> = day_totals::table.find(day).select((day_totals::xp, day_totals::answered)).first(conn).optional()?;
+    if counted.is_some_and(|(xp, answered)| xp > 0 || answered > 0) {
+        return Ok(true);
+    }
+    let lesson: i64 = lessons::table.filter(lessons::last_day.eq(day)).count().get_result(conn)?;
+    let answer: i64 = attempts::table.filter(attempts::day.eq(day)).count().get_result(conn)?;
+    let finished: i64 = learning_events::table
+        .filter(learning_events::day.eq(day))
+        .filter(learning_events::kind.eq_any(["lesson_finished", "game_finished"]))
+        .count()
+        .get_result(conn)?;
+    Ok(lesson + answer + finished > 0)
 }
 
 /// After a lesson: marks today done if it now is. Returns true the moment the

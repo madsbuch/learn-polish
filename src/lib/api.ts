@@ -91,6 +91,7 @@ import {
   LessonSchema,
   LessonDetailSchema,
   LessonFinishedSchema,
+  MasteryLogSchema,
   LessonOverviewSchema,
   LessonTypeInfoSchema,
   MemoryOverviewSchema,
@@ -339,8 +340,10 @@ export const api = {
     call(SessionPlanSchema, "lesson_session", { lessonId, context: context ?? null }),
   /** A drill is done: its score schedules the next check-in. */
   /** `almost`: answers one letter off, each counted as half right. */
-  lessonFinish: (lessonId: LessonId, correct: number, almost: number, total: number, context?: PracticeContext) =>
-    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, almost, total, context: context ?? null }),
+  lessonFinish: (lessonId: LessonId, correct: number, almost: number, total: number, context?: PracticeContext, run?: string) =>
+    call(LessonFinishedSchema, "lesson_finish", { lessonId, correct, almost, total, context: context ?? null, run: run ?? null }),
+  /** Every change to a lesson's mastery points, and why, newest first. */
+  lessonMasteryLog: (lessonId: LessonId) => call(MasteryLogSchema, "lesson_mastery_log", { lessonId }),
   lessonSetPeriod: (lessonId: LessonId, periodDays: number) =>
     call(LessonSchema, "lesson_set_period", { lessonId, periodDays }),
   lessonDelete: (lessonId: LessonId) => run("lesson_delete", { lessonId }),

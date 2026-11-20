@@ -58,6 +58,7 @@ mod stories;
 mod grammar;
 mod mistakes;
 mod learnlog;
+mod masterylog;
 mod analytics;
 mod tutor_analytics;
 mod topics;
@@ -232,6 +233,7 @@ pub fn run() {
             lessons::commands::lesson_detail,
             practice::lesson_session,
             practice::lesson_finish,
+            masterylog::lesson_mastery_log,
             lessons::commands::lesson_set_period,
             lessons::commands::lesson_set_challenge,
             lessons::commands::lesson_delete,
@@ -722,7 +724,7 @@ mod integration {
             stats::record_answer(&mut conn, today, 6, true).unwrap();
         }
 
-        let done = lessons::record(&mut conn, words.id, lessons::result_from_score(9, 10)).unwrap();
+        let done = lessons::record(&mut conn, words.id, lessons::result_from_score(9, 0, 10)).unwrap();
         assert_eq!(done.due_day, Some(today + words.period_days), "first pass: back after its period");
         // The day is done once the rest of today's lessons are.
         for id in plan::plan(&mut conn, today).unwrap().left {
@@ -1264,6 +1266,238 @@ mod integration {
     }
 
     #[test]
+    fn a_drill_with_nothing_scored_is_not_graded() {
+        let mut conn = scratch_db("ungraded");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        let empty = practice::lesson_finish_in(&mut conn, drill.id, 0, 0).unwrap();
+        assert!(!empty.graded && empty.mastery.is_none());
+        assert_eq!((empty.lesson.mastery, empty.lesson.passed, empty.lesson.due_day, empty.lesson.reps), (0, false, None, 0));
+        assert!(crate::masterylog::for_lesson(&mut conn, drill.id).unwrap().entries.is_empty());
+        // More right than scored is capped: 12 of 10 is 10 of 10.
+        let capped = practice::lesson_finish_in(&mut conn, drill.id, 12, 10).unwrap();
+        assert_eq!((capped.correct, capped.total, capped.result.as_str()), (10, 10, "pass"));
+        assert_eq!(capped.mastery.unwrap().text, "Ace 10 of 10, first go: +38 (0 → 38)");
+    }
+
+    #[test]
+    fn a_fail_on_extra_practice_costs_no_mastery() {
+        let mut conn = scratch_db("extra-fail");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        let failed = practice::lesson_finish_in(&mut conn, drill.id, 2, 10).unwrap();
+        assert!(failed.extra);
+        assert_eq!((failed.result.as_str(), failed.lesson.mastery), ("fail", 30), "no change");
+        let row = failed.mastery.unwrap();
+        assert_eq!((row.reason.as_str(), row.delta), ("fail_extra", 0));
+        assert_eq!(row.text, "Fail 2 of 10, same day on extra practice: no change");
+        // A real check-in's fail still costs: the next day it is not extra.
+        conn.batch_execute("UPDATE lessons SET last_day = last_day - 1; UPDATE mastery_log SET day = day - 1;").unwrap();
+        let real = practice::lesson_finish_in(&mut conn, drill.id, 2, 10).unwrap();
+        assert!(!real.extra);
+        assert_eq!(real.lesson.mastery, 10);
+    }
+
+    #[test]
+    fn nearly_right_dictation_and_speech_count_as_almost() {
+        let mut conn = scratch_db("almost-sentences");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let sentence: SentenceId = t::course_sentences::table
+            .filter(t::course_sentences::course_id.eq(basics))
+            .select(t::course_sentences::id)
+            .first(&mut conn)
+            .unwrap();
+        let answer = |kind: &str, given: &str| practice::SubmitAnswer {
+            kind: kind.into(),
+            item_kind: "sentence".into(),
+            item_id: sentence.to_string(),
+            expected: "Poproszę kawę z mlekiem.".into(),
+            given: given.into(),
+            ..Default::default()
+        };
+        let lapses = |conn: &mut Conn| srs::load(conn, "sentence", &sentence.to_string()).unwrap().map_or(0, |r| r.lapses);
+        let written = practice::submit_answer_in(&mut conn, answer("dictation", "poprosze kawe z mlekem")).unwrap();
+        assert!(!written.correct && written.almost, "one word off");
+        assert_eq!(written.xp_gained, 7, "half of 14");
+        assert_eq!(lapses(&mut conn), 0, "nearly: not started over");
+        let said = practice::submit_answer_in(&mut conn, answer("sayIt", "poproszę kawę mlekiem")).unwrap();
+        assert!(!said.correct && said.almost, "one word not heard");
+        assert_eq!(said.xp_gained, 7);
+        let off = practice::submit_answer_in(&mut conn, answer("dictation", "poprosze herbate z cukrem")).unwrap();
+        assert!(!off.correct && !off.almost && off.xp_gained == 0, "two words off is a miss");
+        assert_eq!(lapses(&mut conn), 1);
+    }
+
+    #[test]
+    fn a_day_is_done_by_doing_the_work_not_by_xp() {
+        let mut conn = scratch_db("work-day");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let today = db::today(&mut conn);
+        let lesson = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        // Today's list is that one lesson.
+        db::set_setting(&mut conn, "daily_ids", &serde_json::to_string(&[lesson.id]).unwrap()).unwrap();
+        db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
+        assert!(!stats::practised_on(&mut conn, today).unwrap());
+        // A failed go earns no XP, but the work was done: the day is.
+        lessons::record(&mut conn, lesson.id, "fail").unwrap();
+        assert_eq!(stats::day_xp(&mut conn, today).unwrap(), 0);
+        assert!(stats::day_is_done(&mut conn, today).unwrap());
+        assert!(stats::mark_practised(&mut conn, today).unwrap(), "done the moment it is marked");
+
+        // A quick game marks the day like a drill, even past the day's game XP.
+        let mut conn = scratch_db("work-day-game");
+        let today = db::today(&mut conn);
+        let lesson = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        db::set_setting(&mut conn, "daily_ids", &serde_json::to_string(&[lesson.id]).unwrap()).unwrap();
+        db::set_setting(&mut conn, "daily_day", &today.to_string()).unwrap();
+        diesel::update(t::lessons::table.find(lesson.id)).set(t::lessons::last_day.eq(Some(today))).execute(&mut conn).unwrap();
+        let completed = |conn: &mut Conn| t::day_totals::table.find(today).select(t::day_totals::completed).first::<i64>(conn).optional().unwrap();
+        assert_eq!(completed(&mut conn), None);
+        for _ in 0..4 {
+            crate::games::finish(&mut conn, "match", 8, 40_000, 0).unwrap();
+        }
+        assert_eq!(completed(&mut conn), Some(1));
+        assert_eq!(stats::day_xp(&mut conn, today).unwrap(), 30, "the fourth game paid nothing, and still counted");
+    }
+
+    #[test]
+    fn reset_clears_the_xp_log_mastery_and_its_ledger() {
+        let mut conn = scratch_db("reset");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let today = db::today(&mut conn);
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        for _ in 0..3 {
+            practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        }
+        let word: WordId = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
+        practice::submit_answer_in(
+            &mut conn,
+            practice::SubmitAnswer { kind: "type".into(), item_kind: "word".into(), item_id: word.to_string(), expected: "a".into(), given: "a".into(), ..Default::default() },
+        )
+        .unwrap();
+        crate::games::finish(&mut conn, "match", 8, 40_000, 0).unwrap();
+        diesel::update(t::lessons::table.find(drill.id)).set((t::lessons::mastered_at.eq(Some(1)), t::lessons::mastery.eq(100))).execute(&mut conn).unwrap();
+        db::set_setting(&mut conn, "streak_freezes", "2").unwrap();
+        assert!(t::xp_log::table.count().get_result::<i64>(&mut conn).unwrap() > 0);
+        assert!(t::mastery_log::table.count().get_result::<i64>(&mut conn).unwrap() > 0);
+
+        commands::reset_progress_in(&mut conn).unwrap();
+        let lesson = lessons::load(&mut conn, drill.id).unwrap();
+        assert_eq!((lesson.mastery, lesson.passed, lesson.mastered, lesson.reps), (0, false, false, 0));
+        assert_eq!(t::xp_log::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(t::mastery_log::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(db::get_setting_i64(&mut conn, "streak_freezes", 0), 0);
+        // The XP log and the day totals agree: nothing in either.
+        assert_eq!(stats::day_xp(&mut conn, today).unwrap(), 0);
+        assert_eq!(stats::total_xp(&mut conn).unwrap(), 0);
+        assert_eq!(crate::masterylog::for_lesson(&mut conn, drill.id).unwrap().before_log, None);
+        // Practice after it adds up again.
+        practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        assert_eq!(lessons::load(&mut conn, drill.id).unwrap().mastery, 30);
+    }
+
+    #[test]
+    fn a_mastered_lesson_with_due_words_comes_back_as_a_light_review() {
+        let mut conn = scratch_db("review-slot");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let today = db::today(&mut conn);
+        db::set_setting(&mut conn, "daily_lessons", "20").unwrap();
+        let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        diesel::update(t::lessons::table.find(drill.id))
+            .set((t::lessons::passed.eq(1), t::lessons::mastery.eq(100), t::lessons::last_day.eq(Some(today - 30)), t::lessons::due_day.eq(Some(today + 300))))
+            .execute(&mut conn)
+            .unwrap();
+        lessons::stamp_mastered(&mut conn, drill.id).unwrap();
+        let words: Vec<WordId> = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).load(&mut conn).unwrap();
+        let mut state = srs::ReviewState::fresh(today - 40);
+        state.reps = 4;
+        state.interval = 20;
+        state.due_day = today + 5;
+        for id in &words {
+            srs::save(&mut conn, "word", &id.to_string(), &state).unwrap();
+        }
+        // No word due: it stays out of the day.
+        assert!(!plan::plan(&mut conn, today).unwrap().left.contains(&drill.id));
+        // One due: a spare place takes it — once.
+        db::set_setting(&mut conn, "daily_day", "-1").unwrap();
+        srs::save(&mut conn, "word", &words[0].to_string(), &srs::ReviewState { due_day: today - 1, ..state }).unwrap();
+        let day = plan::plan(&mut conn, today).unwrap();
+        assert_eq!(day.left.iter().filter(|id| **id == drill.id).count(), 1, "{day:?}");
+        // A miss there costs nothing: mastery is for good, the word just comes back.
+        let done = practice::lesson_finish_in(&mut conn, drill.id, 0, 10).unwrap();
+        assert_eq!((done.lesson.mastered, done.lesson.mastery), (true, 100));
+        assert_eq!(done.mastery.unwrap().reason, "after_mastered");
+        assert!(!plan::plan(&mut conn, today).unwrap().left.contains(&drill.id), "done for today");
+        // No room, no review.
+        db::set_setting(&mut conn, "daily_lessons", "1").unwrap();
+        db::set_setting(&mut conn, "daily_day", "-1").unwrap();
+        diesel::update(t::lessons::table.find(drill.id)).set(t::lessons::last_day.eq(Some(today - 1))).execute(&mut conn).unwrap();
+        let tight = plan::plan(&mut conn, today).unwrap();
+        assert!(tight.total <= 1);
+    }
+
+    #[test]
+    fn a_version_15_database_upgrades_to_16_keeping_every_row() {
+        let path = std::env::temp_dir().join("learn-polish-tests").join(format!("v15-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let tables = ["lessons", "words", "sentences", "reviews", "day_log", "xp_log", "attempts", "learning_events", "settings", "courses"];
+        let counts = |conn: &mut Conn| -> Vec<i64> {
+            tables
+                .iter()
+                .map(|t| {
+                    #[derive(diesel::QueryableByName)]
+                    struct N {
+                        #[diesel(sql_type = diesel::sql_types::BigInt)]
+                        n: i64,
+                    }
+                    diesel::sql_query(format!("SELECT count(*) AS n FROM {t}")).get_result::<N>(conn).unwrap().n
+                })
+                .collect()
+        };
+        let before = {
+            let mut conn = db::open(&path).unwrap();
+            db::seed_test_courses(&mut conn).unwrap();
+            db::unify_courses(&mut conn).unwrap();
+            let basics = db::require_course_id(&mut conn, 1).unwrap();
+            let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+            let word: WordId = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
+            practice::submit_answer_in(
+                &mut conn,
+                practice::SubmitAnswer { kind: "type".into(), item_kind: "word".into(), item_id: word.to_string(), expected: "a".into(), given: "a".into(), lesson_id: Some(drill.id), ..Default::default() },
+            )
+            .unwrap();
+            practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+            // Back to version 15: no ledger yet, and the lesson's 30 points
+            // from before it.
+            conn.batch_execute("DROP TABLE mastery_log; DELETE FROM sync_rows WHERE tbl = 'mastery_log'; PRAGMA user_version = 15;").unwrap();
+            (counts(&mut conn), drill.id)
+        };
+        let mut conn = db::open(&path).unwrap();
+        #[derive(diesel::QueryableByName)]
+        struct V {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            user_version: i64,
+        }
+        assert_eq!(diesel::sql_query("PRAGMA user_version").get_result::<V>(&mut conn).unwrap().user_version, 16);
+        assert_eq!(counts(&mut conn), before.0, "every row kept");
+        let log = crate::masterylog::for_lesson(&mut conn, before.1).unwrap();
+        assert!(log.entries.is_empty(), "no backfill");
+        assert_eq!(log.before_log, Some(30), "its points from before the log");
+        // The new table syncs like the rest: writing to it is recorded.
+        practice::lesson_finish_in(&mut conn, before.1, 9, 10).unwrap();
+        #[derive(diesel::QueryableByName)]
+        struct N {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            n: i64,
+        }
+        let synced = diesel::sql_query("SELECT count(*) AS n FROM sync_rows WHERE tbl = 'mastery_log'").get_result::<N>(&mut conn).unwrap().n;
+        assert!(synced >= 1, "{synced}");
+        let backups = std::fs::read_dir(path.parent().unwrap().join("backups")).unwrap().filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().starts_with("before-v16"));
+        assert!(backups, "backed up before upgrading");
+    }
+
+    #[test]
     fn a_partial_earns_half_a_pass_of_mastery() {
         let mut conn = scratch_db("partial-mastery");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
@@ -1272,10 +1506,23 @@ mod integration {
         let first = practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
         assert_eq!(first.result, "partial");
         assert!(!first.lesson.passed, "a partial does not pass the lesson");
-        assert_eq!(first.lesson.mastery, 15, "half of a first pass's 30");
+        assert_eq!(first.lesson.mastery, 5, "half a repeat pass the same day (10), never more than a pass");
+        let again = practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
+        assert_eq!(again.lesson.mastery, 10, "partials in a row don't race ahead");
         let pass = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
         assert!(pass.lesson.passed);
-        assert_eq!(pass.lesson.mastery, 45);
+        assert_eq!(pass.lesson.mastery, 40);
+        // Five partials and a pass no longer master a lesson (they once made 105).
+        for _ in 0..5 {
+            practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
+        }
+        let lesson = lessons::load(&mut conn, drill.id).unwrap();
+        assert!(!lesson.mastered && lesson.mastery <= 90, "{}", lesson.mastery);
+        let log = crate::masterylog::for_lesson(&mut conn, drill.id).unwrap();
+        assert_eq!(log.entries.len(), 8, "every go has its row");
+        assert_eq!(log.entries.last().unwrap().reason, "partial");
+        assert!(log.entries.iter().any(|e| e.reason == "first_pass" && e.delta == 30));
+        assert_eq!(log.before_log, None);
     }
 
     #[test]
@@ -1602,20 +1849,35 @@ mod integration {
         let course = db::require_course_id(&mut conn, 1).unwrap();
         let drill = lessons::for_course(&mut conn, course).unwrap().into_iter().find(|l| l.lesson_type != "writing").unwrap();
         // All in one day: the first pass, then same-day passes — extra
-        // practice, which leaves the schedule alone but still counts.
+        // practice, which leaves the schedule alone but still counts — up
+        // to 90, where the points are held until another day.
         let first = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
         assert_eq!(first.lesson.mastery, 30);
+        assert_eq!(first.lesson.passes_left.now, 7, "six more today to 90, then one another day");
         let due = first.lesson.due_day;
         let mut passes = 1;
         let mut lesson = first.lesson;
-        while !lesson.mastered {
+        for _ in 0..10 {
             let done = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
             assert!(done.extra, "same-day replays are extra practice");
             lesson = done.lesson;
             passes += 1;
-            assert!(passes < 20);
         }
-        assert_eq!((passes, lesson.mastery, lesson.due_day), (8, 100, due), "crammed: 30 + 7 × 10, schedule untouched");
+        assert_eq!((lesson.mastery, lesson.mastered, lesson.due_day), (90, false, due), "crammed: held at 90, schedule untouched");
+        assert_eq!(lesson.passes_left, lessons::PassesLeft { spaced: 1, now: 1 });
+        let log = crate::masterylog::for_lesson(&mut conn, drill.id).unwrap();
+        assert_eq!(log.entries.len(), passes);
+        assert_eq!(log.entries[0].reason, "capped");
+        assert_eq!(log.entries[0].delta, 0);
+        assert_eq!(log.entries.iter().filter(|e| e.reason == "pass_same_day").count(), 6, "40 to 90");
+        // The next day — any later day, not the check-in's — one pass masters it.
+        conn.batch_execute("UPDATE lessons SET last_day = last_day - 1; UPDATE mastery_log SET day = day - 1;").unwrap();
+        let next = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        assert!(!next.extra);
+        assert_eq!((next.lesson.mastery, next.lesson.mastered), (100, true), "90 + 16");
+        let log = crate::masterylog::for_lesson(&mut conn, drill.id).unwrap();
+        assert_eq!((log.entries[0].reason.as_str(), log.entries[1].reason.as_str()), ("mastered", "pass_spaced"));
+        assert_eq!(log.entries[1].text, "Pass 9 of 10, a day after the last go: +10 (90 → 100)");
 
         // Mastery is for good: a fail afterwards takes nothing away.
         let failed = practice::lesson_finish_in(&mut conn, drill.id, 0, 10).unwrap();
@@ -1807,23 +2069,35 @@ mod integration {
             .select(t::course_words::id)
             .first(&mut conn)
             .unwrap();
-        let review = |interval: i64, reps: i64| {
-            (
-                t::reviews::kind.eq("word"),
-                t::reviews::item_id.eq(word.to_string()),
-                t::reviews::due_day.eq(0),
-                t::reviews::interval.eq(interval),
-                t::reviews::ease.eq(2.5),
-                t::reviews::reps.eq(reps),
-                t::reviews::lapses.eq(0),
-                t::reviews::last_day.eq(0),
+        // Real answers, not made-up rows: many right answers in a short span
+        // are not mastery; answers spread over weeks are.
+        let answer = |conn: &mut Conn| {
+            practice::submit_answer_in(
+                conn,
+                practice::SubmitAnswer {
+                    kind: "type".into(),
+                    item_kind: "word".into(),
+                    item_id: word.to_string(),
+                    expected: "kot".into(),
+                    given: "kot".into(),
+                    ..Default::default()
+                },
             )
+            .unwrap()
         };
-        // Many reps in a short span is not mastery; three weeks of spacing is.
-        diesel::insert_into(t::reviews::table).values(review(3, 9)).execute(&mut conn).unwrap();
+        let state = |conn: &mut Conn| srs::load(conn, "word", &word.to_string()).unwrap().unwrap();
+        for _ in 0..9 {
+            assert!(answer(&mut conn).correct);
+        }
+        assert_eq!(state(&mut conn).reps, 1, "nine right answers in a day are one review");
         assert_eq!(stats::collect(&mut conn).unwrap().words_mastered, 0);
-        diesel::delete(t::reviews::table).execute(&mut conn).unwrap();
-        diesel::insert_into(t::reviews::table).values(review(21, 4)).execute(&mut conn).unwrap();
+        // Then each time it comes due, a day at a time back in its history:
+        // 1, 3, 8, 20 and then more than three weeks apart.
+        while state(&mut conn).interval < 21 {
+            let gap = state(&mut conn).interval;
+            conn.batch_execute(&format!("UPDATE reviews SET last_day = last_day - {gap}, due_day = due_day - {gap}")).unwrap();
+            answer(&mut conn);
+        }
         assert_eq!(stats::collect(&mut conn).unwrap().words_mastered, 1);
 
         // A passed writing lesson unlocks both the check-in and the writing one.
@@ -2817,10 +3091,12 @@ mod integration {
         // Known now: some things come back to be found, others to be named
         // — typed, in a medium lesson, once they have come back twice.
         let words: Vec<WordId> = t::words::table.filter(t::words::lesson_id.eq(lesson_id)).select(t::words::id).load(conn).unwrap();
-        for id in &words {
-            for _ in 0..3 {
+        // Over three days: a word counts once a day.
+        for _ in 0..3 {
+            for id in &words {
                 practice::submit_answer_in(conn, practice::SubmitAnswer { kind: "sceneFind".into(), item_kind: "word".into(), item_id: id.to_string(), ..Default::default() }).unwrap();
             }
+            conn.batch_execute("UPDATE reviews SET last_day = last_day - 1, due_day = due_day - 1").unwrap();
         }
         let again = session::build_lesson(conn, lesson_id).unwrap();
         let kinds: Vec<&str> = again.exercises.iter().map(|e| e.kind.as_str()).collect();
@@ -3629,6 +3905,12 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("Lesson.list", &all);
         write("LessonDetail", &lessons::detail(&mut conn, drill.id).unwrap());
         write("LessonFinished", &finished);
+        // The mastery ledger, with a check-in's row and the mastered stamp too.
+        lessons::record(&mut conn, drill.id, "fail").unwrap();
+        write("MasteryLog", &crate::masterylog::for_lesson(&mut conn, drill.id).unwrap());
+        let empty = all.iter().find(|l| l.id != drill.id).unwrap().id;
+        write("MasteryLog.empty", &crate::masterylog::for_lesson(&mut conn, empty).unwrap());
+        write("LessonFinished.ungraded", &practice::lesson_finish_in(&mut conn, empty, 0, 0).unwrap());
         let word: WordId = t::words::table.filter(t::words::lesson_id.eq(drill.id)).select(t::words::id).first(&mut conn).unwrap();
         let almost = practice::submit_answer_in(
             &mut conn,

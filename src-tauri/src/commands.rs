@@ -344,11 +344,25 @@ pub async fn reset_progress(db: State<'_, Db>) -> Result<()> {
     reset_progress_in(&mut db.lock())
 }
 
+/// Erases progress — every review, day, XP entry, achievement, check-in,
+/// tutor conversation, streak freeze and lesson's schedule, pass and
+/// mastery (its ledger too) — and keeps what was made: courses, lessons,
+/// songs. Everything goes as deletes and updates, so devices that sync see
+/// the reset (a delete syncs as a tombstone). Closed courses stay closed
+/// (PRINCIPLES.md); the other courses' completed and mastered stamps go
+/// with the passes that earned them, so they can be celebrated again.
 pub(crate) fn reset_progress_in(conn: &mut Conn) -> Result<()> {
-    use crate::schema::{achievements, checkins, day_log, reviews, tutor_conversations, tutor_messages};
+    use crate::schema::{achievements, checkins, courses, day_log, mastery_log, reviews, tutor_conversations, tutor_messages, xp_log};
     conn.transaction::<_, Error, _>(|conn| {
         diesel::delete(reviews::table).execute(conn)?;
         diesel::delete(day_log::table).execute(conn)?;
+        // The XP log and the day totals agree: both go.
+        diesel::delete(xp_log::table).execute(conn)?;
+        diesel::delete(mastery_log::table).execute(conn)?;
+        db::delete_setting(conn, "streak_freezes")?;
+        diesel::update(courses::table.filter(courses::closed_at.is_null()))
+            .set((courses::completed_at.eq(None::<i64>), courses::mastered_at.eq(None::<i64>)))
+            .execute(conn)?;
         diesel::delete(achievements::table).execute(conn)?;
         diesel::delete(tutor_messages::table).execute(conn)?;
         diesel::delete(tutor_conversations::table).execute(conn)?;
@@ -361,6 +375,10 @@ pub(crate) fn reset_progress_in(conn: &mut Conn) -> Result<()> {
                 lessons::reps.eq(0),
                 lessons::interval_days.eq(0),
                 lessons::mastery.eq(0),
+                lessons::passed.eq(0),
+                lessons::mastered_at.eq(None::<i64>),
+                lessons::support_level.eq(0),
+                lessons::ease.eq(crate::lessons::START_EASE),
             ))
             .execute(conn)?;
         Ok(())

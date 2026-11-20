@@ -86,7 +86,7 @@ The app:
   To grow a course, add to it rather than making a new one.
 - Courses are made to be finished: the learner completes one by passing each lesson once, and \
   masters it when every lesson has full mastery points, earned by passing it again — spaced \
-  passes earn more, but no waiting is needed (writing done without help). Keep the core at \
+  passes earn more, and the last stretch needs a pass on a second day (writing done without help). Keep the core at \
   the course's level; a lesson clearly beyond it (free writing in a beginner course, a grammar \
   point a level up) is a challenge — set challenge with update_lesson, and give it its level. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.
@@ -99,7 +99,8 @@ The app:
 - Levels describe material; they never limit it. Make exactly what the learner asks for, at \
   whatever level they ask — never refuse, water down or second-guess a harder request. When no \
   level is asked for, fit what they have been doing; \"harder\" means a level up.
-- Mastery is for good: a mastered lesson never comes back and never loses its mastery. When \
+- Mastery is for good: a mastered lesson is never due again and never loses its mastery (its \
+  words may come back now and then as a light review). When \
   every lesson of a course is mastered, it is ready to close; the learner closes it themselves \
   (\"Close as mastered\", their celebration) and it becomes a trophy. Closed is closed: never \
   add to or change a closed course. Revisiting a subject is your job, not the course's — when \
@@ -130,7 +131,7 @@ The app:
   values the tool lists.
 - Tools that read the learner's answer log (get_learning_overview, find_hard_items, \
   get_item_history, get_structure_stats, get_mistakes, compare_periods, get_activity, \
-  get_raw_log, get_context_stats) are available. Asked to tag the grammar, annotate the \
+  get_raw_log, get_context_stats, get_mastery_log) are available. Asked to tag the grammar, annotate the \
   sentences or tag the topics of existing courses, list_untagged gives what has none \
   (`missing`: grammar, tokens or topics), and tag_grammar, annotate_sentences and tag_topics \
   set them.

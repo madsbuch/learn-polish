@@ -104,7 +104,10 @@ The **Exercises** tab reads top to bottom: **today's lessons** and **Courses**.
 Each day the app picks the five most important lessons (the number is a
 setting) and keeps them for the day: a lesson that slipped last time and is
 due again, then the other due ones, most overdue first, then — while there
-is room — at most two new ones, from the newest courses (`src-tauri/src/plan.rs`).
+is room — at most two new ones, from the newest courses (`src-tauri/src/plan.rs`),
+and, if a place is still free, at most one mastered lesson whose words are due
+for review (`reviews.due_day`), as a light review that can never cost it its
+mastery.
 Doing them is the day **done**, with a celebration and nothing more: what is
 due never piles up on the home screen. For more, a course's page lists its
 lessons in the same order of importance.
@@ -112,9 +115,16 @@ lessons in the same order of importance.
 A course is **completed** when its core lessons are passed once, and
 **mastered** when every lesson — challenges too — has full mastery points
 (writing: passed once without help). Mastery is earned by passing, never by
-waiting: spaced passes earn more, but a lesson can be mastered in one sitting.
-A partial (60–84% right) earns half what a pass would, without passing it.
-Mastery is for good — a mastered lesson never comes back and never loses it.
+waiting for a check-in: the first pass earns 30, another the same day 10, one
+a day to two weeks later 16 to 35, an ace a quarter more. A partial (60–84%
+right) earns half what a repeat pass would at that gap, without passing it; a
+fail costs 20, but nothing on extra practice. One sitting gets a lesson to 90;
+the last stretch needs a pass on a second day (any later day), so a lesson is
+never mastered by cramming. Every change is written in the lesson's **mastery
+ledger** (`mastery_log`, `masterylog.rs`), shown on its page as "Mastery
+points" and to the tutor as `get_mastery_log`.
+Mastery is for good — a mastered lesson is never due again and never loses it
+(its words can come back as a light review in the daily list).
 A mastered course is **ready to close**: *Close as mastered* is the learner's
 own celebration, and final — the course becomes a trophy in **Mastered**. To
 revisit a theme, the tutor makes a new course on it, a level up
@@ -153,22 +163,31 @@ It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
 
 - **XP** per answer — harder exercise types pay more, wrong answers nothing,
   and cards that are only read (a new word, a dialogue) nothing either. A
-  typed answer one letter off a word of four letters or more is **almost**:
+  typed answer one letter off a word of four letters or more, or a dictation
+  or spoken sentence of three words or more with one word off, is **almost**:
   still a mistake in the log, but half XP, its review comes back sooner
   rather than starting over, and it counts as half right in the drill's
-  score (85% passes, 60% is a partial).
+  score (85% passes — in a drill of three to six scored cards, one miss is
+  allowed — and 60% is a partial). An ace needs every answer fully right. A
+  drill with nothing scored is not graded.
   Conversations pay by effort: 30/80/160 for low/medium/high (half for
   partial), plus 10 per goal in a writing lesson.
 - **Extra practice**: a lesson already passed today can always be done again,
-  at half XP, without moving its schedule; it still earns mastery points. A
+  at half XP, without moving its schedule; it still earns mastery points, and a
+  fail there costs none. A
   lesson done before it is due is an early check-in: full XP, and it moves.
-- **The day** is done when today's lessons are. The **streak** counts done
+- **The day** is done when today's lessons are and something was practised —
+  a failed check-in or a quick game counts as much as a drill. The **streak** counts done
   days and survives until the end of the next one. Every seven-day run earns
   a **streak freeze** (two at most), spent automatically on a missed day.
 - **Reminders** come once a day for the week ahead; today's is skipped once
   the day is done, and says what is due.
 - A word **sticks** when its review interval has reached three weeks
-  ("Words that stick"); *mastered* is kept for lessons and courses.
+  ("Words that stick"); an item counts once a day, so only answers on
+  different days grow it, and a near miss never lengthens it. *Mastered* is
+  kept for lessons and courses.
+- **Reset progress** (Settings) erases reviews, days, the XP log, the mastery
+  ledger, passes, mastery and streak freezes together, so the totals agree.
 - **Achievements** for showing up, words that stick, and the deeper work:
   check-ins, writing lessons, listening, songs, a finished course.
 
@@ -477,6 +496,7 @@ src-tauri/src/
   db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), one-time demo setup
   courses.rs     courses: the folders lessons are listed in; cutting items into drills; moving lessons
   lessons.rs     lessons: what they own, their check-in schedule, mastery
+  masterylog.rs  the mastery ledger: every change to a lesson's points, and why
   lesson_types/  every lesson type, one module each, and their registry
   session.rs     the building blocks of a drill's exercises
   practice.rs    doing a lesson: checking answers, finishing a drill, the results

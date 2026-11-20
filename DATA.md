@@ -55,6 +55,16 @@ change to the schema follows these.
   value from the vocabulary in `grammar.rs`; topics link to the built-in
   ontology: `word_topics`, `sentence_topics`, `lesson_topics` (column
   `topic`, never `topic_id`: the name courses had before version 6).
+- **The mastery ledger** (`mastery_log`, schema 16, ids `mst_…`): one row per
+  graded go at a lesson and one for its mastered stamp — the change to its
+  mastery points, the points before and after, the grade, a drill's score,
+  days since the last go, extra practice or not, drill or check-in, the run,
+  and a reason key (`masterylog::REASONS`) with versioned `details`. Written
+  in the same transaction as the change (`lessons::credit_mastery`,
+  `stamp_mastered`), by the device that made it, never updated: append-only
+  and per device like `attempts`, with no foreign keys. A reset of progress
+  deletes it with the points. Not backfilled: a lesson's points from before
+  it are shown as one starting line.
 - **No ids inside stored text** unless they are TypeIDs: JSON in a column
   (a tutor message's actions, a song's origin, the day's list) holds TypeIDs
   only, never positions or integers.

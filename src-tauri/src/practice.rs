@@ -139,8 +139,10 @@ pub const READING_KINDS: &[&str] = &["intro", "sentenceIntro", "dialogueRead", "
 #[serde(rename_all = "camelCase")]
 pub struct AnswerResult {
     pub correct: bool,
-    /// Wrong, but one letter off a typed answer (see [`almost_matches`]):
-    /// half XP, and the review comes back sooner rather than starting over.
+    /// Wrong, but nearly: one letter off a typed answer (see
+    /// [`almost_matches`]), or one word off a dictation or a spoken
+    /// sentence of three words or more (`dictation::nearly`): half XP, half
+    /// a point, and the review comes back sooner rather than starting over.
     pub almost: bool,
     pub expected: String,
     pub xp_gained: i64,
@@ -219,12 +221,15 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         "wordOrder" => crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given),
         "dictation" => {
             let checked = crate::dictation::check(&answer.expected, &answer.given);
+            almost = !checked.correct && crate::dictation::nearly(&checked.words);
             diff = checked.words;
             checked.correct
         }
         "soundPair" => answer.expected.trim().to_lowercase() == answer.given.trim().to_lowercase(),
         "sayIt" | "dialogueSay" => {
             let spoken = crate::speaking::check(&answer.expected, &answer.given);
+            // Mostly heard right: all but one word of a longer sentence.
+            almost = !spoken.correct && crate::dictation::nearly(&spoken.words);
             diff = spoken.words;
             tips = spoken.tips;
             spoken.correct
@@ -240,7 +245,8 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     // A sentence not quite heard is not a sentence forgotten: the learner
     // knew what to say, and the ear (a model's, in a room) is fallible. It
     // comes back sooner, but is not started over.
-    // A slip of one letter is the same: known, nearly — sooner, not over.
+    // A slip of one letter, or one word off a sentence written or said,
+    // is the same: known, nearly — sooner, not over.
     let missed = if almost || crate::speaking::KINDS.contains(&answer.kind.as_str()) { srs::HARD } else { srs::AGAIN };
     let grade = answer
         .grade
@@ -266,6 +272,7 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     }
     stats::record_answer(conn, today, xp, correct)?;
     let note = match (correct, answer.extra, answer.is_new) {
+        (false, true, _) if almost => "almost, on extra practice: a quarter XP",
         (false, _, _) if almost => "almost: half XP",
         (false, _, _) => "a mistake: no XP",
         (true, true, _) => "extra practice: half XP",
@@ -385,6 +392,9 @@ pub struct LessonFinished {
     pub lesson: lessons::Lesson,
     /// "pass" | "partial" | "fail"
     pub result: String,
+    /// False when nothing was scored: not graded at all (no mastery, no
+    /// schedule change), and `result` means nothing.
+    pub graded: bool,
     /// Extra practice on a lesson that was not due: its schedule is unchanged.
     pub extra: bool,
     /// This drill's score: right answers out of the scored cards, and the
@@ -392,6 +402,8 @@ pub struct LessonFinished {
     pub correct: i64,
     pub almost: i64,
     pub total: i64,
+    /// What it did to the lesson's mastery points: its row in the ledger.
+    pub mastery: Option<crate::masterylog::MasteryEntry>,
     #[serde(flatten)]
     pub session: SessionResult,
 }
@@ -406,8 +418,12 @@ pub async fn lesson_finish(
     almost: Option<i64>,
     total: i64,
     context: Option<crate::learnlog::PracticeContext>,
+    run: Option<String>,
 ) -> Result<LessonFinished> {
-    lesson_finish_with(&mut db.lock(), lesson_id, Score { correct, almost: almost.unwrap_or(0), total }, context.as_ref())
+    let conn = &mut db.lock();
+    let context = crate::learnlog::resolve(conn, context.as_ref(), Some(lesson_id), "")?;
+    let run = run.unwrap_or_default();
+    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, Score { correct, almost: almost.unwrap_or(0), total }, &context, &run))
 }
 
 /// The work behind [`lesson_finish`], callable without Tauri (tests).
@@ -428,6 +444,7 @@ pub struct Score {
 }
 
 /// A drill finished, where it was practised from (for its event).
+#[cfg(test)]
 pub fn lesson_finish_with(
     conn: &mut Conn,
     lesson_id: LessonId,
@@ -435,13 +452,21 @@ pub fn lesson_finish_with(
     context: Option<&crate::learnlog::PracticeContext>,
 ) -> Result<LessonFinished> {
     let context = crate::learnlog::resolve(conn, context, Some(lesson_id), "")?;
-    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, score, &context))
+    conn.transaction(|tx| lesson_finish_steps(tx, lesson_id, score, &context, ""))
 }
 
-fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, score: Score, context: &crate::learnlog::PracticeContext) -> Result<LessonFinished> {
-    let Score { correct, total, .. } = score;
-    // Never more almosts than misses: the screen's count is trusted only so far.
-    let almost = score.almost.clamp(0, (total - correct).max(0));
+fn lesson_finish_steps(
+    conn: &mut Conn,
+    lesson_id: LessonId,
+    score: Score,
+    context: &crate::learnlog::PracticeContext,
+    run: &str,
+) -> Result<LessonFinished> {
+    // The screen's counts are trusted only so far: never more right than
+    // scored, never more almosts than misses.
+    let total = score.total.max(0);
+    let correct = score.correct.clamp(0, total);
+    let almost = score.almost.clamp(0, total - correct);
     let before = unlocked_codes(conn)?;
     crate::learnlog::note(
         conn,
@@ -458,27 +483,54 @@ fn lesson_finish_steps(conn: &mut Conn, lesson_id: LessonId, score: Score, conte
         },
         context,
     )?;
-    // An almost counts as half right: graded in half points.
-    let half_points = correct * 2 + almost;
-    let result = lessons::result_from_score(half_points, total * 2);
     let today = db::today(conn);
+    let current = lessons::load(conn, lesson_id)?;
+    // Nothing scored (every card read, or the speaking ones skipped): there
+    // is nothing to grade, so no mastery and no schedule change. The day
+    // still counts it.
+    if total == 0 {
+        let first = stats::mark_practised(conn, today)?;
+        return Ok(LessonFinished {
+            lesson: current,
+            result: "fail".into(),
+            graded: false,
+            extra: false,
+            correct,
+            almost,
+            total,
+            mastery: None,
+            session: finish_up(conn, &before, first)?,
+        });
+    }
+    let result = lessons::result_from_score(correct, almost, total);
     // Only a lesson that is due (or new) moves its schedule. Practising one
     // early is extra practice: it counts for the day, but a pass must not
     // push the next check-in further out — three quick replays would
     // otherwise send it months away.
-    let current = lessons::load(conn, lesson_id)?;
     let extra = lessons::is_extra_practice(&current, today);
-    // Nearly all right is an ace: the gap grows faster.
-    let ace = total > 0 && half_points * 100 >= total * 2 * 95;
-    let lesson = if extra {
+    // Nearly all right is an ace: the gap grows faster. Only answers fully
+    // right count toward it: an almost is a slip, however small.
+    let ace = almost == 0 && correct * 100 >= total * 95;
+    let go = lessons::Go { via: "drill", run, score: Some((correct, almost, total)), extra };
+    let (lesson, entry) = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
-        lessons::credit_mastery(conn, &current, result, ace, today)?;
-        lessons::load(conn, lesson_id)?
+        let entry = lessons::credit_mastery(conn, &current, result, ace, today, &go)?;
+        (lessons::load(conn, lesson_id)?, entry)
     } else {
-        lessons::record_graded(conn, lesson_id, result, ace)?
+        lessons::record_go(conn, lesson_id, result, ace, &go)?
     };
     let first = stats::mark_practised(conn, today)?;
-    Ok(LessonFinished { lesson, result: result.into(), extra, correct, almost, total, session: finish_up(conn, &before, first)? })
+    Ok(LessonFinished {
+        lesson,
+        result: result.into(),
+        graded: true,
+        extra,
+        correct,
+        almost,
+        total,
+        mastery: Some(entry),
+        session: finish_up(conn, &before, first)?,
+    })
 }
 
 /// Stats after a check-in, for the summary screen. What counts as newly

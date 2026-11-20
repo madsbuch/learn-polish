@@ -48,6 +48,7 @@ pub const KINDS: &[(&str, &str)] = &[
     ("pnl", "story panel"),
     ("att", "answer"),
     ("ev", "learning event"),
+    ("mst", "mastery entry"),
     ("gr", "grammar tag"),
     ("tp", "topic"),
 ];
@@ -306,6 +307,9 @@ typed_id!(/// One graded answer in the learning log (learnlog.rs): append-only,
 typed_id!(/// One thing the learner did that is not an answer (a lesson opened,
     /// a word's meaning tapped): the learning log's events (learnlog.rs).
     LearningEventId, LearningEventIdSql, "ev");
+typed_id!(/// One change to a lesson's mastery points, and why (masterylog.rs):
+    /// append-only, written on the device that made the change.
+    MasteryEntryId, MasteryEntryIdSql, "mst");
 typed_id!(/// A grammar structure from the built-in vocabulary (grammar.rs):
     /// derived from its key, the same on every device. Not a table.
     GrammarTagId, GrammarTagIdSql, "gr");

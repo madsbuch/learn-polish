@@ -7,8 +7,13 @@
 //! What matters most: a lesson **slipping** (failed or partly there last
 //! time) that is due again, then the other lessons **due**, most overdue
 //! first — then, while there is room, at most [`MAX_NEW`] **new** lessons, the
-//! next of the newest courses. A **mastered** lesson never comes back, nor
-//! does one only a closed course lists: they are out of play.
+//! next of the newest courses. A **mastered** lesson is never due again,
+//! nor is one only a closed course lists: they are out of play — except that,
+//! so a mastered lesson's words don't fade, one whose words are due for
+//! review (`reviews.due_day`) can take a spare place as a light **review**:
+//! at most [`MAX_REVIEWS`] a day, only when the due and new lessons leave
+//! room, never in place of one. It stays mastered whatever happens: a miss
+//! there only brings its words back sooner (srs.rs).
 //!
 //! New check-ins are **spread**: a lesson lands on the lightest day near its
 //! target, so they don't bunch up.
@@ -30,6 +35,8 @@ use crate::ids::*;
 pub const DEFAULT_DAILY: i64 = 5;
 /// At most this many new lessons a day: what is due comes first.
 pub const MAX_NEW: usize = 2;
+/// At most this many mastered lessons a day come back as a review.
+pub const MAX_REVIEWS: usize = 1;
 
 /// How many lessons a day asks for (Settings).
 pub fn daily_count(conn: &mut Conn) -> i64 {
@@ -97,6 +104,7 @@ impl Scheduled {
 }
 
 /// Lessons out of play: mastered ones, and ones only closed courses list.
+#[cfg(test)]
 pub fn out_of_play(conn: &mut Conn) -> Result<HashSet<LessonId>> {
     let mut out = crate::courses::retired_lessons(conn)?;
     out.extend(in_play_or_not(conn)?.into_iter().filter(|l| l.mastered()).map(|l| l.id));
@@ -248,6 +256,9 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<LessonId>> {
             in_play(conn)?.into_iter().map(|l| l.id).filter(|id| !ids.contains(id)).collect();
         ids.extend(new_lessons(conn, &playing, (size - ids.len()).min(MAX_NEW))?);
     }
+    if ids.len() < size && MAX_REVIEWS > 0 {
+        ids.extend(review_due(conn, today, &ids)?);
+    }
     // Kept for the day — but not an empty list (nothing to keep: it is
     // chosen again next time), and not while this device is still catching
     // up with its vault (see `catching_up`).
@@ -256,6 +267,39 @@ fn todays_list(conn: &mut Conn, today: i64) -> Result<Vec<LessonId>> {
         db::set_setting(conn, "daily_day", &today.to_string())?;
     }
     Ok(ids)
+}
+
+/// A mastered lesson whose words (or sentences) are due for review today,
+/// the one most overdue first (then the one with the most due): a light
+/// review for a spare place in the day's list. Not one done today, not one
+/// only closed courses list, and only lessons with words or sentences to
+/// review (a writing or study lesson has none).
+fn review_due(conn: &mut Conn, today: i64, taken: &[LessonId]) -> Result<Option<LessonId>> {
+    #[derive(diesel::QueryableByName)]
+    struct Due {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        lesson_id: String,
+    }
+    let due: Vec<Due> = diesel::sql_query(
+        "SELECT l.id AS lesson_id, min(r.due_day) AS first, count(*) AS n
+         FROM lessons l
+         JOIN (SELECT w.lesson_id AS lesson_id, w.id AS item_id, 'word' AS kind FROM words w
+               UNION ALL SELECT s.lesson_id, s.id, 'sentence' FROM sentences s) i ON i.lesson_id = l.id
+         JOIN reviews r ON r.kind = i.kind AND r.item_id = i.item_id
+         WHERE l.mastered_at IS NOT NULL AND (l.last_day IS NULL OR l.last_day <> ?1) AND r.due_day <= ?1
+         GROUP BY l.id
+         ORDER BY first, n DESC, l.id",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(today)
+    .load(conn)?;
+    if due.is_empty() {
+        return Ok(None);
+    }
+    let retired = crate::courses::retired_lessons(conn)?;
+    Ok(due
+        .into_iter()
+        .filter_map(|d| LessonId::parse(&d.lesson_id).ok())
+        .find(|id| !retired.contains(id) && !taken.contains(id)))
 }
 
 /// Where today stands.
@@ -271,18 +315,19 @@ pub struct Plan {
 
 pub fn plan(conn: &mut Conn, today: i64) -> Result<Plan> {
     let list = todays_list(conn, today)?;
-    let out = out_of_play(conn)?;
+    let retired = crate::courses::retired_lessons(conn)?;
     let state: Vec<(LessonId, Option<i64>)> = lessons::table
         .filter(lessons::id.eq_any(&list))
         .select((lessons::id, lessons::last_day))
         .load(conn)?;
     let (mut left, mut done) = (Vec::new(), 0usize);
     for id in &list {
-        // A lesson deleted since just drops out; one mastered or retired
-        // since counts as done.
+        // A lesson deleted since just drops out; one retired since counts
+        // as done. A mastered one in the list is today's review (or was
+        // mastered today: done).
         match state.iter().find(|s| s.0 == *id) {
             Some((_, last)) if *last == Some(today) => done += 1,
-            Some(_) if out.contains(id) => done += 1,
+            Some(_) if retired.contains(id) => done += 1,
             Some(_) => left.push(*id),
             None => {}
         }

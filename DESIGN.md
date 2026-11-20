@@ -150,8 +150,9 @@ counting and celebrating.
   Today ring fill from where they were last seen (`memory`) to the new
   value. Nothing moves on a reload that changed nothing.
 - **Practice.** The next card slides in; a right answer swells and glows, a
-  wrong one shakes, an almost (a typed answer one letter off) only pops in,
-  warm rather than red; the XP badge bumps (`useBump`). A day done or a new
+  wrong one shakes, an almost (a typed answer one letter off, a sentence one
+  word off) only pops in, warm rather than red, with a soft note and a light
+  tap instead of the wrong buzz; the XP badge bumps (`useBump`). A day done or a new
   level gets `Confetti`. A sentence tile lifts when picked up and follows the
   finger above the page; the line makes room, and the tile springs into its
   slot (FLIP: one-off, ending untransformed). Memory cards turn edge-on to

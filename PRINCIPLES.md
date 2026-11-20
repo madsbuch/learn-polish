@@ -34,11 +34,15 @@ app's owner; change them only on their word.
 5. **A course can always be finished, regardless of time.** Time may help —
    passes spread over days are better evidence and earn more — but it is
    never required. Practising a lesson again today always moves it forward,
-   so a learner who wants to can master a lesson, and a course, in one go.
+   so a learner who wants to can take a lesson most of the way in one go;
+   the last stretch to mastered takes a pass on a second day — any day, no
+   waiting for a check-in — because mastering is remembering, not cramming.
 
-6. **Mastery cannot be lost.** A mastered lesson stays mastered and leaves
-   play for good. This is part of the game: earned progress is never taken
-   back.
+6. **Mastery cannot be lost.** A mastered lesson stays mastered and is never
+   due again. This is part of the game: earned progress is never taken back.
+   Its words may still come back now and then as a light review in a spare
+   place of the day's lessons, so they don't fade; nothing there can cost it
+   its mastery.
 
 7. **Closed is closed.** Closing a mastered course is a celebration the
    learner chooses ("Close as mastered", with an animation), and it is final.

@@ -963,7 +963,8 @@ pub struct CourseStatus {
     pub mastery_points: i64,
     pub mastery_max: i64,
     /// About how many minutes of practice are left to master it: each lesson's
-    /// minutes, times the passes it still needs when spaced out.
+    /// minutes, times the passes it still needs when spaced out
+    /// (lessons::passes_left, from its own schedule).
     pub minutes_to_master: i64,
     /// The first core lesson, in the course's order, not passed yet.
     pub next_lesson: Option<String>,
@@ -988,21 +989,16 @@ pub fn status(conn: &mut Conn, course_id: CourseId) -> Result<CourseStatus> {
             lessons::complexity,
         ))
         .load(conn)?;
-    // Passes left at the spaced pace: the first gives 30 points, later ones
-    // about 35 (lessons::mastery_gain).
-    let minutes_to_master = list
+    // Passes left at the spaced pace, each lesson by its own schedule
+    // (lessons::passes_left), times its minutes.
+    let ids: Vec<LessonId> = course_lessons::table
+        .filter(course_lessons::course_id.eq(course_id))
+        .select(course_lessons::lesson_id)
+        .load(conn)?;
+    let minutes_to_master = crate::lessons::load_many(conn, &ids)?
         .iter()
-        .filter(|l| l.4.is_none())
-        .map(|(_, passed, mastery, lesson_type, _, _, complexity)| {
-            let left = crate::lessons::MASTERY_FULL - (*mastery).clamp(0, crate::lessons::MASTERY_FULL);
-            let passes = if *passed == 1 {
-                (left + 34) / 35
-            } else {
-                // The first pass, then the rest at 35 a pass.
-                1 + ((left - 30).max(0) + 34) / 35
-            };
-            passes.max(1) * crate::lesson_types::minutes(lesson_type, complexity)
-        })
+        .filter(|l| !l.mastered)
+        .map(|l| l.passes_left.spaced.max(1) * crate::lesson_types::minutes(&l.lesson_type, &l.complexity))
         .sum();
     // Its core lessons: all but challenges — or, for a course of challenges
     // only, those, so it can be completed too.

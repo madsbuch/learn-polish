@@ -46,41 +46,62 @@ impl ReviewState {
 }
 
 /// Applies a grade and returns the new state. Pure, so it is easy to test.
+///
+/// Spacing is the point: an item counts once a day. A right answer on the
+/// same day as its last review (`last_day`, once it has been reviewed at
+/// all) changes nothing — five right answers in one afternoon do not make a
+/// word "stick" for three weeks. A miss still lapses it, whenever it comes.
+///
+/// HARD is a miss that was nearly there (a slip of a letter, one word off,
+/// a sentence misheard): it comes back sooner, but is not started over. It
+/// keeps the item's reps and never lengthens its gap — on another day it
+/// halves it (at least a day); on the same day, like GOOD, it changes
+/// nothing.
 pub fn grade(state: ReviewState, grade: i64, today: i64) -> ReviewState {
     let mut next = state;
-    next.last_day = today;
 
     if grade <= AGAIN {
+        next.last_day = today;
         next.lapses += 1;
         next.reps = 0;
         next.interval = 0;
         next.ease = (next.ease - 0.20).max(MIN_EASE);
-        // Due again the same day, so a missed item comes back before the
-        // session ends rather than tomorrow.
+        // Due again at once: it is the first to come back.
         next.due_day = today;
         return next;
     }
 
+    // Reviewed already today (a new item, never reviewed, has no reps and
+    // no lapses): counted once a day.
+    let reviewed = state.reps > 0 || state.lapses > 0;
+    if reviewed && state.last_day >= today {
+        return next;
+    }
+    next.last_day = today;
+
+    if grade == HARD {
+        next.ease = (next.ease - 0.15).max(MIN_EASE);
+        next.interval = (next.interval / 2).max(1);
+        next.due_day = today + next.interval;
+        return next;
+    }
+
     next.ease = match grade {
-        HARD => (next.ease - 0.15).max(MIN_EASE),
         EASY => (next.ease + 0.10).min(MAX_EASE),
         _ => next.ease,
     };
 
     next.interval = match next.reps {
         0 => match grade {
-            HARD => 1,
             EASY => 3,
             _ => 1,
         },
         1 => match grade {
-            HARD => 2,
             EASY => 5,
             _ => 3,
         },
         _ => {
             let factor = match grade {
-                HARD => 1.2,
                 EASY => next.ease * 1.3,
                 _ => next.ease,
             };
@@ -139,6 +160,42 @@ mod tests {
         assert_eq!(lapsed.due_day, 4);
         assert_eq!(lapsed.lapses, 1);
         assert!(lapsed.ease < state.ease);
+    }
+
+    #[test]
+    fn right_answers_count_once_a_day() {
+        let mut state = ReviewState::fresh(10);
+        for _ in 0..5 {
+            state = grade(state, GOOD, 10);
+        }
+        assert_eq!((state.reps, state.interval, state.due_day), (1, 1, 11), "five in a day are one review");
+        // The next day it grows; a miss the same day still lapses.
+        state = grade(state, GOOD, 11);
+        assert_eq!((state.reps, state.interval), (2, 3));
+        let lapsed = grade(state, AGAIN, 11);
+        assert_eq!((lapsed.reps, lapsed.lapses), (0, 1));
+        // Right again after the lapse, that day: no credit until tomorrow.
+        assert_eq!(grade(lapsed, GOOD, 11).reps, 0);
+        assert_eq!(grade(lapsed, GOOD, 12).reps, 1);
+    }
+
+    #[test]
+    fn a_near_miss_never_lengthens_the_gap() {
+        let mut state = ReviewState::fresh(0);
+        for day in [0, 1, 4, 12] {
+            state = grade(state, GOOD, day);
+        }
+        assert_eq!(state.interval, 20);
+        for (day, label) in [(12, "same day"), (40, "a later day")] {
+            let hard = grade(state, HARD, day);
+            let good = grade(state, GOOD, day);
+            assert!(hard.interval <= good.interval, "{label}: HARD {} against GOOD {}", hard.interval, good.interval);
+            assert!(hard.interval <= state.interval, "{label}: a miss does not grow it");
+            assert_eq!(hard.reps, state.reps, "{label}: nor start it over");
+        }
+        assert_eq!(grade(state, HARD, 40).interval, 10, "halved, on another day");
+        let new = grade(ReviewState::fresh(3), HARD, 3);
+        assert!(new.interval <= grade(ReviewState::fresh(3), GOOD, 3).interval);
     }
 
     #[test]

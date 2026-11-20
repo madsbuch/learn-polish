@@ -9,8 +9,8 @@ import { useBackHandler } from "../lib/back";
 import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, setPracticeContext, takeSignals } from "../lib/learnLog";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
-import { hapticRight, hapticWrong } from "../lib/haptics";
-import { playCorrect, playWrong } from "../lib/sounds";
+import { hapticAlmost, hapticRight, hapticWrong } from "../lib/haptics";
+import { playAlmost, playCorrect, playWrong } from "../lib/sounds";
 import { exerciseModule, type AnswerState, type ExerciseProps } from "../exercises";
 import { WordIdSchema } from "../lib/types";
 
@@ -192,6 +192,10 @@ export function Session({
         if (answer.correct) {
           playCorrect();
           hapticRight();
+        } else if (answer.almost) {
+          // Nearly there: a gentle note, not the wrong buzz.
+          playAlmost();
+          hapticAlmost();
         } else {
           playWrong();
           hapticWrong();
@@ -226,7 +230,7 @@ export function Session({
     flushLog();
     try {
       const scored = played.filter((e) => !exerciseModule(e.kind).reading).length;
-      onFinished(await api.lessonFinish(plan.lessonId, correctCount, almostCount, scored, plan.context), sessionXp);
+      onFinished(await api.lessonFinish(plan.lessonId, correctCount, almostCount, scored, plan.context, runKey.current), sessionXp);
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
@@ -237,7 +241,8 @@ export function Session({
    *  (unscored), and spoken turns become choices. */
   function skipSpeaking() {
     setSpeakingOff(true);
-    const laterCards = exercises.slice(index).filter((e) => e.kind === "sayIt");
+    // A Say it card already answered stays: its answer is in the score.
+    const laterCards = exercises.slice(phase === "checked" ? index + 1 : index).filter((e) => e.kind === "sayIt");
     for (const card of laterCards) {
       logEvent({
         kind: "card_skipped",

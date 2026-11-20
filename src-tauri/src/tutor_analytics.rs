@@ -120,6 +120,22 @@ pub fn tools() -> Vec<Tool> {
             json!({ "type": "object", "properties": { "period": period_prop(), "course_id": course_prop() } }),
         ),
         tool(
+            "get_mastery_log",
+            "Looking at the mastery points…",
+            "One lesson's mastery ledger: its points now, whether it is mastered, the points it had \
+             before the ledger began, and every change, newest first — when, the change and the points \
+             before and after, the grade, a drill's score, days since the last go, extra practice, \
+             drill or check-in, and the reason (with the rules each reason stands for).",
+            json!({
+                "type": "object",
+                "properties": {
+                    "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Default 40" }
+                },
+                "required": ["lesson_id"]
+            }),
+        ),
+        tool(
             "tag_grammar",
             "Tagging the grammar…",
             "Give existing words and sentences their grammar tags (replacing any they had). Ids from \
@@ -279,6 +295,12 @@ struct HardArgs {
     #[serde(default)]
     course_id: Option<CourseId>,
     #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MasteryArgs {
+    lesson_id: LessonId,
     limit: Option<usize>,
 }
 
@@ -720,6 +742,31 @@ pub fn run(conn: &mut Conn, name: &str, arguments: &str) -> Option<Result<Value>
                 "group_by": s.group_by,
                 "answers": s.attempts,
                 "groups": s.groups.iter().map(|g| json!({ "key": g.key, "label": g.label, "answers": g.attempts, "correct": g.correct, "accuracy_pct": pct(g.accuracy) })).collect::<Vec<_>>(),
+            }))
+        })(),
+        "get_mastery_log" => (|| {
+            let args: MasteryArgs = parse(arguments)?;
+            let log = crate::masterylog::for_lesson(conn, args.lesson_id)?;
+            let reasons: std::collections::BTreeSet<&str> = log.entries.iter().map(|e| e.reason.as_str()).collect();
+            Ok(json!({
+                "lesson_id": log.lesson_id,
+                "points": log.mastery,
+                "mastered": log.mastered,
+                "points_before_the_ledger": log.before_log.unwrap_or(0),
+                "entries": log.entries.iter().take(args.limit.unwrap_or(40).min(100)).map(|e| json!({
+                    "date": date(e.day),
+                    "change": e.delta,
+                    "before": e.before,
+                    "after": e.after,
+                    "grade": e.grade,
+                    "score": e.total.map(|t| json!({ "correct": e.correct, "almost": e.almost, "total": t })),
+                    "days_since_last_go": e.days_since,
+                    "extra_practice": e.extra,
+                    "via": e.via,
+                    "reason": e.reason,
+                    "text": e.text,
+                })).collect::<Vec<_>>(),
+                "reasons": crate::masterylog::REASONS.iter().filter(|(k, _)| reasons.contains(k)).map(|(k, v)| json!({ "reason": k, "rule": v })).collect::<Vec<_>>(),
             }))
         })(),
         _ => return None,

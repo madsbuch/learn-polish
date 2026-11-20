@@ -98,6 +98,19 @@ pub fn check(expected: &str, given: &str) -> Checked {
     Checked { correct, words: out }
 }
 
+/// The fewest words a sentence needs for one word off to be "almost".
+pub const NEARLY_WORDS: usize = 3;
+
+/// A sentence written (or said) all but one word right: of a sentence of
+/// three words or more, exactly one word wrong, left out or added — the
+/// rest right (Polish letters forgiven). Wrong, but nearly there: it counts
+/// as almost (half XP, half a point; practice.rs).
+pub fn nearly(words: &[DiffWord]) -> bool {
+    let said = words.iter().filter(|w| !w.expected.is_empty()).count();
+    let off = words.iter().filter(|w| !matches!(w.status.as_str(), "right" | "accents")).count();
+    said >= NEARLY_WORDS && off == 1
+}
+
 /// How alike two words are, 0 to 1, by their letters (folded): one minus
 /// the edits between them over the longer's length.
 fn likeness(a: &str, b: &str) -> f64 {
@@ -216,5 +229,14 @@ mod tests {
         assert!(!checked.correct);
         assert_eq!(checked.words.len(), 3, "the dash is not a word");
         assert!(checked.words.iter().all(|w| w.status == "missing"));
+    }
+
+    #[test]
+    fn one_word_off_a_longer_sentence_is_nearly() {
+        assert!(nearly(&check("Poproszę kawę z mlekiem.", "poprosze kawe z mlekem").words), "one word wrong");
+        assert!(nearly(&check("Poproszę kawę z mlekiem.", "poprosze kawe mlekiem").words), "one word left out");
+        assert!(!nearly(&check("Mam psa.", "mam duzego psa").words), "too short to be nearly");
+        assert!(!nearly(&check("Poproszę kawę z mlekiem.", "poprosze herbate mlekem").words), "two off");
+        assert!(!nearly(&check("Poproszę kawę z mlekiem.", "poprosze kawe z mlekiem").words), "all right is not nearly");
     }
 }

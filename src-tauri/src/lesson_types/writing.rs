@@ -35,6 +35,6 @@ fn step_help(conn: &mut Conn, lesson: &Lesson, result: &str) -> Result<()> {
     diesel::update(lessons::table.find(lesson.id))
         .set(lessons::support_level.eq(crate::examiner::next_support_level(lesson.support_level, result)))
         .execute(conn)?;
-    crate::lessons::stamp_mastered(conn, lesson.id)?;
+    crate::lessons::stamp_mastered_for(conn, lesson.id, &crate::lessons::Go { via: "checkin", ..Default::default() })?;
     Ok(())
 }

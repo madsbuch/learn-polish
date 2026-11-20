@@ -528,6 +528,45 @@ CREATE TABLE IF NOT EXISTS learning_events (
 CREATE INDEX IF NOT EXISTS learning_events_day ON learning_events(day, kind);
 CREATE INDEX IF NOT EXISTS learning_events_item ON learning_events(item_id);
 
+-- The mastery ledger (masterylog.rs, schema 16): every change to a lesson's
+-- mastery points, and every go that left them as they were, with why —
+-- written in the same transaction as the change, on the device that made
+-- it, and never changed after. Append-only and per device like attempts:
+-- nothing to conflict when it syncs. No foreign key: it is history. A
+-- lesson's points from before it began are not explained by it (no
+-- backfill): its page says "before the log began".
+CREATE TABLE IF NOT EXISTS mastery_log (
+    id            TEXT PRIMARY KEY NOT NULL,
+    -- When (milliseconds since 1970), the learner's day, and the device.
+    at            INTEGER NOT NULL,
+    day           INTEGER NOT NULL,
+    device        TEXT    NOT NULL,
+    lesson_id     TEXT    NOT NULL,
+    -- The change, and the points before and after it (0 to 100).
+    delta         INTEGER NOT NULL,
+    points_before INTEGER NOT NULL,
+    points_after  INTEGER NOT NULL,
+    -- How the go went: fail | partial | pass | ace ('' for the mastered stamp).
+    grade         TEXT    NOT NULL DEFAULT '',
+    -- A drill's score (right, almost, scored cards); NULL for a check-in.
+    correct       INTEGER,
+    almost        INTEGER,
+    total         INTEGER,
+    -- Days since the lesson's last go (NULL for the first), whether it was
+    -- extra practice, and whether it was a drill or a check-in.
+    days_since    INTEGER,
+    extra         INTEGER NOT NULL DEFAULT 0,
+    via           TEXT    NOT NULL DEFAULT '',
+    -- The go it belongs to: a drill's run key, a check-in's id.
+    run           TEXT    NOT NULL DEFAULT '',
+    -- Why, as a key (masterylog::REASONS), and the numbers behind it
+    -- (masterylog::Details, versioned by its "v").
+    reason        TEXT    NOT NULL,
+    details       TEXT    NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS mastery_log_lesson ON mastery_log(lesson_id, at);
+
 -- The grammar a word or sentence shows (grammar.rs: a curated list kept in
 -- the code, its ids derived from their keys). The tutor tags what it makes;
 -- older items are tagged only when the learner asks it to (no backfill).

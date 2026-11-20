@@ -348,6 +348,9 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
         // can end within a second).
         let run = format!("{RUN_PREFIX}{game}:{}", XpEntryId::new());
         crate::xplog::write(conn, today, &run, None, &label, xp, &note)?;
+        // A game counts toward the day like a drill: on a day with no
+        // lessons to give, or once they are done, it can be what does it.
+        crate::stats::mark_practised(conn, today)?;
         let total_xp = crate::stats::total_xp(conn)?;
         Ok(GameFinished {
             xp_gained: xp,

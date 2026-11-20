@@ -36,6 +36,7 @@ import { logEvent, setPracticeContext } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { lessonType } from "../lib/lessonTypes";
 import { useSyncReload } from "../lib/sync";
+import { MasteryPoints } from "../components/MasteryPoints";
 import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { CourseProgress, LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/types";
 
@@ -360,6 +361,7 @@ export function LessonPage({
             >
               {started ? type.againLabel : type.startLabel}
             </Button>
+            {started ? <MasteryPoints lesson={lesson} /> : null}
           </Stack>
         </div>
 
@@ -383,7 +385,7 @@ export function LessonPage({
               <SettingRow
                 label={
                   lesson.mastered
-                    ? "Mastered — it no longer comes back"
+                    ? "Mastered — it is never due again"
                     : lesson.dueDay === null
                       ? "Starts the first time you do it"
                       : lesson.dueDay <= today
@@ -392,7 +394,7 @@ export function LessonPage({
                 }
                 description={
                   lesson.mastered
-                    ? "Mastery is for good. Practise it whenever you like; it won't be scheduled again."
+                    ? "Mastery is for good. Practise it whenever you like; now and then its words come back as a light review in today's lessons."
                     : started
                       ? "Each pass pushes the next one further out; struggling brings it back sooner."
                       : `Then it comes back about every ${lesson.periodDays} days, further apart as you pass.`

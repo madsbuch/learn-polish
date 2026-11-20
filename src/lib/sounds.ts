@@ -92,6 +92,14 @@ export function playWrong() {
   ]);
 }
 
+/** Almost: one soft, warm note — nearly there, not wrong. */
+export function playAlmost() {
+  play([
+    { freq: 587, at: 0, length: 0.3, type: "triangle", volume: 0.22 }, // D5
+    { freq: 1175, at: 0, length: 0.22, volume: 0.04 },
+  ]);
+}
+
 /** A memory pair found: one small blip. */
 export function playMatch() {
   play([{ freq: 1047, at: 0, length: 0.16, type: "triangle", volume: 0.3 }]);

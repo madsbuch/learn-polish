@@ -480,19 +480,22 @@ fn record_steps(conn: &mut Conn, checkin_id: CheckinId, mut assessment: Assessme
         assessment.result = "partial".into();
     }
     let today = db::today(conn);
-    // As with drills, only a due (or new) lesson moves its schedule; checking
-    // in early is extra practice at half XP.
+    // As with drills, a lesson already passed today is extra practice: half
+    // XP, and its schedule stays. (Checking in early, before its day, is not:
+    // it moves the schedule — see lessons::next_gap.)
     let current = lessons::load(conn, lesson_id)?;
     let extra = lessons::is_extra_practice(&current, today);
     // A pass with nothing left to review is an ace: the gap grows faster.
     // An ace is the examiner's call, made knowing what it does.
     let ace = assessment.result == "pass" && assessment.aced;
+    let run = checkin_id.to_string();
+    let go = lessons::Go { via: "checkin", run: &run, score: None, extra };
     let lesson = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
-        lessons::credit_mastery(conn, &current, &assessment.result, ace, today)?;
+        lessons::credit_mastery(conn, &current, &assessment.result, ace, today, &go)?;
         lessons::load(conn, lesson_id)?
     } else {
-        lessons::record_graded(conn, lesson_id, &assessment.result, ace)?
+        lessons::record_go(conn, lesson_id, &assessment.result, ace, &go)?.0
     };
     // What the lesson's type adds: a bonus per goal (writing), and what
     // follows the verdict (writing: its help steps down or up).

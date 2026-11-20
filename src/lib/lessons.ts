@@ -1,5 +1,5 @@
 import { lessonType } from "./lessonTypes";
-import type { Lesson, Complexity } from "./types";
+import type { Lesson, Complexity, MasteryEntry } from "./types";
 
 /** About how many minutes a lesson takes: its type's, by complexity (lesson_types::minutes). */
 export function lessonMinutes(lesson: Pick<Lesson, "type" | "engine" | "complexity">): number {
@@ -38,6 +38,8 @@ export function dueLabel(lesson: Lesson, today: number): string {
 
 /** The mastery points at which a lesson is mastered (lessons.rs). */
 export const MASTERY_FULL = 100;
+/** Where the points stop until a lesson is passed on two different days (lessons.rs `MASTERY_HELD_AT`). */
+export const MASTERY_HELD_AT = 90;
 
 /**
  * Whether a lesson is mastered: passed, with full mastery points, and — for
@@ -66,14 +68,16 @@ export function writingStep(lesson: Lesson): string | null {
 }
 
 /**
- * About how many more passes a lesson needs to be mastered: practising now
- * (one sitting, 10 points a pass after the first) or spaced out by the
- * check-ins (about 35). Mirrors `mastery_gain` in lessons.rs.
+ * About how many more passes a lesson needs to be mastered, in words:
+ * "3 more passes", "3–8 more passes" (spaced by its check-ins, or practising
+ * now). Worked out in Rust from the lesson's own schedule (lessons.rs
+ * `passes_left`).
  */
-export function passesLeft(lesson: Lesson): { now: number; spaced: number } {
-  const first = lesson.passed ? 0 : 1;
-  const left = Math.max(0, MASTERY_FULL - Math.max(lesson.mastery, 0) - (first ? 30 : 0));
-  return { now: first + Math.ceil(left / 10), spaced: first + Math.ceil(left / 35) };
+export function passesText(lesson: Lesson): string {
+  const { now, spaced } = lesson.passesLeft;
+  const low = Math.min(now, spaced);
+  const high = Math.max(now, spaced);
+  return low === high ? `${low} more ${low === 1 ? "pass" : "passes"}` : `${low}–${high} more passes`;
 }
 
 /** A lesson's standing in words, for a course's list. */
@@ -84,9 +88,7 @@ export function standingText(lesson: Lesson, today: number): string {
   const due = dueLabel(lesson, today);
   const back = due === "due now" ? "due now" : `back ${due}`;
   if (lesson.mastery < MASTERY_FULL) {
-    const { now, spaced } = passesLeft(lesson);
-    const passes = now === spaced ? `${now} more ${now === 1 ? "pass" : "passes"}` : `${spaced}–${now} more passes`;
-    return `Mastery ${lesson.mastery} of ${MASTERY_FULL} · ${passes} · ${back}`;
+    return `Mastery ${lesson.mastery} of ${MASTERY_FULL} · ${passesText(lesson)} · ${back}`;
   }
   return `Next: ${writingStep(lesson) ?? "pass it once more"} · ${back}`;
 }
@@ -113,4 +115,16 @@ export function roughDuration(minutes: number): string {
   if (minutes < 60) return `about ${Math.max(5, Math.round(minutes / 5) * 5)} min`;
   const hours = minutes / 60;
   return `about ${hours < 3 ? Math.round(hours * 2) / 2 : Math.round(hours)} h`;
+}
+
+/** A mastery ledger row's change, short: "+19 (30 → 49)", "no change", with why when it was held back. */
+export function masteryChange(entry: MasteryEntry): string {
+  const change =
+    entry.delta === 0
+      ? `no change (${entry.after} of ${MASTERY_FULL})`
+      : `${entry.delta > 0 ? "+" : "−"}${Math.abs(entry.delta)} (${entry.before} → ${entry.after})`;
+  if (entry.reason === "capped") return `${change} — held at ${MASTERY_HELD_AT} until a pass on another day`;
+  if (entry.reason === "fail_extra") return `${change} — extra practice never costs any`;
+  if (entry.reason === "after_mastered") return "mastered, for good";
+  return change;
 }

@@ -70,6 +70,9 @@ export type PanelId = z.infer<typeof PanelIdSchema>;
 /** One graded answer in the learning log. */
 export const AttemptIdSchema = typeId<"AttemptId">("att");
 export type AttemptId = z.infer<typeof AttemptIdSchema>;
+/** One change to a lesson's mastery points, in the mastery ledger. */
+export const MasteryEntryIdSchema = typeId<"MasteryEntryId">("mst");
+export type MasteryEntryId = z.infer<typeof MasteryEntryIdSchema>;
 /** A grammar structure from the built-in list (grammar.rs): derived, not a row. */
 export const GrammarTagIdSchema = typeId<"GrammarTagId">("gr");
 export type GrammarTagId = z.infer<typeof GrammarTagIdSchema>;
@@ -467,6 +470,12 @@ export const LessonSchema = z.object({
   items: z.number(),
   /** A listening lesson's song. */
   songId: SongIdSchema.nullable(),
+  /**
+   * About how many more passes it needs to be mastered (lessons.rs
+   * `passes_left`): spaced by its check-ins, or practising now (with one on
+   * another day when the last stretch needs it). Both 0 once mastered.
+   */
+  passesLeft: z.object({ spaced: z.number(), now: z.number() }),
 });
 export type Lesson = z.infer<typeof LessonSchema>;
 
@@ -926,9 +935,49 @@ export const SessionResultSchema = z.object({
 });
 export type SessionResult = z.infer<typeof SessionResultSchema>;
 
+/** One row of a lesson's mastery ledger (masterylog.rs): a change to its points, and why. */
+export const MasteryEntrySchema = z.object({
+  id: MasteryEntryIdSchema,
+  at: z.number(),
+  day: z.number(),
+  delta: z.number(),
+  before: z.number(),
+  after: z.number(),
+  /** fail | partial | pass | ace, or "" for the mastered stamp. */
+  grade: z.string(),
+  /** A drill's score; null for a check-in. */
+  correct: z.number().nullable(),
+  almost: z.number().nullable(),
+  total: z.number().nullable(),
+  /** Days since the lesson's last go; null for the first. */
+  daysSince: z.number().nullable(),
+  extra: z.boolean(),
+  /** "drill" | "checkin" */
+  via: z.string(),
+  /** Why, as a key (masterylog::REASONS): first_pass, capped, mastered… */
+  reason: z.string(),
+  /** The row in plain words. */
+  text: z.string(),
+});
+export type MasteryEntry = z.infer<typeof MasteryEntrySchema>;
+
+/** A lesson's mastery ledger, newest first, and the points from before it began. */
+export const MasteryLogSchema = z.object({
+  lessonId: LessonIdSchema,
+  mastery: z.number(),
+  mastered: z.boolean(),
+  beforeLog: z.number().nullable(),
+  entries: z.array(MasteryEntrySchema),
+});
+export type MasteryLog = z.infer<typeof MasteryLogSchema>;
+
 export const LessonFinishedSchema = SessionResultSchema.extend({
   lesson: LessonSchema,
   result: LessonResultSchema,
+  /** False when nothing was scored: not graded (no mastery, no schedule change). */
+  graded: z.boolean(),
+  /** What it did to the lesson's mastery points (its ledger row). */
+  mastery: MasteryEntrySchema.nullable(),
   /** Extra practice: the schedule did not move. */
   extra: z.boolean(),
   /** This drill's score: right answers out of the scored cards, and those one letter off (each half right). */

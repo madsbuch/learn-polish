@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 15;
+pub(crate) const SCHEMA_VERSION: i64 = 16;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -769,6 +769,10 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     }
     add_column(conn, "learning_events", "course_id", "TEXT")?;
     add_column(conn, "learning_events", "source", "TEXT NOT NULL DEFAULT ''")?;
+    // Version 16: the mastery ledger (mastery_log, masterylog.rs) — a new
+    // table, made by the schema above. Nothing is filled in (no backfill):
+    // it starts now, and a lesson's page shows its points from before as
+    // "before the log began".
     // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
     conn.batch_execute(
         "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);
@@ -1795,7 +1799,7 @@ mod tests {
             vault_revocations, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
             playlist_tracks, ai_costs, memories, word_examples, xp_log, scenes, scene_spots, stories,
-            story_panels,
+            story_panels, attempts, learning_events, mastery_log,
         );
     }
 }

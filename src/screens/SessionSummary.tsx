@@ -25,8 +25,9 @@ import type { LessonResult, SessionResult } from "../lib/types";
 
 const OUTCOME = {
   pass: "Passed",
-  partial: "Partly there — some mastery earned, and 85% right passes; try again now, or it comes back at its usual pace",
-  fail: "Not yet — 85% right passes; try again now, or it comes back tomorrow",
+  partial:
+    "Partly there — 85% right passes (in a short lesson, all but one); try again now, or it comes back at its usual pace",
+  fail: "Not yet — 85% right passes (in a short lesson, all but one); try again now, or it comes back tomorrow",
 } as const;
 
 const percent = (n: number) => `${n}%`;
@@ -49,6 +50,10 @@ export function SessionSummary({
     nextDueDay: number | null;
     /** Extra practice: the schedule did not move. */
     extra?: boolean;
+    /** False when nothing was scored: not graded at all. */
+    graded?: boolean;
+    /** What it did to the lesson's mastery points, in words (its ledger row). */
+    mastery?: string;
     /** A drill's score; a check-in has none. */
     /** `almost`: one letter off, each half right. */
     score?: { correct: number; almost: number; total: number };
@@ -56,7 +61,8 @@ export function SessionSummary({
   onDone: () => void;
 }) {
   useBackHandler(true, onDone);
-  const passed = !outcome || outcome.result === "pass";
+  const graded = outcome?.graded !== false;
+  const passed = !outcome || (graded && outcome.result === "pass");
   useEffect(() => {
     if (passed) playComplete();
     // Once, as the summary appears.
@@ -81,7 +87,9 @@ export function SessionSummary({
         </Text>
         <h1>{result.firstCompletionToday ? "Day done!" : "Nice work"}</h1>
         <Text tone="dim" align="center" as="p">
-          {outcome?.extra
+          {outcome && !graded
+            ? `${outcome.title}: nothing was scored this time, so it isn't graded — no change to its mastery or its schedule.`
+            : outcome?.extra
             ? `${outcome.title}${scoreText}: already passed today, so this is extra practice: half XP, and its schedule stays as it was.`
             : outcome
               ? `${outcome.title}${scoreText}: ${OUTCOME[outcome.result]}.`
@@ -107,6 +115,11 @@ export function SessionSummary({
           <Text weight="medium" tone="dim">
             XP this session
           </Text>
+          {outcome?.mastery ? (
+            <Text variant="small" tone="dim" align="center">
+              Mastery: {outcome.mastery}
+            </Text>
+          ) : null}
           {outcome?.nextDueDay ? (
             <Text variant="small" tone="dim">
               Next check-in {dayToDate(outcome.nextDueDay)}

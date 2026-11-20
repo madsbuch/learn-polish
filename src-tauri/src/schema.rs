@@ -762,6 +762,32 @@ diesel::table! {
     use diesel::sql_types::*;
     use crate::ids::*;
 
+    mastery_log (id) {
+        id -> MasteryEntryIdSql,
+        at -> BigInt,
+        day -> BigInt,
+        device -> DeviceIdSql,
+        lesson_id -> LessonIdSql,
+        delta -> BigInt,
+        points_before -> BigInt,
+        points_after -> BigInt,
+        grade -> Text,
+        correct -> Nullable<BigInt>,
+        almost -> Nullable<BigInt>,
+        total -> Nullable<BigInt>,
+        days_since -> Nullable<BigInt>,
+        extra -> BigInt,
+        via -> Text,
+        run -> Text,
+        reason -> Text,
+        details -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
     attempt_items (attempt_id, item_id, role, position) {
         attempt_id -> AttemptIdSql,
         item_id -> Text,
@@ -894,6 +920,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     story_panels,
     attempts,
     learning_events,
+    mastery_log,
     word_grammar,
     sentence_grammar,
     attempt_items,

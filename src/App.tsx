@@ -44,6 +44,7 @@ import { setHapticsEnabled } from "./lib/haptics";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
+import { masteryChange } from "./lib/lessons";
 import { Player } from "./screens/Player";
 import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
@@ -93,6 +94,10 @@ type Overlay =
         result: LessonResult;
         nextDueDay: number | null;
         extra?: boolean;
+        /** False when nothing was scored: not graded. */
+        graded?: boolean;
+        /** The mastery change, in words. */
+        mastery?: string;
         /** A drill's score; a check-in has none. */
         score?: { correct: number; almost: number; total: number };
       };
@@ -537,6 +542,8 @@ export default function App() {
                 result: result.result,
                 nextDueDay: result.lesson.dueDay,
                 extra: result.extra,
+                graded: result.graded,
+                mastery: result.mastery ? masteryChange(result.mastery) : undefined,
                 score:
                   result.total > 0
                     ? { correct: result.correct, almost: result.almost, total: result.total }

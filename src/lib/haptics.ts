@@ -59,6 +59,11 @@ export function hapticRight() {
   buzz(() => impactFeedback("soft"), [18]);
 }
 
+/** Almost right: a single light tap, softer than wrong. */
+export function hapticAlmost() {
+  buzz(() => impactFeedback("light"), [12]);
+}
+
 /** A wrong answer: a firmer double buzz. */
 export function hapticWrong() {
   buzz(() => notificationFeedback("error"), [40, 60, 40]);
