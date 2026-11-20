@@ -85,6 +85,16 @@ async fn host() -> Host {
     Host { dev, slot, addr: format!("127.0.0.1:{port}").parse().unwrap(), served, errors }
 }
 
+/// Waits (a little) for the host to have finished `n` syncs.
+async fn served_reaches(h: &Host, n: usize) {
+    for _ in 0..250 {
+        if h.served.load(Ordering::SeqCst) >= n {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// Syncs, waiting out a host that's still finishing the previous sync.
 async fn sync_now(db: &Arc<Db>, addr: SocketAddr) -> Result<Outcome> {
     for _ in 0..100 {
@@ -388,6 +398,9 @@ async fn a_revoked_device_is_refused_by_its_key_whatever_id_it_takes() {
     let h = host().await;
     let joiner = device();
     join(&joiner.db, &offer_from(&h).await, false).await.unwrap();
+    // The host counts a sync once its own side is done, which can be just
+    // after the joiner's side returns.
+    served_reaches(&h, 1).await;
     let joiner_id = me(&joiner.db).device_id;
     crate::sync::service::remove_device(&mut h.dev.db.lock(), joiner_id).unwrap();
     assert_eq!(count(&h.dev.db, "SELECT count(*) AS n FROM vault_revocations"), 1);
