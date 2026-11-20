@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 16;
+pub(crate) const SCHEMA_VERSION: i64 = 17;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -773,6 +773,9 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     // table, made by the schema above. Nothing is filled in (no backfill):
     // it starts now, and a lesson's page shows its points from before as
     // "before the log began".
+    // Version 17: a course kept ready offline (offline.rs). No course is
+    // marked: the learner switches it on, course by course.
+    add_column(conn, "courses", "offline_at", "INTEGER")?;
     // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
     conn.batch_execute(
         "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);

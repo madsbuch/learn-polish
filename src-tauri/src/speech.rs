@@ -333,7 +333,7 @@ fn missing_lines(conn: &mut Conn, lines: &[SpeechLine]) -> Vec<SpeechLine> {
 }
 
 /// Makes every missing clip among `lines`, a few at a time, in order.
-async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>, force: bool) -> CacheProgress {
+pub(crate) async fn fill(app: &tauri::AppHandle, db: &Db, lines: Vec<SpeechLine>, force: bool) -> CacheProgress {
     use futures_util::StreamExt;
     // Drop duplicates and, unless forced, anything already stored before
     // spending a request. A line in two voices is two clips.
@@ -389,9 +389,35 @@ pub fn course_audio_lines_in(conn: &mut Conn, course_id: CourseId) -> Result<Vec
         .collect())
 }
 
-/// A course's spoken items as (kind, text, gender), without repeats: words,
-/// sentences, then dialogue lines.
+/// A course's spoken items as (kind, text, gender), without repeats:
+/// everything its lessons say. Words, sentences, then dialogue lines; then
+/// what the other lesson types add — a story's sentences (each in its
+/// speaker's voice), a scene's "Where is it?" sentences, and the words of
+/// the sound pairs its words lessons can play (each word's near neighbour,
+/// and the built-in pairs for the sounds its words have).
 fn course_audio_items(conn: &mut Conn, course_id: CourseId) -> Result<Vec<(&'static str, String, String)>> {
+    use crate::schema::{course_lessons, scenes, words as word_rows};
+    let lesson_ids: Vec<LessonId> =
+        course_lessons::table.filter(course_lessons::course_id.eq(course_id)).order(course_lessons::ord).select(course_lessons::lesson_id).load(conn)?;
+    let mut extra: Vec<(&'static str, String, String)> = Vec::new();
+    for lesson_id in &lesson_ids {
+        if let Some(story) = crate::stories::load(conn, *lesson_id)? {
+            for line in story.panels.into_iter().flat_map(|(panel, _)| panel.lines) {
+                extra.push(("line", line.pl, line.gender));
+            }
+        }
+    }
+    let statements: Vec<String> = scenes::table.filter(scenes::lesson_id.eq_any(&lesson_ids)).select(scenes::statements).load(conn)?;
+    for json in statements {
+        let statements: Vec<crate::scenes::Statement> = serde_json::from_str(&json).unwrap_or_default();
+        extra.extend(statements.into_iter().map(|s| ("sentence", s.pl, String::new())));
+    }
+    let heard: Vec<(String, String)> =
+        word_rows::table.filter(word_rows::lesson_id.eq_any(&lesson_ids)).select((word_rows::pl, word_rows::near_pl)).load(conn)?;
+    extra.extend(heard.iter().filter(|(_, near)| !near.trim().is_empty()).map(|(_, near)| ("word", near.clone(), String::new())));
+    let own: Vec<String> = heard.into_iter().map(|(pl, _)| pl).collect();
+    extra.extend(crate::sounds::spoken_for(&own).into_iter().map(|word| ("word", word, String::new())));
+
     let words = course_words::table
         .filter(course_words::course_id.eq(course_id))
         .order((course_words::lesson_id, course_words::ord))
@@ -417,6 +443,7 @@ fn course_audio_items(conn: &mut Conn, course_id: CourseId) -> Result<Vec<(&'sta
     Ok(words
         .chain(sentences)
         .chain(lines)
+        .chain(extra)
         .map(|(kind, text, gender)| (kind, text.trim().to_string(), gender))
         .filter(|(_, text, gender)| !text.is_empty() && seen.insert((text.clone(), gender.clone())))
         .collect())

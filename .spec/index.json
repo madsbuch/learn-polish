@@ -12,7 +12,8 @@
     },
     {
       "id": "POL-2",
-      "text": "A fresh install can be practised offline with no API key: the demo course needs neither the network nor a model."
+      "text": "A fresh install can be practised offline with no API key: the demo course needs neither the network nor a model.",
+      "status": "deprecated"
     },
     {
       "id": "POL-3",
@@ -46,6 +47,7 @@
     "today",
     "tutor",
     "music",
-    "data"
+    "data",
+    "courses/offline"
   ]
 }

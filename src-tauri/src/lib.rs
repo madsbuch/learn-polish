@@ -38,6 +38,7 @@ mod session;
 mod songs;
 mod podcasts;
 mod news;
+mod offline;
 mod speech;
 mod srs;
 mod stats;
@@ -183,6 +184,8 @@ pub fn run() {
                 // Story lessons whose panels an earlier run did not finish drawing.
                 stories::resume_pending(app);
                 files::sync_to_disk(app);
+                // Courses kept offline: audio their lessons have gained since.
+                offline::keep_up_in_background(app);
                 // Lessons built on Wikipedia, checked against it every three months.
                 wiki::check_due_in_background(app);
             });
@@ -263,6 +266,9 @@ pub fn run() {
             examiner::writing_hint,
             examples::word_examples,
             examiner::lesson_add_players,
+            offline::course_offline,
+            offline::course_offline_set,
+            offline::course_offline_download,
             pictures::course_picture,
             wiki::lesson_sources,
             wiki::source_article,
@@ -1068,6 +1074,61 @@ mod integration {
     }
 
     #[test]
+    fn a_course_kept_offline_knows_what_it_lacks() {
+        let mut conn = scratch_db("offline-course");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let before = offline::status(&mut conn, basics).unwrap();
+        assert!(!before.enabled && !before.ready, "nothing is kept offline until asked: {before:?}");
+        assert!(before.clips > 0 && before.clips_stored == 0);
+        assert!(!before.can_download, "no key in a fresh database");
+        assert!(offline::kept(&mut conn).unwrap().is_empty());
+
+        offline::set(&mut conn, basics, true).unwrap();
+        assert_eq!(offline::kept(&mut conn).unwrap(), vec![basics]);
+        // Switching it on again keeps the time it was first asked for.
+        let asked: Option<i64> = t::courses::table.find(basics).select(t::courses::offline_at).first(&mut conn).unwrap();
+        offline::set(&mut conn, basics, true).unwrap();
+        assert_eq!(t::courses::table.find(basics).select(t::courses::offline_at).first::<Option<i64>>(&mut conn).unwrap(), asked);
+
+        // Every line its lessons say, stored in the voice that reads it: ready.
+        let lines = speech::course_audio_lines_in(&mut conn, basics).unwrap();
+        assert_eq!(convert::count(lines.len()), before.clips);
+        for line in &lines {
+            let voice = ai::voice_for(&mut conn, &line.gender);
+            let key = speech::audio_key(ai::SPEECH_MODEL, &voice, &line.text);
+            speech::store_clip(&mut conn, &key, ai::SPEECH_MODEL, &voice, &line.text, "audio/mpeg", b"mp3").unwrap();
+        }
+        let after = offline::status(&mut conn, basics).unwrap();
+        assert!(after.enabled && after.ready, "{after:?}");
+        assert_eq!((after.clips_stored, after.pictures), (after.clips, 0));
+
+        // A word with a neighbour by sound adds that word to what is said,
+        // and a picture lesson's words count as pictures until drawn.
+        let (word, lesson): (WordId, LessonId) = t::course_words::table
+            .filter(t::course_words::course_id.eq(basics))
+            .select((t::course_words::id, t::course_words::lesson_id))
+            .first(&mut conn)
+            .unwrap();
+        diesel::update(t::words::table.find(word)).set(t::words::near_pl.eq("zzzsąsiad")).execute(&mut conn).unwrap();
+        let grown = offline::status(&mut conn, basics).unwrap();
+        assert_eq!(grown.clips, after.clips + 1);
+        assert!(!grown.ready, "a course that grew is not ready until the new audio is there");
+        diesel::update(t::lessons::table.find(lesson)).set(t::lessons::lesson_type.eq("pictures")).execute(&mut conn).unwrap();
+        let words_in_lesson: i64 = t::words::table.filter(t::words::lesson_id.eq(lesson)).count().get_result(&mut conn).unwrap();
+        let pictured = offline::status(&mut conn, basics).unwrap();
+        assert_eq!((pictured.pictures, pictured.pictures_stored), (words_in_lesson, 0));
+        let picture = files::store(&mut conn, files::WORD_IMAGE, "w.jpg", "image/jpeg", b"jpg").unwrap();
+        diesel::update(t::words::table.find(word)).set(t::words::image_file_id.eq(Some(picture))).execute(&mut conn).unwrap();
+        assert_eq!(offline::status(&mut conn, basics).unwrap().pictures_stored, 1);
+
+        // Off again: nothing downloaded is deleted.
+        offline::set(&mut conn, basics, false).unwrap();
+        let off = offline::status(&mut conn, basics).unwrap();
+        assert!(!off.enabled);
+        assert_eq!(off.clips_stored, after.clips_stored);
+    }
+
+    #[test]
     fn speech_stored_as_wav_becomes_mp3() {
         let mut conn = scratch_db("speech-mp3");
         let wav = audio::tests::speech_wav();
@@ -1438,7 +1499,7 @@ mod integration {
     }
 
     #[test]
-    fn a_version_15_database_upgrades_to_16_keeping_every_row() {
+    fn a_version_15_database_upgrades_to_the_current_version_keeping_every_row() {
         let path = std::env::temp_dir().join("learn-polish-tests").join(format!("v15-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let tables = ["lessons", "words", "sentences", "reviews", "day_log", "xp_log", "attempts", "learning_events", "settings", "courses"];
@@ -1479,8 +1540,10 @@ mod integration {
             #[diesel(sql_type = diesel::sql_types::BigInt)]
             user_version: i64,
         }
-        assert_eq!(diesel::sql_query("PRAGMA user_version").get_result::<V>(&mut conn).unwrap().user_version, 16);
+        assert_eq!(diesel::sql_query("PRAGMA user_version").get_result::<V>(&mut conn).unwrap().user_version, db::SCHEMA_VERSION);
         assert_eq!(counts(&mut conn), before.0, "every row kept");
+        // Version 17: no course is kept offline until the learner asks.
+        assert!(offline::kept(&mut conn).unwrap().is_empty());
         let log = crate::masterylog::for_lesson(&mut conn, before.1).unwrap();
         assert!(log.entries.is_empty(), "no backfill");
         assert_eq!(log.before_log, Some(30), "its points from before the log");
@@ -1493,7 +1556,7 @@ mod integration {
         }
         let synced = diesel::sql_query("SELECT count(*) AS n FROM sync_rows WHERE tbl = 'mastery_log'").get_result::<N>(&mut conn).unwrap().n;
         assert!(synced >= 1, "{synced}");
-        let backups = std::fs::read_dir(path.parent().unwrap().join("backups")).unwrap().filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().starts_with("before-v16"));
+        let backups = std::fs::read_dir(path.parent().unwrap().join("backups")).unwrap().filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().starts_with(&format!("before-v{}", db::SCHEMA_VERSION)));
         assert!(backups, "backed up before upgrading");
     }
 
@@ -3901,6 +3964,8 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         let today = db::today(&mut conn);
 
         write("Settings", &commands::read_settings(&mut conn).unwrap());
+        let kept_offline = db::require_course_id(&mut conn, 1).unwrap();
+        write("OfflineStatus", &offline::status(&mut conn, kept_offline).unwrap());
         write("LessonOverview", &lessons::overview(&mut conn).unwrap());
         write("Lesson.list", &all);
         write("LessonDetail", &lessons::detail(&mut conn, drill.id).unwrap());

@@ -3419,6 +3419,10 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
                     for course_id in wanted {
                         crate::pictures::draw_in_background(app, course_id);
                     }
+                    // A course kept offline has its new lessons' audio fetched.
+                    if done.action.is_some() {
+                        crate::offline::keep_up_in_background(app);
+                    }
                     match name.as_str() {
                         "create_picture_lesson" => crate::pictures::draw_missing_in_background(app),
                         "create_scene_lesson" => crate::scenes::resume_pending(app),

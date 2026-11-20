@@ -91,6 +91,7 @@
     "lessons",
     "courses/demo",
     "lessons/mastery",
-    "tutor"
+    "tutor",
+    "courses/offline"
   ]
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LessonRow } from "../components/LessonRow";
 import { CourseClosedCelebration } from "../components/CourseClosedCelebration";
+import { CourseOffline } from "../components/CourseOffline";
 import { LevelInfo } from "../components/LevelInfo";
 import { SparkIcon } from "../components/icons";
 import { SlowButton, SpeakButton } from "../components/ui";
@@ -311,6 +312,7 @@ export function CourseDetail({
         </div>
 
         <div className="page-split__side">
+          <CourseOffline courseId={courseId} />
           <Section title="Manage">
             <Stack gap={2}>
               <Button wide onClick={() => setRenaming(names)}>

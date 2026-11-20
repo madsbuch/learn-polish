@@ -817,6 +817,27 @@ export const CoursePictureStatusSchema = z.object({
 });
 export type CoursePictureStatus = z.infer<typeof CoursePictureStatusSchema>;
 
+/** How ready a course is for use without a connection (offline.rs). */
+export const OfflineStatusSchema = z.object({
+  courseId: CourseIdSchema,
+  /** Whether the learner asked for it to be kept offline. */
+  enabled: z.boolean(),
+  /** Everything its lessons say, and how much of it is stored. */
+  clips: z.number(),
+  clipsStored: z.number(),
+  /** Every picture its lessons show, and how many are drawn. */
+  pictures: z.number(),
+  picturesStored: z.number(),
+  /** Conversation lessons: they need a connection whatever is downloaded. */
+  onlineLessons: z.number(),
+  ready: z.boolean(),
+  /** A download is running now. */
+  working: z.boolean(),
+  /** Whether there is a key to download with. */
+  canDownload: z.boolean(),
+});
+export type OfflineStatus = z.infer<typeof OfflineStatusSchema>;
+
 export const MilestoneSchema = z.object({
   courseId: CourseIdSchema,
   title: z.string(),

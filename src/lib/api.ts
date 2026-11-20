@@ -61,6 +61,7 @@ import {
   QuickGamesSchema,
   FileIdSchema,
   CoursePictureStatusSchema,
+  OfflineStatusSchema,
   JoinResultSchema,
   ResolvedIdSchema,
   SyncHeldSchema,
@@ -444,6 +445,14 @@ export const api = {
   /** Checks a lesson's lesson against its sources now. */
   factCheckLesson: (lessonId: LessonId) =>
     call(FactCheckSchema, "fact_check_lesson", { lessonId }),
+  /** How ready a course is for use without a connection. */
+  courseOffline: (courseId: CourseId) => call(OfflineStatusSchema, "course_offline", { courseId }),
+  /** Keeps a course offline (its download starts), or stops keeping it. */
+  courseOfflineSet: (courseId: CourseId, on: boolean) =>
+    call(OfflineStatusSchema, "course_offline_set", { courseId, on }),
+  /** Downloads everything a course lacks, trying again what failed. */
+  courseOfflineDownload: (courseId: CourseId) =>
+    call(OfflineStatusSchema, "course_offline_download", { courseId }),
   /** Draws a new picture for a course; returns its file id. */
   coursePicture: (courseId: CourseId) =>
     call(FileIdSchema, "course_picture", { courseId }),

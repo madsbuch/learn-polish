@@ -408,6 +408,18 @@ instantly, for free, offline. Changing voice does not serve stale audio.
 - Settings shows how many sentences are stored and how much disk
   they take, with a button to clear them.
 
+### Courses kept offline
+
+A course's page has **Keep this course offline**. Switched on, the app
+downloads everything the course's lessons play and show — the audio of every
+word, sentence and line (a story's and a scene's too, and the words of its
+sound pairs) and every picture — and shows how much is there. A course that
+grows is topped up: missing audio is fetched at startup and after the tutor
+adds to it; *Download now* fetches the rest, pictures that failed before
+included (`src-tauri/src/offline.rs`). Conversation lessons talk to a model
+and need a connection whatever is downloaded; the page says how many there
+are. Switching it off deletes nothing.
+
 ## AI costs
 
 **Settings → AI costs** shows what the AI features cost today, over the last
@@ -509,6 +521,7 @@ src-tauri/src/
   memories.rs    long-term memory shared by the agents
   costs.rs       the cost center
   speech.rs      Polish read aloud, the voices, the audio cache
+  offline.rs     courses kept offline: what a course lacks, and downloading it
   audio.rs       speech as MP3: encoding, reading clips back, shrinking old WAV
   songs.rs       songwriter prompt, kie.ai/Suno generation, downloads, lyric timing
   playlists.rs   playlists, and saving or sharing a take's MP3

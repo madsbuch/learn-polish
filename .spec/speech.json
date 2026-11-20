@@ -78,6 +78,7 @@
     "principles#PRIN-4",
     "data#DATA-3",
     "music/podcasts#POD-10",
-    "tutor/models#AI-10"
+    "tutor/models#AI-10",
+    "courses/offline"
   ]
 }

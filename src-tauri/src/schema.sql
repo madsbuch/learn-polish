@@ -30,7 +30,11 @@ CREATE TABLE IF NOT EXISTS courses (
     -- When the learner closed it as mastered: it is kept as a trophy and its
     -- lessons leave the check-ins (courses::close).
     closed_at    INTEGER
-, level TEXT, level_checked_at INTEGER, picture_wanted_at INTEGER);
+, level TEXT, level_checked_at INTEGER, picture_wanted_at INTEGER,
+    -- When the learner asked for it to be kept ready for use without a
+    -- connection (offline.rs): its audio and pictures are downloaded, and
+    -- kept downloaded as it grows. NULL: not asked for.
+    offline_at INTEGER);
 
 CREATE TABLE IF NOT EXISTS words (
     id       TEXT PRIMARY KEY NOT NULL,

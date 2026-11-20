@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Courses kept offline",
+  "summary": "A switch on a course that downloads all of its audio and pictures and keeps them downloaded as it grows.",
+  "status": "implemented",
+  "order": 2,
+  "description": "A learner who is about to be without a connection (a flight, a trip abroad) wants a course that simply works. Audio and pictures are otherwise made the first time a lesson needs them, which takes the network and the learner's key.\n\nKeeping a course offline makes the app fetch everything its lessons play and show ahead of time, and say plainly what will still need a connection. Songs and Wikipedia sources are stored when they are made, so they are there already.",
+  "requirements": [
+    {
+      "id": "OFF-1",
+      "text": "A course can be marked to be kept offline with a switch on its page; no course is marked until the learner does so."
+    },
+    {
+      "id": "OFF-2",
+      "text": "Switching it on starts downloading everything the course lacks: the audio of everything its lessons say and every picture they show."
+    },
+    {
+      "id": "OFF-3",
+      "text": "The audio counted for a course is every word, sentence and dialogue line of its lessons, a story's sentences in each speaker's voice, a scene's sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have."
+    },
+    {
+      "id": "OFF-4",
+      "text": "The pictures counted for a course are the words of its picture lessons, each scene, and each panel of its stories."
+    },
+    {
+      "id": "OFF-5",
+      "text": "A course is ready offline when every counted clip and picture is stored; its page shows how many of each are downloaded."
+    },
+    {
+      "id": "OFF-6",
+      "text": "A course that gains content after it was ready is no longer shown as ready until the new audio and pictures are stored."
+    },
+    {
+      "id": "OFF-7",
+      "text": "For courses kept offline, missing audio is fetched by itself at startup and after the tutor adds to a course."
+    },
+    {
+      "id": "OFF-8",
+      "text": "Pictures are drawn for a course kept offline only when the learner switches it on or taps Download now, which also tries again the pictures that failed before; by itself the app leaves a lesson's pictures to the device that made the lesson."
+    },
+    {
+      "id": "OFF-9",
+      "text": "The page says how many of the course's lessons are conversations, which need a connection whatever is downloaded."
+    },
+    {
+      "id": "OFF-10",
+      "text": "Without an OpenRouter key nothing is downloaded, and the page says a key is needed."
+    },
+    {
+      "id": "OFF-11",
+      "text": "Switching it off deletes nothing that was downloaded."
+    },
+    {
+      "id": "OFF-12",
+      "text": "The mark syncs with the course, and what was downloaded syncs as files, so a course made ready on one device is ready on the others once they have synced."
+    },
+    {
+      "id": "OFF-13",
+      "text": "A course is downloaded once at a time: asking again while a download runs starts no second one."
+    },
+    {
+      "id": "OFF-14",
+      "text": "While a course downloads on Android, the app is kept alive with a quiet notification."
+    }
+  ],
+  "questions": [
+    "At startup, two synced devices that both keep a course offline can each fetch the same missing clip before they sync. Speech is cheap and the copies settle to one, but should only one device fetch?",
+    "Example sentences shown after a wrong answer are made by a model the first time and are not downloaded ahead; offline, sentences from the learner's own courses stand in. Should a course kept offline have them made ahead too?",
+    "Slow versions of a line are still made only when asked for. Should a course kept offline include them?"
+  ],
+  "code": [
+    "src-tauri/src/offline.rs",
+    "src-tauri/src/speech.rs",
+    "src-tauri/src/sounds.rs",
+    "src/components/CourseOffline.tsx",
+    "src/screens/CourseDetail.tsx"
+  ],
+  "related": [
+    "courses",
+    "speech#SPEECH-1",
+    "lessons/pictures",
+    "lessons/conversations",
+    "data/sync#SYNC-12",
+    "tutor/models"
+  ]
+}

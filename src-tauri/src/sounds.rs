@@ -152,6 +152,18 @@ fn heard_in(words: &[&WordRow], rng: &mut impl rand::Rng) -> Vec<SoundPair> {
     found
 }
 
+/// Every built-in word a round of sound pairs could say for these words:
+/// both words of every pair of each contrast the words have. For keeping a
+/// course's audio ready (offline.rs): which pair a round picks is chance.
+pub fn spoken_for(words: &[String]) -> Vec<String> {
+    let text: Vec<String> = words.iter().map(|w| w.to_lowercase()).collect();
+    CONTRASTS
+        .iter()
+        .filter(|contrast| contrast.letters.iter().any(|l| text.iter().any(|t| t.contains(l))))
+        .flat_map(|contrast| contrast.pairs.iter().flat_map(|(a, _, b, _)| [(*a).to_string(), (*b).to_string()]))
+        .collect()
+}
+
 /// The pairs for a words lesson: its words' own neighbours first, then the
 /// built-in pairs for the sounds its words have; at most [`ROUND`].
 pub fn for_words(words: &[&WordRow], rng: &mut impl rand::Rng) -> Vec<SoundPair> {
