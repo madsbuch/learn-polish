@@ -104,7 +104,7 @@ export function CostCenter() {
               Song audio is priced from the kie.ai credits Suno used, at about $0.005 a credit. OpenRouter does not
               report a price for speech, so speech shows how many clips were made. Replaying downloaded audio is free.
             </p>
-            <p>Costs survive a progress reset and are part of the database export.</p>
+            <p>Costs are part of the database export.</p>
           </>
         }
       >
