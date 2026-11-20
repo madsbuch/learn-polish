@@ -1,5 +1,6 @@
 mod agent;
 mod ai;
+mod audio;
 mod bench;
 mod convert;
 mod ids;
@@ -1062,6 +1063,93 @@ mod integration {
         let other = courses::other_course(conn).unwrap();
         assert!(!pictures::want(conn, other).unwrap());
         assert!(pictures::wanted(conn).is_empty());
+    }
+
+    #[test]
+    fn speech_stored_as_wav_becomes_mp3() {
+        let mut conn = scratch_db("speech-mp3");
+        let wav = audio::tests::speech_wav();
+        // A new clip is encoded as it is stored.
+        let key = speech::audio_key("m", "Kore", "Cześć");
+        speech::store_clip(&mut conn, &key, "m", "Kore", "Cześć", "audio/wav", &wav).unwrap();
+        let (mime, size): (String, i64) = t::speech_clips::table
+            .inner_join(t::files::table)
+            .select((t::files::mime, t::files::size))
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(mime, "audio/mpeg");
+        assert!(size * 7 < convert::count(wav.len()));
+
+        // From before: a clip and a podcast episode stored as WAV, the
+        // episode with its copy on disk; and a song, which is MP3 already.
+        let dir = std::env::temp_dir().join("learn-polish-tests").join(format!("speech-mp3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old_clip = files::store(&mut conn, files::SPEECH, "speech-1.wav", "audio/wav", &wav).unwrap();
+        let old_key = speech::audio_key("m", "Kore/pcm", "Dzień dobry");
+        diesel::insert_into(t::speech_clips::table)
+            .values((
+                t::speech_clips::cache_key.eq(&old_key),
+                t::speech_clips::model.eq("m"),
+                t::speech_clips::voice.eq("Kore/pcm"),
+                t::speech_clips::text.eq("Dzień dobry"),
+                t::speech_clips::file_id.eq(old_clip),
+                t::speech_clips::created_at.eq(0),
+            ))
+            .execute(&mut conn)
+            .unwrap();
+        let show = SongId::derived("test", "show");
+        conn.batch_execute(&format!(
+            "INSERT INTO songs (id, title, chorus_pl, chorus_en, style, sections, lyrics, suno_model, status, created_at)
+             VALUES ('{show}', 'Show', '', '', '', '[]', '', '', 'ready', 0);",
+        ))
+        .unwrap();
+        let old_episode = files::store(&mut conn, files::SONG_AUDIO, "podcast-1.wav", "audio/wav", &wav).unwrap();
+        let song = files::store(&mut conn, files::SONG_AUDIO, "song-1-0.mp3", "audio/mpeg", b"mp3").unwrap();
+        for (remote, file) in [("episode", old_episode), ("r1", song)] {
+            diesel::insert_into(t::song_tracks::table)
+                .values((
+                    t::song_tracks::id.eq(TrackId::new()),
+                    t::song_tracks::song_id.eq(show),
+                    t::song_tracks::ord.eq(0),
+                    t::song_tracks::remote_id.eq(remote),
+                    t::song_tracks::audio_file_id.eq(file),
+                ))
+                .execute(&mut conn)
+                .unwrap();
+        }
+        let old_copy = files::materialize(&mut conn, &dir, old_episode).unwrap();
+        // One that is not audio at all stays as it is, and stops nothing.
+        let odd = files::store(&mut conn, files::SPEECH, "odd.wav", "audio/wav", b"not a wav file").unwrap();
+
+        let db = db::Db::new(conn);
+        assert_eq!(audio::compress_in(&db, &dir).unwrap(), 2);
+        assert_eq!(audio::compress_in(&db, &dir).unwrap(), 0, "nothing left to do");
+        let conn = &mut *db.lock();
+
+        // The clip and the take point at new, smaller files; the old are gone.
+        let clip: FileId = t::speech_clips::table.find(&old_key).select(t::speech_clips::file_id).first(conn).unwrap();
+        let episode: FileId = t::song_tracks::table
+            .filter(t::song_tracks::remote_id.eq("episode"))
+            .select(t::song_tracks::audio_file_id.assume_not_null())
+            .first(conn)
+            .unwrap();
+        for (new, old, name) in [(clip, old_clip, "speech-1.mp3"), (episode, old_episode, "podcast-1.mp3")] {
+            assert_ne!(new, old);
+            assert!(files::info(conn, old).is_err());
+            let file = files::info(conn, new).unwrap();
+            assert_eq!((file.name.as_str(), file.mime.as_str()), (name, "audio/mpeg"));
+            assert!(file.size * 7 < convert::count(wav.len()));
+            assert!(audio::wav_from_mp3(&files::read(conn, new).unwrap().1).is_ok(), "it plays");
+        }
+        // The episode's copy on disk is the new one.
+        assert!(!std::path::Path::new(&old_copy).exists());
+        let copy = files::info(conn, episode).unwrap().path.unwrap();
+        assert!(copy.ends_with("podcast-1.mp3") && std::path::Path::new(&copy).exists());
+        // The song and the odd file are untouched.
+        assert_eq!(files::read(conn, song).unwrap().1, b"mp3");
+        assert_eq!(files::read(conn, odd).unwrap().1, b"not a wav file");
+        assert_eq!(db::foreign_key_violations(conn).unwrap(), 0);
     }
 
     #[test]

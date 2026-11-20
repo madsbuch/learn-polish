@@ -148,6 +148,41 @@ pub fn delete(conn: &mut Conn, ids: &[FileId]) -> Result<usize> {
     Ok(deleted)
 }
 
+/// The files of the given types, without reading any of them.
+pub fn with_types(conn: &mut Conn, mimes: &[&str]) -> Result<Vec<FileId>> {
+    let wanted = mimes.iter().map(|m| format!("'{}'", m.replace('\'', "''"))).collect::<Vec<_>>().join(", ");
+    Ok(diesel::sql_query(format!("{META} WHERE f.mime IN ({wanted}) ORDER BY f.id"))
+        .load::<FileInfo>(conn)?
+        .into_iter()
+        .map(|file| file.id)
+        .collect())
+}
+
+/// Puts the same sound in another format in a stored audio file's place: a
+/// new file, as a file's bytes never change, which the clip or take that
+/// pointed at the old one now points at, and the old one is deleted. With
+/// `dir`, a song file gets its copy on disk (the old one's goes). Returns the
+/// new file's id, or `None` if the old file is gone.
+pub fn replace_audio(conn: &mut Conn, dir: Option<&Path>, old: FileId, mime: &str, bytes: &[u8]) -> Result<Option<FileId>> {
+    use crate::schema::{song_tracks, speech_clips};
+    conn.transaction(|conn| {
+        let Ok(file) = info(conn, old) else { return Ok(None) };
+        let stem = file.name.rsplit_once('.').map_or(file.name.as_str(), |(stem, _)| stem);
+        let new = store(conn, &file.kind, &format!("{stem}.{}", extension_for(mime)), mime, bytes)?;
+        diesel::update(speech_clips::table.filter(speech_clips::file_id.eq(old)))
+            .set(speech_clips::file_id.eq(new))
+            .execute(conn)?;
+        diesel::update(song_tracks::table.filter(song_tracks::audio_file_id.eq(old)))
+            .set(song_tracks::audio_file_id.eq(new))
+            .execute(conn)?;
+        delete(conn, &[old])?;
+        if let (Some(dir), SONG_AUDIO) = (dir, file.kind.as_str()) {
+            materialize(conn, dir, new)?;
+        }
+        Ok(Some(new))
+    })
+}
+
 /// Every file some row points at. This is the one list of the columns that
 /// reference files: a new one belongs here, with a foreign key in the schema.
 pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> {
@@ -339,10 +374,15 @@ pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri:
 
 /// Makes sure every song file has its copy on disk for the native player —
 /// after a restore, on a new phone, or when the copies were cleared — in the
-/// background.
+/// background. Before that, speech still stored as WAV is made into MP3.
 pub fn sync_to_disk(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
+        // First, so that no copy is written of a file about to be replaced:
+        // speech stored as WAV becomes MP3 (audio.rs).
+        if let Err(error) = crate::audio::compress_stored(&app) {
+            crate::diagnostics::note("background", format!("Making stored audio smaller failed: {error}"));
+        }
         let result = (|| -> Result<()> {
             let dir = media_dir(&app)?;
             let db = app.state::<Db>();
@@ -376,7 +416,7 @@ pub fn sync_to_disk(app: &AppHandle) {
 pub fn extension_for(mime: &str) -> &'static str {
     match mime {
         "audio/mpeg" | "audio/mp3" => "mp3",
-        "audio/wav" | "audio/x-wav" => "wav",
+        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
         "audio/ogg" => "ogg",
         "audio/mp4" | "audio/aac" => "m4a",
         "image/jpeg" => "jpg",

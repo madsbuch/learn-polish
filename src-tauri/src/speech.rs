@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::ai;
+use crate::audio;
 use crate::costs;
 use crate::db::{self, Conn, Db};
 use crate::files;
@@ -49,6 +50,8 @@ pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Re
 
     let (mime, bytes) =
         ai::synthesize(&key, ai::SPEECH_MODEL, &voice, &text, false).await?;
+    // As it is stored: MP3.
+    let (mime, bytes) = audio::compact(mime, bytes);
     {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -85,6 +88,8 @@ fn cached_clip(conn: &mut Conn, key: &str) -> Result<Option<(String, Vec<u8>)>> 
         .optional()?)
 }
 
+/// Stores a clip. Speech is kept as MP3 (audio.rs): the raw audio the speech
+/// model sends is encoded here if the caller has not already done so.
 pub(crate) fn store_clip(
     conn: &mut Conn,
     key: &str,
@@ -94,6 +99,11 @@ pub(crate) fn store_clip(
     mime: &str,
     bytes: &[u8],
 ) -> Result<()> {
+    let encoded = if audio::is_wav(mime) { audio::mp3_from_wav(bytes).ok() } else { None };
+    let (mime, bytes) = match &encoded {
+        Some(mp3) => (audio::MP3, mp3.as_slice()),
+        None => (mime, bytes),
+    };
     conn.transaction::<_, Error, _>(|tx| {
         // A clip made again replaces the old one, file and all.
         let old: Option<FileId> =
@@ -170,6 +180,8 @@ async fn clip(db: &Db, text: &str, gender: &str, force: bool, slow: bool) -> Res
         }
     }
     let (mime, bytes) = ai::synthesize(&config.key, &config.model, &config.voice, text, slow).await?;
+    // As it is stored: MP3. Encoded before the database is taken.
+    let (mime, bytes) = audio::compact(mime, bytes);
     let mut guard = db.lock();
     let conn = &mut *guard;
     record_speech(conn, &config.model, text);
@@ -186,8 +198,9 @@ pub(crate) enum Delivery {
 }
 
 /// A podcast line's clip as raw audio (WAV), so clips can be joined into an
-/// episode. Stored apart from the lessons' clips, which may be MP3; making an
-/// episode's audio again reuses every line it already has.
+/// episode. Asked of the speech model as raw audio, under a key of its own,
+/// and stored as MP3 like every clip; making an episode's audio again reuses
+/// every line it already has, read back from the MP3.
 /// `how` is a note on the delivery ("surprised", "whispering"), or empty.
 pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Delivery, how: &str) -> Result<Vec<u8>> {
     let (key, model) = {
@@ -204,9 +217,14 @@ pub(crate) async fn pcm_clip(db: &Db, text: &str, voice: &str, delivery: Deliver
     let cache_key = audio_key(&model, &variant, text);
     let lock = clip_lock(&cache_key);
     let _making = lock.lock().await;
-    if let Some((mime, bytes)) = cached_clip(&mut db.lock(), &cache_key)? {
-        if mime == "audio/wav" {
+    let stored = cached_clip(&mut db.lock(), &cache_key)?;
+    if let Some((mime, bytes)) = stored {
+        if audio::is_wav(&mime) {
             return Ok(bytes);
+        }
+        // One that cannot be read back is made again.
+        if let Ok(wav) = audio::wav_from_mp3(&bytes) {
+            return Ok(wav);
         }
     }
     let prompt = match delivery {

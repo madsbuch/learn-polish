@@ -344,6 +344,14 @@ line by line. Audio comes from whichever of these is available:
    wrapped in a WAV header built from the rate and channel count in the
    response's `Content-Type`.
 
+   **Speech is stored as MP3.** Raw audio is nearly 3 MB a minute, so every
+   clip and podcast episode is encoded before it is stored (`audio.rs`: LAME,
+   48 kbit/s for the model's one channel at 24 kHz — an eighth of the size).
+   A podcast is clips joined sample by sample, so it is put together from the
+   raw audio and its stored clips are decoded again when an episode is
+   rebuilt. Speech stored as WAV by earlier versions is re-encoded once, in
+   the background at startup, and the database is vacuumed afterwards.
+
    **Conversations are read in two voices.** Every speaker in the ten
    dialogues is tagged female or male in the content files, and each line is
    synthesised in the matching voice — so the shop assistant and the customer
@@ -476,6 +484,7 @@ src-tauri/src/
   memories.rs    long-term memory shared by the agents
   costs.rs       the cost center
   speech.rs      Polish read aloud, the voices, the audio cache
+  audio.rs       speech as MP3: encoding, reading clips back, shrinking old WAV
   songs.rs       songwriter prompt, kie.ai/Suno generation, downloads, lyric timing
   playlists.rs   playlists, and saving or sharing a take's MP3
   cast.rs        Sonos/UPnP casting
