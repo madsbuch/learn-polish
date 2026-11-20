@@ -2,9 +2,32 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Polski",
   "summary": "A Polish learning app for English speakers: small lessons filed in courses, built to order by an AI tutor.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 0,
-  "description": "Polski teaches Polish to an adult who speaks English. Everything is a small lesson, a quick drill or a conversation with an examiner, filed in courses. The app starts with one small demo course; every other course is made for what the learner needs the language for, by a tutor that acts in the app through tools.\n\nIt is a native app for Android and macOS (Tauri: a Rust core with SQLite, and a React interface). Everything the learner has is in one database on the device, and the learner's devices keep it in step directly between them, with no server.\n\nThe AI features are optional and use the learner's own keys: OpenRouter for the tutor, the examiner, speech and pictures, and kie.ai for sung songs. Without a key the demo course still works.\n\nDansk (learn-danish) is the same product for Danish in a separate codebase. The two share features, not code.",
+  "description": "Polski teaches Polish to an adult who speaks English, in small lessons filed in courses that a tutor builds to order. It is a native Android and macOS app that keeps everything on the learner's devices. The AI features are optional and run on the learner's own keys.\n\nDansk is the same product for Danish, in a separate codebase.",
+  "stories": [
+    {
+      "id": "US-POL-1",
+      "as": "an adult who speaks English and wants Polish for something in their own life",
+      "want": "lessons made for exactly that",
+      "soThat": "I learn the Polish I will use",
+      "requirements": [
+        "#POL-3",
+        "#PRIN-1"
+      ]
+    },
+    {
+      "id": "US-POL-2",
+      "as": "a learner who pays for AI with my own keys",
+      "want": "my keys and my data to stay on my devices",
+      "soThat": "nobody else holds them",
+      "requirements": [
+        "#POL-4",
+        "#POL-5",
+        "#DATA-1"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "POL-1",
@@ -38,14 +61,6 @@
       "id": "POL-6",
       "text": "No chat model is chosen by default: until the learner picks one in Settings, the features that need it are off and say so."
     }
-  ],
-  "code": [
-    "README.md",
-    "PRINCIPLES.md",
-    "src-tauri/src/lib.rs",
-    "src-tauri/src/commands.rs",
-    "src/lib/api.ts",
-    "src/App.tsx"
   ],
   "related": [
     "principles",

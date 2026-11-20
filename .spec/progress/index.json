@@ -2,9 +2,33 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Progress and rewards",
   "summary": "XP for real effort, the day done, streaks with freezes, achievements and a daily reminder.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 5,
-  "description": "The rewards exist to make daily practice a habit, and they reward what was really done. Harder exercises pay more, wrong answers pay nothing, and cards that are only read pay close to nothing.",
+  "description": "Rewards that make daily practice a habit, and pay for what was really done.",
+  "stories": [
+    {
+      "id": "US-PROG-1",
+      "as": "a learner building a habit",
+      "want": "a streak that survives one missed day",
+      "soThat": "one bad day does not undo a month",
+      "requirements": [
+        "#PROG-6",
+        "#PROG-7",
+        "#PROG-8"
+      ]
+    },
+    {
+      "id": "US-PROG-2",
+      "as": "a learner",
+      "want": "rewards only for what I actually did",
+      "soThat": "the numbers mean something",
+      "requirements": [
+        "#PROG-1",
+        "#PROG-2",
+        "#PROG-4"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "PROG-1",
@@ -48,7 +72,7 @@
     },
     {
       "id": "PROG-11",
-      "text": "An achievement's progress and its unlock come from the same count, so the number shown and the unlock always agree."
+      "text": "An achievement's progress and its unlock come from the same count."
     },
     {
       "id": "PROG-12",
@@ -70,14 +94,6 @@
       "id": "PROG-16",
       "text": "The Progress screen shows stats, what has been met, achievements, XP by day, an 18-week activity map and vocabulary totals."
     }
-  ],
-  "code": [
-    "src-tauri/src/stats.rs",
-    "src-tauri/src/xplog.rs",
-    "src/screens/Progress.tsx",
-    "src/screens/AchievementScreen.tsx",
-    "src/screens/XpDayScreen.tsx",
-    "src/lib/notifications.ts"
   ],
   "related": [
     "today#TODAY-10",

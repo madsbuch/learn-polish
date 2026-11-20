@@ -2,9 +2,33 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Governing principles",
   "summary": "The owner's rules that settle design questions everywhere in the app.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "These come from the app's owner and change only on their word. When a change is unclear, or two parts of the app disagree, these decide. Each is stated here as something that can be checked; the parts of the spec that carry them out refer back.",
+  "description": "The owner's rules. When a change is unclear, or two parts of the app disagree, these decide. They change only on the owner's word.",
+  "stories": [
+    {
+      "id": "US-PRIN-1",
+      "as": "the app's owner",
+      "want": "design questions settled by a few rules that hold everywhere",
+      "soThat": "the app stays one thing as it grows",
+      "requirements": [
+        "#PRIN-1",
+        "#PRIN-4",
+        "#PRIN-12"
+      ]
+    },
+    {
+      "id": "US-PRIN-2",
+      "as": "a learner",
+      "want": "what I have earned and made to stay mine",
+      "soThat": "I can trust the app with my effort",
+      "requirements": [
+        "#PRIN-3",
+        "#PRIN-6",
+        "#PRIN-7"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "PRIN-1",
@@ -58,17 +82,6 @@
       "id": "PRIN-13",
       "text": "Every row that names a thing (a course, a lesson, a word, a song, a memory) has a tagged id that says what it is; screens show the title of the thing instead of the id."
     }
-  ],
-  "questions": [
-    "Speech stored as WAV by earlier versions is re-encoded to MP3 by itself at startup, with no button. Is that storage housekeeping, which PRIN-4 allows, or a change to the learner's content that should wait for the learner to ask?",
-    "Three more things change existing content at startup without being asked: lessons built on Wikipedia are corrected by an AI every 90 days (a paid request), unchanged courses from the old built-in collection are removed, and courses mastered under earlier rules are moved to mastered. Are these the ongoing work PRIN-4 allows?",
-    "PRIN-12 holds for the screens, but the core still names lesson types outside the registry: in statistics (dialogue, writing and listening counts), in a few tutor tools, and when a course's items are cut into drills. Should those move into the types?",
-    "Reset progress clears mastery on every lesson, including the lessons of closed courses, while the courses stay closed. Is a closed course with unmastered lessons intended?"
-  ],
-  "code": [
-    "PRINCIPLES.md",
-    "DATA.md",
-    "ADDING_A_LESSON_TYPE.md"
   ],
   "related": [
     "lessons/mastery#MAST-8",

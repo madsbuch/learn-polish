@@ -2,9 +2,30 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The demo course",
   "summary": "First steps: one small course installed once, which then belongs to the learner.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "A fresh install needs something to practise before any key is set up. First steps / Pierwsze kroki is that: a handful of words, sentences and a short introduction dialogue. It is installed once and is the learner's from then on.\n\nEarlier versions shipped a larger collection of built-in courses. Upgrading removes those, but only where the learner left them exactly as shipped.",
+  "description": "First steps / Pierwsze kroki gives a fresh install something to practise before any key is set up. Earlier versions shipped a larger built-in collection, which upgrading retires.",
+  "stories": [
+    {
+      "id": "US-DEMO-1",
+      "as": "someone who has just installed the app",
+      "want": "something to practise straight away",
+      "soThat": "I can try it before setting up a key",
+      "requirements": [
+        "#DEMO-1"
+      ]
+    },
+    {
+      "id": "US-DEMO-2",
+      "as": "a learner upgrading from an earlier version",
+      "want": "the old built-in courses I changed to be kept",
+      "soThat": "an upgrade never takes my work",
+      "requirements": [
+        "#DEMO-6",
+        "#DEMO-7"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "DEMO-1",
@@ -20,7 +41,7 @@
     },
     {
       "id": "DEMO-4",
-      "text": "The demo course's rows have ids derived from the course and each row's place in it, so two devices that install it agree on them."
+      "text": "The demo course's rows have ids derived from the course and each row's place in it, the same on every device."
     },
     {
       "id": "DEMO-5",
@@ -38,12 +59,6 @@
       "id": "DEMO-8",
       "text": "The former built-in courses are not part of production builds; they exist only as test fixtures."
     }
-  ],
-  "code": [
-    "src-tauri/src/demo_course.rs",
-    "src-tauri/src/starter_retirement.rs",
-    "src-tauri/src/content.rs",
-    "src-tauri/test-fixtures/**"
   ],
   "related": [
     "courses",

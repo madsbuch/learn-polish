@@ -2,9 +2,30 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Your data",
   "summary": "Everything is in one SQLite database on the device: progress, courses, conversations, settings and every file.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 9,
-  "description": "The learner's data lives on the learner's devices. One database file holds all of it, the audio and pictures included, so the database alone is a complete backup and can be opened with any SQLite tool.\n\nThe rules for ids exist so the database can sync between devices and so that an agent cannot quietly use the wrong row.",
+  "description": "The learner's data lives on the learner's devices, in one database that is its own complete backup. Ids are built so the data can sync and an agent cannot quietly use the wrong row.",
+  "stories": [
+    {
+      "id": "US-DATA-1",
+      "as": "a learner",
+      "want": "everything I have in one file on my own device",
+      "soThat": "it is mine to back up and inspect",
+      "requirements": [
+        "#DATA-1",
+        "#DATA-2"
+      ]
+    },
+    {
+      "id": "US-DATA-2",
+      "as": "a learner upgrading the app",
+      "want": "a backup taken before the database changes",
+      "soThat": "a bad upgrade loses nothing",
+      "requirements": [
+        "#DATA-9"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "DATA-1",
@@ -54,18 +75,6 @@
       "id": "DATA-12",
       "text": "Writes that belong together (a lesson's grade and its schedule, a check-in's verdict, each tutor tool call) are made in one transaction."
     }
-  ],
-  "code": [
-    "DATA.md",
-    "docs/ID_MIGRATION.md",
-    "src-tauri/src/db.rs",
-    "src-tauri/src/schema.rs",
-    "src-tauri/src/schema.sql",
-    "src-tauri/src/ids.rs",
-    "src-tauri/src/files.rs",
-    "src-tauri/src/upgrade_v7.rs",
-    "src-tauri/src/upgrade_v8.rs",
-    "src/lib/files.ts"
   ],
   "related": [
     "principles#PRIN-13",

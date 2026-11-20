@@ -2,9 +2,33 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Conversation lessons",
   "summary": "Study, listening and writing lessons: an exchange with an AI that ends in a verdict.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 3,
-  "description": "Some things cannot be drilled: a grammar point, a song understood by ear, getting something across in writing. These lessons are conversations. In a study lesson an examiner asks about a short text. A listening lesson ties that to a song. A writing lesson is a situation played out with a partner who only understands Polish.\n\nEach ends with a verdict of pass, partial or fail, and what to review. A conversation lesson coming back on its schedule is a check-in.",
+  "description": "For what cannot be drilled: a grammar point, a song understood by ear, getting something across in writing. A conversation lesson coming back on its schedule is a check-in.",
+  "stories": [
+    {
+      "id": "US-CONV-1",
+      "as": "a learner studying a grammar point",
+      "want": "to be questioned on it and told what to review",
+      "soThat": "I know whether I understood it",
+      "requirements": [
+        "#CONV-1",
+        "#CONV-2",
+        "#CONV-3"
+      ]
+    },
+    {
+      "id": "US-CONV-2",
+      "as": "a learner who needs to write Polish in real situations",
+      "want": "to play a situation out with a partner who only understands Polish",
+      "soThat": "I find out whether I can get my point across",
+      "requirements": [
+        "#CONV-6",
+        "#CONV-7",
+        "#CONV-9"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "CONV-1",
@@ -54,14 +78,6 @@
       "id": "CONV-12",
       "text": "A check-in pays 30, 80 or 160 XP for low, medium or high complexity, plus 10 for each goal a writing lesson has; a partial pays half of that and a fail nothing."
     }
-  ],
-  "code": [
-    "src-tauri/src/examiner.rs",
-    "src-tauri/src/lesson_types/study.rs",
-    "src-tauri/src/lesson_types/listening.rs",
-    "src-tauri/src/lesson_types/writing.rs",
-    "src/screens/CheckIn.tsx",
-    "src/components/Listen.tsx"
   ],
   "related": [
     "lessons",

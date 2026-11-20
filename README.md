@@ -16,13 +16,14 @@ The rules that settle design questions are in
 ## The spec
 
 What the app is meant to do is written down in [`.spec`](.spec): one JSON
-file per part of the product, each with requirements that can be checked
-against the code (`MAST-7`, `SYNC-3`). The format is the one described in
+file per part of the product, each with user stories and requirements that
+can be checked against the app (`MAST-7`, `SYNC-3`). The format is the one
+described in
 [spec-llms.txt](https://raw.githubusercontent.com/madsbuch/better-github/refs/heads/main/spec-llms.txt);
-read it before changing the spec. A change in behaviour and the change to
-its requirements go in the same commit: new behaviour gets new requirements,
-changed behaviour a new version of its requirement with the reason, and a
-requirement no longer wanted is deprecated with the reason, never deleted.
+read it before changing the spec. The spec comes first: a change to what the
+app does starts as a new requirement, a new version of one with the reason,
+or a deprecation with the reason — never a deletion. It does not record
+whether something is built.
 `bun run build` checks the spec (`bun run check:spec` alone).
 
 Dansk ([learn-danish](https://github.com/madsbuch/learn-danish)) has the same spec, item for

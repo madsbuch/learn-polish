@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Memory",
   "summary": "Short facts about the learner that the tutor and the examiner share across conversations.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "What the examiner notices in a check-in should reach the tutor, and the other way round. Both agents see the same set of short facts about the learner and can save, revise and forget them. The learner can read and change all of it.",
+  "description": "What the examiner notices in a check-in should reach the tutor, and the other way round.",
+  "stories": [
+    {
+      "id": "US-MEM-1",
+      "as": "a learner",
+      "want": "the tutor and the examiner to remember what they learn about me, and to see and change it myself",
+      "soThat": "I do not repeat myself and nothing is kept that I do not want",
+      "requirements": [
+        "#MEM-3",
+        "#MEM-5",
+        "#MEM-6"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "MEM-1",
@@ -30,10 +43,6 @@
       "id": "MEM-6",
       "text": "With memory switched off, the agents neither read nor save memories."
     }
-  ],
-  "code": [
-    "src-tauri/src/memories.rs",
-    "src/screens/Memories.tsx"
   ],
   "related": [
     "tutor",

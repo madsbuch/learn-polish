@@ -2,9 +2,31 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Insights and the learning log",
   "summary": "Every answer is logged in detail, so the learner and the tutor can see what is hard.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "Knowing how often the learner is wrong is not much use; knowing what they find hard is. Every graded answer is logged with the kind of mistake it was, the words it involved and how it was reached. The Progress pages and the tutor read the same analysis, so what the tutor can see, the learner can browse.",
+  "description": "How often the learner is wrong says little; what they find hard says a lot. The learner and the tutor read the same analysis.",
+  "stories": [
+    {
+      "id": "US-LOG-1",
+      "as": "a learner who keeps making mistakes",
+      "want": "to see what kind they are and where they happen",
+      "soThat": "I know what to work on",
+      "requirements": [
+        "#LOG-2",
+        "#LOG-6",
+        "#LOG-10"
+      ]
+    },
+    {
+      "id": "US-LOG-2",
+      "as": "a learner asking the tutor for help",
+      "want": "the tutor to see the same analysis I can",
+      "soThat": "its advice fits what I actually get wrong",
+      "requirements": [
+        "#LOG-5"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "LOG-1",
@@ -46,18 +68,6 @@
       "id": "LOG-10",
       "text": "A word's statistics can be broken down by context: the course, the role the word had, its grammatical context, the topic and the exercise."
     }
-  ],
-  "code": [
-    "src-tauri/src/learnlog.rs",
-    "src-tauri/src/analytics.rs",
-    "src-tauri/src/mistakes.rs",
-    "src-tauri/src/rawlog.rs",
-    "src-tauri/src/contexts.rs",
-    "src-tauri/src/wordlinks.rs",
-    "src-tauri/src/grammar.rs",
-    "src-tauri/src/topics.rs",
-    "src-tauri/src/tutor_analytics.rs",
-    "src/screens/Insights.tsx"
   ],
   "related": [
     "principles#PRIN-4",

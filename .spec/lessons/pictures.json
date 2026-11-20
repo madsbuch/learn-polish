@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Picture, scene and story lessons",
   "summary": "Drills built on drawings: a picture per word, one illustrated scene, or a story told in panels.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "Some things are learnt faster from a picture than from a translation. A picture lesson gives each everyday word its own drawing. A scene lesson is one illustration with several things in it, for naming them and saying where they are. A story lesson tells a short story panel by panel, with a few questions.\n\nThe drawings are made by an image model and kept, so each is paid for once.",
+  "description": "Lessons built on drawings, for what is learnt faster from a picture than from a translation. The drawings are made by an image model and kept.",
+  "stories": [
+    {
+      "id": "US-PIC-1",
+      "as": "a learner of everyday words",
+      "want": "to learn them from pictures instead of translations",
+      "soThat": "the word attaches to the thing",
+      "requirements": [
+        "#PIC-1",
+        "#PIC-3",
+        "#PIC-6"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "PIC-1",
@@ -38,18 +51,6 @@
       "id": "PIC-8",
       "text": "A scene or story whose drawing failed says so on its page and can be tried again; a picture lesson offers to draw the pictures still missing."
     }
-  ],
-  "code": [
-    "src-tauri/src/pictures.rs",
-    "src-tauri/src/scenes.rs",
-    "src-tauri/src/stories.rs",
-    "src-tauri/src/lesson_types/pictures.rs",
-    "src-tauri/src/lesson_types/scene.rs",
-    "src-tauri/src/lesson_types/story.rs",
-    "src/exercises/pictures.tsx",
-    "src/exercises/scene.tsx",
-    "src/exercises/story.tsx",
-    "src/components/Scene.tsx"
   ],
   "related": [
     "lessons/drills",

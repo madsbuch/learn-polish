@@ -2,9 +2,33 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Courses kept offline",
   "summary": "A switch on a course that downloads all of its audio and pictures and keeps them downloaded as it grows.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "A learner who is about to be without a connection (a flight, a trip abroad) wants a course that simply works. Audio and pictures are otherwise made the first time a lesson needs them, which takes the network and the learner's key.\n\nKeeping a course offline makes the app fetch everything its lessons play and show ahead of time, and say plainly what will still need a connection. Songs and Wikipedia sources are stored when they are made, so they are there already.",
+  "description": "For a learner about to be without a connection. Audio and pictures are otherwise made the first time a lesson needs them, which takes the network and the learner's key.",
+  "stories": [
+    {
+      "id": "US-OFF-1",
+      "as": "a learner about to board a flight",
+      "want": "one course fully downloaded",
+      "soThat": "I can practise it with no connection",
+      "requirements": [
+        "#OFF-1",
+        "#OFF-2",
+        "#OFF-5"
+      ]
+    },
+    {
+      "id": "US-OFF-2",
+      "as": "a learner who keeps a course offline",
+      "want": "to see what is downloaded and what will still need a connection",
+      "soThat": "I am not surprised mid-lesson",
+      "requirements": [
+        "#OFF-5",
+        "#OFF-9",
+        "#OFF-10"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "OFF-1",
@@ -36,7 +60,7 @@
     },
     {
       "id": "OFF-8",
-      "text": "Pictures are drawn for a course kept offline only when the learner switches it on or taps Download now, which also tries again the pictures that failed before; by itself the app leaves a lesson's pictures to the device that made the lesson."
+      "text": "Pictures are drawn for a course kept offline only when the learner switches it on or taps Download now, which also retries pictures that failed before. By itself the app leaves a lesson's pictures to the device that made the lesson."
     },
     {
       "id": "OFF-9",
@@ -52,7 +76,7 @@
     },
     {
       "id": "OFF-12",
-      "text": "The mark syncs with the course, and what was downloaded syncs as files, so a course made ready on one device is ready on the others once they have synced."
+      "text": "The mark syncs with the course and what was downloaded syncs as files: a course made ready on one device is ready on the others once they have synced."
     },
     {
       "id": "OFF-13",
@@ -62,18 +86,6 @@
       "id": "OFF-14",
       "text": "While a course downloads on Android, the app is kept alive with a quiet notification."
     }
-  ],
-  "questions": [
-    "At startup, two synced devices that both keep a course offline can each fetch the same missing clip before they sync. Speech is cheap and the copies settle to one, but should only one device fetch?",
-    "Example sentences shown after a wrong answer are made by a model the first time and are not downloaded ahead; offline, sentences from the learner's own courses stand in. Should a course kept offline have them made ahead too?",
-    "Slow versions of a line are still made only when asked for. Should a course kept offline include them?"
-  ],
-  "code": [
-    "src-tauri/src/offline.rs",
-    "src-tauri/src/speech.rs",
-    "src-tauri/src/sounds.rs",
-    "src/components/CourseOffline.tsx",
-    "src/screens/CourseDetail.tsx"
   ],
   "related": [
     "courses",

@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Wikipedia sources",
   "summary": "Study lessons built on Wikipedia articles, kept for offline reading and checked again every three months.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 7,
-  "description": "A lesson about a city, a custom or a piece of history should be right. The tutor can search and read Wikipedia, write the lesson from an article and attach the article as its source. The article is kept, so it reads offline, and the lesson is checked against it again as the article changes.",
+  "description": "A lesson about a city, a custom or a piece of history should be right, and stay right as its source changes.",
+  "stories": [
+    {
+      "id": "US-WIKI-1",
+      "as": "a learner curious about a place or a custom",
+      "want": "lessons written from Wikipedia with the article kept alongside",
+      "soThat": "I can trust the facts and read more offline",
+      "requirements": [
+        "#WIKI-1",
+        "#WIKI-2",
+        "#WIKI-5"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "WIKI-1",
@@ -38,11 +51,6 @@
       "id": "WIKI-8",
       "text": "Reading Wikipedia needs no key."
     }
-  ],
-  "code": [
-    "src-tauri/src/wiki.rs",
-    "src/components/WikiArticle.tsx",
-    "src/components/Sources.tsx"
   ],
   "related": [
     "lessons/conversations#CONV-11",

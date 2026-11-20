@@ -2,9 +2,30 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Builds and releases",
   "summary": "Every merge to main is tested, built for Android and macOS, and published as the rolling latest release.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 11,
-  "description": "There is one release channel. A merge to main replaces the latest release, so installing the newest build is always the same download.",
+  "description": "One release channel: installing the newest build is always the same download.",
+  "stories": [
+    {
+      "id": "US-REL-1",
+      "as": "a learner",
+      "want": "the newest build always at one download link",
+      "soThat": "updating is one step",
+      "requirements": [
+        "#REL-1"
+      ]
+    },
+    {
+      "id": "US-REL-2",
+      "as": "the developer",
+      "want": "a release that cannot upgrade installed apps to be stopped",
+      "soThat": "no learner is left unable to update",
+      "requirements": [
+        "#REL-6",
+        "#REL-7"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "REL-1",
@@ -36,14 +57,8 @@
     },
     {
       "id": "REL-8",
-      "text": "The app's own code contains no unsafe Rust, and no `as` casts outside the two float conversions in `convert.rs`; the lints fail the build otherwise."
+      "text": "The app's own code contains no unsafe Rust, and no `as` casts outside two float conversions; the lints fail the build otherwise."
     }
-  ],
-  "code": [
-    ".github/workflows/**",
-    "scripts/**",
-    "src-tauri/Cargo.toml",
-    "src-tauri/tauri.conf.json"
   ],
   "related": [
     "app"

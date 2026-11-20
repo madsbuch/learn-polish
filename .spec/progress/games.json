@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Quick games",
   "summary": "A minute's play over words already met, outside the daily list, that never moves a schedule.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "Sometimes there is a minute and no wish to start a lesson. The quick games are play over what the lessons taught: Match pairs, Flip and match, Dictation, Sound pairs and Say it. They pay a little XP and count as practising, and they leave the schedule alone, because matching from a handful of visible cards is recognition helped by elimination, not recall.",
+  "description": "Play for a spare minute, over what the lessons taught. Matching visible cards is recognition, not recall, so games never count as reviews.",
+  "stories": [
+    {
+      "id": "US-GAME-1",
+      "as": "a learner with a spare minute",
+      "want": "a quick game over words I have met",
+      "soThat": "I practise without starting a lesson or disturbing my schedule",
+      "requirements": [
+        "#GAME-1",
+        "#GAME-4",
+        "#GAME-5"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "GAME-1",
@@ -32,17 +45,12 @@
     },
     {
       "id": "GAME-7",
-      "text": "The best result of Match pairs (fastest time) and of Flip and match (fewest moves) is kept and synced, so a record set on one device is the one to beat on another; the other games keep no record."
+      "text": "The best result of Match pairs (fastest time) and of Flip and match (fewest moves) is kept and synced between devices; the other games keep no record."
     },
     {
       "id": "GAME-8",
       "text": "A game played after the day's game XP is used up still counts as having practised that day."
     }
-  ],
-  "code": [
-    "src-tauri/src/games.rs",
-    "src/screens/QuickGames.tsx",
-    "src/components/EarGames.tsx"
   ],
   "related": [
     "progress#PROG-5",

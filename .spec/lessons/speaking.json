@@ -2,9 +2,31 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Speaking, dictation and sounds",
   "summary": "Cards where the learner speaks or writes what was said, and pairs of sounds an English ear runs together.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 4,
-  "description": "Reading and tapping do not train the ear or the mouth. Dictation has the app say a sentence for the learner to write. Speaking cards have the learner say it, and a model that takes sound writes down what it heard. Sound pairs play two real words that differ in one sound (sz and ś, y and i, ł and l) and ask which was said.",
+  "description": "Training for the ear and the mouth, which reading and tapping do not give. Sound pairs are real words that differ in one sound (sz and ś, y and i, ł and l).",
+  "stories": [
+    {
+      "id": "US-SPK-1",
+      "as": "a learner who cannot yet tell similar Polish sounds apart",
+      "want": "to hear them side by side and be told which I confuse",
+      "soThat": "my ear and my pronunciation improve",
+      "requirements": [
+        "#SPK-1",
+        "#SPK-4",
+        "#SPK-9"
+      ]
+    },
+    {
+      "id": "US-SPK-2",
+      "as": "a learner speaking into the app",
+      "want": "my recordings not to be kept",
+      "soThat": "I can practise aloud without a record of it",
+      "requirements": [
+        "#SPK-5"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "SPK-1",
@@ -32,11 +54,11 @@
     },
     {
       "id": "SPK-7",
-      "text": "Speaking cards take the place of a lesson's usual practice cards, so a lesson with them is no longer than before."
+      "text": "Speaking cards take the place of a lesson's usual practice cards and do not add to its length."
     },
     {
       "id": "SPK-8",
-      "text": "Speaking cards are a setting of the device, so a computer without a microphone can leave them off while the phone keeps them."
+      "text": "Whether speaking cards are shown is a setting of the device, not of the learner."
     },
     {
       "id": "SPK-9",
@@ -46,15 +68,6 @@
       "id": "SPK-10",
       "text": "The built-in sound pairs ship with the app; nothing is written to the database for them."
     }
-  ],
-  "code": [
-    "src-tauri/src/speaking.rs",
-    "src-tauri/src/dictation.rs",
-    "src-tauri/src/sounds.rs",
-    "src/lib/mic.ts",
-    "src/exercises/speak.tsx",
-    "src/exercises/listen.tsx",
-    "src/components/EarGames.tsx"
   ],
   "related": [
     "lessons/drills#DRILL-4",

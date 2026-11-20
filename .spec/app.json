@@ -2,9 +2,31 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The app shell",
   "summary": "Four tabs, a back button that walks back through the app, and a layout that follows the window.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 10,
-  "description": "The same interface runs on a phone, a tablet and a computer. It is built from a small design system, and its mechanical rules are checked by the build, so a new screen looks like the rest.",
+  "description": "One interface for a phone, a tablet and a computer, built from a small design system.",
+  "stories": [
+    {
+      "id": "US-SHELL-1",
+      "as": "a learner using a phone and a computer",
+      "want": "the same app laid out for each screen",
+      "soThat": "I do not relearn it",
+      "requirements": [
+        "#SHELL-1",
+        "#SHELL-4",
+        "#SHELL-5"
+      ]
+    },
+    {
+      "id": "US-SHELL-2",
+      "as": "an Android user",
+      "want": "the back button to walk back through the app",
+      "soThat": "it behaves like every other app on my phone",
+      "requirements": [
+        "#SHELL-3"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "SHELL-1",
@@ -54,20 +76,6 @@
       "id": "SHELL-12",
       "text": "The build fails when a screen breaks the design system's mechanical rules."
     }
-  ],
-  "questions": [
-    "DESIGN.md asks for touch targets of at least 44 px, one confirmation for every destructive action and an explanation in every empty list. The build checks none of the three, and some controls are smaller. Should the design check enforce them?"
-  ],
-  "code": [
-    "src/App.tsx",
-    "src/design/**",
-    "DESIGN.md",
-    "scripts/check-design.mjs",
-    "src/lib/back.ts",
-    "src/lib/keyboard.ts",
-    "src/screens/Search.tsx",
-    "src/screens/SettingsScreen.tsx",
-    "src-tauri/android/MainActivity.kt"
   ],
   "related": [
     "today",

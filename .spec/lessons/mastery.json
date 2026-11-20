@@ -2,9 +2,32 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Mastery",
   "summary": "Points earned by passing, 100 to master, with a ledger of every change.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 6,
-  "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting for a check-in: practising now gets there, it only takes more passes than letting the check-ins space them out. Passes further apart are better evidence and earn more.\n\nEvery change is written down, so the learner can see on the lesson's page why its points are what they are.",
+  "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting, and passes further apart are better evidence.",
+  "stories": [
+    {
+      "id": "US-MAST-1",
+      "as": "a learner in a hurry",
+      "want": "to master a lesson by practising, without waiting for check-ins",
+      "soThat": "a deadline two days away is still reachable",
+      "requirements": [
+        "#MAST-1",
+        "#MAST-2",
+        "#MAST-7"
+      ]
+    },
+    {
+      "id": "US-MAST-2",
+      "as": "a learner looking at a lesson's points",
+      "want": "to see every change and why",
+      "soThat": "the score is something I can trust",
+      "requirements": [
+        "#MAST-10",
+        "#MAST-12"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "MAST-1",
@@ -58,11 +81,6 @@
       "id": "MAST-13",
       "text": "A lesson's points from before the ledger existed are shown as one starting line; nothing is backfilled."
     }
-  ],
-  "code": [
-    "src-tauri/src/lessons.rs",
-    "src-tauri/src/masterylog.rs",
-    "src/components/MasteryPoints.tsx"
   ],
   "related": [
     "principles#PRIN-6",

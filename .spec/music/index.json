@@ -2,9 +2,31 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Songs",
   "summary": "Learning songs written to order from the learner's words and sung by Suno, kept for good.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 7,
-  "description": "Songs get Polish stuck in the head. The Music tab makes them to order: a songwriter model drafts title, style and lyrics from the learner's words, and Suno sings the result. Each verse pairs a short English line with the same line in Polish; the chorus is a single Polish sentence, sung only in Polish, so it is what ends up being hummed.",
+  "description": "Songs get Polish stuck in the head. Each verse pairs an English line with the same line in Polish, and the chorus is one Polish sentence.",
+  "stories": [
+    {
+      "id": "US-SONG-1",
+      "as": "a learner who remembers songs better than word lists",
+      "want": "a song written from my own words and sung",
+      "soThat": "the Polish sticks",
+      "requirements": [
+        "#SONG-1",
+        "#SONG-2",
+        "#SONG-5"
+      ]
+    },
+    {
+      "id": "US-SONG-2",
+      "as": "a learner who liked a song",
+      "want": "it kept for good",
+      "soThat": "it still plays offline when the service that made it has deleted it",
+      "requirements": [
+        "#SONG-8"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "SONG-1",
@@ -54,12 +76,6 @@
       "id": "SONG-12",
       "text": "Many songs can be deleted at once from the song list."
     }
-  ],
-  "code": [
-    "src-tauri/src/songs.rs",
-    "src/screens/Music.tsx",
-    "src/screens/SongComposer.tsx",
-    "src/screens/settings/SongSettings.tsx"
   ],
   "related": [
     "principles#PRIN-11",

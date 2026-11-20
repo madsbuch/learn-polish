@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Player and playlists",
   "summary": "One player for the whole app, with lyrics that follow the music, playlists of takes and the phone's own controls.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "The Music tab is the library; playing is the player's job. A bar above the tabs on every screen opens the full-screen player, and the music keeps going while the learner practises.",
+  "description": "The Music tab is the library; playing is the player's job, and the music keeps going while the learner practises.",
+  "stories": [
+    {
+      "id": "US-PLAY-1",
+      "as": "a learner listening while doing something else",
+      "want": "the lyrics to follow the music and the phone's own controls to work",
+      "soThat": "I can listen hands-free",
+      "requirements": [
+        "#PLAY-1",
+        "#PLAY-4",
+        "#PLAY-9"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "PLAY-1",
@@ -46,15 +59,6 @@
       "id": "PLAY-10",
       "text": "The repeat mode is a setting of the device and does not sync."
     }
-  ],
-  "code": [
-    "src/lib/player.ts",
-    "src/screens/Player.tsx",
-    "src-tauri/src/playlists.rs",
-    "src-tauri/src/singalong.rs",
-    "src/components/FollowLyrics.tsx",
-    "src/components/Lyrics.tsx",
-    "src-tauri/plugins/songplayer/**"
   ],
   "related": [
     "music",

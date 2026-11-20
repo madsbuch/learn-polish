@@ -2,9 +2,32 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Sync between devices",
   "summary": "A learner's phone and computer keep one set of data in step, directly over the local network.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "One learner, several devices. A device shows a QR code and another scans it; from then on the two form a vault and sync whenever both are open on the same Wi-Fi. There is no server and no account: devices talk to each other directly, encrypted, and only to devices that were paired.\n\nWhole rows sync, not operations. Every device reaches the same result whatever order changes arrive in.",
+  "description": "One learner, several devices, no server and no account. Whole rows sync, and every device reaches the same result whatever order changes arrive in.",
+  "stories": [
+    {
+      "id": "US-SYNC-1",
+      "as": "a learner with a phone and a computer",
+      "want": "both to show the same progress without an account or a server",
+      "soThat": "I can practise on whichever is at hand",
+      "requirements": [
+        "#SYNC-1",
+        "#SYNC-3",
+        "#SYNC-7"
+      ]
+    },
+    {
+      "id": "US-SYNC-2",
+      "as": "a learner who lost a phone",
+      "want": "to remove it from my devices",
+      "soThat": "it can no longer read or change my data",
+      "requirements": [
+        "#SYNC-6",
+        "#SYNC-15"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "SYNC-1",
@@ -40,7 +63,7 @@
     },
     {
       "id": "SYNC-9",
-      "text": "A day's totals are kept per device and summed when read, so two devices practising on the same day do not overwrite each other."
+      "text": "A day's totals are kept per device and summed when read."
     },
     {
       "id": "SYNC-10",
@@ -76,20 +99,12 @@
     },
     {
       "id": "SYNC-18",
-      "text": "Android's own backup is off, so a restored phone never carries another device's sync identity."
+      "text": "Android's own backup of the app's data is off."
     },
     {
       "id": "SYNC-19",
       "text": "Every synced table's triggers list all of its columns; a test fails otherwise."
     }
-  ],
-  "code": [
-    "docs/SYNC.md",
-    "src-tauri/src/sync/**",
-    "src-tauri/plugins/sync-background/**",
-    "src/screens/Devices.tsx",
-    "src/lib/sync.ts",
-    "scripts/prepare-android.mjs"
   ],
   "related": [
     "data",

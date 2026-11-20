@@ -2,9 +2,32 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Hearing Polish",
   "summary": "Every Polish line can be read aloud; each clip is made once, stored as MP3 and replayed offline.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 8,
-  "description": "Every Polish line has a speaker button, and conversations can be read line by line. The voice is a speech model through OpenRouter, because it is the one option that sounds the same on Android and macOS; the platform's own speech engine stands in where there is no key.\n\nA line is paid for once. Raw speech is nearly 3 MB a minute, so clips are encoded to MP3 before they are stored.",
+  "description": "Every Polish line can be heard. The voice is a speech model through OpenRouter, the one option that sounds the same on Android and macOS.",
+  "stories": [
+    {
+      "id": "US-SPEECH-1",
+      "as": "a learner",
+      "want": "to hear any Polish line, at once and offline after the first time",
+      "soThat": "I learn how it sounds without waiting or paying twice",
+      "requirements": [
+        "#SPEECH-1",
+        "#SPEECH-6",
+        "#SPEECH-7"
+      ]
+    },
+    {
+      "id": "US-SPEECH-2",
+      "as": "a learner with months of audio on a phone",
+      "want": "stored speech to take little space",
+      "soThat": "the app does not fill my storage",
+      "requirements": [
+        "#SPEECH-9",
+        "#SPEECH-11"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "SPEECH-1",
@@ -62,17 +85,6 @@
       "id": "SPEECH-14",
       "text": "Without an OpenRouter key, the platform's own speech engine is used where the webview has one."
     }
-  ],
-  "questions": [
-    "The README still describes every speaker in the ten dialogues being tagged female or male in content files. The built-in collection is gone; is the gender of a dialogue line now always set by the tutor when it makes the line?"
-  ],
-  "code": [
-    "src-tauri/src/speech.rs",
-    "src-tauri/src/audio.rs",
-    "src-tauri/src/ai.rs",
-    "src/screens/AudioScreen.tsx",
-    "src/screens/settings/SoundSettings.tsx",
-    "src/components/ReadAloud.tsx"
   ],
   "related": [
     "principles#PRIN-4",

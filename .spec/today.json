@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Today's lessons",
   "summary": "Each day the app picks the five lessons that matter most and keeps them for the day.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 4,
-  "description": "The home screen answers one question: what should I do today. It gives a short list, chosen once and kept. Doing it is the day done, with a celebration and nothing more. For more, a course's page lists its lessons in the same order of importance.",
+  "description": "The home screen answers one question: what should I do today. The answer is a short list, not a backlog.",
+  "stories": [
+    {
+      "id": "US-TODAY-1",
+      "as": "a learner opening the app with ten minutes",
+      "want": "a short list of what matters most today",
+      "soThat": "I can start without deciding and stop when it is done",
+      "requirements": [
+        "#TODAY-1",
+        "#TODAY-2",
+        "#TODAY-10"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "TODAY-1",
@@ -50,10 +63,6 @@
       "id": "TODAY-11",
       "text": "The day's list is the same on every device in a vault; if two devices chose a list while apart, the later one wins."
     }
-  ],
-  "code": [
-    "src-tauri/src/plan.rs",
-    "src/screens/Exercises.tsx"
   ],
   "related": [
     "principles#PRIN-9",

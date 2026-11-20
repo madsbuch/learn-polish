@@ -2,9 +2,31 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Models, keys and costs",
   "summary": "The learner's own keys and model choices, and a running account of what the AI features cost.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "The app has no account and no server of its own: the AI features run on the learner's keys, and the learner picks the models. Model ids go stale, so the app ships no default chat model and loads the catalogue live. Because the learner pays, every paid request is logged and shown.",
+  "description": "The app has no account and no server of its own. The AI features run on the learner's keys and chosen models, so what they cost is shown.",
+  "stories": [
+    {
+      "id": "US-AI-1",
+      "as": "a learner paying for AI with my own key",
+      "want": "to choose the models and see what each feature costs",
+      "soThat": "I control what I spend",
+      "requirements": [
+        "#AI-1",
+        "#AI-7",
+        "#AI-11"
+      ]
+    },
+    {
+      "id": "US-AI-2",
+      "as": "a learner setting up a second device",
+      "want": "to move my keys by scanning a code",
+      "soThat": "I do not type them again",
+      "requirements": [
+        "#AI-5"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "AI-1",
@@ -16,7 +38,7 @@
     },
     {
       "id": "AI-3",
-      "text": "Speech always uses one fixed speech model, so the list of voices ships with the app."
+      "text": "Speech always uses one fixed speech model, and the list of voices ships with the app."
     },
     {
       "id": "AI-4",
@@ -44,7 +66,7 @@
     },
     {
       "id": "AI-10",
-      "text": "Speech is counted in clips and shown as unpriced, because the speech endpoint reports no price."
+      "text": "Speech is counted in clips and shown as unpriced."
     },
     {
       "id": "AI-11",
@@ -58,20 +80,6 @@
       "id": "AI-13",
       "text": "Diagnostics keeps a log the learner can read and pass on, holding only the newest entries."
     }
-  ],
-  "code": [
-    "src-tauri/src/ai.rs",
-    "src-tauri/src/http.rs",
-    "src-tauri/src/costs.rs",
-    "src-tauri/src/keyshare.rs",
-    "src-tauri/src/bench.rs",
-    "src-tauri/src/diagnostics.rs",
-    "src/screens/settings/AiSettings.tsx",
-    "src/components/CostCenter.tsx",
-    "src/components/ModelPicker.tsx",
-    "src/components/Benchmark.tsx",
-    "src/components/KeyShare.tsx",
-    "src/components/Diagnostics.tsx"
   ],
   "related": [
     "tutor",

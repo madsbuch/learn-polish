@@ -2,9 +2,33 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Lessons",
   "summary": "The unit of learning: one job each, one type from a flat list, its own schedule and mastery.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 3,
-  "description": "Learning happens in lessons. Every lesson has one type, and the type says everything about it: how it is practised, what its page shows, where it goes in a course and what mastering it takes. There are two ways a lesson runs: a drill is a run of exercises tapped through; a conversation is an exchange with an examiner or a writing partner that ends in a verdict.\n\nA lesson owns what it practises. A word or a sentence belongs to exactly one lesson.",
+  "description": "Learning happens in lessons. A lesson's type says everything about it: how it is practised, what its page shows, where it goes in a course and what mastering it takes.",
+  "stories": [
+    {
+      "id": "US-LSN-1",
+      "as": "a learner",
+      "want": "every lesson to be one small thing with a clear way to do it",
+      "soThat": "I can fit learning into a few minutes",
+      "requirements": [
+        "#LSN-1",
+        "#LSN-5",
+        "#LSN-6"
+      ]
+    },
+    {
+      "id": "US-LSN-2",
+      "as": "a developer adding a kind of lesson",
+      "want": "to declare it in one place",
+      "soThat": "nothing else in the app has to learn about it",
+      "requirements": [
+        "#LSN-2",
+        "#LSN-10",
+        "#LSN-11"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "LSN-1",
@@ -50,17 +74,6 @@
       "id": "LSN-11",
       "text": "Every registered type can be made and practised, and every exercise it produces is one the screens can draw; a test fails otherwise."
     }
-  ],
-  "questions": [
-    "The principle says nothing else branches on a lesson's type, but the core still names types in a few places: cutting a course's items into drills, drawing a picture lesson's words, and a check for writing in the tutor. Are those exceptions accepted, or should they move into the types?"
-  ],
-  "code": [
-    "src-tauri/src/lesson_types/**",
-    "src-tauri/src/lessons.rs",
-    "ADDING_A_LESSON_TYPE.md",
-    "src/lib/lessonTypes.ts",
-    "src/screens/LessonPage.tsx",
-    "src/components/LessonRow.tsx"
   ],
   "related": [
     "principles#PRIN-12",

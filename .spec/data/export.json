@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Export",
   "summary": "Writes a complete, consistent copy of the database to a file the learner chooses.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "The learner can take their data with them. Export writes one file that opens in any SQLite tool. Because the file may be passed on, secrets are left out unless asked for.",
+  "description": "The learner can take their data with them, in a file that opens in any SQLite tool.",
+  "stories": [
+    {
+      "id": "US-EXP-1",
+      "as": "a learner",
+      "want": "a complete copy of my data without my keys in it",
+      "soThat": "I can keep it or pass it on safely",
+      "requirements": [
+        "#EXP-1",
+        "#EXP-3",
+        "#EXP-4"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "EXP-1",
@@ -16,7 +29,7 @@
     },
     {
       "id": "EXP-3",
-      "text": "API keys are removed from the copy unless the learner chooses to include them, and removed so that they are not left in the file's free pages."
+      "text": "API keys are removed from the copy unless the learner chooses to include them, and are not left in the file's free pages."
     },
     {
       "id": "EXP-4",
@@ -24,17 +37,12 @@
     },
     {
       "id": "EXP-5",
-      "text": "An exported copy is marked as a copy, so a device opened from it takes a new sync identity."
+      "text": "An exported copy is marked as a copy: a device opened from it takes a new sync identity."
     },
     {
       "id": "EXP-6",
       "text": "Cancelling the save dialog writes nothing and leaves no temporary copy behind."
     }
-  ],
-  "code": [
-    "src-tauri/src/commands.rs",
-    "src-tauri/src/sync/instance.rs",
-    "src/screens/settings/DataSettings.tsx"
   ],
   "related": [
     "data",

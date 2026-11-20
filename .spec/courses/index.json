@@ -2,9 +2,33 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Courses",
   "summary": "A course is a folder on one theme that lists lessons in order; it can be completed, mastered and closed.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "A course gathers the lessons on one theme: a trip, a hobby, the learner's work. The tutor makes courses to order; the learner can rename, edit and delete any of them. A course holds no words of its own: it reaches words and sentences only through the lessons it lists.\n\nGiving a course words, sentences or a dialogue cuts them into drills. A lesson can be listed in several courses and still be one lesson with one schedule.",
+  "description": "A course gathers the lessons on one theme: a trip, a hobby, the learner's work. It holds no words of its own and reaches them only through the lessons it lists.",
+  "stories": [
+    {
+      "id": "US-CRS-1",
+      "as": "a learner with a trip, a hobby or a job that needs Polish",
+      "want": "a course on that theme with its lessons in order",
+      "soThat": "I can work through it from start to finish",
+      "requirements": [
+        "#CRS-1",
+        "#CRS-2",
+        "#CRS-15"
+      ]
+    },
+    {
+      "id": "US-CRS-2",
+      "as": "a learner who has mastered a course",
+      "want": "to close it as a trophy",
+      "soThat": "finishing feels like finishing",
+      "requirements": [
+        "#CRS-9",
+        "#CRS-10",
+        "#CRS-12"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "CRS-1",
@@ -70,20 +94,6 @@
       "id": "CRS-16",
       "text": "A course can have a picture, drawn by an image model from its title, summary and words."
     }
-  ],
-  "questions": [
-    "Only the tutor can reorder a course's lessons: there is no command for the learner to do it by hand. Is that intended?",
-    "Dialogue lines added to a course are always appended, even when the course already has the same line, while words and sentences are checked for repeats. Should lines be checked too?",
-    "Nothing stops a level being written into a course's title; the tutor is only told not to. Is the instruction enough?"
-  ],
-  "code": [
-    "src-tauri/src/courses.rs",
-    "src-tauri/src/levels.rs",
-    "src-tauri/src/pictures.rs",
-    "src/screens/CourseDetail.tsx",
-    "src/screens/Exercises.tsx",
-    "src/components/CourseList.tsx",
-    "src/components/CourseClosedCelebration.tsx"
   ],
   "related": [
     "principles#PRIN-7",

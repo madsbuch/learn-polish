@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Podcasts",
   "summary": "Spoken episodes written from Wikipedia or today's news and read aloud in the speech voices.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 2,
-  "description": "A podcast is listening practice on a subject the learner cares about. A writer model writes every sentence as a pair, Polish and English, from Wikipedia articles, from today's Polish news, or as a short made-up story. The speech model reads each line, and the clips are joined into one episode with pauses. An episode is stored as a song, so the player, playlists, casting and listening lessons all work on it.",
+  "description": "Listening practice on a subject the learner cares about. An episode is stored as a song, so the player, playlists, casting and listening lessons work on it.",
+  "stories": [
+    {
+      "id": "US-POD-1",
+      "as": "a learner who wants listening practice on subjects I care about",
+      "want": "a spoken episode with each sentence in English and Polish",
+      "soThat": "I can follow real content at my level",
+      "requirements": [
+        "#POD-1",
+        "#POD-3",
+        "#POD-8"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "POD-1",
@@ -36,7 +49,7 @@
     },
     {
       "id": "POD-8",
-      "text": "Each sentence of an episode has its start and end time, so the player follows it like a song's lyrics."
+      "text": "Each sentence of an episode has its start and end time, and the player follows it like a song's lyrics."
     },
     {
       "id": "POD-9",
@@ -46,12 +59,6 @@
       "id": "POD-10",
       "text": "An episode's audio is stored as MP3, or as it came when it cannot be encoded."
     }
-  ],
-  "code": [
-    "src-tauri/src/podcasts.rs",
-    "src-tauri/src/news.rs",
-    "src/screens/PodcastComposer.tsx",
-    "src/components/Podcast.tsx"
   ],
   "related": [
     "music",

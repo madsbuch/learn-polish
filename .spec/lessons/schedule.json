@@ -2,9 +2,22 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Check-in schedule",
   "summary": "Each lesson comes back on its own period; passing spreads it out, failing brings it back tomorrow.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 5,
-  "description": "Every lesson has a check-in period. The gap to the next check-in grows from the time that actually passed since the last one, so checking in early is honest and remembering after longer is worth more.",
+  "description": "Every lesson comes back on its own schedule. The gap grows from the time that actually passed, so that remembering after longer is worth more.",
+  "stories": [
+    {
+      "id": "US-SCHED-1",
+      "as": "a learner with limited time",
+      "want": "each lesson to come back when I am about to forget it",
+      "soThat": "I review what needs it and nothing else",
+      "requirements": [
+        "#SCHED-3",
+        "#SCHED-4",
+        "#SCHED-8"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "SCHED-1",
@@ -58,11 +71,6 @@
       "id": "SCHED-13",
       "text": "Extra practice on a lesson already passed today pays half XP and does not move its schedule."
     }
-  ],
-  "code": [
-    "src-tauri/src/lessons.rs",
-    "src-tauri/src/plan.rs",
-    "src-tauri/src/practice.rs"
   ],
   "related": [
     "lessons",

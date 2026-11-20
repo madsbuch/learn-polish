@@ -2,9 +2,32 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Drills",
   "summary": "Runs of exercises over a lesson's own items, graded by the share answered right.",
-  "status": "implemented",
+  "status": "accepted",
   "order": 1,
-  "description": "A drill practises a handful of items: words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, so a brand-new word is shown on a card first, a word seen before is recognised among choices, and one that has held up has to be typed from memory.\n\nInside a drill every word and sentence has its own review history. That history decides how hard the exercise is; when the lesson itself comes back is decided by the lesson's schedule.",
+  "description": "A drill practises a handful of words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, which decides how hard each one is.",
+  "stories": [
+    {
+      "id": "US-DRILL-1",
+      "as": "a learner meeting new words",
+      "want": "each word to get harder to answer as I get better at it",
+      "soThat": "practice stays just hard enough",
+      "requirements": [
+        "#DRILL-1",
+        "#DRILL-13"
+      ]
+    },
+    {
+      "id": "US-DRILL-2",
+      "as": "a learner typing on a phone",
+      "want": "a slip of one letter treated as nearly right",
+      "soThat": "I am graded on my Polish, not my thumbs",
+      "requirements": [
+        "#DRILL-2",
+        "#DRILL-3",
+        "#DRILL-5"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "DRILL-1",
@@ -58,25 +81,6 @@
       "id": "DRILL-13",
       "text": "Each word's and sentence's review interval grows with right answers on different days, to at most 365 days; an item counts once a day."
     }
-  ],
-  "questions": [
-    "The README says an ace needs every answer fully right; the code gives an ace at 95% fully right with no almost-right answers, so a drill of 20 cards or more can have one miss. Which is meant?"
-  ],
-  "code": [
-    "src-tauri/src/session.rs",
-    "src-tauri/src/practice.rs",
-    "src-tauri/src/srs.rs",
-    "src-tauri/src/tiles.rs",
-    "src-tauri/src/examples.rs",
-    "src-tauri/src/lesson_types/words.rs",
-    "src-tauri/src/lesson_types/sentences.rs",
-    "src-tauri/src/lesson_types/gaps.rs",
-    "src-tauri/src/lesson_types/typing.rs",
-    "src-tauri/src/lesson_types/memory.rs",
-    "src-tauri/src/lesson_types/dialogue.rs",
-    "src/exercises/**",
-    "src/screens/Session.tsx",
-    "src/screens/SessionSummary.tsx"
   ],
   "related": [
     "lessons",
