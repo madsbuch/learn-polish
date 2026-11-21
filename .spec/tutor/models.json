@@ -1,0 +1,90 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Models, keys and costs",
+  "summary": "The learner's own keys and model choices, and a running account of what the AI features cost.",
+  "status": "accepted",
+  "order": 2,
+  "description": "The app has no account and no server of its own. The AI features run on the learner's keys and chosen models, so what they cost is shown.",
+  "stories": [
+    {
+      "id": "US-AI-1",
+      "as": "a learner paying for AI with my own key",
+      "want": "to choose the models and see what each feature costs",
+      "soThat": "I control what I spend",
+      "requirements": [
+        "#AI-1",
+        "#AI-7",
+        "#AI-11"
+      ]
+    },
+    {
+      "id": "US-AI-2",
+      "as": "a learner setting up a second device",
+      "want": "to move my keys by scanning a code",
+      "soThat": "I do not type them again",
+      "requirements": [
+        "#AI-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "AI-1",
+      "text": "The chat model is chosen from the catalogue loaded from OpenRouter; none is built in."
+    },
+    {
+      "id": "AI-2",
+      "text": "Every request to an outside service is made from the Rust core."
+    },
+    {
+      "id": "AI-3",
+      "text": "Speech always uses one fixed speech model, and the list of voices ships with the app."
+    },
+    {
+      "id": "AI-4",
+      "text": "The songwriter, the writing partner, pictures, looking at pictures and hearing speech each have their own model setting."
+    },
+    {
+      "id": "AI-5",
+      "text": "API keys can be moved to another device as a QR code that the other device scans."
+    },
+    {
+      "id": "AI-6",
+      "text": "Picture, vision and hearing models have built-in defaults; the learner can change them."
+    },
+    {
+      "id": "AI-7",
+      "text": "Every paid request is logged with the feature that made it."
+    },
+    {
+      "id": "AI-8",
+      "text": "Chat requests store the cost OpenRouter reports, including for streamed answers."
+    },
+    {
+      "id": "AI-9",
+      "text": "Suno songs store the credits kie.ai reports, converted at $0.005 a credit, once per task."
+    },
+    {
+      "id": "AI-10",
+      "text": "Speech is counted in clips and shown as unpriced."
+    },
+    {
+      "id": "AI-11",
+      "text": "Settings shows costs for today, the last 7, 30 and 90 days and all time, per feature and day by day."
+    },
+    {
+      "id": "AI-12",
+      "text": "A model can be benchmarked on the app's own jobs (Polish, tool use, following the prompts), scored by rules and not by another model; each run is kept with its time and cost."
+    },
+    {
+      "id": "AI-13",
+      "text": "Diagnostics keeps a log the learner can read and pass on, holding only the newest entries."
+    }
+  ],
+  "related": [
+    "tutor",
+    "speech",
+    "music",
+    "progress#PROG-13"
+  ]
+}

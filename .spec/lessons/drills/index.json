@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Drills",
+  "summary": "Runs of exercises over a lesson's own items, graded by the share answered right.",
+  "status": "accepted",
+  "order": 1,
+  "description": "A drill practises a handful of words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, which decides how hard each one is.",
+  "stories": [
+    {
+      "id": "US-DRILL-1",
+      "as": "a learner meeting new words",
+      "want": "each word to get harder to answer as I get better at it",
+      "soThat": "practice stays just hard enough",
+      "requirements": [
+        "#DRILL-1",
+        "#DRILL-13"
+      ]
+    },
+    {
+      "id": "US-DRILL-2",
+      "as": "a learner typing on a phone",
+      "want": "a slip of one letter treated as nearly right",
+      "soThat": "I am graded on my Polish, not my thumbs",
+      "requirements": [
+        "#DRILL-2",
+        "#DRILL-3",
+        "#DRILL-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "DRILL-1",
+      "text": "A word never answered is shown on a card that is only read and then asked by multiple choice; one answered before is asked by multiple choice; one answered right on three different days in a row has to be typed."
+    },
+    {
+      "id": "DRILL-2",
+      "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks: `czesc` counts as `cześć`."
+    },
+    {
+      "id": "DRILL-3",
+      "text": "A typed answer one letter off a word of four letters or more is almost right."
+    },
+    {
+      "id": "DRILL-4",
+      "text": "A dictation or spoken sentence of three words or more with one word wrong is almost right."
+    },
+    {
+      "id": "DRILL-5",
+      "text": "An almost-right answer is logged as a mistake, earns half the XP, counts as half right in the drill's score, and brings the item back sooner instead of starting its reviews over."
+    },
+    {
+      "id": "DRILL-6",
+      "text": "A drill passes at `drill.pass-share` right; a drill of three to six scored cards also passes with a single miss, or two almost-right answers."
+    },
+    {
+      "id": "DRILL-7",
+      "text": "A drill with `drill.partial-share` or more right that does not pass is a partial; less is a fail."
+    },
+    {
+      "id": "DRILL-8",
+      "text": "An ace in a drill is a pass with every scored card fully right.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "An ace in a drill is a pass with no almost-right answers and at least 95% of the scored cards fully right.",
+          "reason": "The owner decided an ace means every answer right: at 95%, a long drill could have a miss and still be an ace.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DRILL-9",
+      "text": "Cards that are only read (a new word, a dialogue to read, a story panel) are not scored, and a drill with nothing scored is not graded."
+    },
+    {
+      "id": "DRILL-10",
+      "text": "A sentence whose words change their ending is built from tiles in dictionary form, and the learner picks the ending on each tile; a sentence without stored endings is built by plain ordering."
+    },
+    {
+      "id": "DRILL-11",
+      "text": "A wrong answer on a word shows example sentences for it: made once by a model and kept, or, without a key, taken from the learner's own courses."
+    },
+    {
+      "id": "DRILL-12",
+      "text": "After a word or sentence card is answered, the learner can talk about it with the tutor straight from the exercise; that chat has its own model setting and otherwise uses the tutor's model."
+    },
+    {
+      "id": "DRILL-13",
+      "text": "Each word's and sentence's review interval grows with right answers on different days, to at most `review.max-interval`; an item counts once a day."
+    }
+  ],
+  "values": [
+    {
+      "id": "drill.pass-share",
+      "type": "number",
+      "value": 85,
+      "unit": "%",
+      "description": "The share of a drill answered right that passes it."
+    },
+    {
+      "id": "drill.partial-share",
+      "type": "number",
+      "value": 60,
+      "unit": "%",
+      "description": "The share that is a partial."
+    },
+    {
+      "id": "review.max-interval",
+      "type": "duration",
+      "value": "365d",
+      "description": "The longest a word or sentence waits for its next review."
+    }
+  ],
+  "related": [
+    "lessons",
+    "lessons/schedule",
+    "lessons/speaking",
+    "progress#PROG-1"
+  ]
+}

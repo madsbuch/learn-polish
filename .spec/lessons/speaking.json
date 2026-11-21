@@ -1,0 +1,77 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Speaking, dictation and sounds",
+  "summary": "Cards where the learner speaks or writes what was said, and pairs of sounds an English ear runs together.",
+  "status": "accepted",
+  "order": 4,
+  "description": "Training for the ear and the mouth, which reading and tapping do not give. Sound pairs are real words that differ in one sound (sz and ś, y and i, ł and l).",
+  "stories": [
+    {
+      "id": "US-SPK-1",
+      "as": "a learner who cannot yet tell similar Polish sounds apart",
+      "want": "to hear them side by side and be told which I confuse",
+      "soThat": "my ear and my pronunciation improve",
+      "requirements": [
+        "#SPK-1",
+        "#SPK-4",
+        "#SPK-9"
+      ]
+    },
+    {
+      "id": "US-SPK-2",
+      "as": "a learner speaking into the app",
+      "want": "my recordings not to be kept",
+      "soThat": "I can practise aloud without a record of it",
+      "requirements": [
+        "#SPK-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SPK-1",
+      "text": "A dictation answer is compared word by word: right words, wrong ones with the right form, words left out, and words that were not said."
+    },
+    {
+      "id": "SPK-2",
+      "text": "In dictation a Polish letter typed without its mark is accepted, and pointed out."
+    },
+    {
+      "id": "SPK-3",
+      "text": "A spoken answer is written down by the model chosen as Hearing you speak and compared word by word as a dictation is."
+    },
+    {
+      "id": "SPK-4",
+      "text": "When a spoken word is heard as another that differs by a known sound contrast, the card says which sound and what to try."
+    },
+    {
+      "id": "SPK-5",
+      "text": "Recordings are never stored or synced: they are passed to the model and dropped."
+    },
+    {
+      "id": "SPK-6",
+      "text": "A recording is refused when it is larger than 4 MB once encoded as text, about 3 MB of audio."
+    },
+    {
+      "id": "SPK-7",
+      "text": "Speaking cards take the place of a lesson's usual practice cards and do not add to its length."
+    },
+    {
+      "id": "SPK-8",
+      "text": "Whether speaking cards are shown is a setting of the device, not of the learner."
+    },
+    {
+      "id": "SPK-9",
+      "text": "A words lesson has a round of up to two sound pairs before its closing memory round, when its words have the sounds."
+    },
+    {
+      "id": "SPK-10",
+      "text": "The built-in sound pairs ship with the app; nothing is written to the database for them."
+    }
+  ],
+  "related": [
+    "lessons/drills#DRILL-4",
+    "progress/games",
+    "tutor/models#AI-6"
+  ]
+}

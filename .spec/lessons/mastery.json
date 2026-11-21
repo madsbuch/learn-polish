@@ -1,0 +1,124 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Mastery",
+  "summary": "Points earned by passing, 100 to master, with a ledger of every change.",
+  "status": "accepted",
+  "order": 6,
+  "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting, and passes further apart are better evidence.",
+  "stories": [
+    {
+      "id": "US-MAST-1",
+      "as": "a learner in a hurry",
+      "want": "to master a lesson by practising, without waiting for check-ins",
+      "soThat": "a deadline two days away is still reachable",
+      "requirements": [
+        "#MAST-1",
+        "#MAST-2",
+        "#MAST-7"
+      ]
+    },
+    {
+      "id": "US-MAST-2",
+      "as": "a learner looking at a lesson's points",
+      "want": "to see every change and why",
+      "soThat": "the score is something I can trust",
+      "requirements": [
+        "#MAST-10",
+        "#MAST-12"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "MAST-1",
+      "text": "The first pass of a lesson earns `mastery.first-pass` mastery points."
+    },
+    {
+      "id": "MAST-2",
+      "text": "A later pass on the same day as the last go earns `mastery.same-day`."
+    },
+    {
+      "id": "MAST-3",
+      "text": "A later pass a day or more after the last go earns 15, plus up to 20 more as the gap grows to 14 days."
+    },
+    {
+      "id": "MAST-4",
+      "text": "An ace earns a quarter more than a pass would."
+    },
+    {
+      "id": "MAST-5",
+      "text": "A partial earns half of what a repeat pass would at the same gap, rounded down, and does not mark the lesson passed."
+    },
+    {
+      "id": "MAST-6",
+      "text": "A fail costs `mastery.fail-cost` points; a fail on extra practice costs none."
+    },
+    {
+      "id": "MAST-7",
+      "text": "Points stay between 0 and `mastery.full`, and stop at `mastery.held-at` until the lesson has been passed on two different days."
+    },
+    {
+      "id": "MAST-8",
+      "text": "A lesson is mastered when it has been passed and has `mastery.full` points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in the day's list."
+    },
+    {
+      "id": "MAST-9",
+      "text": "A writing lesson is mastered only when it has also been passed without help."
+    },
+    {
+      "id": "MAST-10",
+      "text": "Every graded go writes a row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing; the go that masters the lesson adds a second row marking it mastered."
+    },
+    {
+      "id": "MAST-11",
+      "text": "Ledger rows are never changed after they are written."
+    },
+    {
+      "id": "MAST-12",
+      "text": "The ledger is shown on the lesson's page as Mastery points and is readable by the tutor."
+    },
+    {
+      "id": "MAST-13",
+      "text": "A lesson's points from before the ledger existed are shown as one starting line; nothing is backfilled."
+    }
+  ],
+  "values": [
+    {
+      "id": "mastery.full",
+      "type": "number",
+      "value": 100,
+      "description": "The points at which a lesson is mastered."
+    },
+    {
+      "id": "mastery.held-at",
+      "type": "number",
+      "value": 90,
+      "description": "Where points stop until a lesson has passes on two days."
+    },
+    {
+      "id": "mastery.first-pass",
+      "type": "number",
+      "value": 30,
+      "description": "What the first pass earns."
+    },
+    {
+      "id": "mastery.same-day",
+      "type": "number",
+      "value": 10,
+      "description": "What a later pass on the same day earns."
+    },
+    {
+      "id": "mastery.fail-cost",
+      "type": "number",
+      "value": 20,
+      "description": "What a fail costs."
+    }
+  ],
+  "related": [
+    "principles#PRIN-6",
+    "principles#PRIN-5",
+    "lessons/schedule",
+    "courses#CRS-10",
+    "data/sync#SYNC-8"
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Check-in schedule",
+  "summary": "Each lesson comes back on its own period; passing spreads it out, failing brings it back tomorrow.",
+  "status": "accepted",
+  "order": 5,
+  "description": "Every lesson comes back on its own schedule. The gap grows from the time that actually passed, so that remembering after longer is worth more.",
+  "stories": [
+    {
+      "id": "US-SCHED-1",
+      "as": "a learner with limited time",
+      "want": "each lesson to come back when I am about to forget it",
+      "soThat": "I review what needs it and nothing else",
+      "requirements": [
+        "#SCHED-3",
+        "#SCHED-4",
+        "#SCHED-8"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SCHED-1",
+      "text": "A new lesson's period defaults by kind and complexity: drills 2, 4 and 7 days for low, medium and high; conversations 5, 7 and 10."
+    },
+    {
+      "id": "SCHED-2",
+      "text": "The learner can change a lesson's period on its page."
+    },
+    {
+      "id": "SCHED-3",
+      "text": "The first pass brings the lesson back after its period; a first ace, after three times its period."
+    },
+    {
+      "id": "SCHED-4",
+      "text": "Each later pass sets the next gap to the days since the last check-in times the lesson's ease, never less than its period and never less than the days that passed plus one."
+    },
+    {
+      "id": "SCHED-5",
+      "text": "Days since the last check-in count for at most twice the previous gap."
+    },
+    {
+      "id": "SCHED-6",
+      "text": "An ace raises the ease by 0.15 and grows the gap by a further 1.3 times."
+    },
+    {
+      "id": "SCHED-7",
+      "text": "A partial repeats the period and lowers the ease by 0.15."
+    },
+    {
+      "id": "SCHED-8",
+      "text": "A fail brings the lesson back the next day and lowers the ease by 0.2."
+    },
+    {
+      "id": "SCHED-9",
+      "text": "Ease starts at `ease.start` and stays between `ease.min` and `ease.max`."
+    },
+    {
+      "id": "SCHED-10",
+      "text": "The gap worked out for a check-in is never longer than `schedule.max-gap`; spreading can then place it up to a week later."
+    },
+    {
+      "id": "SCHED-11",
+      "text": "A check-in four days or more ahead is placed on the lightest day within a tenth of the gap either side of its target: at least one day and at most seven."
+    },
+    {
+      "id": "SCHED-12",
+      "text": "A lesson done before it is due is an early check-in: full XP, and its schedule moves."
+    },
+    {
+      "id": "SCHED-13",
+      "text": "Extra practice on a lesson already passed today pays half XP and does not move its schedule."
+    }
+  ],
+  "values": [
+    {
+      "id": "schedule.max-gap",
+      "type": "duration",
+      "value": "120d",
+      "description": "The longest gap worked out between two check-ins."
+    },
+    {
+      "id": "ease.start",
+      "type": "number",
+      "value": 2.5,
+      "description": "A new lesson's ease."
+    },
+    {
+      "id": "ease.min",
+      "type": "number",
+      "value": 1.3,
+      "description": "The lowest ease."
+    },
+    {
+      "id": "ease.max",
+      "type": "number",
+      "value": 3.0,
+      "description": "The highest ease."
+    }
+  ],
+  "related": [
+    "lessons",
+    "today",
+    "lessons/mastery"
+  ]
+}

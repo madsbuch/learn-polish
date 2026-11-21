@@ -3,15 +3,41 @@
  * else: they never set a font size, a colour or a spacing by hand. The rules
  * are in DESIGN.md; `scripts/check-design.mjs` enforces the mechanical ones.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
 import { useBackHandler } from "../lib/back";
+import { hapticTick } from "../lib/haptics";
 import { current as currentToasts, dismiss as dismissToast, subscribe as subscribeToasts } from "../lib/toast";
+import {
+  backward,
+  prefersReducedMotion,
+  recall,
+  remember,
+  ScreenEnterProvider,
+  useEnterDirection,
+  useScreenEnter,
+  useStagger,
+} from "./motion";
 import "./tokens.css";
 import "./base.css";
 import "./components.css";
+
+export {
+  backward,
+  CountUp,
+  Confetti,
+  markBack,
+  prefersReducedMotion,
+  recall,
+  remember,
+  useBump,
+  useCountUp,
+  useScreenEnter,
+  useStagger,
+  type ScreenEnter,
+} from "./motion";
 
 type Gap = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
@@ -52,11 +78,7 @@ export function Inline({
   className?: string;
   children: ReactNode;
 }) {
-  return (
-    <div className={cx("inline", `gap-${gap}`, justify, align, wrap && "wrap", className)}>
-      {children}
-    </div>
-  );
+  return <div className={cx("inline", `gap-${gap}`, justify, align, wrap && "wrap", className)}>{children}</div>;
 }
 
 /** Takes the remaining room in an Inline. */
@@ -129,8 +151,11 @@ export function Screen({
   footer,
   backdrop,
   width = "reading",
+  stagger,
   children,
 }: {
+  /** The body's blocks rise in one after another as it opens (a summary). */
+  stagger?: boolean;
   /**
    * A picture behind the top of the page (an image URL), fading into the
    * background; it drifts and fades as the page scrolls. Not with `footer`.
@@ -158,12 +183,20 @@ export function Screen({
   children: ReactNode;
 }) {
   const pushed = Boolean(onBack || onClose);
+  // Pushed screens slide in from the right, slid-up ones rise, a tab's root
+  // fades in; whatever is returned to comes back from the left.
+  const enter = useEnterDirection(onClose && !onBack ? "up" : pushed ? "push" : "tab");
+  const back = onBack ? backward(onBack) : undefined;
+  const close = onClose ? backward(onClose) : undefined;
+  // (Only a screen that asks for it starts the stagger's clock.)
+  const bodyStagger = useStagger(Boolean(stagger));
+  const bodyClass = cx("screen-body", stagger && bodyStagger);
   // The system back button does what the screen's own ← or ⌄ does.
-  useBackHandler(pushed, onBack ?? onClose);
+  useBackHandler(pushed, back ?? close);
   const head = header ?? (
     <header className="screen-header" data-pushed={pushed}>
-      {onBack ? <IconButton icon={<BackIcon />} label="Back" onClick={onBack} /> : null}
-      {onClose ? <IconButton icon={<DownIcon />} label="Close" onClick={onClose} /> : null}
+      {back ? <IconButton icon={<BackIcon />} label="Back" onClick={back} /> : null}
+      {close ? <IconButton icon={<DownIcon />} label="Close" onClick={close} /> : null}
       <div className="screen-header__titles">
         {title ? (
           <h1 className="screen-header__title with-info">
@@ -182,25 +215,74 @@ export function Screen({
   );
   if (!footer) {
     return (
-      <div className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)}>
-        {backdrop ? <Backdrop src={backdrop} /> : null}
-        {head}
-        <div className="screen-body">{children}</div>
-      </div>
+      <ScreenEnterProvider value={enter}>
+        <div className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)} data-enter={enter}>
+          {backdrop ? <Backdrop src={backdrop} /> : null}
+          {head}
+          <div className={bodyClass}>{children}</div>
+        </div>
+      </ScreenEnterProvider>
     );
   }
   // With a footer (a chat), the header is docked too: only the middle scrolls,
   // so Back and the input are always in reach.
   return (
-    <>
-      <div className="screen-top" data-width={width}>{head}</div>
-      <div className="screen" data-width={width} data-nav={nav} data-footer="true">
-        <div className="screen-body">{children}</div>
+    <ScreenEnterProvider value={enter}>
+      <div className="screen-top" data-width={width} data-enter={enter}>
+        {head}
       </div>
-      <div className="screen-footer" data-width={width} data-nav={nav}>
+      <div className="screen" data-width={width} data-nav={nav} data-footer="true" data-enter={enter}>
+        <div className={bodyClass}>{children}</div>
+      </div>
+      <div className="screen-footer" data-width={width} data-nav={nav} data-enter={enter}>
         {footer}
       </div>
-    </>
+    </ScreenEnterProvider>
+  );
+}
+
+/** The window width from which list screens show what is open beside them. */
+const SPLIT_MIN_WIDTH = 1000;
+
+/** Whether a CSS media query matches now, following it as the window changes. */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia?.(query).matches ?? false);
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return;
+    const changed = () => setMatches(media.matches);
+    changed();
+    media.addEventListener("change", changed);
+    return () => media.removeEventListener("change", changed);
+  }, [query]);
+  return matches;
+}
+
+/** True on a window wide enough for two panes (a tablet in landscape). */
+export function useWideLayout(): boolean {
+  return useMediaQuery(`(min-width: ${SPLIT_MIN_WIDTH}px)`);
+}
+
+/**
+ * True on a tablet (or a wide window) held sideways: room to put two columns
+ * beside each other on a screen of its own, such as the player.
+ */
+export function useLandscapeLayout(): boolean {
+  return useMediaQuery("(min-width: 840px) and (orientation: landscape)");
+}
+
+/**
+ * Two screens side by side on a wide window: a list, and what is open in it.
+ * Each pane is a whole <Screen> with its own header, scrolling and footer.
+ * Use it only when useWideLayout() is true; narrower windows show one
+ * screen at a time.
+ */
+export function SplitView({ list, detail }: { list: ReactNode; detail: ReactNode }) {
+  return (
+    <div className="split">
+      <div className="split-list">{list}</div>
+      <div className="split-detail">{detail}</div>
+    </div>
   );
 }
 
@@ -245,16 +327,19 @@ export function Section({
   title,
   info,
   action,
+  id,
   children,
 }: {
   title?: ReactNode;
   info?: ReactNode;
   /** A single plain button at the right of the label, e.g. "Select". */
   action?: ReactNode;
+  /** For scrolling to it. */
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="section">
+    <section className="section" id={id}>
       {title || action ? (
         <div className="section-header">
           <h2 className="t-eyebrow with-info">
@@ -303,8 +388,10 @@ export function Hero({ className, children }: { className?: string; children: Re
 
 // ================================================================= lists
 
-export function List({ children }: { children: ReactNode }) {
-  return <div className="list">{children}</div>;
+export function List({ stagger, children }: { stagger?: boolean; children: ReactNode }) {
+  // `stagger`: its rows rise in one after another as the screen first shows them.
+  const rise = useStagger(Boolean(stagger));
+  return <div className={cx("list", stagger && rise)}>{children}</div>;
 }
 
 /**
@@ -357,9 +444,7 @@ export function ListItem({
         <span className={cx("list-item__title", selectable && "selectable")} data-one-line={oneLine}>
           {title}
         </span>
-        {subtitle ? (
-          <span className={cx("list-item__subtitle", selectable && "selectable")}>{subtitle}</span>
-        ) : null}
+        {subtitle ? <span className={cx("list-item__subtitle", selectable && "selectable")}>{subtitle}</span> : null}
       </span>
       {trailing && trailingInside ? <span className="list-item__trailing">{trailing}</span> : null}
       {showChevron ? (
@@ -420,7 +505,7 @@ export type ButtonVariant = "primary" | "secondary" | "plain" | "danger" | "inve
 export function Button({
   variant = "secondary",
   size = "md",
-  block,
+  wide,
   icon,
   loading,
   disabled,
@@ -430,7 +515,7 @@ export function Button({
 }: {
   variant?: ButtonVariant;
   size?: "sm" | "md" | "lg";
-  block?: boolean;
+  wide?: boolean;
   icon?: ReactNode;
   loading?: boolean;
   disabled?: boolean;
@@ -440,12 +525,21 @@ export function Button({
 }) {
   return (
     <button
-      className={cx("button", block ? null : "no-shrink")}
+      className={cx("button", wide ? null : "no-shrink")}
       data-variant={variant}
       data-size={size}
-      data-block={block}
+      data-wide={wide}
       disabled={disabled || loading}
-      onClick={onClick}
+      onClick={
+        // The one thing that matters on the screen: felt as a light tick
+        // under the finger, on a phone (lib/haptics.ts).
+        onClick && (variant === "primary" || variant === "success")
+          ? () => {
+              hapticTick();
+              onClick();
+            }
+          : onClick
+      }
       aria-label={label}
       aria-busy={loading || undefined}
     >
@@ -466,10 +560,13 @@ export function IconButton({
   failed,
   off,
   keepFocus,
+  pulse,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  /** A soft halo breathing around it while something it started goes on (play, while playing). */
+  pulse?: boolean;
   /**
    * Tapping it leaves focus (and the keyboard) where it is — for a send
    * button next to a text box. Otherwise the box loses focus first, the
@@ -492,6 +589,7 @@ export function IconButton({
       data-size={size}
       data-failed={failed || undefined}
       data-off={off || undefined}
+      data-pulse={pulse || undefined}
       disabled={disabled || loading}
       onPointerDown={keepFocus ? (event) => event.preventDefault() : undefined}
       onMouseDown={keepFocus ? (event) => event.preventDefault() : undefined}
@@ -592,15 +690,7 @@ export function SettingRow({
 }
 
 /** A labelled form control. */
-export function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: ReactNode;
-  hint?: ReactNode;
-  children: ReactNode;
-}) {
+export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="field">
       <span className="field__label">{label}</span>
@@ -623,11 +713,7 @@ export function Segmented<T extends string>({
   return (
     <div className="segmented" role="group">
       {options.map((option) => (
-        <button
-          key={option.value}
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-        >
+        <button key={option.value} aria-pressed={option.value === value} onClick={() => onChange(option.value)}>
           {option.label}
         </button>
       ))}
@@ -683,13 +769,7 @@ export function Badge({
   );
 }
 
-export function Banner({
-  tone = "info",
-  children,
-}: {
-  tone?: "info" | "error" | "ok";
-  children: ReactNode;
-}) {
+export function Banner({ tone = "info", children }: { tone?: "info" | "error" | "ok"; children: ReactNode }) {
   return (
     <div className="banner" data-tone={tone} role={tone === "error" ? "alert" : "status"}>
       {children}
@@ -699,6 +779,17 @@ export function Banner({
 
 export function Spinner() {
   return <span className="spinner" aria-label="Loading" />;
+}
+
+/** The other side of a chat is writing: three dots taking turns to light up. */
+export function Typing() {
+  return (
+    <span className="typing" role="status" aria-label="Writing">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
 }
 
 export function Loading({ label = "Loading…" }: { label?: string }) {
@@ -714,18 +805,30 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   );
 }
 
+/**
+ * A bar. It fills in as it appears (from where it stood when last seen, with
+ * `memory`), and slides to a new value when it changes.
+ */
 export function Progress({
   value,
   max,
   tone,
   size,
+  memory,
 }: {
   value: number;
   max: number;
   tone?: "gold" | "mint";
   size?: "sm";
+  /** A name to remember it by, e.g. "course:12": shown again, it moves on from there. */
+  memory?: string;
 }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const enter = useScreenEnter();
+  // Where the fill starts as it appears: where it was last seen, or empty
+  // on a new screen (a screen returned to shows it where it is).
+  const [from] = useState(() => recall(memory) ?? (enter === "back" || prefersReducedMotion() ? pct : 0));
+  useEffect(() => remember(memory, pct), [memory, pct]);
   return (
     <div
       className="progress"
@@ -735,7 +838,7 @@ export function Progress({
       aria-valuenow={value}
       aria-valuemax={max}
     >
-      <span style={{ width: `${pct}%` }} />
+      <span style={{ "--pct": pct, "--from": from }} />
     </div>
   );
 }
@@ -783,6 +886,9 @@ export function EmptyState({
 
 // ================================================================= sheets
 
+/** How long a sheet takes to slide away (components.css → sheet-out). */
+const SHEET_CLOSE_MS = 180;
+
 /** A panel that slides up from the bottom. Tapping outside closes it. */
 export function Sheet({
   title,
@@ -799,22 +905,37 @@ export function Sheet({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  // Closing from the sheet itself (✕, outside, Escape, back) lets it slide
+  // away first; closed from outside (a choice made in it), it just goes.
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef(0);
+  const dismiss = useCallback(() => {
+    if (prefersReducedMotion()) {
+      onClose();
+      return;
+    }
+    if (closeTimer.current) return;
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, SHEET_CLOSE_MS);
+  }, [onClose]);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && dismiss();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [dismiss]);
   // Back closes the sheet, not the page under it.
-  useBackHandler(true, onClose);
+  useBackHandler(true, dismiss);
   // Rendered at the top of the page, so it never takes on the look of where
   // it was opened from (an ⓘ inside a bold, single-line title, say).
   return createPortal(
     <div
-      className="sheet-backdrop fade-in"
+      className="sheet-backdrop"
+      data-closing={closing || undefined}
       onClick={(event) => {
         // A portal still passes clicks up to where it was opened from.
         event.stopPropagation();
-        onClose();
+        dismiss();
       }}
     >
       <div
@@ -826,7 +947,7 @@ export function Sheet({
       >
         <div className="sheet-header">
           <h2>{title}</h2>
-          <IconButton icon={<CloseIcon />} label="Close" onClick={onClose} />
+          <IconButton icon={<CloseIcon />} label="Close" onClick={dismiss} />
         </div>
         {footer ? (
           <>
@@ -878,7 +999,7 @@ export function ConfirmButton({
   question,
   onConfirm,
   size = "md",
-  block,
+  wide,
 }: {
   label: string;
   confirmLabel: string;
@@ -886,13 +1007,13 @@ export function ConfirmButton({
   question?: string;
   onConfirm: () => Promise<unknown> | void;
   size?: "sm" | "md";
-  block?: boolean;
+  wide?: boolean;
 }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   if (!asking) {
     return (
-      <Button variant="danger" size={size} block={block} onClick={() => setAsking(true)}>
+      <Button variant="danger" size={size} wide={wide} onClick={() => setAsking(true)}>
         {label}
       </Button>
     );
@@ -912,7 +1033,7 @@ export function ConfirmButton({
           <Button
             variant="danger"
             size={size}
-            block
+            wide
             loading={busy}
             onClick={async () => {
               setBusy(true);

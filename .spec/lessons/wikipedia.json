@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Wikipedia sources",
+  "summary": "Study lessons built on Wikipedia articles, kept for offline reading and checked again every three months.",
+  "status": "accepted",
+  "order": 7,
+  "description": "A lesson about a city, a custom or a piece of history should be right, and stay right as its source changes.",
+  "stories": [
+    {
+      "id": "US-WIKI-1",
+      "as": "a learner curious about a place or a custom",
+      "want": "lessons written from Wikipedia with the article kept alongside",
+      "soThat": "I can trust the facts and read more offline",
+      "requirements": [
+        "#WIKI-1",
+        "#WIKI-2",
+        "#WIKI-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "WIKI-1",
+      "text": "The tutor can attach Wikipedia articles to a study lesson, new or existing, and remove them."
+    },
+    {
+      "id": "WIKI-2",
+      "text": "A lesson's page lists its sources; each opens in the app's reader from the stored copy, without the network."
+    },
+    {
+      "id": "WIKI-3",
+      "text": "The reader offers the Polish article when Polish Wikipedia has one."
+    },
+    {
+      "id": "WIKI-4",
+      "text": "The reader shows the credit the licence (CC BY-SA 4.0) asks for."
+    },
+    {
+      "id": "WIKI-5",
+      "text": "A lesson with sources is checked every `wiki.check-every`: each source's current revision is compared with the stored one."
+    },
+    {
+      "id": "WIKI-6",
+      "text": "An article that changed is fetched again and an AI corrects only what the lesson now gets wrong, noting what changed on the lesson's page."
+    },
+    {
+      "id": "WIKI-7",
+      "text": "The learner can run the check on demand from the lesson's page."
+    },
+    {
+      "id": "WIKI-8",
+      "text": "Reading Wikipedia needs no key."
+    }
+  ],
+  "values": [
+    {
+      "id": "wiki.check-every",
+      "type": "duration",
+      "value": "90d",
+      "description": "How often a lesson is checked against its sources."
+    }
+  ],
+  "related": [
+    "lessons/conversations#CONV-11",
+    "tutor",
+    "music/podcasts"
+  ]
+}

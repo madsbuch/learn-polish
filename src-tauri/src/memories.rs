@@ -11,17 +11,22 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+#[allow(unused_imports)]
+use crate::ids::*;
 use crate::agent::{tool, Tool};
 
 use crate::db::{self, Conn};
 use crate::schema::memories;
 use crate::error::{Error, Result};
 
+// Spec: MEM-1
 pub const CATEGORIES: [&str; 5] = ["goal", "preference", "context", "strength", "struggle"];
 
 /// How many memories go into a prompt: the most recently touched first.
+// Spec: MEM-3
 const PROMPT_LIMIT: usize = 80;
 /// A memory is a sentence or two, not an essay.
+// Spec: MEM-2
 const MAX_CHARS: usize = 400;
 /// Above this, the agents are told to merge or forget before adding more.
 const SOFT_LIMIT: i64 = 150;
@@ -30,7 +35,7 @@ const SOFT_LIMIT: i64 = 150;
 #[diesel(table_name = memories)]
 #[serde(rename_all = "camelCase")]
 pub struct Memory {
-    pub id: i64,
+    pub id: MemoryId,
     pub content: String,
     pub category: String,
     /// "tutor", "examiner" or "you".
@@ -72,7 +77,7 @@ pub fn list(conn: &mut Conn) -> Result<Vec<Memory>> {
         .load(conn)?)
 }
 
-pub fn get(conn: &mut Conn, id: i64) -> Result<Memory> {
+pub fn get(conn: &mut Conn, id: MemoryId) -> Result<Memory> {
     memories::table
         .find(id)
         .select(Memory::as_select())
@@ -89,7 +94,7 @@ pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Resu
     let lowered = content.to_lowercase();
     let existing = memories::table
         .select((memories::id, memories::content))
-        .load::<(i64, String)>(conn)?
+        .load::<(MemoryId, String)>(conn)?
         .into_iter()
         .find(|(_, text)| text.to_lowercase() == lowered)
         .map(|(id, _)| id);
@@ -102,6 +107,7 @@ pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Resu
         }
         None => diesel::insert_into(memories::table)
             .values((
+                memories::id.eq(MemoryId::new()),
                 memories::content.eq(&content),
                 memories::category.eq(&category),
                 memories::source.eq(source),
@@ -116,7 +122,7 @@ pub fn add(conn: &mut Conn, content: &str, category: &str, source: &str) -> Resu
 
 pub fn update(
     conn: &mut Conn,
-    id: i64,
+    id: MemoryId,
     content: Option<&str>,
     category: Option<&str>,
 ) -> Result<Memory> {
@@ -136,7 +142,7 @@ pub fn update(
     get(conn, id)
 }
 
-pub fn delete(conn: &mut Conn, id: i64) -> Result<Memory> {
+pub fn delete(conn: &mut Conn, id: MemoryId) -> Result<Memory> {
     let memory = get(conn, id)?;
     diesel::delete(memories::table.find(id)).execute(conn)?;
     Ok(memory)
@@ -153,7 +159,7 @@ pub fn prompt_section(conn: &mut Conn) -> Result<String> {
         return Ok(String::new());
     }
     let memories = list(conn)?;
-    let total = memories.len() as i64;
+    let total = crate::convert::count(memories.len());
     let mut out = String::from(
         "\n\nWhat you remember about the learner (long-term memory, shared with the app's other \
          agents; ids in brackets):\n",
@@ -200,7 +206,7 @@ Using memory:
   short drills, hates long word lists\"), context (\"partner's family speaks only Polish\"), a \
   strength, or a struggle (\"mixes up the instrumental and locative after 'z'\"). One fact per \
   memory, in a short third-person sentence. Don't save small talk, one-off requests, what the \
-  app already records (scores, streaks, blocks), or anything sensitive the learner did not \
+  app already records (scores, streaks, lessons), or anything sensitive the learner did not \
   offer to have remembered.
 - Keep memories true: when one changes or is no longer true (a struggle is overcome, a goal is \
   reached), call update_memory or forget_memory instead of adding a contradicting one.
@@ -233,7 +239,7 @@ pub fn tools() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": { "type": "string", "pattern": "^mem_[0-7][0-9a-hjkmnp-tv-z]{25}$" },
                     "content": { "type": "string" },
                     "category": { "type": "string", "enum": CATEGORIES }
                 },
@@ -246,7 +252,7 @@ pub fn tools() -> Vec<Tool> {
             "Delete a memory that is no longer true or that the learner wants forgotten.",
             json!({
                 "type": "object",
-                "properties": { "id": { "type": "integer" } },
+                "properties": { "id": { "type": "string", "pattern": "^mem_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },
                 "required": ["id"]
             }),
         ),
@@ -266,7 +272,7 @@ struct RememberArgs {
 
 #[derive(Deserialize)]
 struct UpdateArgs {
-    id: i64,
+    id: MemoryId,
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
@@ -275,7 +281,7 @@ struct UpdateArgs {
 
 #[derive(Deserialize)]
 struct IdArgs {
-    id: i64,
+    id: MemoryId,
 }
 
 /// What a memory tool did: the result for the model, and a line for the
@@ -349,7 +355,7 @@ mod tests {
             r#"{"content":"  Wants to order food in Kraków in May ","category":"goal"}"#,
         );
         assert_eq!(out.label.as_deref(), Some("Remembered: Wants to order food in Kraków in May"));
-        let id = out.result["saved"]["id"].as_i64().unwrap();
+        let id = MemoryId::parse(out.result["saved"]["id"].as_str().unwrap()).unwrap();
 
         // Saying it again refreshes rather than duplicating.
         run_tool(conn, "examiner", "remember", r#"{"content":"wants to order food in Kraków in May","category":"goal"}"#);
@@ -366,11 +372,11 @@ mod tests {
             conn,
             "examiner",
             "update_memory",
-            &format!(r#"{{"id":{},"content":"Now uses the instrumental after z correctly","category":"strength"}}"#, struggle.id),
+            &format!(r#"{{"id":"{}","content":"Now uses the instrumental after z correctly","category":"strength"}}"#, struggle.id),
         );
         assert_eq!(updated.result["updated"]["category"], "strength");
 
-        run_tool(conn, "tutor", "forget_memory", &format!(r#"{{"id":{id}}}"#));
+        run_tool(conn, "tutor", "forget_memory", &format!(r#"{{"id":"{id}"}}"#));
         assert!(get(conn, id).is_err());
         let missing = run_tool(conn, "tutor", "forget_memory", r#"{"id":9999}"#);
         assert!(missing.result["error"].is_string());
@@ -388,6 +394,8 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 pub mod commands {
+    #[allow(unused_imports)]
+    use crate::ids::*;
     use serde::Serialize;
     use tauri::State;
 
@@ -401,7 +409,7 @@ pub mod commands {
         pub memories: Vec<Memory>,
     }
 
-    fn overview(conn: &mut Conn) -> Result<MemoryOverview> {
+    pub(crate) fn overview(conn: &mut Conn) -> Result<MemoryOverview> {
         Ok(MemoryOverview { enabled: enabled(conn), memories: list(conn)? })
     }
 
@@ -430,7 +438,7 @@ pub mod commands {
     #[tauri::command]
     pub async fn memory_update(
         db: State<'_, Db>,
-        id: i64,
+        id: MemoryId,
         content: String,
         category: String,
     ) -> Result<MemoryOverview> {
@@ -441,7 +449,7 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn memory_delete(db: State<'_, Db>, id: i64) -> Result<MemoryOverview> {
+    pub async fn memory_delete(db: State<'_, Db>, id: MemoryId) -> Result<MemoryOverview> {
         let mut guard = db.lock();
         let conn = &mut *guard;
         delete(conn, id)?;

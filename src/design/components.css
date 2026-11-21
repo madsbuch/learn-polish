@@ -11,8 +11,6 @@
   height: var(--app-height, 100%);
   min-height: 0;
   width: 100%;
-  max-width: var(--max-width);
-  margin: 0 auto;
   position: relative;
   top: var(--app-offset-top, 0px);
 }
@@ -40,7 +38,7 @@
 }
 [data-width="wide"] > .screen-header,
 [data-width="wide"] > .screen-body {
-  max-width: none;
+  max-width: var(--max-width);
 }
 .screen[data-nav="false"] {
   padding-bottom: calc(var(--safe-bottom) + var(--space-8));
@@ -90,8 +88,8 @@
 }
 [data-keyboard] .screen-footer {
   margin-bottom: 0;
-  /* The web view ends a navigation bar's height below the keyboard's top
-     edge (MainActivity.kt), and the safe-area inset is that height. */
+  /* On Android the web view ends at the keyboard's top edge (MainActivity.kt)
+     and the safe-area inset is zero; in a browser it is the inset below. */
   padding-bottom: calc(var(--safe-bottom) + var(--space-2));
 }
 [data-keyboard] .screen[data-footer="true"] {
@@ -129,6 +127,28 @@
   gap: var(--space-6);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+/* How a screen comes in (Screen decides; see motion.tsx). Once, as it
+   mounts: the whole screen moves, never its rows one by one as it scrolls. */
+.screen[data-enter="tab"],
+.screen-top[data-enter="tab"],
+.screen-footer[data-enter="tab"] {
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
+}
+.screen[data-enter="push"],
+.screen-top[data-enter="push"],
+.screen-footer[data-enter="push"] {
+  animation: enter-push var(--duration-slow) var(--ease-out) backwards;
+}
+.screen[data-enter="back"],
+.screen-top[data-enter="back"],
+.screen-footer[data-enter="back"] {
+  animation: enter-back var(--duration-slow) var(--ease-out) backwards;
+}
+.screen[data-enter="up"],
+.screen-top[data-enter="up"],
+.screen-footer[data-enter="up"] {
+  animation: enter-up var(--duration-slow) var(--ease-out) backwards;
 }
 
 .nav {
@@ -171,7 +191,7 @@
   width: 56px;
   height: 30px;
   border-radius: var(--radius-full);
-  transition: background var(--duration), transform var(--duration);
+  transition: background var(--duration), transform var(--duration) var(--ease-spring);
 }
 .nav button[aria-current="page"] {
   color: var(--brand-ink);
@@ -181,6 +201,10 @@
 }
 .nav button:active .nav-glyph {
   transform: scale(0.92);
+}
+/* The tab just chosen: its icon pops into its pill. */
+.nav button[aria-current="page"] .nav-glyph svg {
+  animation: pop var(--duration-slow) var(--ease-spring) backwards;
 }
 
 .center-screen {
@@ -226,10 +250,12 @@
 .card[data-interactive="true"] {
   width: 100%;
   text-align: left;
-  transition: transform var(--duration-fast);
+  transition: transform var(--duration) var(--ease-spring), box-shadow var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
 }
 .card[data-interactive="true"]:active {
-  transform: scale(0.99);
+  transform: scale(0.985);
+  transition-duration: var(--duration-fast);
 }
 
 /* The one gradient surface: the top thing on a screen that matters most. */
@@ -297,6 +323,9 @@
   text-align: left;
   padding-right: var(--space-2);
   align-self: stretch;
+}
+button.list-item__main {
+  transition: background-color var(--duration) var(--ease-out), opacity var(--duration-fast);
 }
 button.list-item__main:active {
   opacity: 0.7;
@@ -394,11 +423,14 @@ button.list-item__main:active {
   white-space: normal;
   overflow-wrap: anywhere;
   text-align: center;
-  transition: transform var(--duration-fast), opacity var(--duration-fast),
-    background var(--duration-fast);
+  /* Pressed in quickly, sprung back on release. */
+  transition: transform var(--duration) var(--ease-spring), opacity var(--duration-fast),
+    background var(--duration-fast), box-shadow var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
 }
 .button:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.96);
+  transition-duration: var(--duration-fast);
 }
 .button:disabled {
   opacity: 0.45;
@@ -418,7 +450,7 @@ button.list-item__main:active {
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-lg);
 }
-.button[data-block="true"] {
+.button[data-wide="true"] {
   width: 100%;
 }
 .button[data-variant="primary"] {
@@ -464,11 +496,40 @@ button.list-item__main:active {
   border-radius: var(--radius-full);
   color: var(--text-dim);
   font-size: var(--font-lead);
-  transition: transform var(--duration-fast), background var(--duration-fast);
+  transition: transform var(--duration) var(--ease-spring), background var(--duration-fast);
 }
 .icon-button:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(0.88);
   background: var(--tint);
+  transition-duration: var(--duration-fast);
+}
+/* An icon that changes with its state (play ↔ pause) pops in as it swaps:
+   the new one is a new element (keyed by the state). */
+.icon-swap {
+  display: grid;
+  place-items: center;
+  animation: icon-swap var(--duration-slow) var(--ease-spring) backwards;
+}
+@keyframes icon-swap {
+  from {
+    opacity: 0;
+    transform: scale(0.5) rotate(-30deg);
+  }
+}
+/* A soft halo breathing around it while what it started goes on (play). A
+   shadow, not a transform: painted with the button, so it never lifts the
+   button onto a layer of its own inside a scrolling page. */
+.icon-button[data-pulse] {
+  animation: halo 2.4s ease-in-out infinite;
+}
+@keyframes halo {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--on-hero-tint);
+  }
+  50% {
+    box-shadow: 0 0 0 10px var(--on-hero-tint);
+  }
 }
 .icon-button:disabled {
   opacity: 0.35;
@@ -586,7 +647,7 @@ button.list-item__main:active {
   border-radius: var(--radius-full);
   background: var(--inverse-bg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform var(--duration) var(--ease-out);
+  transition: transform var(--duration-slow) var(--ease-spring);
 }
 .switch[aria-checked="true"] {
   background: var(--brand);
@@ -797,24 +858,68 @@ button.badge:active {
   flex: none;
 }
 
+/* Typing: the other side of a chat is writing. Three dots taking turns to
+   light up — colours only, so the scrolling chat is never split into layers. */
+.typing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--leading-small);
+}
+.typing i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background-color: var(--line);
+  animation: typing 1.2s ease-in-out infinite;
+}
+.typing i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.typing i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+@keyframes typing {
+  30% {
+    background-color: var(--brand-ink);
+  }
+  60% {
+    background-color: var(--line);
+  }
+}
 .progress {
   height: 8px;
   border-radius: var(--radius-full);
   background: var(--tint-strong);
   overflow: hidden;
 }
+/* The fill is a full-width bar slid in from the left (a transform, so it
+   moves on the compositor), clipped by the track's round ends. It fills in
+   from --from as it appears and slides to a new --pct when it changes. */
 .progress > span {
   display: block;
   height: 100%;
   border-radius: var(--radius-full);
-  background: linear-gradient(90deg, var(--brand-ink), var(--sky));
-  transition: width 0.35s ease;
+  /* The gradient spans the filled part only, as it did when the bar was
+     drawn at its width: sized to it, at the bar's right end. */
+  background-image: linear-gradient(90deg, var(--brand-ink), var(--sky));
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: calc(var(--pct, 0) * 1%) 100%;
+  transform: translateX(calc((var(--pct, 0) - 100) * 1%));
+  transition: transform var(--duration-count) var(--ease-out);
+  animation: bar-fill var(--duration-count) var(--ease-out) backwards;
+}
+@keyframes bar-fill {
+  from {
+    transform: translateX(calc((var(--from, 0) - 100) * 1%));
+  }
 }
 .progress[data-tone="gold"] > span {
-  background: var(--gold-gradient);
+  background-image: var(--gold-gradient);
 }
 .progress[data-tone="mint"] > span {
-  background: linear-gradient(90deg, var(--mint), var(--sky));
+  background-image: linear-gradient(90deg, var(--mint), var(--sky));
 }
 .progress[data-size="sm"] {
   height: 5px;
@@ -871,8 +976,13 @@ button.badge:active {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  animation: scrim-in var(--duration) var(--ease-out) backwards;
+}
+.sheet-backdrop[data-closing] {
+  animation: scrim-out var(--duration) var(--ease-in) forwards;
 }
 .sheet {
+  animation: sheet-in var(--duration-slow) var(--ease-out) backwards;
   width: 100%;
   max-width: var(--sheet-width);
   max-height: 85%;
@@ -889,6 +999,42 @@ button.badge:active {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+/* Leaving, it slides back down (or, a dialog, shrinks away) before it is gone. */
+.sheet-backdrop[data-closing] .sheet {
+  animation: sheet-out var(--duration) var(--ease-in) forwards;
+}
+@keyframes scrim-in {
+  from {
+    background-color: transparent;
+  }
+}
+@keyframes scrim-out {
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.94);
+  }
+}
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 /* A sheet with a footer: only the body scrolls; the footer (a message box)
    stays put — on top of the keyboard when it is up. */
@@ -1104,7 +1250,7 @@ button.badge:active {
   font-size: var(--font-small);
   line-height: var(--leading-small);
   font-weight: var(--weight-medium);
-  animation: toast-in var(--duration) var(--ease-out);
+  animation: toast-in var(--duration-slow) var(--ease-spring) backwards;
 }
 .toast[data-tone="error"] {
   border-left-color: var(--bad);
@@ -1115,7 +1261,7 @@ button.badge:active {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-16px) scale(0.96);
   }
 }
 
@@ -1158,44 +1304,88 @@ button.badge:active {
 .md-say strong {
   margin-right: 2px;
 }
-/* A whole sentence wraps like the text around it, with 🔊 🐢 after it. */
+/* A whole sentence wraps like the text around it, with 🔊 🐢 after it —
+   in the same box as a word, carried onto each line it takes. */
 .md-say[data-sentence] {
   display: inline;
-  padding: 0;
-  background: none;
+  padding: 1px 2px 1px var(--space-2);
+  border-radius: var(--radius-md);
   white-space: normal;
+  line-height: 1.9;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .md-say[data-sentence] .icon-button {
   vertical-align: middle;
 }
 
-/* A guided writing block's word bank: tap a word to add it to the message. */
+/* A guided writing block's word bank, docked above the message box: one
+   goal at a time, its words in a row that scrolls sideways. */
 .word-bank {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-sunken);
   border: 1px solid var(--line-soft);
+  min-width: 0;
+  overflow: hidden;
+}
+.word-bank__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  color: var(--text-dim);
+}
+.word-bank__goals {
+  display: flex;
+  gap: var(--space-1);
+}
+.word-bank__goal {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-bold);
+}
+.word-bank__goal[aria-selected="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
 }
 .word-bank__chips {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--space-3));
+  padding: var(--space-1) var(--space-3);
+  scroll-padding: 0 var(--space-3);
+}
+.word-bank__chips::-webkit-scrollbar {
+  display: none;
 }
 .word-chip {
+  flex: none;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--tint);
+  background: var(--surface);
   border: 1px solid var(--line-soft);
   font-size: var(--font-small);
   font-weight: var(--weight-bold);
   color: var(--text);
-  text-align: left;
+  white-space: nowrap;
 }
 .word-chip > span {
   font-size: var(--font-caption);
@@ -1207,8 +1397,18 @@ button.badge:active {
   border-color: var(--brand);
   color: var(--brand-ink);
 }
+.word-chip[data-used] {
+  border-color: var(--ok-line);
+  background: var(--ok-bg);
+}
 .word-chip:active {
   transform: scale(0.97);
+}
+/* One pair of buttons under a partner's message reads all of it. */
+.read-aloud {
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: calc(-1 * var(--space-1));
+  margin-left: calc(-1 * var(--space-2));
 }
 /* A hint in a writing chat: for the learner only, not sent. */
 .writing-hint {
@@ -1271,7 +1471,7 @@ button.badge:active {
     --gutter: var(--space-6);
   }
   .app-tabs {
-    padding-left: calc(var(--nav-rail-width) + env(safe-area-inset-left, 0px));
+    padding-left: calc(var(--nav-rail-width) + var(--rail-inset));
     --safe-left: 0px;
   }
   .app-tabs > .screen,
@@ -1288,9 +1488,9 @@ button.badge:active {
     top: 0;
     bottom: 0;
     height: auto;
-    width: calc(var(--nav-rail-width) + env(safe-area-inset-left, 0px));
+    width: calc(var(--nav-rail-width) + var(--rail-inset));
     padding: calc(var(--safe-top) + var(--space-6)) var(--space-2)
-      calc(var(--safe-bottom) + var(--space-3)) calc(var(--space-2) + env(safe-area-inset-left, 0px));
+      calc(var(--safe-bottom) + var(--space-3)) calc(var(--space-2) + var(--rail-inset));
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -1326,8 +1526,84 @@ button.badge:active {
   .sheet {
     max-height: 100%;
     border-radius: var(--radius-xl);
+    /* A dialog here: it springs open in place, and shrinks away. */
+    animation-name: dialog-in;
+    animation-timing-function: var(--ease-spring);
     padding: var(--space-4) var(--space-6) var(--space-6);
   }
+}
+
+/* A computer: a dialog keeps to dialog size on a tall window, and what can be
+   clicked answers the pointer. (Touch screens have no hover, so phones and
+   tablets are unchanged.) */
+@media (min-width: 1000px) {
+  .sheet {
+    max-height: min(100%, var(--sheet-max-height));
+  }
+}
+@media (min-width: 768px) {
+  .sheet-backdrop[data-closing] .sheet {
+    animation-name: dialog-out;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  button.list-item__main:hover,
+  .nav button:hover:not([aria-current="page"]) .nav-glyph {
+    background: var(--tint);
+  }
+  /* What can be clicked answers the mouse. Cards and buttons lift by their
+     shadow and border alone — no transform — so a page scrolled under a
+     resting pointer moves as one piece in WebKit. */
+  .card[data-interactive="true"]:hover {
+    box-shadow: var(--hover-shadow);
+    border-color: var(--line);
+  }
+  .button:not(:disabled):hover {
+    box-shadow: var(--hover-shadow);
+  }
+  .button[data-variant="secondary"]:not(:disabled):hover {
+    border-color: var(--brand);
+  }
+  .button[data-variant="plain"]:not(:disabled):hover {
+    background: var(--tint);
+    box-shadow: none;
+  }
+  .icon-button:not([data-variant]):not(:disabled):hover {
+    background: var(--tint);
+  }
+  .nav button:hover:not([aria-current="page"]) {
+    color: var(--text-dim);
+  }
+}
+
+/* Two panes on a wide window (SplitView): a list and what is open in it.
+   Only used beside the navigation rail, so neither pane leaves room for a
+   tab bar. */
+.split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.split-list,
+.split-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  --nav-height: 0px;
+}
+.split-list {
+  flex: 0 0 clamp(320px, 38%, 440px);
+  border-right: 1px solid var(--line-soft);
+  --safe-right: 0px;
+}
+.split-detail {
+  flex: 1;
+  --safe-left: 0px;
+}
+.split .screen-footer {
+  margin-bottom: 0;
+  padding-bottom: calc(var(--safe-bottom) + var(--space-3));
 }
 
 /* Keep controls and scrollable content usable on short landscape/IME views. */

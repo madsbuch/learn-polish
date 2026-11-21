@@ -1,41 +1,57 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { Logo, NavIcon } from "./components/icons";
-import { Banner, Stack } from "./design";
+import { Banner, markBack, Stack, useWideLayout } from "./design";
 import { Startup, type BootStep } from "./components/Startup";
 import { useBackHandler } from "./lib/back";
 import { api, errorMessage } from "./lib/api";
-import { syncReminder } from "./lib/notifications";
+import { askForNotificationsWhenWorking, syncReminder } from "./lib/notifications";
 import { toast } from "./lib/toast";
-import { keepScreenAwake, resumeCast, syncRepeatFromSettings } from "./lib/player";
+import {
+  keepScreenAwake,
+  resumeCast,
+  syncRepeatFromSettings,
+} from "./lib/player";
 import { syncThemeFromSettings } from "./lib/theme";
 import { setSpeechConfig, stop as stopAudio } from "./lib/speech";
 import type {
-  BlockOverview,
-  BlockResult,
+  CourseId,
+  CourseProgress,
+  LessonId,
+  LessonOverview,
+  LessonResult,
+  PracticeContext,
   SessionPlan,
   SessionResult,
   Settings,
+  SongId,
   Stats,
-  TopicProgress,
-  TutorDone,
-  FactCheck,
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
+import { Insights, type InsightPage } from "./screens/Insights";
+import { AchievementScreen } from "./screens/AchievementScreen";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
 import { Memories } from "./screens/Memories";
-import { SettingsScreen } from "./screens/SettingsScreen";
+import { SettingsPageView, SettingsScreen, type SettingsPage } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
-import { BlockPage } from "./screens/BlockPage";
+import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
+import { XpDayScreen } from "./screens/XpDayScreen";
+import { QuickGames } from "./screens/QuickGames";
+import { setHapticsEnabled } from "./lib/haptics";
 import { CheckIn, type Writing } from "./screens/CheckIn";
-import { Music } from "./screens/Music";
+import { Music, preloadLibrary } from "./screens/Music";
+import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
+import { masteryChange } from "./lib/lessons";
 import { Player } from "./screens/Player";
-import { TopicDetail, type TopicSection } from "./screens/TopicDetail";
+import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
 import { Tutor } from "./screens/Tutor";
+import { onEvent, onSignal } from "./lib/events";
+import { FactCheckSchema, TutorDoneSchema } from "./lib/types";
+import { setIdOpeners } from "./lib/ids";
+import { useSyncReload } from "./lib/sync";
 
 type Tab = "exercises" | "tutor" | "music" | "settings";
 
@@ -49,14 +65,21 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
 /** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
 type Overlay =
   | { kind: "none" }
-  | { kind: "block"; blockId: number; back: Overlay }
+  | {
+      kind: "lesson";
+      lessonId: LessonId;
+      /** Where it was opened from: the learning log keeps it with everything practised. */
+      from: PracticeContext;
+      back: Overlay;
+    }
   | { kind: "session"; plan: SessionPlan; back: Overlay }
   | {
       kind: "checkin";
-      blockId: number;
+      lessonId: LessonId;
+      from: PracticeContext;
       title: string;
-      songId: number | null;
-      /** A writing block's situation and goals, shown above the conversation. */
+      songId: SongId | null;
+      /** A writing lesson's situation and goals, shown above the conversation. */
       writing: Writing | null;
       back: Overlay;
     }
@@ -64,61 +87,126 @@ type Overlay =
       kind: "summary";
       result: SessionResult;
       xp: number;
-      outcome?: { title: string; result: BlockResult; nextDueDay: number | null; extra?: boolean };
-      /** Where Done goes: wherever the block was started from. */
+      /** The lesson took the learner up a level (the summary celebrates). */
+      levelUp?: boolean;
+      outcome?: {
+        title: string;
+        result: LessonResult;
+        nextDueDay: number | null;
+        extra?: boolean;
+        /** False when nothing was scored: not graded. */
+        graded?: boolean;
+        /** The mastery change, in words. */
+        mastery?: string;
+        /** A drill's score; a check-in has none. */
+        score?: { correct: number; almost: number; total: number };
+      };
+      /** Where Done goes: wherever the lesson was started from. */
       back: Overlay;
     }
   | { kind: "progress" }
+  | { kind: "insights"; start: InsightPage }
+  /** Quick games, from Home (screens/QuickGames.tsx). */
+  | { kind: "games" }
+  | { kind: "achievement"; code: string }
+  | { kind: "xpDay"; day: number; back: Overlay }
   | { kind: "memories"; back: Overlay }
   | { kind: "audio" }
   | { kind: "search" }
   | { kind: "player"; back?: Overlay }
   | {
-      kind: "topic";
-      progress: TopicProgress;
-      section?: TopicSection;
+      kind: "course";
+      progress: CourseProgress;
+      section?: CourseSection;
       /** Where the back button goes. */
       back: Overlay;
     };
 
 /**
- * Where to return once a block is done: the screen its page was opened from
- * (a course, or home), not the block page itself.
+ * Where to return once a lesson is done: the screen its page was opened from
+ * (a course, or home), not the lesson page itself.
  */
 function startedFrom(back: Overlay): Overlay {
-  return back.kind === "block" ? back.back : back;
+  return back.kind === "lesson" ? back.back : back;
+}
+
+/**
+ * `init_app`, asked again if the first call has not answered in a few
+ * seconds: on Android a call made while the webview is still starting can
+ * go unanswered, and a second one gets through. It is safe to repeat; the
+ * first answer wins.
+ */
+function initApp(): Promise<Settings> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (done: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(again);
+      done();
+    };
+    const attempt = () =>
+      api.init().then(
+        (value) => settle(() => resolve(value)),
+        (cause) => settle(() => reject(cause)),
+      );
+    const again = window.setTimeout(() => {
+      if (!settled) void attempt();
+    }, 6000);
+    void attempt();
+  });
 }
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [overview, setOverview] = useState<BlockOverview | null>(null);
+  const [overview, setOverview] = useState<LessonOverview | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [topics, setTopics] = useState<TopicProgress[]>([]);
+  const [courses, setCourses] = useState<CourseProgress[]>([]);
   const [tab, setTab] = useState<Tab>("exercises");
+  /** A request for the tutor from a button elsewhere ("Add levels"): starts a new conversation. */
+  const [tutorAsk, setTutorAsk] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
+  /**
+   * The Settings sub-screen open (How to use, AI, …). It stays while a
+   * screen opened from it (Downloaded audio) is on top, so back returns to it.
+   */
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
+  /** A wide window shows a Settings sub-screen beside the menu instead of over it. */
+  const wide = useWideLayout();
+  /** Opens Settings at one of its sub-screens (a "set your key" button elsewhere). */
+  const openSettings = useCallback((page: SettingsPage) => {
+    setOverlay({ kind: "none" });
+    setTab("settings");
+    setSettingsPage(page);
+  }, []);
 
-  // Studying a block — its page, its drill, its check-in — often means pen
+  // Studying a lesson — its page, its drill, its check-in — often means pen
   // and paper, not touching the phone: keep the screen on meanwhile.
-  const studying = overlay.kind === "block" || overlay.kind === "session" || overlay.kind === "checkin";
+  const studying =
+    overlay.kind === "lesson" ||
+    overlay.kind === "session" ||
+    overlay.kind === "checkin";
   useEffect(() => {
     keepScreenAwake(studying, "study");
   }, [studying]);
   const [error, setError] = useState<string | null>(null);
   /** A song the player asked the music tab to show. */
-  const [musicSong, setMusicSong] = useState<number | null>(null);
+  const [musicSong, setMusicSong] = useState<SongId | null>(null);
   const clearMusicSong = useCallback(() => setMusicSong(null), []);
   // Back on another tab goes to Exercises; back on Exercises leaves the app.
-  useBackHandler(overlay.kind === "none" && tab !== "exercises", () => setTab("exercises"));
+  useBackHandler(overlay.kind === "none" && tab !== "exercises", () =>
+    setTab("exercises"),
+  );
 
   const refresh = useCallback(async () => {
-    const [nextOverview, nextStats, nextTopics] = await Promise.all([
-      api.blocksOverview(),
+    const [nextOverview, nextStats, nextCourses] = await Promise.all([
+      api.lessonsOverview(),
       api.getStats(),
-      api.getTopicProgress(),
+      api.getCourseProgress(),
     ]);
     setOverview(nextOverview);
     setStats(nextStats);
-    setTopics(nextTopics);
+    setCourses(nextCourses);
   }, []);
 
   // Starting up, step by step, shown on the loading screen so a stall says
@@ -127,11 +215,25 @@ export default function App() {
   const [bootRun, setBootRun] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    const track = async <T,>(label: string, command: string, run: () => Promise<T>): Promise<T> => {
+    const track = async <T,>(
+      label: string,
+      command: string,
+      run: () => Promise<T>,
+    ): Promise<T> => {
       const startedAt = Date.now();
-      setBootSteps((steps) => [...steps.filter((s) => s.command !== command), { label, command, state: "pending", startedAt }]);
+      setBootSteps((steps) => [
+        ...steps.filter((s) => s.command !== command),
+        { label, command, state: "pending", startedAt },
+      ]);
       const settle = (patch: Partial<BootStep>) =>
-        !cancelled && setBootSteps((steps) => steps.map((s) => (s.command === command ? { ...s, ...patch, ms: Date.now() - startedAt } : s)));
+        !cancelled &&
+        setBootSteps((steps) =>
+          steps.map((s) =>
+            s.command === command
+              ? { ...s, ...patch, ms: Date.now() - startedAt }
+              : s,
+          ),
+        );
       try {
         const value = await run();
         settle({ state: "done" });
@@ -144,7 +246,9 @@ export default function App() {
     setBootSteps([]);
     (async () => {
       try {
-        const loaded = await track("Opening your data", "init_app", () => api.init());
+        const loaded = await track("Opening your data", "init_app", initApp);
+        // The lesson types, which every lesson list and page reads.
+        await track("Loading lesson types", "lesson_types", loadLessonTypes);
         if (cancelled) return;
         setSettings(loaded);
         // Display preferences live in the database; adopt them (or seed them).
@@ -152,15 +256,19 @@ export default function App() {
         syncRepeatFromSettings(loaded.playerRepeat);
         // A speaker may still be playing from before a reload.
         resumeCast();
-        const [nextOverview, nextStats, nextTopics] = await Promise.all([
-          track("Today's check-ins", "blocks_overview", () => api.blocksOverview()),
+        const [nextOverview, nextStats, nextCourses] = await Promise.all([
+          track("Today's check-ins", "lessons_overview", () =>
+            api.lessonsOverview(),
+          ),
           track("Your stats", "get_stats", () => api.getStats()),
-          track("Your courses", "get_topic_progress", () => api.getTopicProgress()),
+          track("Your courses", "get_course_progress", () =>
+            api.getCourseProgress(),
+          ),
         ]);
         if (cancelled) return;
         setOverview(nextOverview);
         setStats(nextStats);
-        setTopics(nextTopics);
+        setCourses(nextCourses);
       } catch (cause) {
         if (!cancelled) setError(errorMessage(cause));
       }
@@ -177,6 +285,11 @@ export default function App() {
     },
     [refresh],
   );
+
+  // Answers are felt on a phone unless this device's setting says not.
+  useEffect(() => {
+    setHapticsEnabled(settings?.haptics ?? true);
+  }, [settings?.haptics]);
 
   // The speech layer needs to know whether an OpenRouter voice is available,
   // because that decides which of the two engines a 🔊 tap uses.
@@ -202,7 +315,10 @@ export default function App() {
       // Dialogue lines carry their speaker's gender so each is warmed in the
       // voice that will actually read it; everything else uses the default.
       const lines = [
-        ...session.dialogue.map((line) => ({ text: line.pl, gender: line.gender })),
+        ...session.dialogue.map((line) => ({
+          text: line.pl,
+          gender: line.gender,
+        })),
         ...session.exercises
           .filter((e) => e.itemKind !== "dialogue")
           .map((e) => ({ text: e.pl, gender: "" })),
@@ -219,12 +335,12 @@ export default function App() {
     [settings?.ttsPrefetch, settings?.hasApiKey],
   );
 
-  /** Starts a drill block's exercises. */
+  /** Starts a drill lesson's exercises. */
   const startDrill = useCallback(
-    async (blockId: number, back: Overlay) => {
+    async (lessonId: LessonId, back: Overlay, from: PracticeContext) => {
       stopAudio();
       try {
-        const session = await api.blockSession(blockId);
+        const session = await api.lessonSession(lessonId, from);
         setOverlay({ kind: "session", plan: session, back });
         prefetchAudio(session);
       } catch (cause) {
@@ -235,16 +351,36 @@ export default function App() {
   );
 
   /** Opens a course by id (the tutor's buttons). */
-  const openTopicById = useCallback(async (topicId: number) => {
+  const openCourseById = useCallback(async (courseId: CourseId) => {
     try {
-      const fresh = await api.getTopicProgress();
-      setTopics(fresh);
-      const progress = fresh.find((entry) => entry.topic.id === topicId);
-      if (progress) setOverlay({ kind: "topic", progress, back: { kind: "none" } });
+      const fresh = await api.getCourseProgress();
+      setCourses(fresh);
+      const progress = fresh.find((entry) => entry.course.id === courseId);
+      if (progress)
+        setOverlay({ kind: "course", progress, back: { kind: "none" } });
     } catch (cause) {
       setError(errorMessage(cause));
     }
   }, []);
+
+  // What an id chip (a title shown in place of an id) opens.
+  useEffect(() => {
+    setIdOpeners({
+      course: (courseId) => void openCourseById(courseId),
+      lesson: (lessonId) =>
+        setOverlay({
+          kind: "lesson",
+          lessonId,
+          from: { source: "link", courseId: null },
+          back: { kind: "none" },
+        }),
+      song: (songId) => {
+        setOverlay({ kind: "none" });
+        setTab("music");
+        setMusicSong(songId);
+      },
+    });
+  }, [openCourseById]);
 
   /** Something changed behind the screens' backs (the tutor acted). */
   const reloadAll = useCallback(async () => {
@@ -256,6 +392,24 @@ export default function App() {
     }
   }, [refresh]);
 
+  // Another device's data arrived (sync, debounced): the screens' data and
+  // the settings that came with it (the day's five, the models) are read
+  // again. The theme and the other device settings stay this device's own.
+  // A drill or check-in that is open carries on with the plan it started
+  // with; an open course page takes its fresh progress.
+  useSyncReload(() => {
+    void (async () => {
+      await reloadAll();
+      const fresh = await api.getCourseProgress().catch(() => null);
+      if (!fresh) return;
+      setOverlay((current) => {
+        if (current.kind !== "course") return current;
+        const progress = fresh.find((entry) => entry.course.id === current.progress.course.id);
+        return progress ? { ...current, progress } : current;
+      });
+    })();
+  });
+
   // Reminders follow the day: re-armed on every launch (the OS drops them
   // after a reboot or an update), and whenever the day is done or what is
   // due changes, so today's is skipped once there is nothing left to nag about.
@@ -266,7 +420,12 @@ export default function App() {
   const dueCount = overview?.due.length;
   const streak = stats?.currentStreak;
   useEffect(() => {
-    if (remindersOn === undefined || reminderHour === undefined || reminderMinute === undefined) return;
+    if (
+      remindersOn === undefined ||
+      reminderHour === undefined ||
+      reminderMinute === undefined
+    )
+      return;
     void syncReminder({
       enabled: remindersOn,
       hour: reminderHour,
@@ -277,10 +436,21 @@ export default function App() {
     });
   }, [remindersOn, reminderHour, reminderMinute, doneToday, dueCount, streak]);
 
+  // The music library, loaded once the app is up, so Music opens at once.
+  const ready = settings !== null;
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(preloadLibrary, 1500);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
+
   // The tutor answers in the background. Off screen, a finished reply is
   // announced with a notification, so the backend needs to know.
   useEffect(() => {
-    const report = () => void api.appVisibility(document.visibilityState === "visible").catch(() => {});
+    const report = () =>
+      void api
+        .appVisibility(document.visibilityState === "visible")
+        .catch(() => {});
     report();
     document.addEventListener("visibilitychange", report);
     return () => document.removeEventListener("visibilitychange", report);
@@ -289,7 +459,7 @@ export default function App() {
   // A lesson corrected against Wikipedia in the background (the
   // three-monthly check at start).
   useEffect(() => {
-    const off = listen<FactCheck>("facts://updated", (event) => {
+    const off = onEvent(FactCheckSchema, "facts://updated", (event) => {
       toast(`“${event.payload.title}” was updated from Wikipedia`, "info");
     });
     return () => {
@@ -300,17 +470,26 @@ export default function App() {
   // A new course's picture arrived (drawn in the background): the lists
   // showing courses reload.
   useEffect(() => {
-    const off = listen("pictures://changed", () => void refresh());
+    const off = onSignal("pictures://changed", () => void refresh());
     return () => {
       void off.then((stop) => stop());
     };
   }, [refresh]);
 
+  // Work in the background: notifications, so its notification can show.
+  useEffect(() => {
+    const off = askForNotificationsWhenWorking();
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, []);
+
   // A background reply that changed things (a course, a song): every screen
   // reloads, wherever the learner is.
   useEffect(() => {
-    const off = listen<TutorDone>("tutor://done", (event) => {
-      if (event.payload.message && event.payload.message.actions.length > 0) void reloadAll();
+    const off = onEvent(TutorDoneSchema, "tutor://done", (event) => {
+      if (event.payload.message && event.payload.message.actions.length > 0)
+        void reloadAll();
     });
     return () => {
       void off.then((stop) => stop());
@@ -347,6 +526,7 @@ export default function App() {
           plan={overlay.plan}
           onQuit={() => {
             stopAudio();
+            markBack();
             setOverlay(overlay.back);
             void refresh();
           }}
@@ -356,11 +536,18 @@ export default function App() {
               kind: "summary",
               result,
               xp: sessionXp,
+              levelUp: result.stats.level > stats.level,
               outcome: {
-                title: result.block.title,
+                title: result.lesson.title,
                 result: result.result,
-                nextDueDay: result.block.dueDay,
+                nextDueDay: result.lesson.dueDay,
                 extra: result.extra,
+                graded: result.graded,
+                mastery: result.mastery ? masteryChange(result.mastery) : undefined,
+                score:
+                  result.total > 0
+                    ? { correct: result.correct, almost: result.almost, total: result.total }
+                    : undefined,
               },
               back: startedFrom(overlay.back),
             });
@@ -376,8 +563,11 @@ export default function App() {
         <SessionSummary
           result={overlay.result}
           sessionXp={overlay.xp}
+          levelUp={overlay.levelUp}
           outcome={overlay.outcome}
           onDone={() => {
+            // Back to where the lesson was started: a return, not a new screen.
+            markBack();
             setOverlay(overlay.back);
             if (overlay.back.kind === "none") setTab("exercises");
             void refresh();
@@ -387,15 +577,27 @@ export default function App() {
     );
   }
 
-  if (overlay.kind === "topic") {
+  if (overlay.kind === "course") {
     return (
       <div className="app">
-        <TopicDetail
+        <CourseDetail
           progress={overlay.progress}
           initialSection={overlay.section}
           today={overview.today}
           onBack={() => setOverlay(overlay.back)}
-          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: overlay })}
+          onOpenLesson={(lessonId) =>
+            setOverlay({
+              kind: "lesson",
+              lessonId,
+              // The course page it was opened from (Other lessons is a course of its own).
+              from: {
+                source:
+                  overlay.progress.course.kind === "other" ? "other" : "course",
+                courseId: overlay.progress.course.id,
+              },
+              back: overlay,
+            })
+          }
           onDeleted={() => {
             setOverlay(overlay.back);
             void reloadAll();
@@ -406,27 +608,36 @@ export default function App() {
     );
   }
 
-  if (overlay.kind === "block") {
+  if (overlay.kind === "lesson") {
     return (
       <div className="app">
-        <BlockPage
-          blockId={overlay.blockId}
+        <LessonPage
+          lessonId={overlay.lessonId}
+          from={overlay.from}
           today={overview.today}
           onBack={() => {
             setOverlay(overlay.back);
             void refresh();
           }}
-          onStartDrill={(blockId) => void startDrill(blockId, overlay)}
-          onCheckIn={async (blockId) => {
-            const detail = await api.blockDetail(blockId).catch(() => null);
+          onStartDrill={(lessonId) =>
+            void startDrill(lessonId, overlay, overlay.from)
+          }
+          onCheckIn={async (lessonId) => {
+            const detail = await api.lessonDetail(lessonId).catch(() => null);
             setOverlay({
               kind: "checkin",
-              blockId,
-              title: detail?.title ?? "Check-in",
+              lessonId,
+              from: overlay.from,
+              title: detail?.title ?? "Conversation",
               songId: detail?.songId ?? null,
               writing:
-                detail?.format === "writing"
-                  ? { situation: detail.lesson, goals: detail.objectives, supportLevel: detail.supportLevel }
+                // A type with a writing section is played out with a partner.
+                detail && lessonType(detail).sections.includes("writing")
+                  ? {
+                      situation: detail.content,
+                      goals: detail.objectives,
+                      supportLevel: detail.supportLevel,
+                    }
                   : null,
               back: overlay,
             });
@@ -444,7 +655,8 @@ export default function App() {
     return (
       <div className="app">
         <CheckIn
-          blockId={overlay.blockId}
+          lessonId={overlay.lessonId}
+          from={overlay.from}
           songId={overlay.songId}
           writing={overlay.writing}
           title={overlay.title}
@@ -463,7 +675,12 @@ export default function App() {
                 kind: "summary",
                 result,
                 xp: assessment.xp,
-                outcome: { title: overlay.title, result: assessment.result, nextDueDay: assessment.nextDueDay },
+                levelUp: result.stats.level > stats.level,
+                outcome: {
+                  title: overlay.title,
+                  result: assessment.result,
+                  nextDueDay: assessment.nextDueDay,
+                },
                 back,
               });
             } catch {
@@ -493,19 +710,80 @@ export default function App() {
     );
   }
 
+  if (overlay.kind === "xpDay") {
+    return (
+      <div className="app">
+        <XpDayScreen
+          day={overlay.day}
+          onBack={() => setOverlay(overlay.back)}
+        />
+      </div>
+    );
+  }
+
+  if (overlay.kind === "games") {
+    return (
+      <div className="app">
+        <QuickGames
+          level={stats.level}
+          onBack={() => {
+            setOverlay({ kind: "none" });
+            void refresh();
+          }}
+          onPlayed={() => void refresh()}
+        />
+      </div>
+    );
+  }
+
   if (overlay.kind === "progress") {
     return (
       <div className="app">
         <Progress
           stats={stats}
-          topics={topics}
           onBack={() => setOverlay({ kind: "none" })}
-          onOpenTopic={(progress) =>
-            setOverlay({ kind: "topic", progress, back: { kind: "progress" } })
+          onOpenAchievement={(code) => setOverlay({ kind: "achievement", code })}
+          onOpenDay={(day) =>
+            setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })
           }
+          onOpenInsights={(start) => setOverlay({ kind: "insights", start })}
+          onAskTutor={(ask) => {
+            setOverlay({ kind: "none" });
+            setTutorAsk(ask);
+            setTab("tutor");
+          }}
         />
       </div>
     );
+  }
+
+  if (overlay.kind === "insights") {
+    return (
+      <div className="app">
+        <Insights
+          start={overlay.start}
+          today={stats.day}
+          courses={courses}
+          onDone={() => setOverlay({ kind: "progress" })}
+          onAskTutor={(ask) => {
+            setOverlay({ kind: "none" });
+            setTutorAsk(ask);
+            setTab("tutor");
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (overlay.kind === "achievement") {
+    const achievement = stats.achievements.find((a) => a.code === overlay.code);
+    if (achievement) {
+      return (
+        <div className="app">
+          <AchievementScreen achievement={achievement} onBack={() => setOverlay({ kind: "progress" })} />
+        </div>
+      );
+    }
   }
 
   if (overlay.kind === "player") {
@@ -526,7 +804,28 @@ export default function App() {
   if (overlay.kind === "search") {
     return (
       <div className="app">
-        <Search topics={topics} onBack={() => setOverlay({ kind: "none" })} />
+        <Search courses={courses} onBack={() => setOverlay({ kind: "none" })} />
+      </div>
+    );
+  }
+
+  const settingsShared = {
+    settings,
+    onSettings: applySettings,
+    onOpenAudio: () => setOverlay({ kind: "audio" }),
+  };
+
+  // A Settings sub-screen on a phone: pushed over the tabs, back to the menu.
+  if (tab === "settings" && settingsPage !== null && !wide) {
+    return (
+      <div className="app">
+        <SettingsPageView
+          key={settingsPage}
+          page={settingsPage}
+          onBack={() => setSettingsPage(null)}
+          onOpenPage={setSettingsPage}
+          {...settingsShared}
+        />
       </div>
     );
   }
@@ -537,11 +836,28 @@ export default function App() {
         <Exercises
           overview={overview}
           stats={stats}
-          topics={topics}
-          onOpenBlock={(block) => setOverlay({ kind: "block", blockId: block.id, back: { kind: "none" } })}
-          onOpenTopic={(progress) => setOverlay({ kind: "topic", progress, back: { kind: "none" } })}
-          onOpenTutor={() => setTab("tutor")}
+          courses={courses}
+          onOpenLesson={(lesson) =>
+            setOverlay({
+              kind: "lesson",
+              lessonId: lesson.id,
+              // Home lists today's lessons: the daily five.
+              from: { source: "daily", courseId: lesson.courseId },
+              back: { kind: "none" },
+            })
+          }
+          onOpenCourse={(progress) =>
+            setOverlay({ kind: "course", progress, back: { kind: "none" } })
+          }
+          onOpenTutor={(ask) => {
+            setTutorAsk(ask ?? null);
+            setTab("tutor");
+          }}
           onOpenProgress={() => setOverlay({ kind: "progress" })}
+          onOpenGames={() => setOverlay({ kind: "games" })}
+          onOpenXpDay={(day) =>
+            setOverlay({ kind: "xpDay", day, back: { kind: "none" } })
+          }
           onOpenSearch={() => setOverlay({ kind: "search" })}
         />
       ) : null}
@@ -549,12 +865,22 @@ export default function App() {
       {tab === "music" ? (
         <Music
           settings={settings}
-          topics={topics}
           openSongId={musicSong}
           onSongOpened={clearMusicSong}
-          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: { kind: "none" } })}
-          onOpenSettings={() => setTab("settings")}
-          onOpenPlayer={() => setOverlay({ kind: "player", back: { kind: "none" } })}
+          onOpenLesson={(lessonId) =>
+            setOverlay({
+              kind: "lesson",
+              lessonId,
+              from: { source: "music", courseId: null },
+              back: { kind: "none" },
+            })
+          }
+          // Songs need the kie.ai key (Settings → Songs); with it, what is
+          // missing is the OpenRouter key (Settings → AI).
+          onOpenSettings={() => openSettings(settings.hasKieKey ? "ai" : "songs")}
+          onOpenPlayer={() =>
+            setOverlay({ kind: "player", back: { kind: "none" } })
+          }
         />
       ) : null}
 
@@ -562,25 +888,34 @@ export default function App() {
         <Tutor
           hasApiKey={settings.hasApiKey}
           hasModel={settings.aiModel.length > 0}
-          onOpenSettings={() => setTab("settings")}
-          onOpenTopic={(topicId) => void openTopicById(topicId)}
-          onOpenBlock={(blockId) => setOverlay({ kind: "block", blockId, back: { kind: "none" } })}
+          onOpenSettings={() => openSettings("ai")}
+          onOpenCourse={(courseId) => void openCourseById(courseId)}
+          onOpenLesson={(lessonId) =>
+            setOverlay({
+              kind: "lesson",
+              lessonId,
+              from: { source: "tutor", courseId: null },
+              back: { kind: "none" },
+            })
+          }
           onOpenSong={(songId) => {
             setTab("music");
             setMusicSong(songId);
           }}
           onChanged={() => void reloadAll()}
-          onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
+          onOpenMemories={() =>
+            setOverlay({ kind: "memories", back: { kind: "none" } })
+          }
+          ask={tutorAsk}
+          onAsked={() => setTutorAsk(null)}
         />
       ) : null}
 
       {tab === "settings" ? (
         <SettingsScreen
-          settings={settings}
-          onSettings={applySettings}
-          onReset={() => void refresh()}
-          onOpenMemories={() => setOverlay({ kind: "memories", back: { kind: "none" } })}
-          onOpenAudio={() => setOverlay({ kind: "audio" })}
+          page={settingsPage}
+          onPage={setSettingsPage}
+          {...settingsShared}
         />
       ) : null}
 
@@ -589,7 +924,6 @@ export default function App() {
           {error} · tap to dismiss
         </button>
       ) : null}
-
 
       <nav className="nav" aria-label="Main navigation">
         <div className="nav-brand" aria-hidden="true">

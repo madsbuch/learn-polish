@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Sentences",
+  "summary": "Sentences built from their words, written down as they are said, then their gaps filled.",
+  "status": "accepted",
+  "order": 7,
+  "description": "Words in use: whole sentences, recalled by building them and by ear.",
+  "requirements": [
+    {
+      "id": "SNT-1",
+      "text": "A new sentence is shown on a card and then built from its words."
+    },
+    {
+      "id": "SNT-2",
+      "text": "A sentence met before is either built from its words or written down as it is said, taking turns as it comes back."
+    },
+    {
+      "id": "SNT-3",
+      "text": "Where speaking cards are on, at most two known sentences in a lesson are said aloud instead."
+    },
+    {
+      "id": "SNT-4",
+      "text": "A sentences lesson ends with fill-the-gaps cards over its own sentences."
+    },
+    {
+      "id": "SNT-5",
+      "text": "A course's new sentences are cut into sentences lessons of five."
+    }
+  ],
+  "related": [
+    "lessons/drills#DRILL-4",
+    "lessons/drills#DRILL-10",
+    "lessons/drills/gaps",
+    "lessons/speaking"
+  ]
+}

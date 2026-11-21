@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Mac app is built with the hardened runtime, under which macOS
+	     refuses the camera (without asking) unless the app declares it:
+	     pairing scans the other device's QR code with the webcam. -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<!-- The same for the microphone: speaking exercises record the learner. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

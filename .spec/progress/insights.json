@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Insights and the learning log",
+  "summary": "Every answer is logged in detail, so the learner and the tutor can see what is hard.",
+  "status": "accepted",
+  "order": 2,
+  "description": "How often the learner is wrong says little; what they find hard says a lot. The learner and the tutor read the same analysis.",
+  "stories": [
+    {
+      "id": "US-LOG-1",
+      "as": "a learner who keeps making mistakes",
+      "want": "to see what kind they are and where they happen",
+      "soThat": "I know what to work on",
+      "requirements": [
+        "#LOG-2",
+        "#LOG-6",
+        "#LOG-10"
+      ]
+    },
+    {
+      "id": "US-LOG-2",
+      "as": "a learner asking the tutor for help",
+      "want": "the tutor to see the same analysis I can",
+      "soThat": "its advice fits what I actually get wrong",
+      "requirements": [
+        "#LOG-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "LOG-1",
+      "text": "Every graded answer is written to the learning log in the same transaction as its grade."
+    },
+    {
+      "id": "LOG-2",
+      "text": "Each wrong answer is given one mistake class, the most telling that fits: a sound contrast or preposition, Polish letters only, order only, an ending, a typo, a look-alike word when it was picked, some words right, or a word not known. A right answer typed without its Polish letters is classed as Polish letters too."
+    },
+    {
+      "id": "LOG-3",
+      "text": "An answer's log row records the words it involved, including the words of a sentence and the wrong options shown beside it."
+    },
+    {
+      "id": "LOG-4",
+      "text": "Log rows are append-only: never updated after they are written."
+    },
+    {
+      "id": "LOG-5",
+      "text": "The Insights pages and the tutor's analysis tools use the same queries."
+    },
+    {
+      "id": "LOG-6",
+      "text": "The raw log lists every answer and event, newest first, in pages of at most `log.page-max` rows, and can be filtered by item, course, lesson, exercise, mistake, topic, grammar, right or wrong, and period."
+    },
+    {
+      "id": "LOG-7",
+      "text": "Words and sentences can be tagged with grammar structures and topics from lists built into the app; the tutor tags what it makes, and older content is tagged only when the learner asks."
+    },
+    {
+      "id": "LOG-8",
+      "text": "A topic's numbers count toward its domain too."
+    },
+    {
+      "id": "LOG-9",
+      "text": "The raw log can be exported as CSV or JSON, up to `log.export-max` rows."
+    },
+    {
+      "id": "LOG-10",
+      "text": "A word's statistics can be broken down by context: the course, the role the word had, its grammatical context, the topic and the exercise."
+    }
+  ],
+  "values": [
+    {
+      "id": "log.page-max",
+      "type": "number",
+      "value": 200,
+      "description": "The most rows in one page of the raw log."
+    },
+    {
+      "id": "log.export-max",
+      "type": "number",
+      "value": 100000,
+      "description": "The most rows in one export of the raw log."
+    }
+  ],
+  "related": [
+    "principles#PRIN-4",
+    "tutor#TUTOR-9",
+    "data/sync#SYNC-8"
+  ]
+}

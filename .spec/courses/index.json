@@ -1,0 +1,171 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Courses",
+  "summary": "A course is a folder on one theme that lists lessons in order; it can be completed, mastered and closed.",
+  "status": "accepted",
+  "order": 2,
+  "description": "A course gathers the lessons on one theme: a trip, a hobby, the learner's work. It holds no words of its own and reaches them only through the lessons it lists.",
+  "stories": [
+    {
+      "id": "US-CRS-1",
+      "as": "a learner with a trip, a hobby or a job that needs Polish",
+      "want": "a course on that theme with its lessons in order",
+      "soThat": "I can work through it from start to finish",
+      "requirements": [
+        "#CRS-1",
+        "#CRS-2",
+        "#CRS-15"
+      ],
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "Too specific",
+        "date": "2026-11-20"
+      }
+    },
+    {
+      "id": "US-CRS-2",
+      "as": "a learner who has mastered a course",
+      "want": "to close it as a trophy",
+      "soThat": "finishing feels like finishing",
+      "requirements": [
+        "#CRS-9",
+        "#CRS-10",
+        "#CRS-12"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "CRS-1",
+      "text": "A course lists its lessons in an order that the tutor can change."
+    },
+    {
+      "id": "CRS-2",
+      "text": "Words given to a course are cut into word drills of at most `drill.words-max`, and sentences into sentence drills of at most `drill.sentences-max`."
+    },
+    {
+      "id": "CRS-3",
+      "text": "Dialogue lines given to a course join its conversation lesson, or start one if it has none."
+    },
+    {
+      "id": "CRS-4",
+      "text": "Words and sentences a course already teaches are skipped when more is added to it, and the number skipped is reported."
+    },
+    {
+      "id": "CRS-5",
+      "text": "A lesson can be listed in several courses; it keeps one schedule and one mastery, shown in each.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "It can not, a lesson van be in a single course as that makes integrity easier.",
+        "date": "2026-11-20",
+        "replacedBy": [
+          "#CRS-18",
+          "#CRS-19"
+        ]
+      }
+    },
+    {
+      "id": "CRS-6",
+      "text": "A lesson can be moved from one course to another.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "It can not. A new lesson can be created in the other course.",
+        "date": "2026-11-20",
+        "replacedBy": [
+          "#CRS-18"
+        ]
+      }
+    },
+    {
+      "id": "CRS-7",
+      "text": "Taking a lesson out of its course deletes the lesson, with its words and their history.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Taking a lesson out of the last course that lists it deletes the lesson, with its words and their history.",
+          "reason": "A lesson is in one course now, so its course is always its last.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CRS-8",
+      "text": "`course.other-title` is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
+    },
+    {
+      "id": "CRS-9",
+      "text": "A course is completed when every core lesson (every lesson that is not a challenge) has been passed once. A course of challenges only counts those as its core."
+    },
+    {
+      "id": "CRS-10",
+      "text": "A course is mastered when it is completed and every lesson in it, challenges included, is mastered."
+    },
+    {
+      "id": "CRS-11",
+      "text": "Reaching completed or mastered is celebrated once for each course."
+    },
+    {
+      "id": "CRS-12",
+      "text": "Only a mastered course can be closed, by the learner's own choice; a closed course is listed under Mastered and can no longer be renamed, changed or added to. It can still be deleted."
+    },
+    {
+      "id": "CRS-13",
+      "text": "A course can carry a CEFR level, stored apart from its title and shown as a badge."
+    },
+    {
+      "id": "CRS-14",
+      "text": "A course without a level is given one only when the learner asks: the Exercises tab offers a button that asks the tutor."
+    },
+    {
+      "id": "CRS-15",
+      "text": "A course's page lists its lessons, its words and its sentences, each item with the drill it belongs to."
+    },
+    {
+      "id": "CRS-16",
+      "text": "A course can have a picture, drawn by an image model from its title, summary and words."
+    },
+    {
+      "id": "CRS-17",
+      "text": "A new course should strive for diversity of lesson types",
+      "level": "should"
+    },
+    {
+      "id": "CRS-18",
+      "text": "Every lesson is in exactly one course; Other lessons counts as one."
+    },
+    {
+      "id": "CRS-19",
+      "text": "Upgrading takes a lesson listed in several courses off every course but the one it was first added to."
+    }
+  ],
+  "values": [
+    {
+      "id": "drill.words-max",
+      "type": "number",
+      "value": 8,
+      "description": "The most words in one word drill."
+    },
+    {
+      "id": "drill.sentences-max",
+      "type": "number",
+      "value": 5,
+      "description": "The most sentences in one sentence drill."
+    },
+    {
+      "id": "course.other-title",
+      "type": "text",
+      "value": "Other lessons",
+      "description": "The folder for lessons that fit no course."
+    }
+  ],
+  "related": [
+    "principles#PRIN-7",
+    "principles#PRIN-10",
+    "lessons",
+    "courses/demo",
+    "lessons/mastery",
+    "tutor",
+    "courses/offline"
+  ]
+}

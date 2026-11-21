@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Fill the gaps",
+  "summary": "Sentences with a word missing, filled from a word bank.",
+  "status": "accepted",
+  "order": 8,
+  "description": "Sentences recalled one word at a time, in their context.",
+  "requirements": [
+    {
+      "id": "GAP-1",
+      "text": "A fill-the-gaps card holds up to four of the lesson's sentences of three words or more, each with one word missing."
+    },
+    {
+      "id": "GAP-2",
+      "text": "The missing word is one the course teaches where a sentence has one; otherwise its longest word."
+    },
+    {
+      "id": "GAP-3",
+      "text": "The word bank holds the missing words and two that do not belong."
+    },
+    {
+      "id": "GAP-4",
+      "text": "A card is made only when at least two sentences have a gap."
+    }
+  ],
+  "related": [
+    "lessons/drills/sentences"
+  ]
+}

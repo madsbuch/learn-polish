@@ -109,6 +109,11 @@ export const PlayerIcon = {
       <rect x="13.8" y="5" width="4.2" height="14" rx="1.2" />
     </Solid>
   ),
+  stop: ({ size }: { size?: number }) => (
+    <Solid size={size}>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </Solid>
+  ),
   next: () => (
     <Solid>
       <path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75L15 13v4.5a1 1 0 0 0 2 0v-11a1 1 0 0 0-2 0V11L6.4 5.45A.9.9 0 0 0 5 6.2z" />
@@ -215,6 +220,25 @@ export function SpeakerIcon() {
   );
 }
 
+/** A microphone: speak. */
+export function MicIcon() {
+  return (
+    <Glyph>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" />
+    </Glyph>
+  );
+}
+
+/** A square: stop recording. */
+export function StopIcon() {
+  return (
+    <Glyph>
+      <rect x="7" y="7" width="10" height="10" rx="2" />
+    </Glyph>
+  );
+}
+
 export function MutedIcon() {
   return (
     <Glyph>
@@ -229,6 +253,16 @@ export function SearchIcon() {
     <Glyph>
       <circle cx="11" cy="11" r="6.5" />
       <path d="M16 16l4.5 4.5" />
+    </Glyph>
+  );
+}
+
+/** Opens something outside the app (a web page). */
+export function ExternalIcon() {
+  return (
+    <Glyph>
+      <path d="M14 4h6v6M20 4l-9 9" />
+      <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
     </Glyph>
   );
 }
@@ -283,7 +317,7 @@ export function CheckIcon() {
   );
 }
 
-/** A drill block: quick, mechanical practice. */
+/** A drill lesson: quick, mechanical practice. */
 export function DrillIcon() {
   return (
     <Glyph>
@@ -292,7 +326,7 @@ export function DrillIcon() {
   );
 }
 
-/** A study block: a lesson to read, then a check-in. */
+/** A study lesson: a lesson to read, then a check-in. */
 export function StudyIcon() {
   return (
     <Glyph>
@@ -302,12 +336,57 @@ export function StudyIcon() {
   );
 }
 
-/** A writing block: a conversation written in Polish. */
+/** A writing lesson: a conversation written in Polish. */
 export function WriteIcon() {
   return (
     <Glyph>
       <path d="M4 20h4L19 9a2.1 2.1 0 0 0-4-4L4 16z" />
       <path d="M13.5 6.5l4 4" />
+    </Glyph>
+  );
+}
+
+/** A picture: a framed landscape (picture lessons). */
+export function PictureIcon() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <circle cx="9" cy="10" r="1.8" />
+      <path d="M4 17.5l5-5 4 4 2.5-2.5 5 4.5" />
+    </Glyph>
+  );
+}
+
+/** A scene: a picture with a thing in it pointed out. */
+export function SceneIcon() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <path d="M4 17.5l4.5-4.5 3.5 3.5" />
+      <rect x="13" y="8" width="5" height="5" rx="1.2" strokeDasharray="2 1.6" />
+    </Glyph>
+  );
+}
+
+/** A story: an open picture book. */
+export function StoryIcon() {
+  return (
+    <Glyph>
+      <path d="M12 6.5c-1.8-1.3-4.6-1.9-8-1.5v13c3.4-.4 6.2.2 8 1.5 1.8-1.3 4.6-1.9 8-1.5V5c-3.4-.4-6.2.2-8 1.5z" />
+      <path d="M12 6.5v13" />
+      <path d="M6 13.5l2-2 2 2" />
+      <circle cx="16.5" cy="10" r="1.3" />
+    </Glyph>
+  );
+}
+
+/** A picture still to be drawn: a pencil. */
+export function PencilIcon() {
+  return (
+    <Glyph>
+      <path d="M4.5 19.5l1-4.2L15.8 5a2 2 0 012.8 0l.4.4a2 2 0 010 2.8L8.7 18.5z" />
+      <path d="M13.8 7l3.2 3.2" />
+      <path d="M4.5 19.5h5" />
     </Glyph>
   );
 }
@@ -357,5 +436,71 @@ export function StarIcon({ on }: { on?: boolean }) {
     >
       <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
     </svg>
+  );
+}
+
+/** A QR code: showing something for another device to scan. */
+export function QrIcon() {
+  return (
+    <Glyph>
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18v2M18 14h2" />
+    </Glyph>
+  );
+}
+
+/** A viewfinder: scanning a code with the camera. */
+export function ScanIcon() {
+  return (
+    <Glyph>
+      <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+      <path d="M7 12h10" />
+    </Glyph>
+  );
+}
+
+/** A phone beside a laptop: the learner's devices, kept in step. */
+export function DevicesIcon() {
+  return (
+    <Glyph>
+      <rect x="3" y="5" width="13" height="9" rx="1.5" />
+      <path d="M1.5 17.5h11" />
+      <rect x="16" y="8" width="6" height="11" rx="1.5" />
+      <path d="M18.5 16.5h1" />
+    </Glyph>
+  );
+}
+
+/** Half light, half dark: the app's appearance. */
+export function ThemeIcon() {
+  return (
+    <Glyph>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" />
+    </Glyph>
+  );
+}
+
+/** A stack of disks: the learner's data, kept in one database. */
+export function DataIcon() {
+  return (
+    <Glyph>
+      <ellipse cx="12" cy="6" rx="7.5" ry="2.8" />
+      <path d="M4.5 6v12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6" />
+      <path d="M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8" />
+    </Glyph>
+  );
+}
+
+/** A calendar day ticked off: the daily practice. */
+export function CalendarIcon() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      <path d="M9 14.5l2 2 4-4" />
+    </Glyph>
   );
 }

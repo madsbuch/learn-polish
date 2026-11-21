@@ -22,7 +22,8 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { Memory, MemoryCategory, MemoryOverview } from "../lib/types";
+import { useSyncReload } from "../lib/sync";
+import type { Memory, MemoryCategory, MemoryId, MemoryOverview } from "../lib/types";
 
 const CATEGORIES: { value: MemoryCategory; title: string; label: string }[] = [
   { value: "goal", title: "Goals", label: "Goal" },
@@ -43,21 +44,27 @@ function when(seconds: number): string {
 }
 
 /** A new memory, or the one being edited. */
-type Editing = { id: number | null; content: string; category: MemoryCategory };
+type Editing = { id: MemoryId | null; content: string; category: MemoryCategory };
 
 /**
  * What the tutor and the examiner remember about the learner. Everything
  * here goes into their prompts, so the learner can correct or delete any of it.
  */
-export function Memories({ onBack }: { onBack: () => void }) {
+export function Memories({ onBack }: { onBack?: () => void }) {
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    api.memoriesOverview().then(setOverview).catch((cause) => setError(errorMessage(cause)));
-  }, []);
+  const load = () => {
+    api
+      .memoriesOverview()
+      .then(setOverview)
+      .catch((cause) => setError(errorMessage(cause)));
+  };
+  useEffect(load, []);
+  // Memories another device's tutor saved (sync). One being edited keeps its draft.
+  useSyncReload(load);
 
   async function run(action: () => Promise<MemoryOverview>) {
     setBusy(true);
@@ -82,8 +89,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
     if (ok) setEditing(null);
   }
 
-  const open = (memory: Memory) =>
-    setEditing({ id: memory.id, content: memory.content, category: memory.category });
+  const open = (memory: Memory) => setEditing({ id: memory.id, content: memory.content, category: memory.category });
 
   return (
     <Screen
@@ -94,15 +100,13 @@ export function Memories({ onBack }: { onBack: () => void }) {
       info={
         <>
           <p>
-            The tutor and the examiner keep short notes about you — your goals, what you like,
-            what you find hard and what you have mastered — and both read all of them before they
-            answer. What the examiner notices in a check-in reaches the tutor, and the other way
-            round.
+            The tutor and the examiner keep short notes about you — your goals, what you like, what you find hard and
+            what you have mastered — and both read all of them before they answer. What the examiner notices in a
+            conversation reaches the tutor, and the other way round.
           </p>
           <p>
-            Add anything you want them to know, and fix or delete anything that is wrong. Memories
-            stay on this device, in the app's database, and are sent to the AI model with each
-            request while memory is on.
+            Add anything you want them to know, and fix or delete anything that is wrong. Memories stay on this device,
+            in the app's database, and are sent to the AI model with each request while memory is on.
           </p>
         </>
       }
@@ -148,8 +152,8 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 </Button>
               }
             >
-              As you talk to the tutor and do check-ins, they note what matters — or add something
-              yourself, like why you are learning Polish.
+              As you talk to the tutor and do conversation lessons, they note what matters — or add something yourself,
+              like why you are learning Polish.
             </EmptyState>
           ) : (
             CATEGORIES.map((category) => {
@@ -179,7 +183,7 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 label="Forget everything"
                 confirmLabel="Forget all"
                 question={`Delete all ${overview.memories.length} memories? The agents start from scratch.`}
-                block
+                wide
                 onConfirm={() => run(api.memoriesClear)}
               />
             </Section>
@@ -215,23 +219,17 @@ export function Memories({ onBack }: { onBack: () => void }) {
                 ))}
               </Inline>
             </Stack>
-            <Button
-              variant="primary"
-              size="lg"
-              block
-              loading={busy}
-              disabled={!editing.content.trim()}
-              onClick={save}
-            >
+            <Button variant="primary" size="lg" wide loading={busy} disabled={!editing.content.trim()} onClick={save}>
               {editing.id === null ? "Remember this" : "Save"}
             </Button>
             {editing.id !== null ? (
               <ConfirmButton
                 label="Forget this"
                 confirmLabel="Forget"
-                block
+                wide
                 onConfirm={async () => {
-                  if (await run(() => api.memoryDelete(editing.id!))) setEditing(null);
+                  const id = editing.id;
+                  if (id !== null && (await run(() => api.memoryDelete(id)))) setEditing(null);
                 }}
               />
             ) : null}

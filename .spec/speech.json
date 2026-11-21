@@ -1,0 +1,105 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Hearing Polish",
+  "summary": "Every Polish line can be read aloud; each clip is made once, stored as MP3 and replayed offline.",
+  "status": "accepted",
+  "order": 8,
+  "description": "Every Polish line can be heard. The voice is a speech model through OpenRouter, the one option that sounds the same on Android and macOS.",
+  "stories": [
+    {
+      "id": "US-SPEECH-1",
+      "as": "a learner",
+      "want": "to hear any Polish line, at once and offline after the first time",
+      "soThat": "I learn how it sounds without waiting or paying twice",
+      "requirements": [
+        "#SPEECH-1",
+        "#SPEECH-6",
+        "#SPEECH-7"
+      ]
+    },
+    {
+      "id": "US-SPEECH-2",
+      "as": "a learner with months of audio on a phone",
+      "want": "stored speech to take little space",
+      "soThat": "the app does not fill my storage",
+      "requirements": [
+        "#SPEECH-9",
+        "#SPEECH-11"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SPEECH-1",
+      "text": "A line's audio is generated once and stored, keyed by its exact text, the model and the voice; after that it replays without the network."
+    },
+    {
+      "id": "SPEECH-2",
+      "text": "Changing the voice never plays a clip made in another voice."
+    },
+    {
+      "id": "SPEECH-3",
+      "text": "Dialogue lines are read in a female or a male voice according to the speaker; the learner chooses the female voice from 14 and the male voice from 16, each with a preview."
+    },
+    {
+      "id": "SPEECH-4",
+      "text": "A line has a slow version, stored as a clip of its own."
+    },
+    {
+      "id": "SPEECH-5",
+      "text": "A clip that came out wrong can be made again, replacing the stored one."
+    },
+    {
+      "id": "SPEECH-6",
+      "text": "Starting a lesson downloads its lines in the background, in the order they will be heard; this can be switched off per device."
+    },
+    {
+      "id": "SPEECH-7",
+      "text": "A course's audio can be downloaded in one pass, with progress reported line by line."
+    },
+    {
+      "id": "SPEECH-8",
+      "text": "Settings shows how many clips are stored and how much space they take per course, and can delete the clips no course uses, or all of them."
+    },
+    {
+      "id": "SPEECH-9",
+      "text": "Speech is stored as MP3: raw audio from the speech model is encoded before it is stored, at `speech.bitrate` for one channel."
+    },
+    {
+      "id": "SPEECH-10",
+      "text": "A clip that cannot be encoded is stored as it came instead of being lost."
+    },
+    {
+      "id": "SPEECH-11",
+      "text": "Speech stored as WAV by an earlier version is re-encoded to MP3 in the background at startup, one file at a time, and the database is compacted afterwards."
+    },
+    {
+      "id": "SPEECH-12",
+      "text": "A re-encoded file gets a new id, and the clip or episode that pointed at the old file points at the new one."
+    },
+    {
+      "id": "SPEECH-13",
+      "text": "When the same clip is asked for twice at once, it is generated once."
+    },
+    {
+      "id": "SPEECH-14",
+      "text": "Without an OpenRouter key, the platform's own speech engine is used where the webview has one."
+    }
+  ],
+  "values": [
+    {
+      "id": "speech.bitrate",
+      "type": "number",
+      "value": 48,
+      "unit": "kbit/s",
+      "description": "The MP3 bitrate of stored speech, for one channel."
+    }
+  ],
+  "related": [
+    "principles#PRIN-4",
+    "data#DATA-3",
+    "music/podcasts#POD-10",
+    "tutor/models#AI-10",
+    "courses/offline"
+  ]
+}

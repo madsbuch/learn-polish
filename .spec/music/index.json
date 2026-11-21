@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Songs",
+  "summary": "Learning songs written to order from the learner's words and sung by Suno, kept for good.",
+  "status": "accepted",
+  "order": 7,
+  "description": "Songs get Polish stuck in the head. Each verse pairs an English line with the same line in Polish, and the chorus is one Polish sentence.",
+  "stories": [
+    {
+      "id": "US-SONG-1",
+      "as": "a learner who remembers songs better than word lists",
+      "want": "a song written from my own words and sung",
+      "soThat": "the Polish sticks",
+      "requirements": [
+        "#SONG-1",
+        "#SONG-2",
+        "#SONG-5"
+      ]
+    },
+    {
+      "id": "US-SONG-2",
+      "as": "a learner who liked a song",
+      "want": "it kept for good",
+      "soThat": "it still plays offline when the service that made it has deleted it",
+      "requirements": [
+        "#SONG-8"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SONG-1",
+      "text": "A song is written from a theme, a vocabulary topic and, optionally, the exact chorus sentence."
+    },
+    {
+      "id": "SONG-2",
+      "text": "The lyrics can be edited by hand, or revised by the songwriter, before anything is sung."
+    },
+    {
+      "id": "SONG-3",
+      "text": "A song's length is one of `song.lengths`, long by default, each a lyric structure the songwriter follows."
+    },
+    {
+      "id": "SONG-4",
+      "text": "Songs are sung by Suno through kie.ai with the learner's kie.ai key, in the model chosen in Settings from `song.models`."
+    },
+    {
+      "id": "SONG-5",
+      "text": "Each song comes in two takes."
+    },
+    {
+      "id": "SONG-6",
+      "text": "Generation runs in the background and carries on after leaving the screen or restarting the app."
+    },
+    {
+      "id": "SONG-7",
+      "text": "After a restart only the device that started a song resumes polling for it and downloading it; a device where the learner taps retry takes the song over."
+    },
+    {
+      "id": "SONG-8",
+      "text": "Both takes and their cover art are downloaded and stored in the database, and play offline."
+    },
+    {
+      "id": "SONG-9",
+      "text": "When a song is ready the app fetches Suno's word timings and stores them with each take."
+    },
+    {
+      "id": "SONG-10",
+      "text": "A song remembers the course whose words it uses, and its listening lesson is filed there."
+    },
+    {
+      "id": "SONG-11",
+      "text": "Enough of what a song was made from is kept to rebuild the prompt that made it."
+    },
+    {
+      "id": "SONG-12",
+      "text": "Many songs can be deleted at once from the song list."
+    }
+  ],
+  "values": [
+    {
+      "id": "song.lengths",
+      "type": "list",
+      "value": [
+        "short",
+        "medium",
+        "long"
+      ],
+      "description": "The lengths a song can be asked for in."
+    },
+    {
+      "id": "song.models",
+      "type": "list",
+      "value": [
+        "V6",
+        "V6 Mini",
+        "V6 Wild"
+      ],
+      "description": "The Suno models a song can be sung with."
+    }
+  ],
+  "related": [
+    "principles#PRIN-11",
+    "music/player",
+    "music/podcasts",
+    "music/sonos",
+    "lessons/conversations#CONV-4",
+    "data#DATA-3"
+  ]
+}

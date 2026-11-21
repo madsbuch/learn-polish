@@ -10,6 +10,7 @@
  * is guaranteed to work on the phone.
  */
 import { api } from "./api";
+import { noteAudio } from "./learnLog";
 
 let hasKey = false;
 let hasVoice = false;
@@ -28,12 +29,12 @@ const aiVoiceReady = () => hasKey && hasVoice;
 /** Names the actual blocker, rather than blaming whichever engine ran last. */
 function unavailableReason(): string {
   if (hasVoice && !hasKey) {
-    return "Add your OpenRouter API key in Settings — the Polish voice needs it.";
+    return "Add your OpenRouter API key in Settings → AI — the Polish voice needs it.";
   }
   if (hasKey && !hasVoice) {
-    return "Choose a Polish voice in Settings to hear this.";
+    return "Choose a Polish voice in Settings → Voices & sound to hear this.";
   }
-  return "No speech on this device yet. Set up an OpenRouter voice in Settings to hear Polish.";
+  return "No speech on this device yet. Set up an OpenRouter key in Settings → AI to hear Polish.";
 }
 
 // ---------------------------------------------------------------- native path
@@ -138,6 +139,8 @@ export class SpeechError extends Error {}
 export async function speak(text: string, gender = "", rate = 0.85): Promise<void> {
   // A line asked for on its own ends a conversation that is playing.
   if (conversation?.playing) stopConversation();
+  // Asked for (a 🔊 tapped): the learning log counts it.
+  noteAudio(text, false);
   return speakLine(text, gender, rate);
 }
 
@@ -147,6 +150,7 @@ export async function speak(text: string, gender = "", rate = 0.85): Promise<voi
  */
 export async function speakSlowly(text: string, gender = ""): Promise<void> {
   if (conversation?.playing) stopConversation();
+  noteAudio(text, true);
   return speakLine(text, gender, 0.6, true);
 }
 
@@ -165,7 +169,7 @@ async function speakLine(text: string, gender = "", rate = 0.85, slow = false): 
       // backend's message, which names the model or key that failed.
       if (speakNatively(line, rate)) return;
       throw new SpeechError(
-        typeof cause === "string" ? cause : (cause as Error)?.message ?? "Could not play audio.",
+        typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "Could not play audio.",
       );
     }
   }
@@ -272,6 +276,14 @@ export function stopConversation() {
 /** Plays several lines back to back (a conversation). */
 export async function speakSequence(lines: ConversationLine[], gapMs = 350): Promise<void> {
   return playConversation(lines, 0, gapMs);
+}
+
+/**
+ * Resolves when the clip playing now stops — it ends, is stopped, or another
+ * one takes its place — whichever engine plays it.
+ */
+export function playbackFinished(): Promise<void> {
+  return finished();
 }
 
 /** Resolves when the current clip stops, whichever engine is playing it. */

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Podcasts",
+  "summary": "Spoken episodes written from Wikipedia or today's news and read aloud in the speech voices.",
+  "status": "accepted",
+  "order": 2,
+  "description": "Listening practice on a subject the learner cares about. An episode is stored as a song, so the player, playlists, casting and listening lessons work on it.",
+  "stories": [
+    {
+      "id": "US-POD-1",
+      "as": "a learner who wants listening practice on subjects I care about",
+      "want": "a spoken episode with each sentence in English and Polish",
+      "soThat": "I can follow real content at my level",
+      "requirements": [
+        "#POD-1",
+        "#POD-3",
+        "#POD-8"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "POD-1",
+      "text": "An episode is written from 1 to `podcast.max-articles` Wikipedia articles, from today's news, or from none as a made-up story."
+    },
+    {
+      "id": "POD-2",
+      "text": "An episode holds at most `podcast.max-sentences` sentences."
+    },
+    {
+      "id": "POD-3",
+      "text": "In the pairs format each sentence is said in English and then in Polish; in the immersion format only Polish is spoken and the English is shown with each line, except that a line with no Polish is still said in English."
+    },
+    {
+      "id": "POD-4",
+      "text": "An episode can have a cast of up to `podcast.max-cast` speakers, each keeping the same voice when the audio is made again."
+    },
+    {
+      "id": "POD-5",
+      "text": "The app can suggest subjects for an episode from what the learner is interested in."
+    },
+    {
+      "id": "POD-6",
+      "text": "A news episode is written from the headlines and short summaries of Polish news feeds, with Wikipedia for background; where a feed gives no summary, the description the article's page gives of itself is used, and the articles themselves are only linked to."
+    },
+    {
+      "id": "POD-7",
+      "text": "The articles an episode was written from are kept as its sources and open in the app's reader."
+    },
+    {
+      "id": "POD-8",
+      "text": "Each sentence of an episode has its start and end time, and the player follows it like a song's lyrics."
+    },
+    {
+      "id": "POD-9",
+      "text": "Changing an episode's pauses or repeats reuses the clips already made; turning on slow speech or English makes only the clips that are missing."
+    },
+    {
+      "id": "POD-10",
+      "text": "An episode's audio is stored as MP3, or as it came when it cannot be encoded."
+    }
+  ],
+  "values": [
+    {
+      "id": "podcast.max-articles",
+      "type": "number",
+      "value": 5,
+      "description": "The most Wikipedia articles an episode is written from."
+    },
+    {
+      "id": "podcast.max-sentences",
+      "type": "number",
+      "value": 120,
+      "description": "The most sentences in an episode."
+    },
+    {
+      "id": "podcast.max-cast",
+      "type": "number",
+      "value": 4,
+      "description": "The most speakers in an episode's cast."
+    }
+  ],
+  "related": [
+    "music",
+    "speech#SPEECH-9",
+    "lessons/wikipedia",
+    "principles#PRIN-11"
+  ]
+}

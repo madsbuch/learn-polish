@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Banner, Inline, Sheet, Spinner, Text } from "../design";
+import { Banner, Inline, Sheet, Text, Typing } from "../design";
+import { logEvent } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { useTutorJob } from "../lib/tutorJob";
-import type { ChatMessage } from "../lib/types";
+import type { ChatMessage, ConversationId } from "../lib/types";
 import { Composer } from "./Composer";
 import { Markdown } from "./Markdown";
 
@@ -22,15 +23,17 @@ export function WordChat({
   onClose,
 }: {
   itemKind: string;
-  itemId: number;
+  itemId: string;
   /** The Polish, shown as the sheet's title. */
   title: string;
-  /** For a line of a conversation (itemKind "line"): what it means. */
+  /** For a line of a conversation ("line"): what it means; for a word of a song ("lyric") or a story ("story"): its line. */
   meaning?: string;
   onClose: () => void;
 }) {
-  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [conversationId, setConversationId] = useState<ConversationId | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  /** Messages sent from this sheet, which rise into place (not the history). */
+  const sent = useRef(new Set<ChatMessage["id"]>());
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const job = useTutorJob(conversationId);
@@ -41,8 +44,9 @@ export function WordChat({
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
+    logEvent({ kind: "talk_opened", itemKind, itemId: itemId.startsWith("wd_") || itemId.startsWith("sn_") ? itemId : undefined, details: { word: title.slice(0, 80) } });
     api
-      .tutorTalkAbout(itemKind, itemId, itemKind === "line" ? title : undefined, meaning)
+      .tutorTalkAbout(itemKind, itemId, itemKind === "line" || itemKind === "lyric" || itemKind === "story" ? title : undefined, meaning)
       .then((talk) => {
         if (!talk.existing) job.begin();
         setConversationId(talk.conversationId);
@@ -78,6 +82,7 @@ export function WordChat({
     job.begin();
     try {
       const started = await api.tutorSend(message, conversationId);
+      sent.current.add(started.message.id);
       setMessages((current) => [...current, started.message]);
     } catch (cause) {
       job.cancel();
@@ -113,12 +118,17 @@ export function WordChat({
     >
       <div className="chat word-chat">
         {shown.map((message) => (
-          <div key={message.id} className="msg selectable" data-role={message.role}>
+          <div
+            key={message.id}
+            className="msg selectable"
+            data-role={message.role}
+            data-fresh={sent.current.has(message.id) || undefined}
+          >
             {message.role === "assistant" ? <Markdown text={message.content} /> : message.content}
           </div>
         ))}
         {job.working ? (
-          <div className="msg" data-role="assistant">
+          <div className="msg" data-role="assistant" data-fresh>
             {job.text ? (
               <div>
                 <Markdown text={job.text} />
@@ -126,7 +136,7 @@ export function WordChat({
               </div>
             ) : (
               <Inline gap={2}>
-                <Spinner />
+                <Typing />
                 <Text variant="small" tone="faint">
                   {job.status ?? "Thinking…"}
                 </Text>

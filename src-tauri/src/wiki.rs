@@ -1,22 +1,24 @@
-//! Wikipedia as the source of study blocks — culture especially: a lesson
+//! Wikipedia as the source of study lessons — culture especially: a lesson
 //! on Kraków is written from the Kraków article, the article is kept with
-//! the block (readable in the app, offline, in English and in Polish), and
+//! the lesson (readable in the app, offline, in English and in Polish), and
 //! every three months the lesson is checked against the article again.
 //!
 //! Wikipedia's APIs need no key. Articles are CC BY-SA: the reader shows
 //! where each comes from.
 
 use diesel::prelude::*;
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
 use crate::files;
-use crate::schema::{blocks, wiki_sources};
+use crate::schema::{lessons, songs, wiki_sources};
+#[allow(unused_imports)]
+use crate::ids::*;
 
-/// How often a block's lesson is compared with its sources again.
+/// How often a lesson's lesson is compared with its sources again.
+// Spec: WIKI-5
 pub const CHECK_EVERY_DAYS: i64 = 90;
 /// The most of an article an AI reads at once (fact checks, the tutor).
 const READ_LIMIT: usize = 12_000;
@@ -36,6 +38,9 @@ pub struct Article {
     pub thumbnail: Option<String>,
     /// The same article's title on Polish Wikipedia.
     pub polish_title: Option<String>,
+    /// The article as Wikipedia lays it out (HTML), for the reader; fetched
+    /// only by `fetch_with_layout`.
+    pub html: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,7 +56,104 @@ fn api(lang: &str) -> Result<String> {
     Ok(format!("https://{lang}.wikipedia.org/w/api.php"))
 }
 
-async fn get(lang: &str, query: &[(&str, &str)]) -> Result<Value> {
+// What we read of Wikipedia's API answers (format=json, formatversion=2).
+
+#[derive(Deserialize)]
+struct ApiError {
+    #[serde(default)]
+    info: String,
+}
+
+/// Any answer: an error, if there was one, and the rest as `T`.
+#[derive(Deserialize)]
+struct Answer<T> {
+    #[serde(default)]
+    error: Option<ApiError>,
+    #[serde(flatten)]
+    body: T,
+}
+
+#[derive(Deserialize, Default)]
+struct SearchBody {
+    #[serde(default)]
+    query: Option<SearchQuery>,
+}
+
+#[derive(Deserialize, Default)]
+struct SearchQuery {
+    #[serde(default)]
+    search: Vec<RawHit>,
+}
+
+#[derive(Deserialize)]
+struct RawHit {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    snippet: String,
+}
+
+#[derive(Deserialize, Default)]
+struct PagesBody {
+    #[serde(default)]
+    query: Option<PagesQuery>,
+}
+
+#[derive(Deserialize, Default)]
+struct PagesQuery {
+    #[serde(default)]
+    pages: Vec<RawPage>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawPage {
+    #[serde(default)]
+    missing: bool,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    extract: Option<String>,
+    #[serde(default)]
+    fullurl: Option<String>,
+    #[serde(default)]
+    pageid: i64,
+    #[serde(default)]
+    revisions: Vec<RawRevision>,
+    #[serde(default)]
+    thumbnail: Option<RawThumbnail>,
+    #[serde(default)]
+    langlinks: Vec<RawLanglink>,
+}
+
+#[derive(Deserialize)]
+struct RawRevision {
+    #[serde(default)]
+    revid: i64,
+}
+
+#[derive(Deserialize)]
+struct RawThumbnail {
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct RawLanglink {
+    title: String,
+}
+
+#[derive(Deserialize, Default)]
+struct ParseBody {
+    #[serde(default)]
+    parse: Option<ParsedPage>,
+}
+
+#[derive(Deserialize)]
+struct ParsedPage {
+    #[serde(default)]
+    text: String,
+}
+
+async fn get<T: serde::de::DeserializeOwned>(lang: &str, query: &[(&str, &str)]) -> Result<T> {
     let response = crate::http::wikipedia()
         .get(api(lang)?)
         .query(&[("format", "json"), ("formatversion", "2")])
@@ -63,28 +165,24 @@ async fn get(lang: &str, query: &[(&str, &str)]) -> Result<Value> {
     if !status.is_success() {
         return Err(Error::msg(format!("Wikipedia answered {status}.")));
     }
-    let body: Value = response.json().await.map_err(|_| Error::msg("Wikipedia sent something unreadable."))?;
-    if let Some(info) = body.pointer("/error/info").and_then(Value::as_str) {
-        return Err(Error::msg(format!("Wikipedia: {info}")));
+    let answer: Answer<T> = response.json().await.map_err(|_| Error::msg("Wikipedia sent something unreadable."))?;
+    if let Some(error) = answer.error {
+        return Err(Error::msg(format!("Wikipedia: {}", error.info)));
     }
-    Ok(body)
+    Ok(answer.body)
 }
 
 /// Finds articles. Snippets come as plain text.
 pub async fn search(lang: &str, query: &str) -> Result<Vec<SearchHit>> {
-    let body = get(lang, &[("action", "query"), ("list", "search"), ("srsearch", query), ("srlimit", "6")]).await?;
+    let body: SearchBody =
+        get(lang, &[("action", "query"), ("list", "search"), ("srsearch", query), ("srlimit", "6")]).await?;
     Ok(body
-        .pointer("/query/search")
-        .and_then(Value::as_array)
-        .map(|hits| {
-            hits.iter()
-                .map(|hit| SearchHit {
-                    title: hit["title"].as_str().unwrap_or_default().to_string(),
-                    snippet: strip_tags(hit["snippet"].as_str().unwrap_or_default()),
-                })
-                .collect()
-        })
-        .unwrap_or_default())
+        .query
+        .unwrap_or_default()
+        .search
+        .into_iter()
+        .map(|hit| SearchHit { title: hit.title, snippet: strip_tags(&hit.snippet) })
+        .collect())
 }
 
 fn strip_tags(html: &str) -> String {
@@ -146,7 +244,7 @@ pub fn lead(markdown: &str) -> String {
 /// Fetches an article: its text, revision, address, picture, and the
 /// title of its Polish version.
 pub async fn fetch(lang: &str, title: &str) -> Result<Article> {
-    let body = get(
+    let body: PagesBody = get(
         lang,
         &[
             ("action", "query"),
@@ -164,70 +262,114 @@ pub async fn fetch(lang: &str, title: &str) -> Result<Article> {
     )
     .await?;
     let page = body
-        .pointer("/query/pages/0")
+        .query
+        .and_then(|q| q.pages.into_iter().next())
         .ok_or_else(|| Error::msg("Wikipedia sent no article."))?;
-    if page.get("missing").and_then(Value::as_bool) == Some(true) {
+    if page.missing {
         return Err(Error::msg(format!("There is no article called “{title}” on {lang}.wikipedia.org.")));
     }
-    let content = to_markdown(page["extract"].as_str().unwrap_or_default());
+    let content = to_markdown(page.extract.as_deref().unwrap_or_default());
     Ok(Article {
         lang: lang.to_string(),
-        title: page["title"].as_str().unwrap_or(title).to_string(),
-        url: page["fullurl"].as_str().map(str::to_string).unwrap_or_else(|| {
-            format!("https://{lang}.wikipedia.org/wiki/{}", title.replace(' ', "_"))
-        }),
-        pageid: page["pageid"].as_i64().unwrap_or_default(),
-        revid: page.pointer("/revisions/0/revid").and_then(Value::as_i64).unwrap_or_default(),
+        title: page.title.unwrap_or_else(|| title.to_string()),
+        url: page
+            .fullurl
+            .unwrap_or_else(|| format!("https://{lang}.wikipedia.org/wiki/{}", title.replace(' ', "_"))),
+        pageid: page.pageid,
+        revid: page.revisions.first().map(|r| r.revid).unwrap_or_default(),
         summary: lead(&content),
         content,
-        thumbnail: page.pointer("/thumbnail/source").and_then(Value::as_str).map(str::to_string),
-        polish_title: page.pointer("/langlinks/0/title").and_then(Value::as_str).map(str::to_string),
+        thumbnail: page.thumbnail.map(|t| t.source),
+        polish_title: page.langlinks.into_iter().next().map(|l| l.title),
+        html: None,
     })
+}
+
+/// The article as Wikipedia lays it out: its HTML, with sections, lists,
+/// tables, the infobox and figures. The reader turns it into the app's own
+/// elements (it is never inserted as HTML).
+pub async fn fetch_html(lang: &str, title: &str) -> Result<String> {
+    let body: ParseBody = get(
+        lang,
+        &[
+            ("action", "parse"),
+            ("page", title),
+            ("redirects", "1"),
+            ("prop", "text"),
+            ("disableeditsection", "1"),
+            ("disabletoc", "1"),
+        ],
+    )
+    .await?;
+    body.parse
+        .map(|p| p.text)
+        .filter(|html| !html.trim().is_empty())
+        .ok_or_else(|| Error::msg("Wikipedia sent the article without its text."))
+}
+
+/// An article with its layout. The layout is a nicety: without it the reader
+/// shows the plain text.
+pub async fn fetch_with_layout(lang: &str, title: &str) -> Result<Article> {
+    let mut article = fetch(lang, title).await?;
+    article.html = fetch_html(lang, &article.title).await.ok();
+    Ok(article)
 }
 
 /// The article's current revision, without its text: is it still the same?
 pub async fn current_revision(lang: &str, title: &str) -> Result<i64> {
-    let body = get(lang, &[("action", "query"), ("titles", title), ("redirects", "1"), ("prop", "revisions"), ("rvprop", "ids")])
-        .await?;
-    body.pointer("/query/pages/0/revisions/0/revid")
-        .and_then(Value::as_i64)
+    let body: PagesBody =
+        get(lang, &[("action", "query"), ("titles", title), ("redirects", "1"), ("prop", "revisions"), ("rvprop", "ids")])
+            .await?;
+    body.query
+        .and_then(|q| q.pages.into_iter().next())
+        .and_then(|page| page.revisions.first().map(|r| r.revid))
         .ok_or_else(|| Error::msg(format!("Wikipedia has no “{title}” any more.")))
 }
 
 // ---------------------------------------------------------------------------
-// Sources of a block
+// Sources of a lesson
 // ---------------------------------------------------------------------------
 
-/// A source as the block page shows it.
+/// Whose source it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Owner {
+    /// A study lesson, which is written from it and checked against it.
+    Lesson(LessonId),
+    /// A podcast episode, which is written from it.
+    Song(SongId),
+}
+
+/// A source as a lesson's or an episode's page shows it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
-    pub id: i64,
-    pub block_id: i64,
+    pub id: SourceId,
+    pub lesson_id: Option<LessonId>,
+    pub song_id: Option<SongId>,
     pub lang: String,
     pub title: String,
     pub url: String,
     pub summary: String,
-    pub image_file_id: Option<i64>,
+    pub image_file_id: Option<FileId>,
     /// Polish Wikipedia has it too.
     pub polish_title: Option<String>,
     pub checked_at: i64,
 }
 
-type SourceRow = (i64, i64, String, String, String, String, Option<i64>, Option<String>, i64);
+type SourceRow = (SourceId, Option<LessonId>, Option<SongId>, String, String, String, String, Option<FileId>, Option<String>, i64);
 
 fn source_from(row: SourceRow) -> Source {
-    let (id, block_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
-    Source { id, block_id, lang, title, url, summary, image_file_id, polish_title, checked_at }
+    let (id, lesson_id, song_id, lang, title, url, summary, image_file_id, polish_title, checked_at) = row;
+    Source { id, lesson_id, song_id, lang, title, url, summary, image_file_id, polish_title, checked_at }
 }
 
-pub fn sources_of(conn: &mut Conn, block_id: i64) -> Result<Vec<Source>> {
-    Ok(wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+fn owned_by(conn: &mut Conn, owner: Owner) -> Result<Vec<Source>> {
+    let query = wiki_sources::table
         .order((wiki_sources::ord, wiki_sources::id))
         .select((
             wiki_sources::id,
-            wiki_sources::block_id,
+            wiki_sources::lesson_id,
+            wiki_sources::song_id,
             wiki_sources::lang,
             wiki_sources::title,
             wiki_sources::url,
@@ -236,30 +378,65 @@ pub fn sources_of(conn: &mut Conn, block_id: i64) -> Result<Vec<Source>> {
             wiki_sources::pl_title,
             wiki_sources::checked_at,
         ))
-        .load::<SourceRow>(conn)?
-        .into_iter()
-        .map(source_from)
-        .collect())
+        .into_boxed();
+    let query = match owner {
+        Owner::Lesson(id) => query.filter(wiki_sources::lesson_id.eq(id)),
+        Owner::Song(id) => query.filter(wiki_sources::song_id.eq(id)),
+    };
+    Ok(query.load::<SourceRow>(conn)?.into_iter().map(source_from).collect())
 }
 
-/// Stores an article as a source of a study block (replacing an earlier
+pub fn sources_of(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<Source>> {
+    owned_by(conn, Owner::Lesson(lesson_id))
+}
+
+pub fn sources_of_song(conn: &mut Conn, song_id: SongId) -> Result<Vec<Source>> {
+    owned_by(conn, Owner::Song(song_id))
+}
+
+/// Stores an article as a source of a study lesson (replacing an earlier
 /// copy of the same article), with its Polish version's text and its picture.
 pub fn store(
     conn: &mut Conn,
-    block_id: i64,
+    lesson_id: LessonId,
     article: &Article,
     polish: Option<&Article>,
     picture: Option<(String, Vec<u8>)>,
 ) -> Result<Source> {
-    let kind: String = blocks::table
-        .find(block_id)
-        .select(blocks::kind)
-        .first(conn)
-        .optional()?
-        .ok_or_else(|| Error::msg("That block no longer exists."))?;
-    if kind != "study" {
-        return Err(Error::msg("Only study blocks take sources."));
-    }
+    store_for(conn, Owner::Lesson(lesson_id), article, polish, picture)
+}
+
+/// Stores an article as a source of a lesson or an episode.
+pub fn store_for(
+    conn: &mut Conn,
+    owner: Owner,
+    article: &Article,
+    polish: Option<&Article>,
+    picture: Option<(String, Vec<u8>)>,
+) -> Result<Source> {
+    let (lesson_id, song_id) = match owner {
+        Owner::Lesson(id) => {
+            let kind: String = lessons::table
+                .find(id)
+                .select(lessons::lesson_type)
+                .first(conn)
+                .optional()?
+                .ok_or_else(|| Error::msg("That lesson no longer exists."))?;
+            if kind != "study" {
+                return Err(Error::msg("Only study lessons take sources."));
+            }
+            (Some(id), None)
+        }
+        Owner::Song(id) => {
+            songs::table
+                .find(id)
+                .select(songs::id)
+                .first::<SongId>(conn)
+                .optional()?
+                .ok_or_else(|| Error::msg("That podcast no longer exists."))?;
+            (None, Some(id))
+        }
+    };
     let image = match picture {
         Some((mime, bytes)) => Some(files::store(
             conn,
@@ -271,12 +448,11 @@ pub fn store(
         None => None,
     };
     let now = db::now_secs();
-    let ord: i64 = wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
-        .count()
-        .get_result(conn)?;
-    let existing: Option<(i64, Option<i64>)> = wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+    let siblings = owned_by(conn, owner)?;
+    let ord = crate::convert::count(siblings.len());
+    let existing: Option<(SourceId, Option<FileId>)> = wiki_sources::table
+        .filter(wiki_sources::lesson_id.is(lesson_id))
+        .filter(wiki_sources::song_id.is(song_id))
         .filter(wiki_sources::lang.eq(&article.lang))
         .filter(wiki_sources::pageid.eq(article.pageid))
         .select((wiki_sources::id, wiki_sources::image_file_id))
@@ -307,7 +483,9 @@ pub fn store(
         }
         None => diesel::insert_into(wiki_sources::table)
             .values((
-                wiki_sources::block_id.eq(block_id),
+                wiki_sources::id.eq(SourceId::new()),
+                wiki_sources::lesson_id.eq(lesson_id),
+                wiki_sources::song_id.eq(song_id),
                 wiki_sources::ord.eq(ord),
                 wiki_sources::lang.eq(&article.lang),
                 wiki_sources::pageid.eq(article.pageid),
@@ -316,23 +494,36 @@ pub fn store(
             .returning(wiki_sources::id)
             .get_result(conn)?,
     };
-    Ok(sources_of(conn, block_id)?.into_iter().find(|s| s.id == id).expect("just stored"))
+    // The layout is kept unless a new one came with the article.
+    if let Some(html) = &article.html {
+        diesel::update(wiki_sources::table.find(id)).set(wiki_sources::html.eq(html)).execute(conn)?;
+    }
+    if let Some(html) = polish.and_then(|p| p.html.as_ref()) {
+        diesel::update(wiki_sources::table.find(id)).set(wiki_sources::pl_html.eq(html)).execute(conn)?;
+    }
+    Ok(owned_by(conn, owner)?.into_iter().find(|s| s.id == id).expect("just stored"))
 }
 
-/// Fetches an article and attaches it to a study block: the tutor's
-/// attach_source, for new and existing blocks alike.
-pub async fn attach(db: &Db, block_id: i64, lang: &str, title: &str) -> Result<Source> {
-    let article = fetch(lang, title).await?;
+/// Fetches an article and attaches it to a study lesson: the tutor's
+/// attach_source, for new and existing lessons alike.
+pub async fn attach(db: &Db, lesson_id: LessonId, lang: &str, title: &str) -> Result<Source> {
+    attach_to(db, Owner::Lesson(lesson_id), lang, title).await
+}
+
+/// Fetches an article with its layout, its Polish version and its picture,
+/// and keeps it as a lesson's or an episode's source.
+pub async fn attach_to(db: &Db, owner: Owner, lang: &str, title: &str) -> Result<Source> {
+    let article = fetch_with_layout(lang, title).await?;
     // Reading practice: the Polish version, when there is one.
     let polish = match (&article.polish_title, lang) {
-        (Some(pl), l) if l != "pl" => fetch("pl", pl).await.ok(),
+        (Some(pl), l) if l != "pl" => fetch_with_layout("pl", pl).await.ok(),
         _ => None,
     };
     let picture = match &article.thumbnail {
         Some(url) => download_picture(url).await.ok(),
         None => None,
     };
-    store(&mut db.lock(), block_id, &article, polish.as_ref(), picture)
+    store_for(&mut db.lock(), owner, &article, polish.as_ref(), picture)
 }
 
 async fn download_picture(url: &str) -> Result<(String, Vec<u8>)> {
@@ -353,8 +544,8 @@ async fn download_picture(url: &str) -> Result<(String, Vec<u8>)> {
     Ok((mime, bytes))
 }
 
-pub fn remove(conn: &mut Conn, source_id: i64) -> Result<()> {
-    let image: Option<Option<i64>> =
+pub fn remove(conn: &mut Conn, source_id: SourceId) -> Result<()> {
+    let image: Option<Option<FileId>> =
         wiki_sources::table.find(source_id).select(wiki_sources::image_file_id).first(conn).optional()?;
     diesel::delete(wiki_sources::table.find(source_id)).execute(conn)?;
     files::delete(conn, &image.flatten().into_iter().collect::<Vec<_>>())?;
@@ -363,9 +554,9 @@ pub fn remove(conn: &mut Conn, source_id: i64) -> Result<()> {
 
 /// What the examiner and the fact check read: each source's lead, and as
 /// much of the rest as fits.
-pub fn reading_for(conn: &mut Conn, block_id: i64, limit: usize) -> Result<String> {
+pub fn reading_for(conn: &mut Conn, lesson_id: LessonId, limit: usize) -> Result<String> {
     let rows: Vec<(String, String)> = wiki_sources::table
-        .filter(wiki_sources::block_id.eq(block_id))
+        .filter(wiki_sources::lesson_id.eq(lesson_id))
         .order(wiki_sources::ord)
         .select((wiki_sources::title, wiki_sources::content))
         .load(conn)?;
@@ -396,7 +587,7 @@ fn clip(text: &str, limit: usize) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FactCheck {
-    pub block_id: i64,
+    pub lesson_id: LessonId,
     pub title: String,
     /// The lesson was out of date and has been corrected.
     pub updated: bool,
@@ -404,22 +595,33 @@ pub struct FactCheck {
     pub note: Option<String>,
 }
 
-/// Blocks whose sources have not been compared with Wikipedia for three months.
-pub fn blocks_due(conn: &mut Conn, now: i64) -> Result<Vec<i64>> {
-    let mut ids: Vec<i64> = wiki_sources::table
+/// Lessons whose sources have not been compared with Wikipedia for three months.
+///
+/// Only sources whose current version this device wrote
+/// (`sync::written_here`): it fetched them, or checked them last. With the
+/// learner's data on two devices, one checks each lesson — both would pay
+/// for the same AI read and could correct the lesson twice.
+pub fn lessons_due(conn: &mut Conn, now: i64) -> Result<Vec<LessonId>> {
+    // Only lessons are checked: an episode is recorded once, as it was written.
+    let due: Vec<(SourceId, Option<LessonId>)> = wiki_sources::table
         .filter(wiki_sources::checked_at.lt(now - CHECK_EVERY_DAYS * 86_400))
-        .select(wiki_sources::block_id)
+        .select((wiki_sources::id, wiki_sources::lesson_id))
         .load(conn)?;
+    let mut ids: Vec<LessonId> = due
+        .into_iter()
+        .filter(|(source, _)| crate::sync::written_here(conn, "wiki_sources", &source.to_string()))
+        .filter_map(|(_, lesson)| lesson)
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
 }
 
-/// At startup: checks every block that is due, in the background, and says
+/// At startup: checks every lesson that is due, in the background, and says
 /// when a lesson was corrected (`facts://updated`).
 pub fn check_due_in_background(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
-    let due = blocks_due(&mut app.state::<Db>().lock(), db::now_secs()).unwrap_or_default();
+    let due = lessons_due(&mut app.state::<Db>().lock(), db::now_secs()).unwrap_or_default();
     if due.is_empty() {
         return;
     }
@@ -428,29 +630,29 @@ pub fn check_due_in_background(app: &tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let _busy = busy;
         let db = app.state::<Db>();
-        for block_id in due {
-            match fact_check(&db, block_id, false).await {
+        for lesson_id in due {
+            match fact_check(&db, lesson_id, false).await {
                 Ok(check) if check.updated => {
                     let _ = app.emit("facts://updated", check);
                 }
                 Ok(_) => {}
-                Err(error) => eprintln!("fact check of block {block_id}: {error}"),
+                Err(error) => crate::diagnostics::note("background", format!("Checking lesson {lesson_id} against Wikipedia failed: {error}")),
             }
         }
     });
 }
 
-/// Compares a block's sources with Wikipedia now. Articles that changed are
+/// Compares a lesson's sources with Wikipedia now. Articles that changed are
 /// fetched again; if any did (or `force`), an AI reads the lesson against
 /// them and corrects what is out of date — nothing else — noting what
 /// changed. Unchanged articles cost nothing.
-pub async fn fact_check(db: &Db, block_id: i64, force: bool) -> Result<FactCheck> {
-    let (title, sources): (String, Vec<(i64, String, String, i64)>) = {
+pub async fn fact_check(db: &Db, lesson_id: LessonId, force: bool) -> Result<FactCheck> {
+    let (title, sources): (String, Vec<(SourceId, String, String, i64)>) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let title = blocks::table.find(block_id).select(blocks::title).first(conn)?;
+        let title = lessons::table.find(lesson_id).select(lessons::title).first(conn)?;
         let sources = wiki_sources::table
-            .filter(wiki_sources::block_id.eq(block_id))
+            .filter(wiki_sources::lesson_id.eq(lesson_id))
             .select((wiki_sources::id, wiki_sources::lang, wiki_sources::title, wiki_sources::revid))
             .load(conn)?;
         (title, sources)
@@ -465,40 +667,40 @@ pub async fn fact_check(db: &Db, block_id: i64, force: bool) -> Result<FactCheck
             continue;
         }
         changed = true;
-        let article = fetch(lang, article_title).await?;
+        let article = fetch_with_layout(lang, article_title).await?;
         let polish = match (&article.polish_title, lang.as_str()) {
-            (Some(pl), l) if l != "pl" => fetch("pl", pl).await.ok(),
+            (Some(pl), l) if l != "pl" => fetch_with_layout("pl", pl).await.ok(),
             _ => None,
         };
-        store(&mut db.lock(), block_id, &article, polish.as_ref(), None)?;
+        store(&mut db.lock(), lesson_id, &article, polish.as_ref(), None)?;
     }
-    let mut check = FactCheck { block_id, title, updated: false, note: None };
+    let mut check = FactCheck { lesson_id, title, updated: false, note: None };
     if changed || force {
-        if let Some(note) = correct_lesson(db, block_id).await? {
+        if let Some(note) = correct_lesson(db, lesson_id).await? {
             check.updated = true;
             check.note = Some(note);
         }
     }
-    diesel::update(blocks::table.find(block_id))
-        .set(blocks::fact_checked_at.eq(db::now_secs()))
+    diesel::update(lessons::table.find(lesson_id))
+        .set(lessons::fact_checked_at.eq(db::now_secs()))
         .execute(&mut *db.lock())?;
     Ok(check)
 }
 
 /// Asks the model whether the lesson is out of date against its sources and,
 /// if so, stores the corrected lesson. Returns what changed.
-async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
-    let (key, model, lesson, objectives, reading) = {
+async fn correct_lesson(db: &Db, lesson_id: LessonId) -> Result<Option<String>> {
+    let (key, model, content, objectives, reading) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let (lesson, objectives): (String, String) =
-            blocks::table.find(block_id).select((blocks::lesson, blocks::objectives)).first(conn)?;
+        let (content, objectives): (String, String) =
+            lessons::table.find(lesson_id).select((lessons::content, lessons::objectives)).first(conn)?;
         (
             crate::ai::api_key(conn)?,
             crate::ai::require_model(conn)?,
-            lesson,
+            content,
             objectives,
-            reading_for(conn, block_id, READ_LIMIT)?,
+            reading_for(conn, lesson_id, READ_LIMIT)?,
         )
     };
     if reading.is_empty() {
@@ -510,7 +712,7 @@ async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
              answer with JSON only.",
         ),
         crate::ai::Wire::user(format!(
-            "The lesson:\n{lesson}\n\nWhat the learner should be able to do: {objectives}\n\n\
+            "The lesson:\n{content}\n\nWhat the learner should be able to do: {objectives}\n\n\
              The sources, as they read today:\n{reading}\n\n\
              Is anything in the lesson now wrong or out of date according to the sources — a figure, \
              a name, an officeholder, a date? Wording, style, the Polish teaching, and things the \
@@ -524,12 +726,14 @@ async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
     let mut guard = db.lock();
     let conn = &mut *guard;
     let _ = crate::costs::record_tokens(conn, crate::costs::FACT_CHECK, &model, reply.cost, "", reply.tokens);
-    let verdict = parse_verdict(&reply.text)?;
+    let verdict = parse_verdict(&reply.text).inspect_err(|_| {
+        crate::diagnostics::unreadable_reply("A Wikipedia fact check", &reply.text);
+    })?;
     let Some((changes, corrected)) = verdict else { return Ok(None) };
     let today = crate::commands::civil_date(db::today(conn));
     let note = format!("{}-{:02}-{:02}: {changes}", today.0, today.1, today.2);
-    diesel::update(blocks::table.find(block_id))
-        .set((blocks::lesson.eq(corrected.trim()), blocks::fact_note.eq(&note)))
+    diesel::update(lessons::table.find(lesson_id))
+        .set((lessons::content.eq(corrected.trim()), lessons::fact_note.eq(&note)))
         .execute(conn)?;
     Ok(Some(note))
 }
@@ -539,14 +743,23 @@ async fn correct_lesson(db: &Db, block_id: i64) -> Result<Option<String>> {
 fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
     let start = text.find('{').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
     let end = text.rfind('}').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
-    let value: Value = serde_json::from_str(&text[start..=end])
+    #[derive(Deserialize)]
+    struct Verdict {
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        outdated: Option<bool>,
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        changes: Option<String>,
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        lesson: Option<String>,
+    }
+    let verdict: Verdict = serde_json::from_str(&text[start..=end])
         .map_err(|_| Error::msg("The fact check's answer was unreadable."))?;
-    if value["outdated"].as_bool() != Some(true) {
+    if verdict.outdated != Some(true) {
         return Ok(None);
     }
-    let changes = value["changes"].as_str().unwrap_or("Corrected against Wikipedia.").trim().to_string();
-    match value["lesson"].as_str().map(str::trim).filter(|l| !l.is_empty()) {
-        Some(lesson) => Ok(Some((changes, lesson.to_string()))),
+    let changes = verdict.changes.as_deref().unwrap_or("Corrected against Wikipedia.").trim().to_string();
+    match verdict.lesson.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+        Some(corrected) => Ok(Some((changes, corrected.to_string()))),
         None => Ok(None),
     }
 }
@@ -556,8 +769,8 @@ fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn block_sources(db: State<'_, Db>, block_id: i64) -> Result<Vec<Source>> {
-    sources_of(&mut db.lock(), block_id)
+pub async fn lesson_sources(db: State<'_, Db>, lesson_id: LessonId) -> Result<Vec<Source>> {
+    sources_of(&mut db.lock(), lesson_id)
 }
 
 /// One source's article for the reader, in its own language or in Polish.
@@ -567,40 +780,89 @@ pub struct ArticleView {
     pub lang: String,
     pub title: String,
     pub url: String,
+    /// The plain text, as markdown: shown when there is no layout.
     pub content: String,
+    /// The article as Wikipedia lays it out (HTML), when it is known.
+    pub html: Option<String>,
 }
 
 #[tauri::command]
-pub async fn source_article(db: State<'_, Db>, source_id: i64, polish: bool) -> Result<ArticleView> {
-    let row: (String, String, String, String, Option<String>, Option<String>, Option<String>) = wiki_sources::table
+pub async fn source_article(db: State<'_, Db>, source_id: SourceId, polish: bool) -> Result<ArticleView> {
+    type Row = (String, String, String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    let row: Row = wiki_sources::table
         .find(source_id)
         .select((
             wiki_sources::lang,
             wiki_sources::title,
             wiki_sources::url,
             wiki_sources::content,
+            wiki_sources::html,
             wiki_sources::pl_title,
             wiki_sources::pl_url,
             wiki_sources::pl_content,
+            wiki_sources::pl_html,
         ))
         .first(&mut *db.lock())
         .optional()?
         .ok_or_else(|| Error::msg("That source no longer exists."))?;
-    let (lang, title, url, content, pl_title, pl_url, pl_content) = row;
-    Ok(match (polish, pl_title, pl_url, pl_content) {
-        (true, Some(title), Some(url), Some(content)) => ArticleView { lang: "pl".into(), title, url, content },
-        _ => ArticleView { lang, title, url, content },
-    })
+    let (lang, title, url, content, html, pl_title, pl_url, pl_content, pl_html) = row;
+    let (mut view, in_polish) = match (polish, pl_title, pl_url, pl_content) {
+        (true, Some(title), Some(url), Some(content)) => {
+            (ArticleView { lang: "pl".into(), title, url, content, html: pl_html }, true)
+        }
+        _ => (ArticleView { lang, title, url, content, html }, false),
+    };
+    // Sources kept before the reader showed layouts get theirs the first
+    // time they are read online; offline, the plain text does.
+    if view.html.is_none() {
+        if let Ok(html) = fetch_html(&view.lang, &view.title).await {
+            let row = diesel::update(wiki_sources::table.find(source_id));
+            let _ = if in_polish {
+                row.set(wiki_sources::pl_html.eq(&html)).execute(&mut *db.lock())
+            } else {
+                row.set(wiki_sources::html.eq(&html)).execute(&mut *db.lock())
+            };
+            view.html = Some(html);
+        }
+    }
+    Ok(view)
 }
 
-/// Checks one block against its sources now, whatever the date.
+/// An episode's sources, for its page.
 #[tauri::command]
-pub async fn fact_check_block(db: State<'_, Db>, block_id: i64) -> Result<FactCheck> {
-    fact_check(&db, block_id, true).await
+pub async fn song_sources(db: State<'_, Db>, song_id: SongId) -> Result<Vec<Source>> {
+    sources_of_song(&mut db.lock(), song_id)
+}
+
+/// One of an episode's articles, kept now if it is not yet (the episode is
+/// still being made, or the article could not be fetched then), so it opens
+/// in the app's reader rather than outside it.
+#[tauri::command]
+pub async fn song_source_open(db: State<'_, Db>, song_id: SongId, lang: String, title: String) -> Result<Source> {
+    let kept = sources_of_song(&mut db.lock(), song_id)?;
+    if let Some(source) = kept.into_iter().find(|s| s.lang == lang && s.title == title) {
+        return Ok(source);
+    }
+    attach_to(&db, Owner::Song(song_id), &lang, &title).await
+}
+
+/// Finds English Wikipedia articles, for choosing what a podcast is written from.
+#[tauri::command]
+pub async fn wiki_find(query: String) -> Result<Vec<SearchHit>> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    search("en", query.trim()).await
+}
+
+/// Checks one lesson against its sources now, whatever the date.
+#[tauri::command]
+pub async fn fact_check_lesson(db: State<'_, Db>, lesson_id: LessonId) -> Result<FactCheck> {
+    fact_check(&db, lesson_id, true).await
 }
 
 #[tauri::command]
-pub async fn source_remove(db: State<'_, Db>, source_id: i64) -> Result<()> {
+pub async fn source_remove(db: State<'_, Db>, source_id: SourceId) -> Result<()> {
     remove(&mut db.lock(), source_id)
 }
 
@@ -628,12 +890,12 @@ mod tests {
     #[test]
     fn a_fact_check_verdict_is_read_from_the_reply() {
         assert_eq!(parse_verdict("```json\n{\"outdated\": false}\n```").unwrap(), None);
-        let (changes, lesson) = parse_verdict(
+        let (changes, corrected) = parse_verdict(
             "Here: {\"outdated\": true, \"changes\": \"The population is now 804,000.\", \"lesson\": \"Kraków has 804,000 people.\"}",
         )
         .unwrap()
         .unwrap();
-        assert!(changes.contains("804,000") && lesson.starts_with("Kraków"));
+        assert!(changes.contains("804,000") && corrected.starts_with("Kraków"));
         assert!(parse_verdict("no json here").is_err());
         // A verdict without a corrected lesson changes nothing.
         assert_eq!(parse_verdict("{\"outdated\": true, \"changes\": \"x\"}").unwrap(), None);

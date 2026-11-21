@@ -10,11 +10,14 @@ use diesel::dsl::sum;
 use diesel::prelude::*;
 use serde::Serialize;
 
+#[allow(unused_imports)]
+use crate::ids::*;
 use crate::db::{self, Conn};
 use crate::schema::ai_costs;
 use crate::error::Result;
 
 /// kie.ai sells credits at roughly $0.005 each.
+// Spec: AI-9
 pub const KIE_USD_PER_CREDIT: f64 = 0.005;
 
 /// Features as they are stored and shown.
@@ -24,6 +27,10 @@ pub const WORD_CHAT: &str = "word chat";
 pub const EXAMINER: &str = "examiner";
 pub const PARTNER: &str = "writing partner";
 pub const PICTURES: &str = "pictures";
+/// A vision model finding the things in a scene lesson's picture.
+pub const SCENE_SPOTS: &str = "scene spots";
+/// A model hearing the learner speak (speaking.rs).
+pub const HEARING: &str = "hearing";
 pub const FACT_CHECK: &str = "fact check";
 pub const SONGWRITER: &str = "songwriter";
 pub const SONGS: &str = "songs";
@@ -56,6 +63,7 @@ pub fn record_tokens(
     let day = db::today(conn);
     diesel::insert_into(ai_costs::table)
         .values((
+            ai_costs::id.eq(CostId::new()),
             ai_costs::day.eq(day),
             ai_costs::feature.eq(feature),
             ai_costs::provider.eq("openrouter"),
@@ -134,6 +142,7 @@ pub fn record_once(
     let day = db::today(conn);
     diesel::insert_or_ignore_into(ai_costs::table)
         .values((
+            ai_costs::id.eq(CostId::new()),
             ai_costs::day.eq(day),
             ai_costs::feature.eq(feature),
             ai_costs::provider.eq(provider),
@@ -241,6 +250,8 @@ pub fn summary(conn: &mut Conn, days: i64) -> Result<CostSummary> {
 }
 
 pub mod commands {
+    #[allow(unused_imports)]
+    use crate::ids::*;
     use tauri::State;
 
     use crate::db::Db;
@@ -273,6 +284,7 @@ mod tests {
         let today = db::today(conn);
         let earlier = |day: i64, cost: f64| {
             (
+                ai_costs::id.eq(CostId::new()),
                 ai_costs::day.eq(day),
                 ai_costs::feature.eq(TUTOR),
                 ai_costs::provider.eq("openrouter"),

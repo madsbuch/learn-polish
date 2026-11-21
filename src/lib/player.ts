@@ -14,12 +14,14 @@
 import { useSyncExternalStore } from "react";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 
-import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 
 import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
-import type { CastDevice, CastState, Song, SongTrack } from "./types";
+import { logCause } from "./log";
+import type { CastDevice, CastState, Song, SongTrack, TrackId } from "./types";
+import { onEvent } from "./events";
+import { CastStateSchema } from "./types";
 
 export type RepeatMode = "all" | "one" | "off";
 
@@ -78,6 +80,7 @@ function set(patch: Partial<PlayerState>) {
 }
 
 function fail(cause: unknown) {
+  logCause("player", cause);
   set({ error: errorMessage(cause) });
 }
 
@@ -92,9 +95,9 @@ const isAndroid = (() => {
 // ------------------------------------------------------------- play counts
 
 /** A play counts once per pass, when the learner is half-way through. */
-let counted: { trackId: number } | null = null;
+let counted: { trackId: TrackId } | null = null;
 
-function maybeCount(trackId: number | undefined, position: number, duration: number) {
+function maybeCount(trackId: TrackId | undefined, position: number, duration: number) {
   if (trackId === undefined) return;
   if (position < 5) counted = null; // back at the start: a new pass
   if (counted?.trackId === trackId) return;
@@ -158,25 +161,26 @@ let audio: HTMLAudioElement | null = null;
 
 function element(): HTMLAudioElement {
   if (audio) return audio;
-  audio = new Audio();
-  audio.preload = "auto";
+  const el = new Audio();
+  audio = el;
+  el.preload = "auto";
   // While a speaker plays, the local element's late events must not
   // overwrite the speaker's state (pausing it fires "pause" afterwards).
-  audio.addEventListener("play", () => !state.cast && set({ playing: true }));
-  audio.addEventListener("pause", () => !state.cast && set({ playing: false }));
-  audio.addEventListener("loadedmetadata", () => {
-    if (!state.cast) set({ duration: Number.isFinite(audio!.duration) ? audio!.duration : 0 });
+  el.addEventListener("play", () => !state.cast && set({ playing: true }));
+  el.addEventListener("pause", () => !state.cast && set({ playing: false }));
+  el.addEventListener("loadedmetadata", () => {
+    if (!state.cast) set({ duration: Number.isFinite(el.duration) ? el.duration : 0 });
   });
-  audio.addEventListener("timeupdate", () => {
+  el.addEventListener("timeupdate", () => {
     if (state.cast) return;
-    set({ position: audio!.currentTime });
-    maybeCount(state.queue[state.index]?.track.id, audio!.currentTime, audio!.duration);
+    set({ position: el.currentTime });
+    maybeCount(state.queue[state.index]?.track.id, el.currentTime, el.duration);
   });
-  audio.addEventListener("ended", () => {
+  el.addEventListener("ended", () => {
     if (state.cast) return;
     if (state.repeat === "one") {
-      audio!.currentTime = 0;
-      void audio!.play();
+      el.currentTime = 0;
+      void el.play();
       return;
     }
     const last = state.index >= state.queue.length - 1;
@@ -207,7 +211,7 @@ let castListening = false;
 function listenCast() {
   if (castListening) return;
   castListening = true;
-  void listen<CastState | null>("cast://state", (event) => applyCast(event.payload));
+  void onEvent(CastStateSchema.nullable(), "cast://state", (event) => applyCast(event.payload));
 }
 
 function applyCast(cast: CastState | null) {
@@ -330,12 +334,9 @@ let wantAwake = false;
 let wakeLock: { release: () => Promise<void> } | null = null;
 
 async function requestWebWakeLock() {
-  const nav = navigator as Navigator & {
-    wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
-  };
-  if (!nav.wakeLock || wakeLock) return;
+  if (!("wakeLock" in navigator) || wakeLock) return;
   try {
-    wakeLock = await nav.wakeLock.request("screen");
+    wakeLock = await navigator.wakeLock.request("screen");
   } catch {
     /* not allowed right now (e.g. the page is hidden); retried on return */
   }
@@ -351,13 +352,13 @@ if (typeof document !== "undefined") {
   });
 }
 
-// Who wants the screen on: the lyrics player, an open block… It stays on
+// Who wants the screen on: the lyrics player, an open lesson… It stays on
 // while anyone does, so one letting go doesn't switch it off for another.
 const awakeHolders = new Set<string>();
 
 /**
  * Keeps the screen from going to standby while `holder` wants it — following
- * the lyrics, studying a block with pen and paper. Android sets the window
+ * the lyrics, studying a lesson with pen and paper. Android sets the window
  * flag natively; desktops use the browser's wake lock. Only ever applies
  * while the app is in front.
  */
@@ -484,16 +485,14 @@ export function resumeCast() {
  */
 export function syncLibrary(songs: Song[]) {
   if (state.queue.length === 0) return;
-  const tracks = new Map<number, QueueItem>();
+  const tracks = new Map<TrackId, QueueItem>();
   for (const song of songs) for (const track of song.tracks) tracks.set(track.id, { song, track });
   const current = state.queue[state.index];
   if (current && !tracks.has(current.track.id) && !state.cast) {
     stopPlayback();
     return;
   }
-  const queue = state.queue
-    .map((item) => tracks.get(item.track.id))
-    .filter((item): item is QueueItem => Boolean(item));
+  const queue = state.queue.map((item) => tracks.get(item.track.id)).filter((item): item is QueueItem => Boolean(item));
   set({ queue, index: current ? queue.findIndex((i) => i.track.id === current.track.id) : -1 });
 }
 
@@ -515,8 +514,7 @@ export function libraryQueue(songs: Song[], chosen?: SongTrack): QueueItem[] {
   return songs
     .filter((song) => song.status === "ready")
     .map((song) => {
-      const track =
-        chosen && chosen.songId === song.id ? chosen : preferredTake(song);
+      const track = chosen && chosen.songId === song.id ? chosen : preferredTake(song);
       return track ? { song, track } : null;
     })
     .filter((item): item is QueueItem => item !== null);
@@ -563,8 +561,7 @@ function updateMediaMetadata(item: QueueItem) {
       title: item.song.title,
       artist: item.song.chorusPl,
       album: "Polski",
-      artwork:
-        item.track.imageFileId !== null ? [{ src: fileUrl(item.track.imageFileId), sizes: "512x512" }] : [],
+      artwork: item.track.imageFileId !== null ? [{ src: fileUrl(item.track.imageFileId), sizes: "512x512" }] : [],
     });
   } catch {
     /* MediaMetadata missing in some webviews */

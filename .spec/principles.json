@@ -1,0 +1,103 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Governing principles",
+  "summary": "The owner's rules that settle design questions everywhere in the app.",
+  "status": "accepted",
+  "order": 1,
+  "description": "The owner's rules. When a change is unclear, or two parts of the app disagree, these decide. They change only on the owner's word.",
+  "stories": [
+    {
+      "id": "US-PRIN-1",
+      "as": "the app's owner",
+      "want": "design questions settled by a few rules that hold everywhere",
+      "soThat": "the app stays one thing as it grows",
+      "requirements": [
+        "#PRIN-1",
+        "#PRIN-4",
+        "#PRIN-12"
+      ]
+    },
+    {
+      "id": "US-PRIN-2",
+      "as": "a learner",
+      "want": "what I have earned and made to stay mine",
+      "soThat": "I can trust the app with my effort",
+      "requirements": [
+        "#PRIN-3",
+        "#PRIN-6",
+        "#PRIN-7"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "PRIN-1",
+      "text": "A course is made for what the learner asks for; the app never decides what is worth learning."
+    },
+    {
+      "id": "PRIN-2",
+      "text": "A level (CEFR, A1 to C2) describes material and never limits what can be made or practised: a request at any level is made as asked."
+    },
+    {
+      "id": "PRIN-3",
+      "text": "Nothing the tutor makes waits for approval: keeping it is approving it, deleting it is rejecting it."
+    },
+    {
+      "id": "PRIN-4",
+      "text": "The app does not fill in the learner's existing content by itself at startup. When a new feature needs something existing content lacks, a button asks the tutor to add it, in a conversation the learner can read."
+    },
+    {
+      "id": "PRIN-5",
+      "text": "A course can be finished regardless of time: passing a lesson again the same day always adds mastery points, and no step toward mastery requires waiting for a check-in to come due."
+    },
+    {
+      "id": "PRIN-6",
+      "text": "Mastery is never lost: a mastered lesson stays mastered whatever its later results.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Mastery is never lost through practice: a mastered lesson stays mastered whatever its later results. Only the learner's own reset of progress clears it.",
+          "reason": "Reset progress, the one thing that cleared mastery, was removed.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "PRIN-7",
+      "text": "Closing a mastered course is final: nothing is added to it, changed in it or brought back from it."
+    },
+    {
+      "id": "PRIN-8",
+      "text": "A mastered subject is revisited through a new course from the tutor, never by reopening the old one."
+    },
+    {
+      "id": "PRIN-9",
+      "text": "The day's list is a short way in, not a backlog: what is due never piles up on the home screen."
+    },
+    {
+      "id": "PRIN-10",
+      "text": "A lesson that fits no course goes in the single folder `course.other-title`."
+    },
+    {
+      "id": "PRIN-11",
+      "text": "For each song and podcast, enough is kept to rebuild the exact prompt that made it."
+    },
+    {
+      "id": "PRIN-12",
+      "text": "A lesson type is declared in one place, and the screens and the lesson flow ask the type instead of branching on it."
+    },
+    {
+      "id": "PRIN-13",
+      "text": "Every row that names a thing (a course, a lesson, a word, a song, a memory) has a tagged id that says what it is; screens show the title of the thing instead of the id."
+    }
+  ],
+  "related": [
+    "lessons/mastery#MAST-8",
+    "courses#CRS-12",
+    "data#DATA-6",
+    "lessons#LSN-2",
+    "today#TODAY-1",
+    "progress/insights#LOG-7"
+  ]
+}

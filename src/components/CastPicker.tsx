@@ -11,13 +11,7 @@ import { SpeakerIcon } from "./icons";
  * starts as soon as the sheet opens; an address can be typed for networks
  * that block discovery.
  */
-export function CastPicker({
-  fallbackQueue,
-  onClose,
-}: {
-  fallbackQueue: QueueItem[];
-  onClose: () => void;
-}) {
+export function CastPicker({ fallbackQueue, onClose }: { fallbackQueue: QueueItem[]; onClose: () => void }) {
   const [devices, setDevices] = useState<CastDevice[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -92,8 +86,8 @@ export function CastPicker({
           </Button>
         </Inline>
         <Text variant="caption" tone="faint">
-          The songs stream from this phone, so keep it on the same Wi-Fi. A speaker's IP is in
-          the Sonos app under Settings → System → About My System.
+          The songs stream from this phone, so keep it on the same Wi-Fi. A speaker's IP is in the Sonos app under
+          Settings → System → About My System.
         </Text>
       </Stack>
     </Sheet>

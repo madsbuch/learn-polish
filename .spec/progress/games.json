@@ -1,0 +1,75 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Quick games",
+  "summary": "A minute's play over words already met, outside the daily list, that never moves a schedule.",
+  "status": "accepted",
+  "order": 1,
+  "description": "Play for a spare minute, over what the lessons taught. Matching visible cards is recognition, not recall, so games never count as reviews.",
+  "stories": [
+    {
+      "id": "US-GAME-1",
+      "as": "a learner with a spare minute",
+      "want": "a quick game over words I have met",
+      "soThat": "I practise without starting a lesson or disturbing my schedule",
+      "requirements": [
+        "#GAME-1",
+        "#GAME-4",
+        "#GAME-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "GAME-1",
+      "text": "Match pairs, Flip and match, the dictation game and Say it draw only on words and sentences the learner has already met; Sound pairs uses the app's built-in pairs."
+    },
+    {
+      "id": "GAME-2",
+      "text": "Match pairs uses up to 8 Polish and English pairs against the clock, and Flip and match up to 6 pairs counted in moves; each needs at least 4 words met."
+    },
+    {
+      "id": "GAME-3",
+      "text": "The dictation game and Say it use up to 5 sentences each and need at least 3 met; Sound pairs plays 8 rounds."
+    },
+    {
+      "id": "GAME-4",
+      "text": "A finished game pays `game.xp`, up to `game.xp-per-day` from games a day."
+    },
+    {
+      "id": "GAME-5",
+      "text": "Playing a game writes no review: no word's or lesson's next check-in moves."
+    },
+    {
+      "id": "GAME-6",
+      "text": "Game XP is listed in the day's XP under the game's own name."
+    },
+    {
+      "id": "GAME-7",
+      "text": "The best result of Match pairs (fastest time) and of Flip and match (fewest moves) is kept and synced between devices; the other games keep no record."
+    },
+    {
+      "id": "GAME-8",
+      "text": "A game played after the day's game XP is used up still counts as having practised that day."
+    }
+  ],
+  "values": [
+    {
+      "id": "game.xp",
+      "type": "number",
+      "value": 10,
+      "unit": "XP",
+      "description": "What a finished quick game pays."
+    },
+    {
+      "id": "game.xp-per-day",
+      "type": "number",
+      "value": 30,
+      "unit": "XP",
+      "description": "The most quick games pay in a day."
+    }
+  ],
+  "related": [
+    "progress#PROG-5",
+    "lessons/speaking"
+  ]
+}

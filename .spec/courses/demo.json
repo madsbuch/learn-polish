@@ -1,0 +1,87 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "The demo course",
+  "summary": "First steps: one small course with a lesson of every type, installed once, which then belongs to the learner.",
+  "status": "accepted",
+  "order": 1,
+  "description": "First steps / Pierwsze kroki shows a fresh install every kind of lesson. Earlier versions shipped a larger built-in collection, which upgrading retires.",
+  "stories": [
+    {
+      "id": "US-DEMO-1",
+      "as": "someone who has just installed the app",
+      "want": "a first course with every kind of lesson",
+      "soThat": "I see what the app can do",
+      "requirements": [
+        "#DEMO-1",
+        "#DEMO-9",
+        "#DEMO-10"
+      ]
+    },
+    {
+      "id": "US-DEMO-2",
+      "as": "a learner upgrading from an earlier version",
+      "want": "the old built-in courses I changed to be kept",
+      "soThat": "an upgrade never takes my work",
+      "requirements": [
+        "#DEMO-6",
+        "#DEMO-7"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "DEMO-1",
+      "text": "A fresh install has exactly one course.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A fresh install has exactly one course, First steps, with 12 words, 4 sentences and a 6-line dialogue.",
+          "reason": "Requirement too broad",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DEMO-2",
+      "text": "The demo course is seeded once per install: after the learner deletes it, it does not come back."
+    },
+    {
+      "id": "DEMO-3",
+      "text": "Edits to the demo course are never overwritten by the app."
+    },
+    {
+      "id": "DEMO-4",
+      "text": "The demo course's rows have ids derived from the course and each row's place in it, the same on every device."
+    },
+    {
+      "id": "DEMO-5",
+      "text": "A device that joins another device's data does not seed the demo course into it again."
+    },
+    {
+      "id": "DEMO-6",
+      "text": "Upgrading removes a course from the previous built-in collection only when its content still matches what was shipped; practice progress does not count as a change."
+    },
+    {
+      "id": "DEMO-7",
+      "text": "A formerly built-in course that was edited, extended, shared with another course, or has songs or sources is kept on upgrade."
+    },
+    {
+      "id": "DEMO-8",
+      "text": "The former built-in courses are not part of production builds; they exist only as test fixtures."
+    },
+    {
+      "id": "DEMO-9",
+      "text": "The demo course has a lesson of every lesson type."
+    },
+    {
+      "id": "DEMO-10",
+      "text": "A demo lesson that needs a model or a key says so until one is set, and then works like any other lesson."
+    }
+  ],
+  "related": [
+    "courses",
+    "data/sync#SYNC-11",
+    "data#DATA-6"
+  ]
+}

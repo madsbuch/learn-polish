@@ -1,12 +1,13 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { BlockRow } from "../components/BlockRow";
-import { Logo, SearchIcon } from "../components/icons";
-import { TopicList } from "../components/TopicList";
+import { LessonRow } from "../components/LessonRow";
+import { ChevronIcon, Logo, SearchIcon } from "../components/icons";
+import { CourseList } from "../components/CourseList";
 import {
   Avatar,
   Badge,
   Button,
+  CountUp,
   EmptyState,
   Hero,
   IconButton,
@@ -17,9 +18,12 @@ import {
   Section,
   Stack,
   Text,
+  recall,
+  remember,
+  useStagger,
 } from "../design";
-import { minutes } from "../lib/blocks";
-import type { Block, BlockOverview, Stats, TopicProgress } from "../lib/types";
+import { lessonMinutes, minutes } from "../lib/lessons";
+import type { Lesson, LessonOverview, Stats, CourseProgress } from "../lib/types";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -28,51 +32,110 @@ function greeting(): string {
   return "Dobry wieczór";
 }
 
-/** Rough minutes for a list of blocks, for the summary line. */
-function estimate(blocks: Block[]): number {
-  return blocks.reduce((sum, b) => sum + (b.complexity === "low" ? 2 : b.complexity === "medium" ? 7 : 20), 0);
+/** What "Add levels" asks the tutor. */
+const LEVEL_ASK =
+  "Add a CEFR level to every course that doesn't have one yet: read each (get_course) and set its level with edit_course. Change nothing else.";
+
+/** Rough minutes for a list of lessons, for the summary line. */
+function estimate(lessons: Lesson[]): number {
+  return lessons.reduce((sum, lesson) => sum + lessonMinutes(lesson), 0);
 }
 
 /**
  * Everything to practise, top to bottom: today (with the one thing to do
- * next), what is due for a check-in, and the courses every block lives in.
+ * next), what is due for a check-in, and the courses every lesson lives in.
  */
+/** The Mastered shelf's tally: "7 courses mastered · 86 lessons · 1,240 words for good". */
+function masteredLine(stats: Stats): string {
+  const { courses, lessons, words } = stats.mastered;
+  const n = (count: number, one: string, many: string) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+  return `${n(courses, "course", "courses")} mastered · ${n(lessons, "lesson", "lessons")} · ${n(words, "word", "words")} for good`;
+}
+
+/** A celebration for a finished day, varied by the day. */
+function celebration(day: number): string {
+  const lines = [
+    "Today's lessons are done! 🎉",
+    "Brilliant — all done! 🎉",
+    "That's the day done! 🌟",
+    "Well done! 🎉",
+    "All done for today! 🙌",
+  ];
+  return lines[((day % lines.length) + lines.length) % lines.length];
+}
+
+/**
+ * Today's ring. It fills from where it stood when last seen (empty on the
+ * first visit) to where it stands now, and glows when this visit is the one
+ * that filled it.
+ */
+function GoalRing({ pct, label, children }: { pct: number; label: string; children: ReactNode }) {
+  const [from] = useState(() => recall("today:ring"));
+  useEffect(() => remember("today:ring", pct), [pct]);
+  const filled = pct >= 100 && from !== undefined && from < 100;
+  return (
+    <div
+      className="goal-ring"
+      data-filled={filled || undefined}
+      style={{ "--ring": pct, "--ring-from": from ?? 0 }}
+      role="img"
+      aria-label={label}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function Exercises({
   overview,
   stats,
-  topics,
-  onOpenBlock,
-  onOpenTopic,
+  courses,
+  onOpenLesson,
+  onOpenCourse,
   onOpenTutor,
   onOpenProgress,
+  onOpenGames,
+  onOpenXpDay,
   onOpenSearch,
 }: {
-  overview: BlockOverview;
+  overview: LessonOverview;
   stats: Stats;
-  topics: TopicProgress[];
-  onOpenBlock: (block: Block) => void;
-  onOpenTopic: (progress: TopicProgress) => void;
-  onOpenTutor: () => void;
+  courses: CourseProgress[];
+  onOpenLesson: (lesson: Lesson) => void;
+  onOpenCourse: (progress: CourseProgress) => void;
+  /** Opens the tutor; with `ask`, a new conversation that starts with it. */
+  onOpenTutor: (ask?: string) => void;
   onOpenProgress: () => void;
+  /** Quick games over the words met, outside the daily five. */
+  onOpenGames: () => void;
+  /** What earned a day's XP. */
+  onOpenXpDay: (day: number) => void;
   onOpenSearch: () => void;
 }) {
-  // A done day (the goal reached, or everything due cleared) fills the ring.
-  const goalPct = stats.completedToday
-    ? 100
-    : Math.min(100, Math.round((stats.dayXp / Math.max(1, stats.dailyGoal)) * 100));
-  // Finished courses leave the list for their own shelf.
-  const active = topics.filter((t) => t.status === "active");
-  const finished = topics.filter((t) => t.status !== "active");
-  const [showFinished, setShowFinished] = useState(false);
-  // Today's list first; once it's done, more for a big day; else something new.
-  const keepGoing = overview.due.length === 0 && overview.more.length > 0;
-  const upNext = overview.due[0] ?? overview.more[0] ?? overview.next[0] ?? null;
-  const balance =
-    overview.behindMinutes > 0
-      ? `About ${overview.behindMinutes} min more is due — it waits for another day, or keep going`
-      : overview.aheadMinutes > 0
-        ? `${overview.aheadMinutes} min ahead this week`
-        : null;
+  // Today's lessons fill the ring as they are done.
+  const total = overview.planTotal;
+  const doneCount = overview.planDone;
+  const finished = total > 0 && overview.due.length === 0;
+  const goalPct = finished || stats.completedToday ? 100 : Math.round((doneCount / Math.max(1, total)) * 100);
+  // Courses closed as mastered leave the list for their own shelf; the rest
+  // stay, completed and mastered ones after those still being worked on.
+  // The folder of one-offs (Other lessons) comes last of all, and only
+  // when it has lessons.
+  const open = courses.filter((t) => t.closedAt === null && !t.openEnded);
+  // Courses without a level: the tutor levels them when asked (nothing does
+  // it behind the learner's back — PRINCIPLES.md).
+  const unlevelled = open.filter((t) => !t.course.level).length;
+  const folders = courses.filter((t) => t.openEnded && t.totalLessons > 0);
+  const active = [
+    ...open.filter((t) => t.status === "active"),
+    ...open.filter((t) => t.status !== "active"),
+    ...folders,
+  ];
+  const mastered = courses.filter((t) => t.closedAt !== null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0));
+  const [showMastered, setShowMastered] = useState(false);
+  // The next of today's lessons; when they are done, nothing more.
+  const upNext = overview.due[0] ?? null;
+  const rise = useStagger();
 
   return (
     <Screen
@@ -81,211 +144,232 @@ export function Exercises({
         <header className="screen-header">
           <Logo size={40} />
           <div className="screen-header__titles">
-            <Text variant="eyebrow">{greeting()}</Text>
-            <h1>Exercises</h1>
+            <Text variant="eyebrow">{greeting()} · a little every day</Text>
+            <h1>Polski</h1>
           </div>
           <IconButton icon={<SearchIcon />} label="Search words and sentences" onClick={onOpenSearch} />
         </header>
       }
     >
       <div className="practice-layout">
-        {topics.length > 0 || stats.totalXp > 0 ? <div className="practice-today">
-          {topics.length > 0 ? <Hero>
-            <Stack gap={4}>
-              <Inline gap={4}>
-                <div
-                  className="goal-ring"
-                  style={{ "--value": goalPct } as CSSProperties}
-                  role="img"
-                  aria-label={`${stats.dayXp} of ${stats.dailyGoal} XP today`}
-                >
-                  <div>
-                    <Text variant="title" weight="bold">
-                      {stats.dayXp}
-                    </Text>
-                    <Text variant="caption" tone="dim">
-                      / {stats.dailyGoal} XP
-                    </Text>
-                  </div>
-                </div>
-                <div className="grow">
-                  <Inline gap={2} wrap>
-                    <Text variant="eyebrow">{stats.completedToday ? "Today is done ✓" : "Today"}</Text>
-                    {stats.currentStreak > 0 ? <Badge>🔥 {stats.currentStreak}</Badge> : null}
-                    {stats.streakFreezes > 0 ? (
-                      <Badge>
-                        🧊 {stats.streakFreezes}
-                      </Badge>
-                    ) : null}
+        {courses.length > 0 || stats.totalXp > 0 ? (
+          <div className={rise ? `practice-today ${rise}` : "practice-today"}>
+            {courses.length > 0 ? (
+              <Hero className="practice-today__hero">
+                <Stack gap={4}>
+                  <Inline gap={4}>
+                    <GoalRing pct={goalPct} label={`${doneCount} of ${total} of today's lessons done`}>
+                      <div>
+                        <Text variant="title" weight="bold">
+                          {finished ? <span className="goal-ring__done">🎉</span> : <CountUp value={doneCount} memory="today:done" />}
+                        </Text>
+                        {finished ? null : (
+                          <Text variant="caption" tone="dim">
+                            / {total}
+                          </Text>
+                        )}
+                      </div>
+                    </GoalRing>
+                    <div className="grow">
+                      <Inline gap={2} wrap>
+                        <Text variant="eyebrow">{finished ? "Today is done ✓" : "Today"}</Text>
+                        {stats.currentStreak > 0 ? (
+                          <Badge>
+                            🔥 <CountUp value={stats.currentStreak} memory="streak" />
+                          </Badge>
+                        ) : null}
+                        {stats.streakFreezes > 0 ? <Badge>🧊 {stats.streakFreezes}</Badge> : null}
+                      </Inline>
+                      <Text variant="title" as="h2">
+                        {finished
+                          ? `${celebration(overview.today)}`
+                          : total > 0
+                            ? `${overview.due.length} lesson${overview.due.length === 1 ? "" : "s"} to go today`
+                            : "Nothing for today"}
+                      </Text>
+                      <Text variant="small" tone="dim" as="div">
+                        {finished
+                          ? `All ${total} of today's lessons done. See you tomorrow.`
+                          : total > 0
+                            ? `About ${estimate(overview.due)} min${doneCount > 0 ? ` · ${doneCount} of ${total} done` : ""}`
+                            : "Every lesson is mastered or waiting — ask the tutor for a new course."}
+                      </Text>
+                      <button
+                        className="hero-xp"
+                        onClick={() => onOpenXpDay(overview.today)}
+                        aria-label={`${stats.dayXp} XP today: see what earned it`}
+                      >
+                        <span aria-hidden="true">⭐</span>
+                        <span>
+                          <CountUp value={stats.dayXp} memory="xp:today" /> XP today
+                        </span>
+                        <span className="hero-xp__chevron" aria-hidden="true">
+                          <ChevronIcon />
+                        </span>
+                      </button>
+                    </div>
                   </Inline>
-                  <Text variant="title" as="h2">
-                    {overview.due.length > 0
-                      ? `${overview.due.length} check-in${overview.due.length === 1 ? "" : "s"} today`
-                      : overview.planTotal > 0
-                        ? "Today's list is done"
-                        : "All caught up"}
-                  </Text>
-                  <Text variant="small" tone="dim" as="div">
-                    {overview.due.length > 0
-                      ? `About ${estimate(overview.due)} min${
-                          overview.planDone > 0 ? ` · ${overview.planDone} of ${overview.planTotal} done` : ""
-                        }`
-                      : overview.doneToday > 0
-                        ? `${overview.doneToday} block${overview.doneToday === 1 ? "" : "s"} done today`
-                        : "Start something new below"}
-                  </Text>
-                  {balance ? (
-                    <Text variant="caption" tone="dim" as="div">
-                      {balance}
-                    </Text>
+                  {upNext ? (
+                    <Stack gap={2}>
+                      <Button variant="inverse" size="lg" wide onClick={() => onOpenLesson(upNext)}>
+                        {doneCount > 0 ? "Next lesson" : "Start today's lessons"}
+                      </Button>
+                      <Text variant="caption" tone="dim" align="center" as="div">
+                        {upNext.title}
+                        {upNext.courseTitle ? ` · ${upNext.courseTitle}` : ""} · {minutes(upNext)}
+                      </Text>
+                    </Stack>
                   ) : null}
-                </div>
-              </Inline>
-              {upNext ? (
-                <Stack gap={2}>
-                  <Button variant="inverse" size="lg" block onClick={() => onOpenBlock(upNext)}>
-                    {overview.due.length > 0
-                      ? "Start the first check-in"
-                      : keepGoing
-                        ? "Keep going"
-                        : "Start something new"}
-                  </Button>
-                  <Text variant="caption" tone="dim" align="center" as="div">
-                    {upNext.title}
-                    {upNext.topicTitle ? ` · ${upNext.topicTitle}` : ""} · {minutes(upNext.complexity)}
-                  </Text>
                 </Stack>
-              ) : null}
-            </Stack>
-          </Hero> : null}
+              </Hero>
+            ) : null}
 
-          {overview.due.length > 0 ? (
-            <Section
-              title="Today's check-ins"
-              info={
-                <>
-                  <p>
-                    The blocks most at risk of being forgotten, as many as fit today. Clear these and
-                    the day counts for your streak.
-                  </p>
-                  <p>
-                    How much goes on the list follows what you usually do, never less than the quiet-day
-                    minimum in Settings. Anything else that is due waits for another day without counting
-                    as missed.
-                  </p>
-                </>
-              }
-            >
-              <List>
-                {overview.due.map((block) => (
-                  <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
-                ))}
-              </List>
-            </Section>
-          ) : null}
+            {overview.due.length > 0 ? (
+              <div className="practice-today__lessons">
+                <Section
+                  title="Today's lessons"
+                  info={
+                    <>
+                      <p>
+                        The most important lessons for today: one that slipped last time comes first, then the ones
+                        whose time has come, then — while there is room — up to two new ones. Do these and the day is
+                        done.
+                      </p>
+                      <p>
+                        Want more? Open a course: its lessons are listed by what matters most. A mastered lesson never
+                        comes back, and a mastered course moves to Mastered.
+                      </p>
+                    </>
+                  }
+                >
+                  <List stagger>
+                    {overview.due.map((lesson) => (
+                      <LessonRow
+                        key={lesson.id}
+                        lesson={lesson}
+                        today={overview.today}
+                        showCourse
+                        onOpen={onOpenLesson}
+                      />
+                    ))}
+                  </List>
+                </Section>
+              </div>
+            ) : null}
 
-          {keepGoing ? (
-            <Section
-              title="Keep going"
-              info={
-                <p>
-                  Today's list is done. These are next: the rest of what is due, then what comes due
-                  soonest. Doing one early is a real check-in — it moves out from the time that has
-                  passed, and comes off the day it was due.
-                </p>
-              }
-            >
-              <List>
-                {overview.more.map((block) => (
-                  <BlockRow key={block.id} block={block} today={overview.today} showTopic onOpen={onOpenBlock} />
-                ))}
-              </List>
-            </Section>
-          ) : null}
-
-          {topics.length > 0 || stats.totalXp > 0 ? <List>
-            <ListItem
-              leading={<Avatar>📈</Avatar>}
-              title="Your progress"
-              subtitle={`${stats.wordsSeen} words · level ${stats.level}`}
-              trailing={
-                <Inline gap={1}>
-                  <Badge tone="crimson">🔥 {stats.currentStreak}</Badge>
-                </Inline>
-              }
-              chevron
-              onClick={onOpenProgress}
-            />
-          </List> : null}
-
-        </div> : null}
+            {courses.length > 0 || stats.totalXp > 0 ? (
+              <div className="practice-today__stats">
+                <List>
+                  <ListItem
+                    leading={<Avatar>📈</Avatar>}
+                    title="Your progress"
+                    subtitle={
+                      <>
+                        <CountUp value={stats.wordsSeen} memory="words:seen" /> words · level{" "}
+                        <CountUp value={stats.level} memory="level" />
+                      </>
+                    }
+                    trailing={
+                      <Inline gap={1}>
+                        <Badge tone="crimson">
+                          🔥 <CountUp value={stats.currentStreak} memory="streak" />
+                        </Badge>
+                      </Inline>
+                    }
+                    chevron
+                    onClick={onOpenProgress}
+                  />
+                  {stats.wordsSeen >= 4 ? (
+                    <ListItem
+                      leading={<Avatar>🃏</Avatar>}
+                      title="Quick games"
+                      subtitle="Match pairs, memory cards, dictation and sound pairs"
+                      chevron
+                      onClick={onOpenGames}
+                    />
+                  ) : null}
+                </List>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="practice-courses">
           <Section
             title="Courses"
             info={
               <p>
-                A course is a folder of blocks on one theme: drills on its words, sentences and
-                dialogue, and lessons with a check-in. Ask the tutor for a new course on anything, or to
-                add lessons and drills to one you have.
+                A course is a folder of lessons on one theme: drills on its words, sentences and dialogue, and
+                conversations with the examiner. Ask the tutor for a new course on anything, or to add lessons and
+                drills to one you have.
               </p>
             }
           >
-            {topics.length === 0 ? (
+            {courses.length === 0 ? (
               <List>
                 <EmptyState
                   icon="✨"
                   title="Build your first Polish course"
                   action={
-                    <Button variant="primary" size="sm" onClick={onOpenTutor}>
+                    <Button variant="primary" size="sm" onClick={() => onOpenTutor()}>
                       Create a course
                     </Button>
                   }
                 >
-                  Tell the tutor what you want to learn — everyday conversation, life in Poland, or a topic you enjoy.
+                  Tell the tutor what you want to learn — everyday conversation, life in Poland, or a course you enjoy.
                 </EmptyState>
               </List>
             ) : (
               <Stack gap={3}>
-                <TopicList entries={active} onOpen={onOpenTopic} />
-                <List>
-                  <ListItem
-                    leading={<Avatar>✨</Avatar>}
-                    title="New course or lesson"
-                    subtitle="Ask the tutor for anything — a theme, a conjugation, a grammar point"
-                    onClick={onOpenTutor}
-                  />
-                </List>
+                {unlevelled > 0 ? (
+                  <div className="practice-courses__levels">
+                    <Button variant="primary" wide onClick={() => onOpenTutor(LEVEL_ASK)}>
+                      {`✨ Add levels to ${unlevelled === 1 ? "1 course" : `${unlevelled} courses`}`}
+                    </Button>
+                  </div>
+                ) : null}
+                <CourseList entries={active} onOpen={onOpenCourse} />
+                <div className="practice-courses__new">
+                  <List>
+                    <ListItem
+                      leading={<Avatar>✨</Avatar>}
+                      title="New course or lesson"
+                      subtitle="Ask the tutor for anything — a theme, a conjugation, a grammar point"
+                      onClick={() => onOpenTutor()}
+                    />
+                  </List>
+                </div>
               </Stack>
             )}
           </Section>
 
-          {finished.length > 0 ? (
+          {mastered.length > 0 ? (
             <Section
-              title="Completed"
+              title="Mastered"
               info={
                 <p>
-                  Courses where every block is passed. Their blocks still come back in today's
-                  check-ins now and then; keep them up and a course becomes mastered 🏆.
+                  Courses you mastered and closed: kept here as trophies, readable any time. Their lessons no longer
+                  come back in your check-ins. To revisit a theme, ask the tutor for a new course.
                 </p>
               }
             >
-              {showFinished ? (
-                <TopicList entries={finished} onOpen={onOpenTopic} />
-              ) : (
-                <List>
-                  <ListItem
-                    leading={<Avatar>✓</Avatar>}
-                    title={`${finished.length} completed course${finished.length === 1 ? "" : "s"}`}
-                    subtitle={
-                      finished.filter((t) => t.status === "mastered").length > 0
-                        ? `${finished.filter((t) => t.status === "mastered").length} mastered 🏆`
-                        : "Tap to see them"
-                    }
-                    onClick={() => setShowFinished(true)}
-                  />
-                </List>
-              )}
+              <Stack gap={3}>
+                <Text variant="small" tone="dim" as="div">
+                  {masteredLine(stats)}
+                </Text>
+                {showMastered ? (
+                  <CourseList entries={mastered} onOpen={onOpenCourse} />
+                ) : (
+                  <List>
+                    <ListItem
+                      leading={<Avatar>🏆</Avatar>}
+                      title={`${mastered.length} mastered course${mastered.length === 1 ? "" : "s"}`}
+                      subtitle="Tap to see them"
+                      onClick={() => setShowMastered(true)}
+                    />
+                  </List>
+                )}
+              </Stack>
             </Section>
           ) : null}
         </div>

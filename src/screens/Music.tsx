@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { onSignal } from "../lib/events";
 
 import { Cover } from "../components/Cover";
 import {
@@ -28,8 +28,10 @@ import {
   Section,
   Segmented,
   Spinner,
+  SplitView,
   Stack,
   Text,
+  useWideLayout,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
@@ -43,8 +45,12 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { Playlist, Settings, Song, TopicProgress } from "../lib/types";
+import type { LessonId, Playlist, PlaylistId, Settings, Song, SongId, TrackId, WikiSource } from "../lib/types";
+import { EpisodeSources, PodcastSound } from "../components/Podcast";
+import { ArticleReader } from "../components/Sources";
+import { PodcastComposer } from "./PodcastComposer";
 import { SongComposer } from "./SongComposer";
+import { useSyncReload } from "../lib/sync";
 
 /**
  * The music library: songs and playlists. Playing happens in the player
@@ -53,15 +59,28 @@ import { SongComposer } from "./SongComposer";
  */
 type View =
   | { kind: "library" }
-  | { kind: "song"; songId: number }
-  | { kind: "playlist"; playlistId: number }
-  | { kind: "compose" };
+  | { kind: "song"; songId: SongId }
+  | { kind: "playlist"; playlistId: PlaylistId }
+  | { kind: "compose"; what: "song" | "podcast" }
+  | { kind: "article"; songId: SongId; source: WikiSource };
 
 /** Every downloaded take, in library order. */
 function allTakes(songs: Song[]): QueueItem[] {
   return songs
     .filter((song) => song.status === "ready")
     .flatMap((song) => song.tracks.map((track) => ({ song, track })));
+}
+
+/** What a song or episode still being made is doing. */
+function making(song: Song): string {
+  if (song.kind !== "podcast") return "Suno is singing… (2–4 min)";
+  if (song.sections.length > 0) return "Recording…";
+  return song.origin?.news ? "Reading today's news…" : "Writing the script…";
+}
+
+/** A row's subtitle: a song's chorus, or that it is a podcast. */
+function describe(song: Song): string {
+  return song.kind === "podcast" ? `Podcast · ${song.chorusPl}` : `„${song.chorusPl}”`;
 }
 
 function plural(n: number, word: string): string {
@@ -78,47 +97,77 @@ function NowPlaying({ onOpen }: { onOpen: () => void }) {
   const item = currentItem(player);
   if (!item) return null;
   return (
-    <List>
-      <ListItem
-        leading={<Cover fileId={item.track.imageFileId} size={44} />}
-        title={item.song.title}
-        subtitle={player.cast ? `Now playing on ${player.cast.device.name}` : "Now playing"}
-        label="Open the player"
-        onClick={onOpen}
-        trailing={
-          <IconButton
-            icon={player.playing ? <PlayerIcon.pause size={20} /> : <PlayerIcon.play size={20} />}
-            label={player.playing ? "Pause" : "Play"}
-            onClick={toggle}
-          />
-        }
-      />
-    </List>
+    <div className="now-playing">
+      <List>
+        <ListItem
+          leading={<Cover fileId={item.track.imageFileId} size={44} />}
+          title={item.song.title}
+          subtitle={player.cast ? `Now playing on ${player.cast.device.name}` : "Now playing"}
+          label="Open the player"
+          onClick={onOpen}
+          trailing={
+            <IconButton
+              icon={
+                <span className="icon-swap" key={player.playing ? "pause" : "play"}>
+                  {player.playing ? <PlayerIcon.pause size={20} /> : <PlayerIcon.play size={20} />}
+                </span>
+              }
+              label={player.playing ? "Pause" : "Play"}
+              onClick={toggle}
+            />
+          }
+        />
+      </List>
+    </div>
   );
+}
+
+/** The library as last loaded, kept while the app runs (see Music). */
+let cachedSongs: Song[] | null = null;
+let cachedPlaylists: Playlist[] | null = null;
+
+/**
+ * Loads the library in the background, a moment after the app starts, so
+ * even the first visit to Music finds it ready.
+ */
+export function preloadLibrary(): void {
+  if (cachedSongs !== null) return;
+  void api
+    .songsList()
+    .then((list) => {
+      if (cachedSongs === null) cachedSongs = list;
+    })
+    .catch(() => {});
+  void api
+    .playlistsList()
+    .then((list) => {
+      if (cachedPlaylists === null) cachedPlaylists = list;
+    })
+    .catch(() => {});
 }
 
 export function Music({
   settings,
-  topics,
   openSongId,
   onOpenSettings,
   onSongOpened,
-  onOpenBlock,
+  onOpenLesson,
   onOpenPlayer,
 }: {
   settings: Settings;
-  topics: TopicProgress[];
   /** Set when the player asks to show a song's page. */
-  openSongId: number | null;
+  openSongId: SongId | null;
   onOpenSettings: () => void;
   onSongOpened: () => void;
-  /** Opens a block's page (a song's listening block). */
-  onOpenBlock: (blockId: number) => void;
+  /** Opens a lesson's page (a song's listening lesson). */
+  onOpenLesson: (lessonId: LessonId) => void;
   /** Opens the full player (lyrics that follow the music). */
   onOpenPlayer: () => void;
 }) {
-  const [songs, setSongs] = useState<Song[] | null>(null);
-  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  // The last library seen shows at once; a fresh one replaces it when it
+  // arrives, so opening the tab never waits.
+  const [songs, setSongs] = useState<Song[] | null>(cachedSongs);
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(cachedPlaylists);
   const [tab, setTab] = useState<"songs" | "playlists">("songs");
   const [view, setView] = useState<View>({ kind: "library" });
   const [selecting, setSelecting] = useState(false);
@@ -128,18 +177,27 @@ export function Music({
     api
       .songsList()
       .then((list) => {
+        cachedSongs = list;
         setSongs(list);
         syncLibrary(list);
       })
       .catch((cause) => setError(errorMessage(cause)));
-    api.playlistsList().then(setPlaylists).catch((cause) => setError(errorMessage(cause)));
+    api
+      .playlistsList()
+      .then((list) => {
+        cachedPlaylists = list;
+        setPlaylists(list);
+      })
+      .catch((cause) => setError(errorMessage(cause)));
   }, []);
 
   useEffect(refresh, [refresh]);
+  // Songs and playlists from another device (sync).
+  useSyncReload(refresh);
 
   // Songs finish in the background; the backend says when.
   useEffect(() => {
-    const unlisten = listen("songs://changed", refresh);
+    const unlisten = onSignal("songs://changed", refresh);
     return () => {
       void unlisten.then((off) => off());
     };
@@ -153,7 +211,7 @@ export function Music({
   }, [openSongId, onSongOpened]);
 
   const tracks = useMemo(() => {
-    const map = new Map<number, QueueItem>();
+    const map = new Map<TrackId, QueueItem>();
     for (const item of allTakes(songs ?? [])) map.set(item.track.id, item);
     return map;
   }, [songs]);
@@ -167,30 +225,41 @@ export function Music({
     setError(null);
   };
 
+  // On a wide window the library stays on the left and what is open in it
+  // shows beside it, without a way back (the library is in view).
+  const wide = useWideLayout();
+  const onBack = wide ? undefined : back;
+
+  let detail: ReactNode = null;
   if (view.kind === "compose") {
-    return (
-      <SongComposer
-        settings={settings}
-        topics={topics}
-        onCancel={back}
-        onCreated={() => {
-          back();
-          refresh();
-        }}
-      />
-    );
+    const created = () => {
+      back();
+      refresh();
+    };
+    detail =
+      view.what === "podcast" ? (
+        <PodcastComposer
+          settings={settings}
+          onCancel={back}
+          onCreated={created}
+          onSwitch={() => setView({ kind: "compose", what: "song" })}
+        />
+      ) : (
+        <SongComposer
+          settings={settings}
+          onCancel={back}
+          onCreated={created}
+          onSwitch={() => setView({ kind: "compose", what: "podcast" })}
+        />
+      );
   }
 
-  const feedback = (
-    <>
-      {error ? <Banner tone="error">{error}</Banner> : null}
-    </>
-  );
+  const feedback = <>{error ? <Banner tone="error">{error}</Banner> : null}</>;
 
   if (view.kind === "song") {
     const song = songs?.find((entry) => entry.id === view.songId);
-    return (
-      <Screen title="Song" onBack={back}>
+    detail = (
+      <Screen title={song?.kind === "podcast" ? "Podcast" : "Song"} onBack={onBack}>
         {feedback}
         {song ? (
           <SongPage
@@ -204,11 +273,12 @@ export function Music({
             onMessage={message}
             onPractise={async () => {
               try {
-                onOpenBlock((await api.blockForSong(song.id)).id);
+                onOpenLesson((await api.lessonForSong(song.id)).id);
               } catch (cause) {
                 toast(errorMessage(cause), "error");
               }
             }}
+            onRead={(source) => setView({ kind: "article", songId: song.id, source })}
           />
         ) : songs === null ? (
           <Spinner />
@@ -219,19 +289,22 @@ export function Music({
     );
   }
 
+  if (view.kind === "article") {
+    const songId = view.songId;
+    detail = <ArticleReader source={view.source} onBack={() => setView({ kind: "song", songId })} />;
+  }
+
   if (view.kind === "playlist") {
     const playlist = playlists?.find((entry) => entry.id === view.playlistId);
-    return (
-      <Screen title={playlist?.name ?? "Playlist"} onBack={back}>
+    detail = (
+      <Screen title={playlist?.name ?? "Playlist"} onBack={onBack}>
         {feedback}
         {playlist ? (
           <PlaylistPage
             playlist={playlist}
             tracks={tracks}
             onChanged={(next) =>
-              setPlaylists((current) =>
-                (current ?? []).map((entry) => (entry.id === next.id ? next : entry)),
-              )
+              setPlaylists((current) => (current ?? []).map((entry) => (entry.id === next.id ? next : entry)))
             }
             onDeleted={() => {
               back();
@@ -248,21 +321,26 @@ export function Music({
     );
   }
 
-  const ready = settings.hasKieKey && settings.hasApiKey;
+  // Songs need both keys; podcasts only OpenRouter's.
+  const ready = settings.hasApiKey;
+  if (detail !== null && !wide) return detail;
 
-  return (
+  const library = (
     <Screen
       title="Music"
       info={
         <>
           <p>
-            Short lines in English, then straight into Polish — and a Polish chorus that gets
-            stuck in your head. Play them on repeat.
+            Short lines in English, then straight into Polish — and a Polish chorus that gets stuck in your head. Play
+            them on repeat.
           </p>
           <p>
-            Make one with <b>+</b>: pick a theme and a chorus sentence, the songwriter drafts the
-            lyrics, and Suno sings two takes. Put the ones you like into playlists, and save or
-            share any take as an MP3.
+            Make one with <b>+</b>: pick a theme and a chorus sentence, the songwriter drafts the lyrics, and Suno sings
+            two takes. Put the ones you like into playlists, and save or share any take as an MP3.
+          </p>
+          <p>
+            Or make a <b>podcast</b>: a short spoken episode on a subject you like, written from a Wikipedia article.
+            Every sentence is said in English, then in Polish.
           </p>
         </>
       }
@@ -270,9 +348,9 @@ export function Music({
         <IconButton
           variant="primary"
           icon={<PlusIcon />}
-          label="New song"
+          label="New song or podcast"
           disabled={!ready}
-          onClick={() => setView({ kind: "compose" })}
+          onClick={() => setView({ kind: "compose", what: "song" })}
         />
       }
     >
@@ -280,13 +358,13 @@ export function Music({
 
       <NowPlaying onOpen={onOpenPlayer} />
 
-      {!ready ? (
+      {!ready || !settings.hasKieKey ? (
         <Banner tone="info">
           {!settings.hasKieKey && !settings.hasApiKey
-            ? "Making songs needs kie.ai and OpenRouter keys. "
+            ? "Making songs needs kie.ai and OpenRouter keys; podcasts need the OpenRouter key. "
             : !settings.hasKieKey
-              ? "Making songs needs a kie.ai key. "
-              : "Making songs needs an OpenRouter key. "}
+              ? "Making songs needs a kie.ai key; podcasts work without one. "
+              : "Making songs and podcasts needs an OpenRouter key. "}
           <Button variant="plain" onClick={onOpenSettings}>
             Open Settings
           </Button>
@@ -311,7 +389,7 @@ export function Music({
           selecting={selecting}
           onSelecting={setSelecting}
           onOpen={(songId) => setView({ kind: "song", songId })}
-          onCompose={ready ? () => setView({ kind: "compose" }) : undefined}
+          onCompose={ready ? () => setView({ kind: "compose", what: "song" }) : undefined}
           onDeleted={refresh}
           onError={(text) => toast(text, "error")}
         />
@@ -319,6 +397,7 @@ export function Music({
         <PlaylistList
           playlists={playlists}
           tracks={tracks}
+          current={wide && view.kind === "playlist" ? view.playlistId : undefined}
           onOpen={(playlistId) => setView({ kind: "playlist", playlistId })}
           onCreated={(playlist) => {
             setPlaylists((current) => [playlist, ...(current ?? [])]);
@@ -329,6 +408,21 @@ export function Music({
       )}
     </Screen>
   );
+  if (!wide) return library;
+  return (
+    <SplitView
+      list={library}
+      detail={
+        detail ?? (
+          <Screen>
+            <EmptyState icon="🎵" title="Pick a song or a playlist">
+              It opens here, beside your library{ready ? " — or make a new song or podcast with +" : ""}.
+            </EmptyState>
+          </Screen>
+        )
+      }
+    />
+  );
 }
 
 /** Play and Shuffle for a list of takes. */
@@ -337,13 +431,13 @@ function PlayButtons({ queue }: { queue: QueueItem[] }) {
   return (
     <Inline gap={2}>
       <div className="grow">
-        <Button variant="primary" block icon={<PlayerIcon.play size={16} />} onClick={() => playQueue(queue, 0)}>
+        <Button variant="primary" wide icon={<PlayerIcon.play size={16} />} onClick={() => playQueue(queue, 0)}>
           Play
         </Button>
       </div>
       <div className="grow">
         <Button
-          block
+          wide
           icon={<PlayerIcon.shuffle />}
           onClick={() => playQueue(queue, Math.floor(Math.random() * queue.length), { shuffle: true })}
         >
@@ -370,7 +464,7 @@ function TrackCover({ item, size = 48 }: { item: QueueItem; size?: number }) {
   );
 }
 
-function useIsCurrent(trackId: number): boolean {
+function useIsCurrent(trackId: TrackId): boolean {
   const player = usePlayer();
   return currentItem(player)?.track.id === trackId;
 }
@@ -416,12 +510,12 @@ function SongList({
   songs: Song[] | null;
   selecting: boolean;
   onSelecting: (selecting: boolean) => void;
-  onOpen: (songId: number) => void;
+  onOpen: (songId: SongId) => void;
   onCompose?: () => void;
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<SongId>>(new Set());
 
   if (songs === null) return <Spinner />;
   if (songs.length === 0) {
@@ -446,7 +540,7 @@ function SongList({
 
   const queue = libraryQueue(songs);
 
-  function pick(songId: number) {
+  function pick(songId: SongId) {
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(songId)) next.delete(songId);
@@ -489,7 +583,7 @@ function SongList({
           )
         }
       >
-        <List>
+        <List stagger>
           {songs.map((song) => {
             if (selecting) {
               const checked = selected.has(song.id);
@@ -505,7 +599,7 @@ function SongList({
                     </Inline>
                   }
                   title={song.title}
-                  subtitle={`„${song.chorusPl}”`}
+                  subtitle={describe(song)}
                   selected={checked}
                   chevron={false}
                   onClick={() => pick(song.id)}
@@ -520,10 +614,8 @@ function SongList({
                   key={song.id}
                   leading={<Cover fileId={null} size={48} />}
                   title={song.title}
-                  subtitle={song.status === "generating" ? "Suno is singing… (2–4 min)" : "Could not be made"}
-                  trailing={
-                    song.status === "generating" ? <Spinner /> : <Badge tone="crimson">Failed</Badge>
-                  }
+                  subtitle={song.status === "generating" ? making(song) : "Could not be made"}
+                  trailing={song.status === "generating" ? <Spinner /> : <Badge tone="crimson">Failed</Badge>}
                   onClick={() => onOpen(song.id)}
                 />
               );
@@ -533,7 +625,7 @@ function SongList({
               <TrackRow
                 key={song.id}
                 item={item}
-                subtitle={`„${song.chorusPl}” · ${formatTime(item.track.duration)}`}
+                subtitle={`${describe(song)} · ${formatTime(item.track.duration)}`}
                 onPlay={() => playQueue(queue, index)}
                 trailing={
                   <IconButton icon={<MoreIcon />} label={`More about ${song.title}`} onClick={() => onOpen(song.id)} />
@@ -550,7 +642,7 @@ function SongList({
             <ConfirmButton
               label={`Delete ${plural(selected.size, "song")}`}
               confirmLabel="Delete"
-              block
+              wide
               onConfirm={async () => {
                 try {
                   for (const songId of selected) await api.songDelete(songId);
@@ -576,6 +668,7 @@ function SongPage({
   onDeleted,
   onMessage,
   onPractise,
+  onRead,
 }: {
   song: Song;
   /** Every song, so a take plays on into the next song — not the other take. */
@@ -583,15 +676,18 @@ function SongPage({
   onChanged: () => void;
   onDeleted: () => void;
   onMessage: (message: string, isError?: boolean) => void;
-  /** Opens (or makes) the song's listening block. */
+  /** Opens (or makes) the song's listening lesson. */
   onPractise: () => void;
+  /** Opens one of an episode's articles in the reader. */
+  onRead: (source: WikiSource) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [adding, setAdding] = useState<number | null>(null);
+  const [adding, setAdding] = useState<TrackId | null>(null);
   const exporter = useTrackExport(onMessage);
   const player = usePlayer();
   const playingId = currentItem(player)?.track.id ?? null;
   const takes: QueueItem[] = song.tracks.map((track) => ({ song, track }));
+  const podcast = song.kind === "podcast";
 
   async function act(action: () => Promise<unknown>, after: () => void = onChanged) {
     setBusy(true);
@@ -622,7 +718,7 @@ function SongPage({
         <Stack gap={1} className="grow">
           <h2>{song.title}</h2>
           <Text weight="bold" tone="polish" selectable>
-            „{song.chorusPl}”
+            {podcast ? song.chorusPl : `„${song.chorusPl}”`}
           </Text>
           <Text variant="small" tone="dim">
             {song.chorusEn}
@@ -633,17 +729,28 @@ function SongPage({
       {song.status === "failed" ? (
         <Stack gap={3}>
           {song.error ? <Banner tone="error">{song.error}</Banner> : null}
-          <Button variant="primary" block loading={busy} onClick={() => act(() => api.songRetry(song.id))}>
+          <Button
+            variant="primary"
+            wide
+            loading={busy}
+            onClick={() => act(() => (podcast ? api.podcastRerender(song.id) : api.songRetry(song.id)))}
+          >
             Try again
           </Button>
         </Stack>
       ) : null}
       {song.status === "generating" ? (
-        <Banner tone="info">Suno is singing — this usually takes 2–4 minutes.</Banner>
+        <Banner tone="info">
+          {podcast
+            ? song.sections.length === 0
+              ? "Writing the script — then each sentence is read aloud. A few minutes; you can leave meanwhile."
+              : "Recording — each sentence is read aloud and joined. You can leave meanwhile."
+            : "Suno is singing — this usually takes 2–4 minutes."}
+        </Banner>
       ) : null}
 
       {takes.length > 0 ? (
-        <Section title="Takes">
+        <Section title={podcast ? "Episode" : "Takes"}>
           <List>
             {takes.map((item) => {
               const current = item.track.id === playingId;
@@ -656,11 +763,17 @@ function SongPage({
                       variant="primary"
                       size="sm"
                       icon={current && player.playing ? <PlayerIcon.pause size={16} /> : <PlayerIcon.play size={16} />}
-                      label={current && player.playing ? "Pause" : `Play take ${item.track.ord + 1}`}
+                      label={
+                        current && player.playing
+                          ? "Pause"
+                          : podcast
+                            ? "Play the episode"
+                            : `Play take ${item.track.ord + 1}`
+                      }
                       onClick={() => play(item)}
                     />
                   }
-                  title={`Take ${item.track.ord + 1}`}
+                  title={podcast ? "Play the episode" : `Take ${item.track.ord + 1}`}
                   subtitle={`${formatTime(item.track.duration)} · played ${item.track.playCount}×`}
                   onClick={() => play(item)}
                   chevron={false}
@@ -682,7 +795,7 @@ function SongPage({
                       ) : null}
                       <IconButton
                         icon={<PlayerIcon.download />}
-                        label="Save MP3"
+                        label={podcast ? "Save audio" : "Save MP3"}
                         loading={exporter.busy === "save"}
                         disabled={exporter.busy !== null}
                         onClick={() => exporter.save(item)}
@@ -702,18 +815,28 @@ function SongPage({
             <ListItem
               leading={<SpeakerIcon />}
               title="Listen and answer questions"
-              subtitle="A listening block: the examiner asks about what you heard"
+              subtitle="A listening lesson: the examiner asks about what you heard"
               onClick={onPractise}
             />
           </List>
         </Section>
       ) : null}
 
-      <Section title="Lyrics">
-        <Lyrics sections={song.sections} />
-        <Text variant="caption" tone="faint" clamp={2}>
-          Style: {song.style}
-        </Text>
+      {podcast ? <PodcastSound song={song} onChanged={onChanged} /> : null}
+
+      {podcast ? <EpisodeSources song={song} onRead={onRead} /> : null}
+
+      <Section title={podcast ? "Script" : "Lyrics"}>
+        <Lyrics sections={song.sections} parts={podcast} />
+        {podcast ? (
+          <Text variant="caption" tone="faint" clamp={2}>
+            {song.chorusEn}
+          </Text>
+        ) : (
+          <Text variant="caption" tone="faint" clamp={2}>
+            Style: {song.style}
+          </Text>
+        )}
       </Section>
 
       <Section title="Manage">
@@ -725,16 +848,20 @@ function SongPage({
                   label={`Remove take ${item.track.ord + 1}`}
                   confirmLabel="Remove"
                   question={`Remove take ${item.track.ord + 1}? The other take stays.`}
-                  block
+                  wide
                   onConfirm={() => act(() => api.songTrackDelete(item.track.id))}
                 />
               ))
             : null}
           <ConfirmButton
-            label="Delete song"
+            label={podcast ? "Delete episode" : "Delete song"}
             confirmLabel="Delete"
-            question="Delete the song and all its takes? It also leaves your playlists."
-            block
+            question={
+              podcast
+                ? "Delete the episode and its audio? It also leaves your playlists, and its listening lesson goes too."
+                : "Delete the song and all its takes? It also leaves your playlists, and its listening lesson goes too."
+            }
+            wide
             onConfirm={() => act(() => api.songDelete(song.id), onDeleted)}
           />
         </Stack>
@@ -749,24 +876,25 @@ function SongPage({
 
 // ------------------------------------------------------------------ playlists
 
-function playlistItems(playlist: Playlist, tracks: Map<number, QueueItem>) {
+function playlistItems(playlist: Playlist, tracks: Map<TrackId, QueueItem>) {
   return playlist.entries
     .map((entry) => ({ entry, item: tracks.get(entry.trackId) }))
-    .filter((row): row is { entry: (typeof playlist.entries)[number]; item: QueueItem } =>
-      Boolean(row.item),
-    );
+    .filter((row): row is { entry: (typeof playlist.entries)[number]; item: QueueItem } => Boolean(row.item));
 }
 
 function PlaylistList({
   playlists,
   tracks,
+  current,
   onOpen,
   onCreated,
   onError,
 }: {
   playlists: Playlist[] | null;
-  tracks: Map<number, QueueItem>;
-  onOpen: (playlistId: number) => void;
+  tracks: Map<TrackId, QueueItem>;
+  /** The playlist open beside the list (wide windows). */
+  current?: PlaylistId;
+  onOpen: (playlistId: PlaylistId) => void;
   onCreated: (playlist: Playlist) => void;
   onError: (message: string) => void;
 }) {
@@ -818,6 +946,7 @@ function PlaylistList({
                 leading={<Cover fileId={items[0]?.item.track.imageFileId ?? null} size={48} />}
                 title={playlist.name}
                 subtitle={`${plural(items.length, "song")}${seconds > 0 ? ` · ${formatTime(seconds)}` : ""}`}
+                selected={playlist.id === current}
                 onClick={() => onOpen(playlist.id)}
               />
             );
@@ -836,7 +965,7 @@ function PlaylistPage({
   onError,
 }: {
   playlist: Playlist;
-  tracks: Map<number, QueueItem>;
+  tracks: Map<TrackId, QueueItem>;
   onChanged: (playlist: Playlist) => void;
   onDeleted: () => void;
   onError: (message: string) => void;
@@ -920,7 +1049,7 @@ function PlaylistPage({
               </Button>
             </div>
           ) : (
-            <Button block onClick={() => setEditing(true)}>
+            <Button wide onClick={() => setEditing(true)}>
               Rename playlist
             </Button>
           )}
@@ -928,7 +1057,7 @@ function PlaylistPage({
             label="Delete playlist"
             confirmLabel="Delete"
             question="Delete this playlist? Its songs stay in your library."
-            block
+            wide
             onConfirm={async () => {
               try {
                 await api.playlistDelete(playlist.id);
@@ -943,4 +1072,3 @@ function PlaylistPage({
     </>
   );
 }
-

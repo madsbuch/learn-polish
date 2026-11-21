@@ -1,0 +1,126 @@
+import { useCallback, useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+
+import { Button, Inline, Section, Stack, Text } from "../design";
+import { api, errorMessage } from "../lib/api";
+import { idsIn, resolveIds, withTitles } from "../lib/ids";
+import { toast } from "../lib/toast";
+import { buildLabel } from "../build-info";
+import type { DiagnosticEntry } from "../lib/types";
+
+/**
+ * The entries as plain text, to paste into a message. Each id keeps its
+ * title beside it ("ls_01jd… (Pierwsze spotkanie)"), so the log reads on its
+ * own and the id is still there to look up.
+ */
+function asText(entries: DiagnosticEntry[]): string {
+  return entries
+    .map(
+      (e) =>
+        `${new Date(e.at * 1000).toISOString()} [${e.kind}] ${withTitles(e.message)}`,
+    )
+    .join("\n");
+}
+
+/** Copies text, with a fallback for webviews without the clipboard API. */
+export async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    if (!ok) throw new Error("Copying is not allowed here.");
+  }
+}
+
+/**
+ * Settings → Your data → Diagnostics: what the app noted about itself — how long slow
+ * screens took, model replies it could not read, background work that
+ * failed. Raw lines, newest first, in a box that is easy to select; Copy
+ * puts it all on the clipboard to pass on.
+ */
+export function Diagnostics() {
+  const [entries, setEntries] = useState<DiagnosticEntry[] | null>(null);
+  // Which build this is: shown here, and the first line of what Copy gives,
+  // so a pasted log always says which version it came from.
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => setVersion("?"));
+  }, []);
+  const build = `Polski ${version} · ${buildLabel()}`;
+
+  const load = useCallback(() => {
+    api
+      .diagnostics()
+      .then(async (found) => {
+        await resolveIds(found.flatMap((e) => idsIn(e.message)));
+        setEntries(found);
+      })
+      .catch(() => setEntries([]));
+  }, []);
+  useEffect(load, [load]);
+
+  return (
+    <Section
+      title="Diagnostics"
+      info={
+        <p>
+          What the app noted about itself: how long slow screens took to load,
+          answers from AI models it could not read, and work in the background
+          that failed. Copy it to pass it on when something seems wrong. It
+          stays on this device.
+        </p>
+      }
+    >
+      <Stack gap={3}>
+        <Text variant="small" tone="dim" className="selectable">
+          {build}
+        </Text>
+        <pre className="diagnostics-log selectable">
+          {entries === null
+            ? "Loading…"
+            : entries.length === 0
+              ? "Nothing noted yet."
+              : asText(entries)}
+        </pre>
+        <Inline gap={2} wrap>
+          <Button
+            size="sm"
+            disabled={!entries?.length}
+            onClick={async () => {
+              try {
+                await copyText(`${build}\n${asText(entries ?? [])}`);
+                toast("Copied — paste it into a message.");
+              } catch (cause) {
+                toast(errorMessage(cause));
+              }
+            }}
+          >
+            Copy all
+          </Button>
+          <Button size="sm" onClick={load}>
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="plain"
+            disabled={!entries?.length}
+            onClick={async () => {
+              await api.diagnosticsClear().catch(() => {});
+              load();
+            }}
+          >
+            Clear
+          </Button>
+        </Inline>
+      </Stack>
+    </Section>
+  );
+}

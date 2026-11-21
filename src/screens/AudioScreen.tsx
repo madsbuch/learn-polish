@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { CheckIcon, PlayerIcon } from "../components/icons";
 import { SpeakButton } from "../components/ui";
@@ -24,6 +23,8 @@ import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import { playClip, speak } from "../lib/speech";
 import type { AudioItem, AudioOverview, CacheProgress, CourseAudio } from "../lib/types";
+import { onEvent } from "../lib/events";
+import { CacheProgressSchema } from "../lib/types";
 
 export function megabytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -40,7 +41,7 @@ const KIND_NAMES: Record<AudioItem["kind"], string> = {
 function useCacheProgress(onFinished: () => void): CacheProgress | null {
   const [progress, setProgress] = useState<CacheProgress | null>(null);
   useEffect(() => {
-    const unlisten = listen<CacheProgress>("tts://progress", (event) => {
+    const unlisten = onEvent(CacheProgressSchema, "tts://progress", (event) => {
       setProgress(event.payload);
       if (event.payload.finished) onFinished();
     });
@@ -57,8 +58,7 @@ function Downloading({ progress }: { progress: CacheProgress | null }) {
     <Stack gap={1}>
       <Progress value={progress.done} max={Math.max(1, progress.total)} />
       <Text variant="caption" tone="faint">
-        Downloading {progress.done} of {progress.total}…
-        {progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
+        Downloading {progress.done} of {progress.total}…{progress.failed > 0 ? ` ${progress.failed} failed.` : ""}
       </Text>
     </Stack>
   );
@@ -81,7 +81,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
       .then((next) => {
         setOverview(next);
         // Keep an open course's numbers current.
-        setOpen((current) => (current ? (next.courses.find((c) => c.topicId === current.topicId) ?? current) : null));
+        setOpen((current) => (current ? (next.courses.find((c) => c.courseId === current.courseId) ?? current) : null));
       })
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
@@ -126,8 +126,8 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
       nav={false}
       info={
         <p>
-          A line's audio is made the first time it's played, then kept: it replays instantly,
-          for free and offline. Download a course to have all of it ready ahead of time.
+          A line's audio is made the first time it's played, then kept: it replays instantly, for free and offline.
+          Download a course to have all of it ready ahead of time.
         </p>
       }
     >
@@ -156,7 +156,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
             <List>
               {overview.courses.map((course) => (
                 <ListItem
-                  key={course.topicId}
+                  key={course.courseId}
                   oneLine
                   title={course.titlePl}
                   leading={
@@ -183,22 +183,19 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
               title="Not used"
               info={
                 <p>
-                  Clips no course uses with your current voices: lines read in a voice you no
-                  longer use, deleted words and sentences, and voice samples.
+                  Clips no course uses with your current voices: lines read in a voice you no longer use, deleted words
+                  and sentences, and voice samples.
                 </p>
               }
             >
               <List>
-                <SettingRow
-                  label={`${overview.unusedClips} clips`}
-                  value={megabytes(overview.unusedBytes)}
-                />
+                <SettingRow label={`${overview.unusedClips} clips`} value={megabytes(overview.unusedBytes)} />
               </List>
               <ConfirmButton
                 label="Delete unused clips"
                 confirmLabel="Delete"
                 question={`Delete ${overview.unusedClips} clips no course uses?`}
-                block
+                wide
                 onConfirm={() =>
                   run(async () => {
                     const deleted = await api.deleteUnusedAudio();
@@ -212,7 +209,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
           <Section title="Everything">
             <Stack gap={2}>
               <Button
-                block
+                wide
                 icon={<PlayerIcon.download />}
                 loading={busy && Boolean(progress && !progress.finished)}
                 disabled={busy || missing === 0}
@@ -220,7 +217,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
                   run(async () => {
                     const lines = [];
                     for (const course of overview.courses) {
-                      if (course.stored < course.total) lines.push(...(await api.topicAudioLines(course.topicId)));
+                      if (course.stored < course.total) lines.push(...(await api.courseAudioLines(course.courseId)));
                     }
                     const result = await api.cacheAudio(lines);
                     return result.error
@@ -235,7 +232,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
                 label="Delete all downloaded audio"
                 confirmLabel="Delete"
                 question="Delete every stored clip? Each is made again the next time it's played."
-                block
+                wide
                 onConfirm={() =>
                   run(async () => {
                     await api.clearAudioCache();
@@ -275,10 +272,10 @@ function CourseAudioPage({
 
   const load = useCallback(() => {
     api
-      .courseAudio(course.topicId)
+      .courseAudio(course.courseId)
       .then(setItems)
       .catch((cause) => setError(errorMessage(cause)));
-  }, [course.topicId]);
+  }, [course.courseId]);
   useEffect(load, [load]);
   // Tick items off as a download goes.
   useEffect(() => {
@@ -314,7 +311,7 @@ function CourseAudioPage({
           </List>
           <Button
             variant={missing.length > 0 ? "primary" : "secondary"}
-            block
+            wide
             icon={<PlayerIcon.download />}
             loading={busy}
             disabled={missing.length === 0}
@@ -340,7 +337,7 @@ function CourseAudioPage({
               label="Download the whole course again"
               confirmLabel="Download again"
               question={`Make all ${items.length} clips again, replacing the stored ones? Each costs a speech request.`}
-              block
+              wide
               onConfirm={async () => {
                 setBusy(true);
                 setError(null);
@@ -359,8 +356,7 @@ function CourseAudioPage({
             />
           ) : null}
           <Text variant="small" tone="dim" as="p">
-            Tap a line to download it again — if it was read with the wrong accent, or says
-            something else.
+            Tap a line to download it again — if it was read with the wrong accent, or says something else.
           </Text>
 
           <Segmented
@@ -421,12 +417,18 @@ function CourseAudioPage({
               {selected.gender === "m" ? " · male voice" : ""} ·{" "}
               {selected.stored ? `downloaded, ${megabytes(selected.bytes)}` : "not downloaded"}
             </Text>
-            <Button block icon={<PlayerIcon.play size={16} />} onClick={() => speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))}>
+            <Button
+              wide
+              icon={<PlayerIcon.play size={16} />}
+              onClick={() =>
+                speak(selected.text, selected.gender).catch((cause) => toast(errorMessage(cause), "error"))
+              }
+            >
               Play
             </Button>
             <Button
               variant="primary"
-              block
+              wide
               icon={<PlayerIcon.download />}
               loading={redoing}
               onClick={async () => {

@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{Emitter, State};
 
+#[allow(unused_imports)]
+use crate::ids::*;
 use crate::ai::{self, Wire};
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
@@ -89,7 +91,7 @@ fn items() -> Vec<Item> {
             Contains(&["kawę"]),
         ),
         Item { part: "tools", name: "Make a course", prompt: "Make me a course about the weather with exactly 10 words and 5 sentences.", check: Tool(ToolTask::Course) },
-        Item { part: "tools", name: "Make a writing block", prompt: "Make a writing block where I order food in a restaurant, with exactly 3 goals.", check: Tool(ToolTask::Writing) },
+        Item { part: "tools", name: "Make a writing lesson", prompt: "Make a writing lesson where I order food in a restaurant, with exactly 3 goals.", check: Tool(ToolTask::Writing) },
         Item { part: "tools", name: "A question is not an order", prompt: "What does \"dziękuję\" mean?", check: Tool(ToolTask::NoTool) },
         Item { part: "rules", name: "Answers in Danish", prompt: "Hvad er forskellen på \"ty\" og \"pan\"?", check: Rule(RuleTask::Danish) },
         Item { part: "rules", name: "Short, with a player", prompt: "How do I say \"thank you\" in Polish?", check: Rule(RuleTask::ShortWithPlayer) },
@@ -104,7 +106,7 @@ fn messages(item: &Item) -> Vec<Wire> {
         Check::Exactly(_) => vec![Wire::system(FILL), Wire::user(item.prompt)],
         Check::Contains(_) if item.name.starts_with("Fix") => vec![Wire::system(FIX), Wire::user(item.prompt)],
         Check::Contains(_) => vec![Wire::user(item.prompt)],
-        Check::Tool(_) => vec![Wire::system(crate::tutor::RULES), Wire::user(item.prompt)],
+        Check::Tool(_) => vec![Wire::system(crate::tutor::rules()), Wire::user(item.prompt)],
         Check::Rule(RuleTask::PartnerStaysPolish) => vec![
             Wire::system(PARTNER),
             Wire::assistant("Dzień dobry! Jestem Ewa, mieszkam pod trójką. Pan tu nowy?"),
@@ -113,12 +115,12 @@ fn messages(item: &Item) -> Vec<Wire> {
         Check::Rule(RuleTask::WordChatOpening) => vec![
             Wire::system(ai::with_say_player(format!(
                 "{}\n\n{}",
-                crate::tutor::RULES,
+                crate::tutor::rules(),
                 crate::tutor::word_chat_rules("kot — cat")
             ))),
             Wire::user(item.prompt),
         ],
-        Check::Rule(_) => vec![Wire::system(ai::with_say_player(crate::tutor::RULES.to_string())), Wire::user(item.prompt)],
+        Check::Rule(_) => vec![Wire::system(ai::with_say_player(crate::tutor::rules())), Wire::user(item.prompt)],
     }
 }
 
@@ -148,7 +150,7 @@ pub struct ItemResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BenchRun {
-    pub id: i64,
+    pub id: BenchRunId,
     pub model: String,
     pub created_at: i64,
     pub score: i64,
@@ -253,26 +255,49 @@ fn score_tools(task: ToolTask, turn: &ai::Turn) -> (f64, String) {
             Some(c) => (0.0, format!("called {} for a plain question", c.function.name)),
         },
         ToolTask::Course | ToolTask::Writing => {
-            let wanted = if matches!(task, ToolTask::Course) { "create_course" } else { "create_writing_block" };
+            let wanted = if matches!(task, ToolTask::Course) { "create_course" } else { "create_writing_lesson" };
             let Some(call) = turn.tool_calls.iter().find(|c| c.function.name == wanted) else {
                 return (0.0, format!("did not call {wanted}"));
             };
-            let Ok(args) = serde_json::from_str::<Value>(&call.function.arguments) else {
+            /// What is scored of a create_course / create_writing_lesson call:
+            /// each part leniently, so one odd part costs only its points.
+            #[derive(serde::Deserialize)]
+            struct Args {
+                #[serde(default)]
+                goals: Vec<crate::wire::Lenient<serde::de::IgnoredAny>>,
+                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                scenario: Option<String>,
+                #[serde(default)]
+                words: Vec<crate::wire::Lenient<BenchWord>>,
+                #[serde(default)]
+                sentences: Vec<crate::wire::Lenient<serde::de::IgnoredAny>>,
+            }
+            #[derive(serde::Deserialize)]
+            struct BenchWord {
+                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                pl: Option<String>,
+                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                en: Option<String>,
+            }
+            let Ok(args) = serde_json::from_str::<Args>(&call.function.arguments) else {
                 return (0.1, "the call's arguments were not valid JSON".into());
             };
             let mut score: f64 = 0.3;
             let mut notes = Vec::new();
             if matches!(task, ToolTask::Writing) {
-                let goals = args["goals"].as_array().map_or(0, Vec::len);
+                let goals = args.goals.len();
                 if goals == 3 { score += 0.4 } else { notes.push(format!("{goals} goals, not 3")) }
-                if args["scenario"].as_str().is_some_and(|s| s.len() > 20) { score += 0.3 } else { notes.push("no scenario".into()) }
+                if args.scenario.is_some_and(|s| s.len() > 20) { score += 0.3 } else { notes.push("no scenario".into()) }
             } else {
-                let words = args["words"].as_array().cloned().unwrap_or_default();
-                let sentences = args["sentences"].as_array().map_or(0, Vec::len);
+                let words = args.words;
+                let sentences = args.sentences.len();
                 if words.len() == 10 { score += 0.2 } else { notes.push(format!("{} words, not 10", words.len())) }
                 if sentences == 5 { score += 0.15 } else { notes.push(format!("{sentences} sentences, not 5")) }
-                let polish: Vec<String> = words.iter().filter_map(|w| w["pl"].as_str()).map(str::to_lowercase).collect();
-                if polish.len() == words.len() && words.iter().all(|w| w["en"].as_str().is_some_and(|e| !e.is_empty())) {
+                let polish: Vec<String> =
+                    words.iter().filter_map(|w| w.0.as_ref()?.pl.as_deref()).map(str::to_lowercase).collect();
+                if polish.len() == words.len()
+                    && words.iter().all(|w| w.0.as_ref().and_then(|w| w.en.as_deref()).is_some_and(|e| !e.is_empty()))
+                {
                     score += 0.1
                 } else {
                     notes.push("words missing their Polish or English".into())
@@ -402,11 +427,11 @@ pub async fn bench_run(app: tauri::AppHandle, db: State<'_, Db>, model: String) 
 
     let part = |name: &str| -> i64 {
         let scores: Vec<f64> = outcomes.iter().filter(|o| o.0.part == name).map(|o| o.0.score).collect();
-        if scores.is_empty() { 0 } else { (scores.iter().sum::<f64>() / scores.len() as f64 * 100.0).round() as i64 }
+        if scores.is_empty() { 0 } else { crate::convert::round(scores.iter().sum::<f64>() / crate::convert::real_len(scores.len()) * 100.0) }
     };
     let (polish, tools_score, rules) = (part("polish"), part("tools"), part("rules"));
-    let score = ((polish + tools_score + rules) as f64 / 3.0).round() as i64;
-    let seconds = outcomes.iter().map(|o| o.1).sum::<f64>() / outcomes.len().max(1) as f64;
+    let score = crate::convert::round(crate::convert::real(polish + tools_score + rules) / 3.0);
+    let seconds = outcomes.iter().map(|o| o.1).sum::<f64>() / crate::convert::real_len(outcomes.len().max(1));
     let priced: Vec<f64> = outcomes.iter().filter_map(|o| o.2).collect();
     let cost_usd: Option<f64> = (!priced.is_empty()).then(|| priced.iter().sum());
     // Keep the suite's order, not the order answers came back in.
@@ -420,6 +445,7 @@ pub async fn bench_run(app: tauri::AppHandle, db: State<'_, Db>, model: String) 
     }
     let id = diesel::insert_into(bench_runs::table)
         .values((
+            bench_runs::id.eq(BenchRunId::new()),
             bench_runs::model.eq(&model),
             bench_runs::created_at.eq(db::now_secs()),
             bench_runs::score.eq(score),
@@ -431,11 +457,11 @@ pub async fn bench_run(app: tauri::AppHandle, db: State<'_, Db>, model: String) 
             bench_runs::items.eq(serde_json::to_string(&items_out)?),
         ))
         .returning(bench_runs::id)
-        .get_result::<i64>(conn)?;
+        .get_result::<BenchRunId>(conn)?;
     load(conn, id)
 }
 
-type Row = (i64, String, i64, i64, i64, i64, i64, f64, Option<f64>, String);
+type Row = (BenchRunId, String, i64, i64, i64, i64, i64, f64, Option<f64>, String);
 
 fn from_row(row: Row) -> BenchRun {
     let (id, model, created_at, score, polish, tools, rules, seconds, cost_usd, items) = row;
@@ -479,7 +505,7 @@ fn columns() -> (
     )
 }
 
-fn load(conn: &mut Conn, id: i64) -> Result<BenchRun> {
+fn load(conn: &mut Conn, id: BenchRunId) -> Result<BenchRun> {
     Ok(from_row(bench_runs::table.find(id).select(columns()).first::<Row>(conn)?))
 }
 
@@ -500,7 +526,7 @@ pub async fn bench_runs(db: State<'_, Db>) -> Result<Vec<BenchRun>> {
 }
 
 #[tauri::command]
-pub async fn bench_delete(db: State<'_, Db>, id: i64) -> Result<()> {
+pub async fn bench_delete(db: State<'_, Db>, id: BenchRunId) -> Result<()> {
     diesel::delete(bench_runs::table.find(id)).execute(&mut *db.lock())?;
     Ok(())
 }

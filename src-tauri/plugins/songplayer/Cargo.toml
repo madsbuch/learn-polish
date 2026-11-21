@@ -12,3 +12,9 @@ serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+as_conversions = "deny"

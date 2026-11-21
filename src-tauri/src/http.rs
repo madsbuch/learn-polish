@@ -40,3 +40,15 @@ pub fn wikipedia() -> &'static reqwest::Client {
             .timeout(Duration::from_secs(30))
     })
 }
+
+/// News outlets' RSS feeds, and the pages their stories point to (only their
+/// short summaries are read). Pages are given little time: a slow site is
+/// simply left without a summary.
+pub fn news() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    build(&CLIENT, || {
+        reqwest::Client::builder()
+            .user_agent(concat!("Polski/", env!("CARGO_PKG_VERSION"), " (language-learning app; reads news headlines)"))
+            .timeout(Duration::from_secs(20))
+    })
+}

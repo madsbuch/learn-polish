@@ -13,16 +13,16 @@
     "windows": [
       {
         "title": "Polski",
-        "width": 460,
-        "height": 900,
+        "width": 1200,
+        "height": 860,
         "minWidth": 380,
-        "minHeight": 620,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' media: http://media.localhost data:; media-src 'self' data: blob: media: http://media.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; img-src 'self' media: http://media.localhost data: https://upload.wikimedia.org; media-src 'self' data: blob: media: http://media.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {
@@ -43,9 +43,10 @@
     ],
     "category": "Education",
     "shortDescription": "Daily Polish practice",
-    "longDescription": "Learn Polish from English or Danish with a daily gamified check-in: one conversation, its words, and its sentences.",
+    "longDescription": "Learn Polish from English with a daily gamified check-in: one conversation, its words, and its sentences.",
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "entitlements": "Entitlements.plist"
     },
     "android": {
       "minSdkVersion": 24

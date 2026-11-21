@@ -24,6 +24,8 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::db::{self, Conn, Db};
 use crate::schema::{song_tracks, songs};
 use crate::error::{Error, Result};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 const SSDP_ADDR: &str = "239.255.255.250:1900";
 const SONOS_ST: &str = "urn:schemas-upnp-org:device:ZonePlayer:1";
@@ -65,7 +67,7 @@ pub struct CastDevice {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CastItem {
-    pub track_id: i64,
+    pub track_id: TrackId,
     pub title: String,
     pub artist: String,
 }
@@ -77,7 +79,7 @@ pub struct CastState {
     pub items: Vec<CastItem>,
     /// Index into `items` of the song Sonos is on.
     pub index: i64,
-    pub track_id: Option<i64>,
+    pub track_id: Option<TrackId>,
     pub playing: bool,
     /// Raw UPnP state: PLAYING, PAUSED_PLAYBACK, STOPPED, TRANSITIONING.
     pub transport: String,
@@ -189,7 +191,7 @@ pub fn parse_hms(text: &str) -> f64 {
 }
 
 pub fn format_hms(seconds: f64) -> String {
-    let total = seconds.max(0.0).round() as u64;
+    let total = crate::convert::unsigned(crate::convert::round(seconds.max(0.0)));
     format!("{}:{:02}:{:02}", total / 3600, (total / 60) % 60, total % 60)
 }
 
@@ -310,12 +312,12 @@ pub fn groups_from_topology(state_xml: &str) -> Vec<CastDevice> {
             .find("</ZoneGroup>")
             .map(|e| start + e)
             .unwrap_or(state_xml.len());
-        let block = &state_xml[start..end];
+        let lesson = &state_xml[start..end];
         search = end.max(start + 1);
 
-        let Some(group) = elements(block, "ZoneGroup").into_iter().next() else { continue };
+        let Some(group) = elements(lesson, "ZoneGroup").into_iter().next() else { continue };
         let Some(coordinator) = group.get("Coordinator").cloned() else { continue };
-        let members: Vec<HashMap<String, String>> = elements(block, "ZoneGroupMember")
+        let members: Vec<HashMap<String, String>> = elements(lesson, "ZoneGroupMember")
             .into_iter()
             // Surround speakers, subs and bridges are not rooms of their own.
             .filter(|m| m.get("Invisible").map(String::as_str) != Some("1"))
@@ -515,7 +517,7 @@ fn mime_for(path: &str) -> &'static str {
 }
 
 /// Serves a file from the files table, whole or by range, over HTTP.
-async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, file_id: i64) -> Result<()> {
+async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, file_id: FileId) -> Result<()> {
     let file = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
@@ -529,7 +531,7 @@ async fn send_file(stream: &mut TcpStream, request: &Request, app: &AppHandle, f
         let mut guard = db.lock();
         crate::files::read_range(&mut guard, file_id, at, length)
     };
-    send_bytes(stream, request, &file.mime, file.size as u64, read).await
+    send_bytes(stream, request, &file.mime, crate::convert::unsigned(file.size), read).await
 }
 
 /// Answers a request for `size` bytes of type `mime`, whole or by range,
@@ -570,14 +572,14 @@ where
             break;
         }
         stream.write_all(&chunk).await?;
-        at += chunk.len() as u64;
+        at += crate::convert::bytes(chunk.len());
     }
     Ok(())
 }
 
 /// A take's audio and cover art files.
-fn track_files(conn: &mut Conn, track_id: i64) -> Result<Option<(i64, Option<i64>)>> {
-    let ids: Option<(Option<i64>, Option<i64>)> = song_tracks::table
+fn track_files(conn: &mut Conn, track_id: TrackId) -> Result<Option<(FileId, Option<FileId>)>> {
+    let ids: Option<(Option<FileId>, Option<FileId>)> = song_tracks::table
         .find(track_id)
         .select((song_tracks::audio_file_id, song_tracks::image_file_id))
         .first(conn)
@@ -609,7 +611,9 @@ async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAd
     match parts.as_slice() {
         // /media/<token>/<track>.mp3 and /art/<token>/<track> — for the speaker.
         [kind @ ("media" | "art"), token, file] if *token == server.token => {
-            let track_id: i64 = file.split('.').next().unwrap_or("").parse().unwrap_or(-1);
+            let Ok(track_id) = TrackId::parse(file.split('.').next().unwrap_or("")) else {
+                return respond(&mut stream, "404 Not Found", "text/plain", b"unknown").await;
+            };
             let files = {
                 let db = app.state::<Db>();
                 let mut guard = db.lock();
@@ -665,7 +669,7 @@ struct Session {
     generation: u64,
     last: Option<CastState>,
     /// The track whose play has already been counted on this pass.
-    counted: Option<i64>,
+    counted: Option<TrackId>,
 }
 
 #[derive(Default)]
@@ -695,7 +699,7 @@ fn session_device(app: &AppHandle) -> Result<CastDevice> {
         .ok_or_else(|| Error::msg("Not casting."))
 }
 
-pub fn didl(title: &str, artist: &str, url: &str, art: &str, mime: &str, id: i64) -> String {
+pub fn didl(title: &str, artist: &str, url: &str, art: &str, mime: &str, id: TrackId) -> String {
     format!(
         "<DIDL-Lite xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
          xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" \
@@ -720,7 +724,7 @@ pub fn play_mode(repeat: &str) -> &'static str {
     }
 }
 
-fn load_items(conn: &mut Conn, track_ids: &[i64]) -> Result<Vec<(CastItem, String)>> {
+fn load_items(conn: &mut Conn, track_ids: &[TrackId]) -> Result<Vec<(CastItem, String)>> {
     let mut items = Vec::new();
     for id in track_ids {
         let row: Option<(String, String)> = song_tracks::table
@@ -771,11 +775,11 @@ async fn poll_once(app: &AppHandle) -> Result<CastState> {
     let uri = tag_text(&position, "TrackURI").unwrap_or_default();
     let ours = uri.starts_with(&prefix);
     let track_id = ours
-        .then(|| uri[prefix.len()..].split('.').next().and_then(|id| id.parse::<i64>().ok()))
+        .then(|| uri[prefix.len()..].split('.').next().and_then(|id| TrackId::parse(id).ok()))
         .flatten();
     let index = track_id
         .and_then(|id| items.iter().position(|item| item.track_id == id))
-        .map(|i| i as i64)
+        .map(crate::convert::count)
         .unwrap_or(-1);
 
     Ok(CastState {
@@ -899,7 +903,7 @@ async fn run_command(app: &AppHandle, action: &str, value: Option<f64>) -> Resul
         }
         "track" => {
             // `value` is a 0-based index into the queue.
-            let number = (value.unwrap_or(0.0).max(0.0) as i64 + 1).to_string();
+            let number = (crate::convert::round(value.unwrap_or(0.0).max(0.0).trunc()) + 1).to_string();
             soap(base, AV_TRANSPORT, "Seek", &[("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", &number)]).await?;
             soap(base, AV_TRANSPORT, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
         }
@@ -965,7 +969,7 @@ pub async fn cast_start(
     app: AppHandle,
     db: State<'_, Db>,
     device: CastDevice,
-    track_ids: Vec<i64>,
+    track_ids: Vec<TrackId>,
     index: i64,
     repeat: String,
 ) -> Result<CastState> {
@@ -1018,7 +1022,7 @@ pub async fn cast_start(
         &[("InstanceID", "0"), ("NewPlayMode", play_mode(&repeat))],
     )
     .await;
-    let number = (index.clamp(0, items.len() as i64 - 1) + 1).to_string();
+    let number = (index.clamp(0, crate::convert::count(items.len()) - 1) + 1).to_string();
     soap(base, AV_TRANSPORT, "Seek", &[("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", &number)]).await?;
     soap(base, AV_TRANSPORT, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
 
@@ -1242,7 +1246,7 @@ mod tests {
                 let mut buffer = [0u8; 2048];
                 let n = stream.read(&mut buffer).await.unwrap();
                 let request = parse_request(&String::from_utf8_lossy(&buffer[..n])).unwrap();
-                let read = |at: u64, length: u64| Ok(song[at as usize..(at + length) as usize].to_vec());
+                let read = |at: u64, length: u64| Ok(song[crate::convert::offset(at)..crate::convert::offset(at + length)].to_vec());
                 send_bytes(&mut stream, &request, "audio/mpeg", 200, read).await.unwrap();
             }
         });
@@ -1269,7 +1273,7 @@ mod tests {
 
     #[test]
     fn metadata_names_the_song() {
-        let meta = didl("Kawa & mleko", "Poproszę <kawę>", "http://h/media/t/1.mp3", "http://h/art/t/1", "audio/mpeg", 1);
+        let meta = didl("Kawa & mleko", "Poproszę <kawę>", "http://h/media/t/1.mp3", "http://h/art/t/1", "audio/mpeg", TrackId::derived("test", "1"));
         assert!(meta.contains("<dc:title>Kawa &amp; mleko</dc:title>"));
         assert!(meta.contains("<dc:creator>Poproszę &lt;kawę&gt;</dc:creator>"));
         assert!(meta.contains("protocolInfo=\"http-get:*:audio/mpeg:*\">http://h/media/t/1.mp3</res>"));

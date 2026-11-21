@@ -1,21 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import {
-  Banner,
-  Button,
-  Card,
-  Choice,
-  ChoiceRow,
-  Field,
-  Screen,
-  Section,
-  Segmented,
-  Stack,
-  Text,
-} from "../design";
+import { Banner, Button, Card, Choice, ChoiceRow, Field, Screen, Section, Segmented, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { sectionsToText, textToSections } from "../lib/lyrics";
-import type { Sentence, Settings, SongDraft, SongLength, TopicProgress } from "../lib/types";
+import type { Settings, SongDraft, SongLength } from "../lib/types";
 
 // ------------------------------------------------------------------ composer
 
@@ -31,18 +19,17 @@ const PRESET_NAMES = ["Acoustic pop", "Indie folk", "Synth pop", "Lullaby", "Reg
 
 export function SongComposer({
   settings,
-  topics,
   onCancel,
   onCreated,
+  onSwitch,
 }: {
   settings: Settings;
-  topics: TopicProgress[];
   onCancel: () => void;
   onCreated: () => void;
+  /** Makes a podcast instead. */
+  onSwitch: () => void;
 }) {
   const [brief, setBrief] = useState("");
-  const [topicId, setTopicId] = useState<number | null>(null);
-  const [sentences, setSentences] = useState<Sentence[]>([]);
   const [chorusChoice, setChorusChoice] = useState(""); // "", sentence pl, or "custom"
   const [customChorus, setCustomChorus] = useState("");
   const [style, setStyle] = useState(STYLE_PRESETS[0]);
@@ -54,15 +41,6 @@ export function SongComposer({
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState<"draft" | "refine" | "create" | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setChorusChoice("");
-    if (topicId === null) {
-      setSentences([]);
-      return;
-    }
-    api.browseSentences(topicId).then(setSentences).catch(() => setSentences([]));
-  }, [topicId]);
 
   const chorus = chorusChoice === "custom" ? customChorus.trim() : chorusChoice;
   const songwriter = settings.songwriterModel || settings.aiModel;
@@ -93,10 +71,22 @@ export function SongComposer({
   return (
     <Screen title={draft ? "Your song" : "New song"} onBack={onCancel}>
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {!songwriter ? <Banner tone="info">Pick a songwriter model in Settings.</Banner> : null}
+      {!songwriter ? <Banner tone="info">Pick a songwriter model in Settings → AI.</Banner> : null}
+      {!settings.hasKieKey ? (
+        <Banner tone="info">Songs need a kie.ai key in Settings → Songs. Podcasts work without one.</Banner>
+      ) : null}
 
       {!draft ? (
         <>
+          <Segmented
+            value="song"
+            onChange={(value) => value === "podcast" && onSwitch()}
+            options={[
+              { value: "song", label: "Song" },
+              { value: "podcast", label: "Podcast" },
+            ]}
+          />
+
           <Section title="What it is about">
             <Card>
               <Stack gap={4}>
@@ -108,27 +98,9 @@ export function SongComposer({
                     onChange={(event) => setBrief(event.target.value)}
                   />
                 </Field>
-                <Field label="Words from">
-                  <select
-                    value={topicId ?? ""}
-                    onChange={(event) => setTopicId(event.target.value ? Number(event.target.value) : null)}
-                  >
-                    <option value="">Words I have practised</option>
-                    {topics.map((entry) => (
-                      <option key={entry.topic.id} value={entry.topic.id}>
-                        {entry.topic.titlePl} — {entry.topic.title}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
                 <Field label="Chorus sentence" hint="The one sentence to get stuck in your head.">
                   <select value={chorusChoice} onChange={(event) => setChorusChoice(event.target.value)}>
                     <option value="">Let the songwriter choose</option>
-                    {sentences.map((sentence) => (
-                      <option key={sentence.id} value={sentence.pl}>
-                        {sentence.pl} — {sentence.meaning}
-                      </option>
-                    ))}
                     <option value="custom">Write my own…</option>
                   </select>
                 </Field>
@@ -186,12 +158,12 @@ export function SongComposer({
             <Button
               variant="primary"
               size="lg"
-              block
+              wide
               loading={busy === "draft"}
-              disabled={busy !== null || !songwriter || (chorusChoice === "custom" && !chorus)}
+              disabled={busy !== null || !songwriter || !settings.hasKieKey || (chorusChoice === "custom" && !chorus)}
               onClick={() =>
                 run("draft", async () =>
-                  accept(await api.songDraft({ brief, topicId, chorusPl: chorus, style, vocalGender, length })),
+                  accept(await api.songDraft({ brief, chorusPl: chorus, style, vocalGender, length })),
                 )
               }
             >
@@ -268,7 +240,7 @@ export function SongComposer({
             <Button
               variant="primary"
               size="lg"
-              block
+              wide
               loading={busy === "create"}
               disabled={busy !== null || !settings.hasKieKey}
               onClick={() =>

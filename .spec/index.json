@@ -1,0 +1,79 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Polski",
+  "summary": "A Polish learning app for English speakers: small lessons filed in courses, built to order by an AI tutor.",
+  "status": "accepted",
+  "order": 0,
+  "description": "Polski teaches Polish to an adult who speaks English, in small lessons filed in courses that a tutor builds to order. It is a native Android and macOS app that keeps everything on the learner's devices. The AI features are optional and run on the learner's own keys.\n\nDansk is the same product for Danish, in a separate codebase.",
+  "stories": [
+    {
+      "id": "US-POL-1",
+      "as": "an adult who speaks English and wants Polish for something in their own life",
+      "want": "lessons made for exactly that",
+      "soThat": "I learn the Polish I will use",
+      "requirements": [
+        "#POL-3",
+        "#PRIN-1"
+      ]
+    },
+    {
+      "id": "US-POL-2",
+      "as": "a learner who pays for AI with my own keys",
+      "want": "my keys and my data to stay on my devices",
+      "soThat": "nobody else holds them",
+      "requirements": [
+        "#POL-5",
+        "#DATA-1"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "POL-1",
+      "text": "The app runs as a native Android app and a native macOS app from one codebase."
+    },
+    {
+      "id": "POL-2",
+      "text": "A fresh install can be practised offline with no API key: the demo course needs neither the network nor a model.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "Not necessary as a promise of the whole app: working without a connection is asked for course by course, where the learner needs it, and a course kept offline has its assets downloaded.",
+        "replacedBy": [
+          "courses/offline"
+        ],
+        "date": "2026-11-20"
+      }
+    },
+    {
+      "id": "POL-3",
+      "text": "The interface is English; Polish is the content being learnt."
+    },
+    {
+      "id": "POL-4",
+      "text": "The webview never reaches the database itself, and makes no outside request of its own except loading the pictures of Wikipedia articles from upload.wikimedia.org; every other read, write and request is a command in the Rust core.",
+      "status": "deprecated",
+      "deprecation": {
+        "reason": "Not applicable, there is no reason it should be",
+        "date": "2026-11-20"
+      }
+    },
+    {
+      "id": "POL-5",
+      "text": "API keys are kept in the app's database; once saved they are not handed back to the interface as text, only as whether a key is set or as a QR picture."
+    },
+    {
+      "id": "POL-6",
+      "text": "No chat model is chosen by default: until the learner picks one in Settings, the features that need it are off and say so."
+    }
+  ],
+  "related": [
+    "principles",
+    "courses",
+    "lessons",
+    "today",
+    "tutor",
+    "music",
+    "data",
+    "courses/offline"
+  ]
+}

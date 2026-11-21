@@ -25,19 +25,19 @@ export function sectionLabel(kind: SongSectionKind): string {
 
 function kindOf(label: string): SongSectionKind {
   const lower = label.toLowerCase();
-  if (lower.startsWith("chorus") || lower.startsWith("hook") || lower.startsWith("refrain"))
-    return "chorus";
+  if (lower.startsWith("chorus") || lower.startsWith("hook") || lower.startsWith("refrain")) return "chorus";
   if (lower.startsWith("bridge")) return "bridge";
   if (lower.startsWith("intro")) return "intro";
   if (lower.startsWith("outro")) return "outro";
   return "verse";
 }
 
-export function sectionsToText(sections: SongSection[]): string {
+/** `label` names every section alike (a podcast's "Part"); songs name each by its kind. */
+export function sectionsToText(sections: SongSection[], label?: string): string {
   return sections
     .map(
       (section) =>
-        `[${sectionLabel(section.kind)}]\n` +
+        `[${label ?? sectionLabel(section.kind)}]\n` +
         section.lines.map((line) => `${line.en} | ${line.pl}`).join("\n"),
     )
     .join("\n\n");
@@ -62,9 +62,7 @@ export function textToSections(text: string): SongSection[] {
     const bar = line.indexOf("|");
     // A line without "|" is taken as Polish only.
     current.lines.push(
-      bar < 0
-        ? { en: "", pl: line }
-        : { en: line.slice(0, bar).trim(), pl: line.slice(bar + 1).trim() },
+      bar < 0 ? { en: "", pl: line } : { en: line.slice(0, bar).trim(), pl: line.slice(bar + 1).trim() },
     );
   }
   return sections.filter((section) => section.lines.length > 0);

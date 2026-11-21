@@ -4,6 +4,7 @@ import { Composer } from "../components/Composer";
 import { MemoryIcon, PlayerIcon } from "../components/icons";
 import { playSong, useSongItem } from "../components/SongToListen";
 import { Markdown } from "../components/Markdown";
+import { ReadAloud, unsay } from "../components/ReadAloud";
 import {
   Badge,
   Banner,
@@ -15,7 +16,7 @@ import {
   ListItem,
   Screen,
   Section,
-  Spinner,
+  Typing,
   Stack,
   Text,
 } from "../design";
@@ -26,11 +27,10 @@ import { useAiStream } from "../lib/useAiStream";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { currentItem, usePlayer } from "../lib/player";
-import { dayToDate } from "../lib/blocks";
-import type { Assessment } from "../lib/types";
+import { dayToDate } from "../lib/lessons";
+import type { Assessment, CheckinId, LessonId, PracticeContext, SongId } from "../lib/types";
 
-
-/** A writing block's situation and goals. */
+/** A writing lesson's situation and goals. */
 export interface Writing {
   situation: string;
   goals: string[];
@@ -56,33 +56,36 @@ interface Line {
 }
 
 /**
- * A study block's check-in: the examiner asks, the learner answers, and at
+ * A study lesson's check-in: the examiner asks, the learner answers, and at
  * the end the examiner gives a verdict that schedules the next check-in.
  */
 export function CheckIn({
-  blockId,
+  lessonId,
+  from,
   songId,
   writing,
   title,
   onClose,
   onFinished,
 }: {
-  blockId: number;
-  /** For a listening block: its song, playable during the check-in. */
-  songId: number | null;
-  /** For a writing block: the conversation is with a partner, in Polish. */
+  lessonId: LessonId;
+  /** Where the lesson was opened from: its verdict is logged with it. */
+  from: PracticeContext;
+  /** For a listening lesson: its song, playable during the check-in. */
+  songId: SongId | null;
+  /** For a writing lesson: the conversation is with a partner, in Polish. */
   writing?: Writing | null;
   title: string;
   onClose: () => void;
   /** The verdict is in; `first` is true when it earned today's streak. */
-  onFinished: (first: boolean, checkinId: number, assessment: Assessment) => void;
+  onFinished: (first: boolean, checkinId: CheckinId, assessment: Assessment) => void;
 }) {
-  const [checkinId, setCheckinId] = useState<number | null>(null);
+  const [checkinId, setCheckinId] = useState<CheckinId | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const stream = useAiStream();
   const live = stream.text;
   // Busy from the start: the examiner opens with the first question.
-  const busy = stream.streaming || checkinId === null && !stream.error;
+  const busy = stream.streaming || (checkinId === null && !stream.error);
   const [draft, setDraft] = useState("");
   const error = stream.error;
   const [assessment, setAssessment] = useState<Assessment | null>(null);
@@ -117,8 +120,8 @@ export function CheckIn({
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void exchange((streamId) => api.checkinStart(blockId, streamId));
-  }, [blockId]);
+    void exchange((streamId) => api.checkinStart(lessonId, streamId, from));
+  }, [lessonId]);
 
   async function answer() {
     const text = draft.trim();
@@ -163,7 +166,7 @@ export function CheckIn({
   return (
     <Screen
       title={title}
-      subtitle={writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Check-in"}
+      subtitle={writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Conversation"}
       onClose={onClose}
       nav={false}
       actions={
@@ -191,18 +194,27 @@ export function CheckIn({
       }
       footer={
         assessment ? (
-          <Button variant="primary" size="lg" block onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}>
+          <Button
+            variant="primary"
+            size="lg"
+            wide
+            onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}
+          >
             Done
           </Button>
         ) : (
-          <Composer
-            draft={draft}
-            setDraft={setDraft}
-            placeholder={writing ? "Write in Polish" : "Your answer"}
-            disabled={checkinId === null}
-            canSend={!busy}
-            onSend={() => void answer()}
-          />
+          <Stack gap={2}>
+            {writing && writing.supportLevel === 0 ? <WordBank lessonId={lessonId} draft={draft} onUse={use} /> : null}
+            <Composer
+              draft={draft}
+              setDraft={setDraft}
+              placeholder={writing ? "Write in Polish" : "Your answer"}
+              disabled={checkinId === null}
+              dictate
+              canSend={!busy}
+              onSend={() => void answer()}
+            />
+          </Stack>
         )
       }
     >
@@ -210,9 +222,7 @@ export function CheckIn({
         <Stack gap={2}>
           <Banner tone="error">{error}</Banner>
           {checkinId === null ? (
-            <Button onClick={() => void exchange((streamId) => api.checkinStart(blockId, streamId))}>
-              Try again
-            </Button>
+            <Button onClick={() => void exchange((streamId) => api.checkinStart(lessonId, streamId, from))}>Try again</Button>
           ) : null}
         </Stack>
       ) : null}
@@ -229,7 +239,6 @@ export function CheckIn({
           </Stack>
         </Card>
       ) : null}
-      {writing && writing.supportLevel === 0 && !assessment ? <WordBank blockId={blockId} onUse={use} /> : null}
 
       <div className="chat">
         {lines.map((line, i) =>
@@ -257,21 +266,38 @@ export function CheckIn({
               </Inline>
             </div>
           ) : (
-            <div key={i} className="msg selectable" data-role={line.role}>
-              {line.role === "assistant" ? <Markdown text={line.content} /> : line.content}
+            <div
+              key={i}
+              className="msg selectable"
+              data-role={line.role}
+              // The learner's answers are all sent from here: each rises into place.
+              data-fresh={line.role === "user" || undefined}
+            >
+              {line.role !== "assistant" ? (
+                line.content
+              ) : writing ? (
+                // The partner writes only Polish: one button reads the whole
+                // message, instead of a player after every sentence.
+                <>
+                  <Markdown text={unsay(line.content)} />
+                  <ReadAloud text={line.content} />
+                </>
+              ) : (
+                <Markdown text={line.content} />
+              )}
             </div>
           ),
         )}
         {busy ? (
-          <div className="msg" data-role="assistant">
+          <div className="msg" data-role="assistant" data-fresh>
             {live ? (
               <div>
-                <Markdown text={live} />
+                <Markdown text={writing ? unsay(live) : live} />
                 <span className="caret" />
               </div>
             ) : (
               <Inline gap={2}>
-                <Spinner />
+                <Typing />
                 <Text variant="small" tone="faint">
                   {lines.length === 0
                     ? writing
@@ -302,18 +328,12 @@ export function CheckIn({
                 </Inline>
               }
             />
-            <ListItem
-              title={writing ? "How it went" : "What the examiner said"}
-              subtitle={assessment.summary}
-            />
+            <ListItem title={writing ? "How it went" : "What the examiner said"} subtitle={assessment.summary} />
             {assessment.strengths.length > 0 ? (
               <ListItem title="Strong" subtitle={assessment.strengths.join(" · ")} />
             ) : null}
             {assessment.toReview.length > 0 ? (
-              <ListItem
-                title={writing ? "Corrections" : "Go over again"}
-                subtitle={assessment.toReview.join(" · ")}
-              />
+              <ListItem title={writing ? "Corrections" : "Go over again"} subtitle={assessment.toReview.join(" · ")} />
             ) : null}
             <ListItem title="Next check-in" subtitle={dayToDate(assessment.nextDueDay)} />
           </List>

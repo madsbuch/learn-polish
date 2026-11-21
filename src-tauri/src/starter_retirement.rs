@@ -2,16 +2,18 @@
 //!
 //! Only definitions that match a frozen fingerprint of a shipped course are
 //! removed. Practice progress is deliberately absent from that fingerprint;
-//! changed content, added blocks, shared blocks, songs and sources are kept.
+//! changed content, added lessons, shared lessons, songs and sources are kept.
 
 use diesel::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::db::{self, Conn};
 use crate::error::{Error, Result};
-use crate::schema::{blocks, conversation_lines, course_blocks, sentences, songs, topics, wiki_sources, words};
+use crate::schema::{lessons, conversation_lines, course_lessons, sentences, songs, courses, wiki_sources, words};
+#[allow(unused_imports)]
+use crate::ids::*;
 
-const RETIRED: &str = "bundled_courses_retired_v1";
+pub(crate) const RETIRED: &str = "bundled_courses_retired_v1";
 
 // SHA-256 of the definitions shipped before default courses were removed.
 // These hashes contain no vocabulary or lesson content and cannot seed courses.
@@ -30,56 +32,71 @@ const LEGACY_COURSES: &[(&str, &str)] = &[
 ];
 
 /// Hash the complete editable definition, without database IDs or review state.
-fn fingerprint(conn: &mut Conn, topic_id: i64) -> Result<Option<String>> {
-    let course: (String, String, String, String, i64, Option<i64>) = topics::table
-        .find(topic_id)
-        .select((topics::slug, topics::title_pl, topics::title_en, topics::summary_en, topics::created_at, topics::image_file_id))
+fn fingerprint(conn: &mut Conn, course_id: CourseId) -> Result<Option<String>> {
+    let course: (String, String, String, String, i64, Option<FileId>) = courses::table
+        .find(course_id)
+        .select((courses::slug, courses::title_pl, courses::title_en, courses::summary_en, courses::created_at, courses::image_file_id))
         .first(conn)?;
     if course.4 != 0 || course.5.is_some() {
         return Ok(None);
     }
-    if songs::table.filter(songs::topic_id.eq(topic_id)).count().get_result::<i64>(conn)? > 0 {
+    if songs::table.filter(songs::course_id.eq(course_id)).count().get_result::<i64>(conn)? > 0 {
         return Ok(None);
     }
     let mut definition = vec![serde_json::to_value((&course.0, &course.1, &course.2, &course.3))?];
-    let listed: Vec<(i64, i64)> = course_blocks::table
-        .filter(course_blocks::topic_id.eq(topic_id))
-        .order((course_blocks::ord, course_blocks::block_id))
-        .select((course_blocks::block_id, course_blocks::ord))
+    let listed: Vec<(LessonId, i64)> = course_lessons::table
+        .filter(course_lessons::course_id.eq(course_id))
+        .order((course_lessons::ord, course_lessons::lesson_id))
+        .select((course_lessons::lesson_id, course_lessons::ord))
         .load(conn)?;
-    for (block_id, ord) in listed {
-        if course_blocks::table.filter(course_blocks::block_id.eq(block_id)).count().get_result::<i64>(conn)? != 1
-            || wiki_sources::table.filter(wiki_sources::block_id.eq(block_id)).count().get_result::<i64>(conn)? > 0
+    for (lesson_id, ord) in listed {
+        if course_lessons::table.filter(course_lessons::lesson_id.eq(lesson_id)).count().get_result::<i64>(conn)? != 1
+            || wiki_sources::table.filter(wiki_sources::lesson_id.eq(lesson_id)).count().get_result::<i64>(conn)? > 0
         {
             return Ok(None);
         }
-        let block: (Option<String>, String, String, String, String, String, String, String, i64, String, i64, Option<i64>) = blocks::table
-            .find(block_id)
-            .select((blocks::slug, blocks::kind, blocks::format, blocks::title, blocks::summary,
-                blocks::complexity, blocks::lesson, blocks::objectives, blocks::period_days,
-                blocks::origin, blocks::challenge, blocks::song_id))
+        let mut lesson: (Option<String>, String, String, String, String, String, String, String, i64, String, i64, Option<SongId>) = lessons::table
+            .find(lesson_id)
+            .select((lessons::slug, lessons::lesson_type, lessons::lesson_type, lessons::title, lessons::summary,
+                lessons::complexity, lessons::content, lessons::objectives, lessons::period_days,
+                lessons::origin, lessons::challenge, lessons::song_id))
             .first(conn)?;
-        if block.9 != "starter" || block.11.is_some() {
+        // The fingerprints were taken when a lesson had a kind and a format:
+        // they are rebuilt from its type, so the old courses still match.
+        let (kind, format) = legacy_kind_and_format(&lesson.1);
+        (lesson.1, lesson.2) = (kind.to_string(), format);
+        if lesson.9 != "starter" || lesson.11.is_some() {
             return Ok(None);
         }
         let vocabulary: Vec<(i64, String, String, String)> = words::table
-            .filter(words::block_id.eq(block_id)).order(words::ord)
+            .filter(words::lesson_id.eq(lesson_id)).order(words::ord)
             .select((words::ord, words::pl, words::en, words::pos)).load(conn)?;
         let phrases: Vec<(i64, String, String)> = sentences::table
-            .filter(sentences::block_id.eq(block_id)).order(sentences::ord)
+            .filter(sentences::lesson_id.eq(lesson_id)).order(sentences::ord)
             .select((sentences::ord, sentences::pl, sentences::en)).load(conn)?;
         let dialogue: Vec<(i64, String, String, String, String)> = conversation_lines::table
-            .filter(conversation_lines::block_id.eq(block_id)).order(conversation_lines::ord)
+            .filter(conversation_lines::lesson_id.eq(lesson_id)).order(conversation_lines::ord)
             .select((conversation_lines::ord, conversation_lines::speaker, conversation_lines::gender,
                 conversation_lines::pl, conversation_lines::en)).load(conn)?;
-        definition.push(serde_json::to_value((ord, block, vocabulary, phrases, dialogue))?);
+        definition.push(serde_json::to_value((ord, lesson, vocabulary, phrases, dialogue))?);
     }
     Ok(Some(format!("{:x}", Sha256::digest(serde_json::to_vec(&definition)?))))
 }
 
+/// A type as the kind (drill | study) and format it was stored as before
+/// lesson types were flattened.
+fn legacy_kind_and_format(lesson_type: &str) -> (&'static str, String) {
+    match lesson_type {
+        "study" => ("study", String::new()),
+        "writing" => ("study", "writing".into()),
+        "listening" => ("study", "song".into()),
+        drill => ("drill", drill.to_string()),
+    }
+}
+
 fn retire_matching(conn: &mut Conn, manifest: &[(&str, &str)]) -> Result<()> {
     for (slug, expected) in manifest {
-        let id = topics::table.filter(topics::slug.eq(slug)).select(topics::id).first::<i64>(conn).optional()?;
+        let id = courses::table.filter(courses::slug.eq(slug)).select(courses::id).first::<CourseId>(conn).optional()?;
         if let Some(id) = id {
             if fingerprint(conn, id)?.as_deref() == Some(*expected) {
                 crate::courses::delete(conn, id)?;
@@ -105,7 +122,7 @@ pub fn run(conn: &mut Conn) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{blocks as practice_blocks, courses, schema, stats};
+    use crate::{lessons as practice_lessons, schema, stats};
 
     fn path(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("polish-retirement-{name}-{}.db", std::process::id()))
@@ -126,14 +143,14 @@ mod tests {
         conn
     }
 
-    fn course(conn: &mut Conn, slug: &str) -> i64 {
-        topics::table.filter(topics::slug.eq(slug)).select(topics::id).first(conn).unwrap()
+    fn course(conn: &mut Conn, slug: &str) -> CourseId {
+        courses::table.filter(courses::slug.eq(slug)).select(courses::id).first(conn).unwrap()
     }
 
     #[test]
     fn released_defaults_are_retired_once_without_resetting_the_learner() {
         let mut conn = legacy("released");
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), LEGACY_COURSES.len() as i64);
+        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), crate::convert::count(LEGACY_COURSES.len()));
         for (slug, expected) in LEGACY_COURSES {
             let id = course(&mut conn, slug);
             assert_eq!(fingerprint(&mut conn, id).unwrap().as_deref(), Some(*expected), "{slug}");
@@ -141,18 +158,18 @@ mod tests {
         let today = db::today(&mut conn);
         stats::add_xp(&mut conn, today, 42).unwrap();
         db::set_setting(&mut conn, "daily_goal", "250").unwrap();
-        diesel::update(blocks::table).set((blocks::reps.eq(3), blocks::due_day.eq(today + 8), blocks::passed.eq(1))).execute(&mut conn).unwrap();
+        diesel::update(lessons::table).set((lessons::reps.eq(3), lessons::due_day.eq(today + 8), lessons::passed.eq(1))).execute(&mut conn).unwrap();
         run(&mut conn).unwrap();
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
-        assert_eq!(blocks::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
+        assert_eq!(lessons::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 0);
         assert_eq!(db::get_setting(&mut conn, "daily_goal").unwrap().as_deref(), Some("250"));
-        assert_eq!(schema::day_log::table.find(today).select(schema::day_log::xp).first::<i64>(&mut conn).unwrap(), 42);
+        assert_eq!(schema::day_totals::table.find(today).select(schema::day_totals::xp).first::<i64>(&mut conn).unwrap(), 42);
         drop(conn);
         let mut conn = db::open(&path("released")).unwrap();
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
-        assert_eq!(topics::table.select(topics::slug).first::<String>(&mut conn).unwrap(), crate::demo_course::SLUG);
-        assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 12);
+        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 1);
+        assert_eq!(courses::table.select(courses::slug).first::<String>(&mut conn).unwrap(), crate::demo_course::SLUG);
+        assert_eq!(words::table.count().get_result::<i64>(&mut conn).unwrap(), 31, "the demo's words");
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
     }
 
@@ -160,37 +177,46 @@ mod tests {
     fn customized_extended_shared_and_user_courses_survive() {
         let mut conn = legacy("custom");
         let renamed = course(&mut conn, "basics");
-        diesel::update(topics::table.find(renamed)).set(topics::title_en.eq("My Polish basics")).execute(&mut conn).unwrap();
+        diesel::update(courses::table.find(renamed)).set(courses::title_en.eq("My Polish basics")).execute(&mut conn).unwrap();
         let extended = course(&mut conn, "family");
-        courses::extend(&mut conn, extended, &[courses::NewWord { pl: "moje własne słowo".into(), en: "my own word".into(), pos: "phr".into() }], &[], &[], "you").unwrap();
+        crate::courses::extend(&mut conn, extended, &[crate::courses::NewWord { pl: "moje własne słowo".into(), en: "my own word".into(), pos: "phr".into(), ..Default::default() }], &[], &[], "you").unwrap();
         let edited = course(&mut conn, "food");
-        let edited_block = practice_blocks::for_topic(&mut conn, edited).unwrap()[0].id;
-        practice_blocks::update(&mut conn, edited_block, practice_blocks::BlockChanges { title: Some("My dialogue".into()), ..Default::default() }).unwrap();
+        let edited_lesson = practice_lessons::for_course(&mut conn, edited).unwrap()[0].id;
+        practice_lessons::update(&mut conn, edited_lesson, practice_lessons::LessonChanges { title: Some("My dialogue".into()), ..Default::default() }).unwrap();
         let shared = course(&mut conn, "shopping");
-        let shared_block = practice_blocks::for_topic(&mut conn, shared).unwrap()[0].id;
-        let own = courses::create_empty(&mut conn, "My practice", "Made by me").unwrap();
-        courses::add_block(&mut conn, own, shared_block).unwrap();
+        let shared_lesson = practice_lessons::for_course(&mut conn, shared).unwrap()[0].id;
+        let own = crate::courses::create_empty(&mut conn, "My practice", "Made by me").unwrap();
+        // Shared, as a lesson could be before version 18 (which runs this
+        // before it takes a lesson off all but one of its courses).
+        diesel::sql_query("DROP INDEX course_lessons_one_course").execute(&mut conn).unwrap();
+        diesel::insert_into(course_lessons::table)
+            .values((course_lessons::course_id.eq(own), course_lessons::lesson_id.eq(shared_lesson), course_lessons::ord.eq(1)))
+            .execute(&mut conn)
+            .unwrap();
         let changed_word = course(&mut conn, "travel");
-        let word = schema::course_words::table.filter(schema::course_words::topic_id.eq(changed_word)).select(schema::course_words::id).first::<i64>(&mut conn).unwrap();
+        let word = schema::course_words::table.filter(schema::course_words::course_id.eq(changed_word)).select(schema::course_words::id).first::<WordId>(&mut conn).unwrap();
         diesel::update(words::table.find(word)).set(words::en.eq("my edited translation")).execute(&mut conn).unwrap();
         let scheduled = course(&mut conn, "home");
-        let scheduled_block = practice_blocks::for_topic(&mut conn, scheduled).unwrap()[0].id;
-        practice_blocks::update(&mut conn, scheduled_block, practice_blocks::BlockChanges { period_days: Some(19), ..Default::default() }).unwrap();
+        let scheduled_lesson = practice_lessons::for_course(&mut conn, scheduled).unwrap()[0].id;
+        practice_lessons::update(&mut conn, scheduled_lesson, practice_lessons::LessonChanges { period_days: Some(19), ..Default::default() }).unwrap();
         run(&mut conn).unwrap();
-        let retained: Vec<i64> = topics::table.select(topics::id).load(&mut conn).unwrap();
+        let retained: Vec<CourseId> = courses::table.select(courses::id).load(&mut conn).unwrap();
         for id in [renamed, extended, edited, shared, changed_word, scheduled, own] {
             assert!(retained.contains(&id), "customized course {id} was lost");
         }
         assert_eq!(retained.len(), 7);
-        assert_eq!(course_blocks::table.filter(course_blocks::block_id.eq(shared_block)).count().get_result::<i64>(&mut conn).unwrap(), 2);
+        assert_eq!(course_lessons::table.filter(course_lessons::lesson_id.eq(shared_lesson)).count().get_result::<i64>(&mut conn).unwrap(), 2);
         assert_eq!(db::foreign_key_violations(&mut conn).unwrap(), 0);
         // Once retained, restoring a title later must not trigger another sweep.
-        diesel::update(topics::table.find(renamed)).set(topics::title_en.eq("Meeting for the first time")).execute(&mut conn).unwrap();
+        diesel::update(courses::table.find(renamed)).set(courses::title_en.eq("Meeting for the first time")).execute(&mut conn).unwrap();
         run(&mut conn).unwrap();
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 7);
+        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 7);
         drop(conn);
         let mut conn = db::open(&path("custom")).unwrap();
-        assert_eq!(topics::table.count().get_result::<i64>(&mut conn).unwrap(), 8);
-        assert_eq!(topics::table.filter(topics::slug.eq(crate::demo_course::SLUG)).count().get_result::<i64>(&mut conn).unwrap(), 1);
+        assert_eq!(courses::table.count().get_result::<i64>(&mut conn).unwrap(), 8);
+        assert_eq!(courses::table.filter(courses::slug.eq(crate::demo_course::SLUG)).count().get_result::<i64>(&mut conn).unwrap(), 1);
+        // Opening it again upgrades it: the shared lesson keeps one of its courses.
+        assert_eq!(course_lessons::table.filter(course_lessons::lesson_id.eq(shared_lesson)).count().get_result::<i64>(&mut conn).unwrap(), 1);
+        assert!(practice_lessons::load(&mut conn, shared_lesson).is_ok());
     }
 }

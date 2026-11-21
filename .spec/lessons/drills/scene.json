@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Scene",
+  "summary": "One illustrated place full of things to find, name and place.",
+  "status": "accepted",
+  "order": 3,
+  "description": "Words for the things in a place, learnt where they are: in one drawing of a kitchen, a market stall or a station.",
+  "requirements": [
+    {
+      "id": "SCN-1",
+      "text": "Until its scene is ready, a scene lesson is practised as a words lesson over its things."
+    },
+    {
+      "id": "SCN-2",
+      "text": "When a scene has a thing new to the learner, the lesson opens with the whole scene to explore, where tapping a thing says its name."
+    },
+    {
+      "id": "SCN-3",
+      "text": "The learner finds a thing in the picture by its name, and names a thing that lights up by choosing among the scene's other things."
+    },
+    {
+      "id": "SCN-4",
+      "text": "In a scene lesson of medium or high complexity, a thing that has come back at least twice is named by typing it."
+    },
+    {
+      "id": "SCN-5",
+      "text": "A thing the vision model did not find in the picture is practised as in a words lesson."
+    },
+    {
+      "id": "SCN-6",
+      "text": "A session asks at most three “Where is it?” cards about the scene, in turn a sentence to judge true or false against the picture and a sentence with the place left out to choose."
+    },
+    {
+      "id": "SCN-7",
+      "text": "A “Where is it?” sentence the picture does not bear out is never asked."
+    }
+  ],
+  "related": [
+    "lessons/pictures#PIC-3",
+    "lessons/pictures#PIC-4",
+    "lessons/pictures#PIC-5",
+    "lessons/pictures#PIC-7",
+    "lessons/pictures#PIC-8",
+    "tutor/models#AI-6",
+    "speech"
+  ]
+}

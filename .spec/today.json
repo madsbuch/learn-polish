@@ -1,0 +1,102 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Today's lessons",
+  "summary": "Each day the app picks the five lessons that matter most and keeps them for the day.",
+  "status": "accepted",
+  "order": 4,
+  "description": "The home screen answers one question: what should I do today. The answer is a short list, not a backlog.",
+  "stories": [
+    {
+      "id": "US-TODAY-1",
+      "as": "a learner opening the app with ten minutes",
+      "want": "a short list of what matters most today",
+      "soThat": "I can start without deciding and stop when it is done",
+      "requirements": [
+        "#TODAY-1",
+        "#TODAY-2",
+        "#TODAY-10"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "TODAY-1",
+      "text": "The day's list is chosen once a day and kept for that day; it is chosen again only when the learner changes how many lessons a day they want, or when the kept list names no lesson this device has."
+    },
+    {
+      "id": "TODAY-2",
+      "text": "The list has `daily.default` lessons unless the learner sets another number, from 1 to 20."
+    },
+    {
+      "id": "TODAY-3",
+      "text": "Lessons that failed or were partly there last time and are due again come first."
+    },
+    {
+      "id": "TODAY-4",
+      "text": "Other due lessons follow, those most at risk first: the furthest past their interval, with lessons of lower ease ahead."
+    },
+    {
+      "id": "TODAY-5",
+      "text": "While there is room, at most `daily.max-new` new lessons a day are added, taken from the newest courses."
+    },
+    {
+      "id": "TODAY-6",
+      "text": "If a place is still free, at most `daily.max-reviews` mastered lesson whose words are due for review is added as a light review."
+    },
+    {
+      "id": "TODAY-7",
+      "text": "A review of a mastered lesson never takes the place of a due or new lesson, and cannot cost the lesson its mastery."
+    },
+    {
+      "id": "TODAY-8",
+      "text": "A mastered lesson, or one in a closed course, is never due.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A mastered lesson, or one listed only by a closed course, is never due.",
+          "reason": "A lesson is in one course now, so no other course can keep it in play.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "TODAY-9",
+      "text": "A course's challenges are offered only once its other lessons are passed."
+    },
+    {
+      "id": "TODAY-10",
+      "text": "Finishing the list is the day done, shown with a celebration; lessons due beyond the list are not shown on the home screen."
+    },
+    {
+      "id": "TODAY-11",
+      "text": "The day's list is the same on every device in a vault; if two devices chose a list while apart, the later one wins."
+    }
+  ],
+  "values": [
+    {
+      "id": "daily.default",
+      "type": "number",
+      "value": 5,
+      "description": "Lessons in the day's list unless the learner sets another number."
+    },
+    {
+      "id": "daily.max-new",
+      "type": "number",
+      "value": 2,
+      "description": "The most new lessons in a day's list."
+    },
+    {
+      "id": "daily.max-reviews",
+      "type": "number",
+      "value": 1,
+      "description": "The most mastered lessons that come back as a review in a day."
+    }
+  ],
+  "related": [
+    "principles#PRIN-9",
+    "lessons/schedule",
+    "progress#PROG-5",
+    "data/sync"
+  ]
+}

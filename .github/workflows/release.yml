@@ -1,18 +1,11 @@
 name: Build and publish latest
 
 # Every merge to main replaces the rolling "latest" release with fresh builds.
-# Pull requests only run the tests, so problems show up before the merge.
+# Pull requests test and compile Android and macOS too; only main publishes.
 on:
   push:
     branches: [main]
-    # Docs and the icon script do not change what ships.
-    paths-ignore:
-      - "**.md"
-      - "scripts/**"
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "scripts/**"
   workflow_dispatch:
 
 concurrency:
@@ -21,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,13 +26,15 @@ jobs:
     name: Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.4.0"
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -47,46 +42,63 @@ jobs:
           # Pull requests read the cache but never overwrite main's.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install Linux build dependencies
+      # On a cold cache apt does reach the mirrors: retry and time out a
+      # stalled download instead of failing (or hanging) on the first one.
+      - name: Make apt patient with slow mirrors
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev pkg-config
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80-patient >/dev/null
+
+      # The GTK/WebKit packages the Rust tests link against, kept in GitHub's
+      # cache: Ubuntu's mirrors often hang or fail, and with the cache warm
+      # this step doesn't reach them at all. Bump `version` to refresh it.
+      - name: Install Linux build dependencies (cached)
+        timeout-minutes: 10
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev pkg-config
+          version: "1"
 
       - run: bun install --frozen-lockfile
 
       - name: Type-check and build the frontend
         run: bun run build
 
+      - name: Rust lints (no unsafe, no `as` casts)
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets
+
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test --locked
+
+      - name: The screens' zod schemas match what the core sends
+        run: bun scripts/check-shapes.ts
 
   # The build starts alongside the tests instead of waiting for them; only
   # publishing waits for the tests to pass.
   android:
     name: Android (APK)
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.4.0"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       # Caches Gradle's downloads and build cache between runs.
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
-          packages: "platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.2.12479018"
+          packages: "platform-tools build-tools;36.0.0 platforms;android-36 ndk;27.2.12479018"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -102,34 +114,21 @@ jobs:
       - name: Locate the NDK
         run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
-      - name: Generate the Android project
-        run: bun tauri android init --ci
-
-      # `android init` fills the project with Tauri's default launcher icons.
-      # Replace them with ours (from `scripts/make-icon.mjs`), including the
-      # adaptive icon and its background colour, which the template lacks.
-      - name: Use the app's launcher icons
-        run: cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
-
-      # The generated activity draws edge to edge but never makes room for
-      # the keyboard, so Android pans the whole screen up. Ours shrinks the
-      # app above the keyboard instead (see src-tauri/android/MainActivity.kt).
-      - name: Make the app resize above the keyboard
-        run: |
-          activity=$(find src-tauri/gen/android/app/src/main -name MainActivity.kt | head -1)
-          test -n "$activity"
-          cp src-tauri/android/MainActivity.kt "$activity"
-          manifest=src-tauri/gen/android/app/src/main/AndroidManifest.xml
-          sed -i 's|android:name=".MainActivity"|android:name=".MainActivity"\n            android:windowSoftInputMode="adjustResize"|' "$manifest"
-          grep -q 'adjustResize' "$manifest"
+      - name: Generate and prepare the Android project
+        run: bun run android:init
 
       # Phones only: 64-bit and 32-bit ARM. x86_64 was for emulators and cost a
       # third of the Rust compile time.
       - name: Build the release APK
-        run: bun tauri android build --apk --target aarch64 --target armv7
+        env:
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          export VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node scripts/stamp-version.mjs
+          bun run android:build
 
-      - name: Sign the APK
-        id: sign
+      - name: Sign the APK with the release key
+        if: github.event_name != 'pull_request'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -137,69 +136,114 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          tools="$ANDROID_HOME/build-tools/34.0.0"
+          tools="$ANDROID_HOME/build-tools/36.0.0"
           mkdir -p out
+          trap 'rm -f key.jks aligned.apk' EXIT
 
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > key.jks
-            store_pass="$KEYSTORE_PASSWORD"
-            key_pass="$KEY_PASSWORD"
-            alias="$KEY_ALIAS"
-            echo "stable=true" >> "$GITHUB_OUTPUT"
-          else
-            # No signing secret configured: fall back to a throwaway key so the
-            # APK is at least installable. See scripts/make-android-keystore.sh.
-            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — signing with a throwaway key. This build cannot upgrade a previous install."
-            store_pass="polski-ephemeral"
-            key_pass="$store_pass"
-            alias="ephemeral"
-            keytool -genkeypair -keystore key.jks -alias "$alias" \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass "$store_pass" -keypass "$key_pass" \
-              -dname "CN=Polski CI, O=Polski, C=DK"
-            echo "stable=false" >> "$GITHUB_OUTPUT"
-          fi
+          : "${KEYSTORE_BASE64:?Configure ANDROID_KEYSTORE_BASE64 before releasing}"
+          : "${KEYSTORE_PASSWORD:?Configure ANDROID_KEYSTORE_PASSWORD before releasing}"
+          : "${KEY_PASSWORD:?Configure ANDROID_KEY_PASSWORD before releasing}"
+          : "${KEY_ALIAS:?Configure ANDROID_KEY_ALIAS before releasing}"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > key.jks
 
           # Tauri names the output directory after the ABI set it built, so find
           # the APK rather than assuming "universal".
-          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
-          if [ -z "$apk" ]; then
-            echo "No APK produced. Contents of the outputs tree:" >&2
+          mapfile -t apks < <(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk')
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "Expected one combined release APK; found ${#apks[@]}." >&2
             find src-tauri/gen/android/app/build/outputs -type f >&2 || true
             exit 1
           fi
+          apk="${apks[0]}"
 
-          "$tools/zipalign" -p -f 4 "$apk" aligned.apk
+          "$tools/zipalign" -P 16 -f 4 "$apk" aligned.apk
           "$tools/apksigner" sign \
-            --ks key.jks --ks-pass "pass:$store_pass" \
-            --ks-key-alias "$alias" --key-pass "pass:$key_pass" \
+            --ks key.jks --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD \
             --out out/Polski-android-universal.apk aligned.apk
           "$tools/apksigner" verify --print-certs out/Polski-android-universal.apk
+          "$tools/zipalign" -c -P 16 4 out/Polski-android-universal.apk
           # apksigner also writes a v4 signature file for incremental installs;
           # it is not needed to install the APK, so keep it out of the release.
           rm -f out/*.idsig
           rm -f key.jks aligned.apk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android
+          # Fork PRs have no secrets; their APK is compiled but never signed or published.
+          path: ${{ github.event_name == 'pull_request' && 'src-tauri/gen/android/app/build/outputs/apk/**/release/*.apk' || 'out/*' }}
+          if-no-files-found: error
+
+  macos:
+    name: macOS (DMG)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      # One universal app runs natively on both Apple Silicon and Intel Macs.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - run: bun install --frozen-lockfile
+
+      # No Apple Developer ID yet, so the app is ad-hoc signed ("-"): Apple
+      # Silicon refuses to run unsigned code at all, and ad-hoc is enough to
+      # launch once Gatekeeper is told to allow it (see the release notes).
+      - name: Build the universal app and DMG
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+          VITE_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          export VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node scripts/stamp-version.mjs
+          bun run tauri build --target universal-apple-darwin --bundles dmg --ci
+
+      - name: Collect the DMG
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          shopt -s nullglob
+          dmgs=(src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo "Expected one DMG; found ${#dmgs[@]}." >&2
+            find src-tauri/target/universal-apple-darwin/release/bundle -maxdepth 2 >&2 || true
+            exit 1
+          fi
+          cp "${dmgs[0]}" out/Polski-macos-universal.dmg
+          ls -lh out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
           path: out/*
           if-no-files-found: error
 
-    outputs:
-      stable-signing: ${{ steps.sign.outputs.stable }}
-
   publish:
     name: Publish latest
-    needs: [check, android]
+    permissions:
+      contents: write
+    needs: [check, android, macos]
     # Only main publishes. A manual run on another branch still builds the
-    # APK and keeps it as a workflow artefact, for testing before merging.
+    # APK and DMG and keeps them as workflow artefacts, for testing before merging.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -229,16 +273,14 @@ jobs:
           phone and allow installation from this source. Notifications need to be
           granted once, in the app's Settings screen.
 
-          HEADER
-          if [ "${{ needs.android.outputs.stable-signing }}" != "true" ]; then
-            cat >> notes.md <<'WARN'
-          > **Note** — no signing key is configured, so this APK is signed with a
-          > throwaway key and cannot upgrade an earlier install. Run
-          > `scripts/make-android-keystore.sh` once and add the four secrets it
-          > prints to make upgrades seamless.
+          **macOS** — download `Polski-macos-universal.dmg` (Apple Silicon and Intel,
+          macOS 10.15 or later), open it and drag Polski into Applications. The app is
+          not notarized yet, so the first launch is blocked: either run
+          `xattr -dr com.apple.quarantine /Applications/Polski.app` in Terminal, or try to
+          open it once and then choose *Open Anyway* in System Settings → Privacy &
+          Security.
 
-          WARN
-          fi
+          HEADER
           {
             echo "### This build"
             echo
@@ -254,7 +296,7 @@ jobs:
         run: gh release delete latest --yes --repo "$GITHUB_REPOSITORY" || true
 
       - name: Publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: Latest build

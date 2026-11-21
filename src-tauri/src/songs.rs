@@ -16,14 +16,17 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::ai;
 use crate::files;
 use crate::db::{self, Conn, Db};
-use crate::schema::{course_sentences, course_words, reviews, sentences, song_tracks, songs, topics, words};
+use crate::schema::{courses, reviews, sentences, song_tracks, songs, words};
 use crate::error::{Error, Result};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 const KIE_BASE_URL: &str = "https://api.kie.ai/api/v1";
 /// kie.ai's Suno generation endpoint, as named in its unified task API.
 const KIE_MUSIC_MODEL: &str = "ai-music-api/generate";
 
 /// Suno versions kie.ai currently accepts for new songs.
+// Spec: SONG-4
 pub const SUNO_MODELS: &[&str] = &["V6", "V6_MINI", "V6_WILD"];
 pub const DEFAULT_SUNO_MODEL: &str = "V6";
 
@@ -53,6 +56,12 @@ fn unreachable(error: reqwest::Error) -> Error {
 pub struct SongLine {
     pub en: String,
     pub pl: String,
+    /// In a podcast with a cast: who says it (empty: the narrator).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub speaker: String,
+    /// In a podcast: how it is said, in a word or two ("surprised").
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub how: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -75,11 +84,15 @@ pub struct SongDraft {
     /// "f", "m" or "" for no preference.
     pub vocal_gender: String,
     pub sections: Vec<SongSection>,
-    /// The course whose words it uses: its listening block is filed there.
-    pub topic_id: Option<i64>,
+    /// The course it is filed in (through its listening lesson), if any.
+    pub course_id: Option<CourseId>,
     /// How the song came about: what was asked and with what. Saved with the
     /// song, so it can be made again or varied later.
     pub origin: SongOrigin,
+    /// "podcast" for a spoken episode; empty or "song" for a song.
+    pub kind: String,
+    /// For a podcast: how its audio is put together.
+    pub podcast: Option<crate::podcasts::PodcastAudio>,
 }
 
 /// Everything that went into making a song, besides the lyrics and style it
@@ -99,18 +112,119 @@ pub struct SongOrigin {
     pub songwriter_model: String,
     /// Changes asked for while refining the draft, in order.
     pub revisions: Vec<String>,
+    /// What a podcast was written from — its Wikipedia article, and the same
+    /// article in Polish when there is one — kept so it can be read later.
+    pub sources: Vec<Source>,
+    /// The article's picture, used as the episode's cover.
+    pub source_image: String,
+    /// For a podcast: the articles asked for, and whether it is a story —
+    /// kept so the episode can be written again if writing it failed.
+    pub requested_articles: Vec<String>,
+    pub story: bool,
+    /// For a podcast: who talks — "narrator", "hosts" or "characters".
+    pub requested_cast: String,
+    /// For a podcast: made from today's news, and the stories it told
+    /// (their headlines, outlets, dates and links).
+    pub news: bool,
+    pub news_items: Vec<crate::news::Headline>,
+    /// Who made it: "composer" (the learner, on the Music tab) or "tutor".
+    pub made_by: String,
+    /// What the lyrics or script had to meet, word for word (the tutor's).
+    pub requirements: String,
+    /// The song or podcast this one varies, or was edited from.
+    pub based_on: Option<SongId>,
+    /// Everything the writer was given besides the request itself. With the
+    /// request fields above and the instructions of `instructions_version`,
+    /// it rebuilds the first prompt exactly.
+    pub given: WriterInput,
+    /// Which fixed writer instructions were used: a version and a hash of
+    /// their text (see [`instructions_version`]).
+    pub instructions_version: String,
+    /// What happened after the first draft, in order: revisions asked of the
+    /// writer and edits made directly, each with the draft as it was before —
+    /// which, with the request, is that revision's whole prompt.
+    pub steps: Vec<OriginStep>,
+}
+
+/// What the writer was given from the app: the learner's words, memories and
+/// what to read. A snapshot, since all of it changes over time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WriterInput {
+    /// "Polish = English", as given.
+    pub words: Vec<String>,
+    pub sentences: Vec<String>,
+    /// Words the learner keeps forgetting.
+    pub weak_words: Vec<String>,
+    /// Choruses that already existed, to avoid.
+    pub existing_choruses: Vec<String>,
+    /// What is known about the learner (podcasts).
+    pub memories: Vec<String>,
+    /// The articles or news as the writer read them (podcasts).
+    pub reading: String,
+}
+
+/// A change after the first draft.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct OriginStep {
+    /// "revise" (asked of the writer) or "edit" (changed directly).
+    pub kind: String,
+    /// "composer" or "tutor".
+    pub by: String,
+    /// The feedback given, or what was edited.
+    pub text: String,
+    /// The model that did a revision.
+    pub model: String,
+    /// The draft before this step, without its origin.
+    pub before: Option<Box<SongDraft>>,
+}
+
+/// "tutor", or else "composer".
+pub fn made_by(by: &str) -> &'static str {
+    if by == "tutor" {
+        "tutor"
+    } else {
+        "composer"
+    }
+}
+
+/// Bump when the way a writer's prompt is put together from its inputs
+/// changes, so an old song's prompt is rebuilt with the code of its version.
+pub const PROMPT_VERSION: u32 = 1;
+
+/// "v1-1a2b3c4d": the prompt version and a hash of the fixed instructions.
+pub fn instructions_version(rules: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(rules.as_bytes());
+    format!("v{PROMPT_VERSION}-{}", hash.iter().take(4).map(|b| format!("{b:02x}")).collect::<String>())
+}
+
+/// A draft as a step's "before": without how it came about.
+pub fn bare(draft: &SongDraft) -> Option<Box<SongDraft>> {
+    Some(Box::new(SongDraft { origin: SongOrigin::default(), ..draft.clone() }))
+}
+
+/// An article a podcast was written from.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Source {
+    pub title: String,
+    pub url: String,
+    /// The Wikipedia language: "en" or "pl".
+    pub lang: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SongTrack {
-    pub id: i64,
-    pub song_id: i64,
+    pub id: TrackId,
+    pub song_id: SongId,
     pub ord: i64,
     /// The take's audio and cover art: file ids, which the webview loads
     /// through the media protocol.
-    pub audio_file_id: i64,
-    pub image_file_id: Option<i64>,
+    pub audio_file_id: FileId,
+    pub image_file_id: Option<FileId>,
     /// The copies on disk, only for Android's native player.
     pub audio_path: String,
     pub image_path: Option<String>,
@@ -121,7 +235,7 @@ pub struct SongTrack {
 }
 
 /// One sung line with when it is sung, for lyrics that follow the music.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TimedLine {
     pub start: f64,
@@ -133,6 +247,9 @@ pub struct TimedLine {
     pub gloss: Option<String>,
     /// Set on the first line of a section: "Verse 1", "Chorus".
     pub section: Option<String>,
+    /// In a podcast with a cast: who says it.
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 /// A sung word and its timing, as Suno aligns it. Stored compactly.
@@ -149,7 +266,7 @@ pub struct TimedWord {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Song {
-    pub id: i64,
+    pub id: SongId,
     pub title: String,
     pub chorus_pl: String,
     pub chorus_en: String,
@@ -162,10 +279,14 @@ pub struct Song {
     pub created_at: i64,
     pub tracks: Vec<SongTrack>,
     /// The course it was written from.
-    pub topic_id: Option<i64>,
+    pub course_id: Option<CourseId>,
     /// The Suno model that sang it.
     pub suno_model: String,
     pub origin: SongOrigin,
+    /// "song" or "podcast".
+    pub kind: String,
+    /// For a podcast: how its audio is put together.
+    pub podcast: Option<crate::podcasts::PodcastAudio>,
 }
 
 /// What the songwriter is asked for.
@@ -174,8 +295,13 @@ pub struct Song {
 pub struct DraftRequest {
     /// Free text: what the song should be about.
     pub brief: String,
-    /// Draw vocabulary from this conversation topic.
-    pub topic_id: Option<i64>,
+    /// What the lyrics must meet, word for word (the tutor's): words to use,
+    /// grammar, line length — anything.
+    pub requirements: String,
+    /// The song this one varies, if any.
+    pub based_on: Option<SongId>,
+    /// "composer" or "tutor"; empty: the composer.
+    pub made_by: String,
     /// A fixed chorus sentence; empty lets the songwriter choose.
     pub chorus_pl: String,
     pub style: String,
@@ -190,7 +316,7 @@ pub struct DraftRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SongsChanged {
-    pub song_id: i64,
+    pub song_id: SongId,
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +447,14 @@ pub fn normalize_draft(mut draft: SongDraft) -> Result<SongDraft> {
 /// Pulls the JSON object out of a model reply that may wrap it in prose or
 /// a code fence.
 pub fn parse_draft(reply: &str) -> Result<SongDraft> {
+    let draft = read_draft(reply);
+    if draft.is_err() {
+        crate::diagnostics::unreadable_reply("A song draft", reply);
+    }
+    draft
+}
+
+fn read_draft(reply: &str) -> Result<SongDraft> {
     let start = reply.find('{');
     let end = reply.rfind('}');
     let (Some(start), Some(end)) = (start, end) else {
@@ -339,14 +473,14 @@ pub fn parse_draft(reply: &str) -> Result<SongDraft> {
 // Songwriter prompt
 // ---------------------------------------------------------------------------
 
-const SONGWRITER_RULES: &str = r#"You write songs that teach Polish to an adult beginner who speaks English. The learner will listen to each song many times, so it must be catchy, simple and correct.
+const SONGWRITER_RULES: &str = r#"You write songs that teach Polish to an adult who speaks English, at the level the brief gives (a beginner when it gives none). The learner will listen to each song many times, so it must be catchy, clear and correct.
 
 How the songs work:
 - Verses are made of pairs: a short English line, then the same meaning in Polish. Both are sung, English first. 2–7 words per line.
 - The chorus is ONE Polish sentence (the hook) that the learner should get stuck in their head. It is sung only in Polish, usually 2–4 times. Give its English meaning.
 - Follow the structure and length given in the brief exactly; Suno sings as long as the lyrics are.
-- Polish must be natural, grammatical and use correct diacritics (ą ć ę ł ń ó ś ź ż). Prefer the present tense and everyday words.
-- Reuse the target words; repeating a word across verses helps it stick.
+- Polish must be natural, grammatical and use correct diacritics (ą ć ę ł ń ó ś ź ż). Write at the brief's level — never simpler than it asks: for a beginner, the present tense and everyday words; higher up, the grammar and vocabulary of that level.
+- Words the requirements name come first. The target words are extras to reuse where they fit; repeating a word across verses helps it stick.
 - style is a Suno style prompt under 200 characters: genre, tempo, mood, voice. Always include "clear vocals" and "clear diction". Never name real artists.
 
 Reply with ONLY a JSON object, no prose, in exactly this shape:
@@ -363,69 +497,73 @@ Reply with ONLY a JSON object, no prose, in exactly this shape:
 }"#;
 
 pub(crate) struct SongContext {
-    topic: Option<String>,
-    words: Vec<String>,
-    sentences: Vec<String>,
-    weak_words: Vec<String>,
-    existing_choruses: Vec<String>,
+    pub(crate) words: Vec<String>,
+    pub(crate) sentences: Vec<String>,
+    pub(crate) weak_words: Vec<String>,
+    pub(crate) existing_choruses: Vec<String>,
 }
 
-pub(crate) fn gather_context(conn: &mut Conn, topic_id: Option<i64>) -> Result<SongContext> {
+impl SongContext {
+    /// The snapshot kept with the song.
+    pub(crate) fn given(&self) -> WriterInput {
+        WriterInput {
+            words: self.words.clone(),
+            sentences: self.sentences.clone(),
+            weak_words: self.weak_words.clone(),
+            existing_choruses: self.existing_choruses.clone(),
+            ..Default::default()
+        }
+    }
+}
+
+/// What the writer gets from the app: the words and sentences the learner has
+/// actually met, most recent first, and the ones they keep forgetting.
+pub(crate) fn gather_context(conn: &mut Conn) -> Result<SongContext> {
     let pair = |(pl, en): (String, String)| format!("{pl} = {en}");
-    let topic = match topic_id {
-        Some(id) => topics::table.find(id).select(topics::title_en).first(conn).optional()?,
-        None => None,
-    };
     let met = |kind: &'static str| reviews::kind.eq(kind);
-    let (words, sentences) = match topic_id {
-        Some(id) => (
-            course_words::table
-                .filter(course_words::topic_id.eq(id))
-                .order(course_words::ord)
-                .limit(40)
-                .select((course_words::pl, course_words::en))
-                .load(conn)?,
-            course_sentences::table
-                .filter(course_sentences::topic_id.eq(id))
-                .order(course_sentences::ord)
-                .limit(20)
-                .select((course_sentences::pl, course_sentences::en))
-                .load(conn)?,
-        ),
-        // Without a topic, sing what the learner has actually met.
-        None => (
-            words::table
-                .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
-                .order(reviews::last_day.desc())
-                .limit(40)
-                .select((words::pl, words::en))
-                .load(conn)?,
-            sentences::table
-                .inner_join(reviews::table.on(reviews::item_id.eq(sentences::id).and(met("sentence"))))
-                .order(reviews::last_day.desc())
-                .limit(20)
-                .select((sentences::pl, sentences::en))
-                .load(conn)?,
-        ),
-    };
+    let words: Vec<(String, String)> = words::table
+        .inner_join(reviews::table.on(diesel::dsl::sql::<diesel::sql_types::Bool>("reviews.item_id = words.id").and(met("word"))))
+        .order(reviews::last_day.desc())
+        .limit(40)
+        .select((words::pl, words::en))
+        .load(conn)?;
+    let sentences: Vec<(String, String)> = sentences::table
+        .inner_join(reviews::table.on(diesel::dsl::sql::<diesel::sql_types::Bool>("reviews.item_id = sentences.id").and(met("sentence"))))
+        .order(reviews::last_day.desc())
+        .limit(20)
+        .select((sentences::pl, sentences::en))
+        .load(conn)?;
     Ok(SongContext {
-        topic,
         words: words.into_iter().map(pair).collect(),
         sentences: sentences.into_iter().map(pair).collect(),
         weak_words: words::table
-            .inner_join(reviews::table.on(reviews::item_id.eq(words::id).and(met("word"))))
+            .inner_join(reviews::table.on(diesel::dsl::sql::<diesel::sql_types::Bool>("reviews.item_id = words.id").and(met("word"))))
             .order((reviews::lapses.desc(), reviews::ease.asc()))
             .limit(10)
             .select(words::pl)
             .load(conn)?,
-        existing_choruses: songs::table.order(songs::id.desc()).limit(30).select(songs::chorus_pl).load(conn)?,
+        existing_choruses: songs::table
+            .filter(songs::kind.eq("song"))
+            .order(songs::id.desc())
+            .limit(30)
+            .select(songs::chorus_pl)
+            .load(conn)?,
     })
+}
+
+/// The requirements, as the writer is told them.
+pub(crate) fn requirements_text(requirements: &str) -> String {
+    match requirements.trim() {
+        "" => String::new(),
+        text => format!("\nRequirements — every one of these MUST be met:\n{text}\n"),
+    }
 }
 
 fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &str) -> Vec<ai::Wire> {
     let mut brief = String::new();
     if let Some(previous) = &request.previous {
         brief.push_str("Here is the current draft:\n");
+        let requirements = requirements_text(&previous.origin.requirements);
         // How it came about is for the record, not for the songwriter.
         let previous = SongDraft { origin: SongOrigin::default(), ..previous.clone() };
         brief.push_str(&serde_json::to_string_pretty(&previous).unwrap_or_default());
@@ -435,15 +573,14 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
         } else {
             request.feedback.trim()
         });
-        brief.push_str("\n\nReturn the whole revised song as JSON.");
+        brief.push('\n');
+        brief.push_str(&requirements);
+        brief.push_str("\nReturn the whole revised song as JSON.");
         return vec![ai::Wire::system(SONGWRITER_RULES), ai::Wire::user(brief)];
     }
 
     if !request.brief.trim().is_empty() {
         brief.push_str(&format!("The song is about: {}\n", request.brief.trim()));
-    }
-    if let Some(topic) = &context.topic {
-        brief.push_str(&format!("Theme: {topic}\n"));
     }
     brief.push_str(structure_for(length));
     brief.push('\n');
@@ -483,6 +620,7 @@ fn songwriter_messages(request: &DraftRequest, context: &SongContext, length: &s
             context.existing_choruses.join(" | ")
         ));
     }
+    brief.push_str(&requirements_text(&request.requirements));
     if brief.trim().is_empty() {
         brief.push_str("Write a song about everyday life for a complete beginner.\n");
     }
@@ -500,6 +638,7 @@ pub fn songwriter_model(conn: &mut Conn) -> Result<String> {
 
 /// How long a song should be. Suno has no duration setting: a song lasts as
 /// long as its lyrics, so each length is a structure for the songwriter.
+// Spec: SONG-3
 pub const SONG_LENGTHS: &[&str] = &["short", "medium", "long"];
 pub const DEFAULT_SONG_LENGTH: &str = "long";
 
@@ -555,20 +694,20 @@ pub fn kie_key(conn: &mut Conn) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-struct KieEnvelope {
+struct KieEnvelope<T> {
     code: i64,
     #[serde(default)]
     msg: String,
-    #[serde(default)]
-    data: serde_json::Value,
+    data: Option<T>,
 }
 
 /// kie.ai answers HTTP 200 even for failures; the real status is in `code`.
-async fn kie_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value> {
+/// Its `data` is read as `T`.
+async fn kie_json<T: serde::de::DeserializeOwned>(request: reqwest::RequestBuilder) -> Result<T> {
     let response = request.send().await.map_err(unreachable)?;
     let status = response.status();
     let body = response.text().await.map_err(unreachable)?;
-    let envelope: KieEnvelope = serde_json::from_str(&body).map_err(|_| {
+    let envelope: KieEnvelope<T> = serde_json::from_str(&body).map_err(|_| {
         Error::msg(format!(
             "kie.ai returned an unexpected response ({status}): {}",
             body.chars().take(300).collect::<String>()
@@ -583,39 +722,70 @@ async fn kie_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value>
         };
         return Err(Error::msg(format!("kie.ai ({}): {}{hint}", envelope.code, envelope.msg)));
     }
-    Ok(envelope.data)
+    envelope.data.ok_or_else(|| Error::msg("kie.ai answered without the data it was asked for."))
 }
 
 pub async fn credits(key: &str) -> Result<f64> {
-    let data = kie_json(crate::http::downloads().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
-    data.as_f64()
-        .ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
+    let balance: crate::wire::Number =
+        kie_json(crate::http::downloads().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
+    balance.value().ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
+}
+
+/// kie.ai's answer to a new task.
+#[derive(Deserialize)]
+struct TaskCreated {
+    #[serde(rename = "taskId")]
+    task_id: String,
+}
+
+/// A kie.ai task: which of its models, and that model's input.
+#[derive(Serialize)]
+struct NewTask<'a, I: Serialize> {
+    model: &'a str,
+    input: I,
+}
+
+/// A song for Suno to sing.
+#[derive(Serialize)]
+struct SongInput<'a> {
+    custom_mode: bool,
+    instrumental: bool,
+    model: &'a str,
+    title: &'a str,
+    lyrics: String,
+    style: &'a str,
+    negative_tags: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    vocal_gender: &'a str,
+}
+
+/// A take to time the lyrics of.
+#[derive(Serialize)]
+struct TimingInput<'a> {
+    task_id: &'a str,
+    audio_id: &'a str,
 }
 
 async fn create_task(key: &str, model: &str, draft: &SongDraft) -> Result<String> {
-    let mut input = serde_json::json!({
-        "custom_mode": true,
-        "instrumental": false,
-        "model": model,
-        "title": draft.title,
-        "lyrics": render_lyrics(draft),
-        "style": draft.style,
-        "negative_tags": NEGATIVE_TAGS,
-    });
-    if !draft.vocal_gender.is_empty() {
-        input["vocal_gender"] = draft.vocal_gender.clone().into();
-    }
-    let data = kie_json(
+    let input = SongInput {
+        custom_mode: true,
+        instrumental: false,
+        model,
+        title: &draft.title,
+        lyrics: render_lyrics(draft),
+        style: &draft.style,
+        negative_tags: NEGATIVE_TAGS,
+        vocal_gender: &draft.vocal_gender,
+    };
+    let created: TaskCreated = kie_json(
         crate::http::downloads()
             .post(format!("{KIE_BASE_URL}/jobs/createTask"))
             .bearer_auth(key)
-            .json(&serde_json::json!({ "model": KIE_MUSIC_MODEL, "input": input })),
+            .json(&NewTask { model: KIE_MUSIC_MODEL, input }),
     )
-    .await?;
-    data.get("taskId")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .ok_or_else(|| Error::msg("kie.ai accepted the song but returned no task id."))
+    .await
+    .map_err(|e| Error::msg(format!("kie.ai did not start the song: {e}")))?;
+    Ok(created.task_id)
 }
 
 /// A finished take, as kie.ai reports it.
@@ -634,54 +804,72 @@ pub enum TaskState {
     Failed(String),
 }
 
-fn tracks_from(value: &serde_json::Value) -> Vec<RemoteTrack> {
-    let list = value
-        .get("data")
-        .or_else(|| value.get("sunoData"))
-        .and_then(|v| v.as_array())
-        .or_else(|| value.as_array());
-    let Some(list) = list else { return Vec::new() };
-    list.iter()
+/// A take as kie.ai lists it (snake_case or camelCase, by endpoint).
+#[derive(Debug, Default, Deserialize)]
+struct KieTrack {
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    id: Option<String>,
+    #[serde(default, alias = "audioUrl", deserialize_with = "crate::wire::lenient")]
+    audio_url: Option<String>,
+    #[serde(default, alias = "imageUrl", deserialize_with = "crate::wire::lenient")]
+    image_url: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    duration: Option<f64>,
+}
+
+/// The takes: in `data` (or `sunoData`), or a bare list.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum KieTracks {
+    Wrapped {
+        #[serde(alias = "sunoData")]
+        data: Vec<KieTrack>,
+    },
+    List(Vec<KieTrack>),
+}
+
+/// A task's `recordInfo` answer.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordInfo {
+    #[serde(default)]
+    state: String,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    response: Option<KieTracks>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    result_json: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    fail_msg: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    credits_consumed: Option<crate::wire::Number>,
+}
+
+fn tracks_from(tracks: KieTracks) -> Vec<RemoteTrack> {
+    let list = match tracks {
+        KieTracks::Wrapped { data } | KieTracks::List(data) => data,
+    };
+    list.into_iter()
         .filter_map(|item| {
-            let audio_url = item
-                .get("audio_url")
-                .or_else(|| item.get("audioUrl"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())?
-                .to_string();
+            let audio_url = item.audio_url.filter(|s| !s.is_empty())?;
             Some(RemoteTrack {
-                id: item
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .unwrap_or_else(|| audio_url.clone()),
+                id: item.id.unwrap_or_else(|| audio_url.clone()),
                 audio_url,
-                image_url: item
-                    .get("image_url")
-                    .or_else(|| item.get("imageUrl"))
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string),
-                duration: item.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                image_url: item.image_url.filter(|s| !s.is_empty()),
+                duration: item.duration.unwrap_or(0.0),
             })
         })
         .collect()
 }
 
-/// Reads a `recordInfo` payload. The tracks normally sit in `response.data`;
+/// Reads a `recordInfo` answer. The tracks normally sit in `response.data`;
 /// `resultJson` (a JSON string) is the fallback.
-pub fn parse_task(data: &serde_json::Value) -> TaskState {
-    let state = data.get("state").and_then(|v| v.as_str()).unwrap_or("");
-    match state {
+pub fn parse_task(data: RecordInfo) -> TaskState {
+    match data.state.as_str() {
         "success" => {
-            let mut tracks = data.get("response").map(tracks_from).unwrap_or_default();
+            let mut tracks = data.response.map(tracks_from).unwrap_or_default();
             if tracks.is_empty() {
-                if let Some(parsed) = data
-                    .get("resultJson")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                {
-                    tracks = tracks_from(&parsed);
+                if let Some(parsed) = data.result_json.and_then(|s| serde_json::from_str::<KieTracks>(&s).ok()) {
+                    tracks = tracks_from(parsed);
                 }
             }
             if tracks.is_empty() {
@@ -691,36 +879,27 @@ pub fn parse_task(data: &serde_json::Value) -> TaskState {
             }
         }
         "fail" => TaskState::Failed(
-            data.get("failMsg")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Suno could not make this song.")
-                .to_string(),
+            data.fail_msg.filter(|s| !s.is_empty()).unwrap_or_else(|| "Suno could not make this song.".into()),
         ),
         _ => TaskState::Pending,
     }
 }
 
-/// The kie.ai credits a finished task used, when the answer says.
-pub fn credits_consumed(data: &serde_json::Value) -> Option<f64> {
-    let value = data.get("creditsConsumed")?;
-    value.as_f64().or_else(|| value.as_str().and_then(|s| s.trim().parse().ok()))
-}
-
 async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)> {
-    let data = kie_json(
+    let data: RecordInfo = kie_json(
         crate::http::downloads()
             .get(format!("{KIE_BASE_URL}/jobs/recordInfo"))
             .query(&[("taskId", task_id)])
             .bearer_auth(key),
     )
     .await?;
-    Ok((parse_task(&data), credits_consumed(&data)))
+    let credits = data.credits_consumed.as_ref().and_then(crate::wire::Number::value);
+    Ok((parse_task(data), credits))
 }
 
 /// Downloads a file and returns its bytes and type; the caller stores them in
 /// the files table.
-async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
+pub(crate) async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
     let response = crate::http::downloads().get(url).send().await.map_err(unreachable)?;
     if !response.status().is_success() {
         return Err(Error::msg(format!("Could not download the song ({}).", response.status())));
@@ -739,7 +918,7 @@ async fn download(url: &str) -> Result<(Option<String>, Vec<u8>)> {
 }
 
 /// A MIME type from a file extension, when the server did not say.
-fn mime_for(ext: &str, fallback: &str) -> String {
+pub(crate) fn mime_for(ext: &str, fallback: &str) -> String {
     match ext {
         "mp3" => "audio/mpeg",
         "wav" => "audio/wav",
@@ -752,7 +931,7 @@ fn mime_for(ext: &str, fallback: &str) -> String {
     .to_string()
 }
 
-fn extension(url: &str, fallback: &str) -> String {
+pub(crate) fn extension(url: &str, fallback: &str) -> String {
     let path = url.split(['?', '#']).next().unwrap_or("");
     path.rsplit_once('.')
         .map(|(_, ext)| ext.to_lowercase())
@@ -766,27 +945,41 @@ fn extension(url: &str, fallback: &str) -> String {
 
 const TIMESTAMP_MODEL: &str = "ai-music-api/timeStamped-lyrics";
 
+/// One aligned word, in either spelling.
+#[derive(Debug, Deserialize)]
+struct AlignedWord {
+    word: String,
+    #[serde(default, alias = "start_s", rename = "startS", deserialize_with = "crate::wire::lenient")]
+    start: Option<f64>,
+    #[serde(default, alias = "end_s", rename = "endS", deserialize_with = "crate::wire::lenient")]
+    end: Option<f64>,
+}
+
+/// Suno's aligned words: camelCase in the direct answer, which nests a
+/// second status around them, or snake_case (callback).
+#[derive(Debug, Default, Deserialize)]
+pub struct AlignedWords {
+    #[serde(default)]
+    code: Option<i64>,
+    #[serde(default)]
+    msg: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    data: Option<Box<AlignedWords>>,
+    #[serde(default, alias = "aligned_words", rename = "alignedWords")]
+    words: Option<Vec<AlignedWord>>,
+}
+
 /// Reads Suno's aligned words, in either the camelCase (direct answer) or
 /// snake_case (callback) spelling.
-pub fn parse_aligned_words(data: &serde_json::Value) -> Option<Vec<TimedWord>> {
-    let list = data
-        .pointer("/data/alignedWords")
-        .or_else(|| data.pointer("/data/aligned_words"))
-        .or_else(|| data.get("alignedWords"))
-        .or_else(|| data.get("aligned_words"))?
-        .as_array()?;
-    let number = |item: &serde_json::Value, a: &str, b: &str| {
-        item.get(a).or_else(|| item.get(b)).and_then(|v| v.as_f64()).unwrap_or(-1.0)
-    };
+pub fn parse_aligned_words(data: AlignedWords) -> Option<Vec<TimedWord>> {
+    let words = match data.data {
+        Some(inner) if inner.words.is_some() => inner.words,
+        _ => data.words,
+    }?;
     Some(
-        list.iter()
-            .filter_map(|item| {
-                Some(TimedWord {
-                    text: item.get("word")?.as_str()?.to_string(),
-                    start: number(item, "startS", "start_s"),
-                    end: number(item, "endS", "end_s"),
-                })
-            })
+        words
+            .into_iter()
+            .map(|w| TimedWord { text: w.word, start: w.start.unwrap_or(-1.0), end: w.end.unwrap_or(-1.0) })
             .collect(),
     )
 }
@@ -851,6 +1044,7 @@ pub fn timed_lines(words: &[TimedWord], sections: &[SongSection]) -> Vec<TimedLi
                 lang: lang.to_string(),
                 gloss,
                 section: section.take(),
+                speaker: None,
             });
         }
         text.clear();
@@ -891,28 +1085,23 @@ pub fn timed_lines(words: &[TimedWord], sections: &[SongSection]) -> Vec<TimedLi
 }
 
 async fn fetch_timestamps(key: &str, task_id: &str, audio_id: &str) -> Result<Vec<TimedWord>> {
-    let data = kie_json(
+    let data: AlignedWords = kie_json(
         crate::http::downloads()
             .post(format!("{KIE_BASE_URL}/jobs/createTask"))
             .bearer_auth(key)
-            .json(&serde_json::json!({
-                "model": TIMESTAMP_MODEL,
-                "input": { "task_id": task_id, "audio_id": audio_id },
-            })),
+            .json(&NewTask { model: TIMESTAMP_MODEL, input: TimingInput { task_id, audio_id } }),
     )
     .await?;
     // The answer nests a second status inside `data`.
-    if let Some(code) = data.get("code").and_then(|c| c.as_i64()) {
-        if code != 200 {
-            let msg = data.get("msg").and_then(|m| m.as_str()).unwrap_or("no lyrics timing");
-            return Err(Error::msg(format!("kie.ai ({code}): {msg}")));
-        }
+    if let Some(code) = data.code.filter(|c| *c != 200) {
+        let msg = data.msg.clone().unwrap_or_else(|| "no lyrics timing".into());
+        return Err(Error::msg(format!("kie.ai ({code}): {msg}")));
     }
-    parse_aligned_words(&data).ok_or_else(|| Error::msg("kie.ai returned no lyrics timing."))
+    parse_aligned_words(data).ok_or_else(|| Error::msg("kie.ai returned no lyrics timing."))
 }
 
 /// Fetches and stores one take's word timings.
-async fn sync_track_lyrics(app: &AppHandle, track_id: i64) -> Result<()> {
+async fn sync_track_lyrics(app: &AppHandle, track_id: TrackId) -> Result<()> {
     let (key, task_id, audio_id) = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
@@ -944,17 +1133,18 @@ async fn sync_track_lyrics(app: &AppHandle, track_id: i64) -> Result<()> {
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = song_tracks, check_for_backend(diesel::sqlite::Sqlite))]
 struct TrackRow {
-    id: i64,
-    song_id: i64,
+    id: TrackId,
+    song_id: SongId,
     ord: i64,
-    audio_file_id: Option<i64>,
-    image_file_id: Option<i64>,
+    audio_file_id: Option<FileId>,
+    image_file_id: Option<FileId>,
     duration: f64,
     play_count: i64,
     aligned_words: Option<String>,
+    timed_lines: Option<String>,
 }
 
-fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
+fn load_tracks(conn: &mut Conn, song_id: SongId, sections: &[SongSection]) -> Result<Vec<SongTrack>> {
     let rows: Vec<TrackRow> = song_tracks::table
         .filter(song_tracks::song_id.eq(song_id))
         .filter(song_tracks::audio_file_id.is_not_null())
@@ -962,27 +1152,33 @@ fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Resul
         .select(TrackRow::as_select())
         .load(conn)?;
     // The players stream from each file's copy on disk.
-    let ids: Vec<i64> = rows.iter().flat_map(|r| [r.audio_file_id, r.image_file_id]).flatten().collect();
+    let ids: Vec<FileId> = rows.iter().flat_map(|r| [r.audio_file_id, r.image_file_id]).flatten().collect();
     let paths = files::paths(conn, &ids)?;
-    let path = |id: Option<i64>| id.and_then(|id| paths.get(&id).cloned());
+    let path = |id: Option<FileId>| id.and_then(|id| paths.get(&id).cloned());
     Ok(rows
         .into_iter()
-        .map(|row| SongTrack {
+        // Only takes with audio are loaded (the filter above).
+        .filter_map(|row| Some(SongTrack {
+            audio_file_id: row.audio_file_id?,
             id: row.id,
             song_id: row.song_id,
             ord: row.ord,
-            audio_file_id: row.audio_file_id.unwrap_or_default(),
             image_file_id: row.image_file_id,
             audio_path: path(row.audio_file_id).unwrap_or_default(),
             image_path: path(row.image_file_id),
             duration: row.duration,
             play_count: row.play_count,
+            // A podcast knows its timings exactly; a song's come from Suno.
             lines: row
-                .aligned_words
-                .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
-                .filter(|words| !words.is_empty())
-                .map(|words| timed_lines(&words, sections)),
-        })
+                .timed_lines
+                .and_then(|json| serde_json::from_str::<Vec<TimedLine>>(&json).ok())
+                .or_else(|| {
+                    row.aligned_words
+                        .and_then(|json| serde_json::from_str::<Vec<TimedWord>>(&json).ok())
+                        .filter(|words| !words.is_empty())
+                        .map(|words| timed_lines(&words, sections))
+                }),
+        }))
         .collect())
 }
 
@@ -990,7 +1186,7 @@ fn load_tracks(conn: &mut Conn, song_id: i64, sections: &[SongSection]) -> Resul
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = songs, check_for_backend(diesel::sqlite::Sqlite))]
 struct SongRow {
-    id: i64,
+    id: SongId,
     title: String,
     chorus_pl: String,
     chorus_en: String,
@@ -1000,9 +1196,11 @@ struct SongRow {
     status: String,
     error: Option<String>,
     created_at: i64,
-    topic_id: Option<i64>,
+    course_id: Option<CourseId>,
     suno_model: String,
     origin: String,
+    kind: String,
+    podcast: String,
 }
 
 fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
@@ -1019,13 +1217,19 @@ fn with_tracks(conn: &mut Conn, row: SongRow) -> Result<Song> {
         status: row.status,
         error: row.error,
         created_at: row.created_at,
-        topic_id: row.topic_id,
+        course_id: row.course_id,
         suno_model: row.suno_model,
         origin: serde_json::from_str(&row.origin).unwrap_or_default(),
+        podcast: if row.kind == "podcast" {
+            Some(serde_json::from_str(&row.podcast).unwrap_or_default())
+        } else {
+            None
+        },
+        kind: row.kind,
     })
 }
 
-pub fn load_song(conn: &mut Conn, id: i64) -> Result<Song> {
+pub(crate) fn load_song(conn: &mut Conn, id: SongId) -> Result<Song> {
     let row = songs::table
         .find(id)
         .select(SongRow::as_select())
@@ -1035,19 +1239,122 @@ pub fn load_song(conn: &mut Conn, id: i64) -> Result<Song> {
     with_tracks(conn, row)
 }
 
-pub fn list_songs(conn: &mut Conn) -> Result<Vec<Song>> {
-    let rows = songs::table.order(songs::id.desc()).select(SongRow::as_select()).load(conn)?;
+/// The songs and podcasts in the library; with `drafts`, also the tutor's
+/// drafts not made yet (which the Music tab does not show).
+pub fn list_songs(conn: &mut Conn, drafts: bool) -> Result<Vec<Song>> {
+    let mut query = songs::table.order(songs::id.desc()).into_boxed();
+    if !drafts {
+        query = query.filter(songs::status.ne("draft"));
+    }
+    let rows = query.select(SongRow::as_select()).load(conn)?;
     rows.into_iter().map(|row| with_tracks(conn, row)).collect()
 }
 
-pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Result<i64> {
+/// Saves a draft that is not made yet: the tutor's, to look over and change
+/// before it is sung or read. Returns its id.
+pub fn insert_draft(conn: &mut Conn, draft: &SongDraft) -> Result<SongId> {
+    let model = if draft.kind == "podcast" { crate::ai::SPEECH_MODEL.to_string() } else { suno_model(conn) };
+    let id = insert_song(conn, draft, &model)?;
+    set_status(conn, id, "draft", None)?;
+    Ok(id)
+}
+
+/// Stores a changed draft in place.
+pub fn save_draft(conn: &mut Conn, id: SongId, draft: &SongDraft) -> Result<()> {
+    diesel::update(songs::table.find(id))
+        .set((
+            songs::title.eq(&draft.title),
+            songs::chorus_pl.eq(&draft.chorus_pl),
+            songs::chorus_en.eq(&draft.chorus_en),
+            songs::style.eq(&draft.style),
+            songs::vocal_gender.eq(&draft.vocal_gender),
+            songs::sections.eq(serde_json::to_string(&draft.sections)?),
+            songs::lyrics.eq(render_lyrics(draft)),
+            songs::origin.eq(serde_json::to_string(&draft.origin)?),
+            songs::podcast.eq(match &draft.podcast {
+                Some(audio) => serde_json::to_string(audio)?,
+                None => "{}".to_string(),
+            }),
+        ))
+        .execute(conn)?;
+    Ok(())
+}
+
+/// The draft to change for a song: the song itself while it is a draft
+/// (`Some` of its id). One already made is never changed — its takes were
+/// sung from its lyrics — so changing it gives a new draft based on it
+/// (`None`: saved by [`store_draft`] once the change is made).
+pub fn editable(conn: &mut Conn, song_id: SongId, by: &str) -> Result<(Option<SongId>, SongDraft)> {
+    let song = load_song(conn, song_id)?;
+    let mut draft = draft_of(&song);
+    draft.course_id = song.course_id;
+    if song.status == "draft" {
+        return Ok((Some(song_id), draft));
+    }
+    // A podcast's sound settings and cast come along.
+    draft.origin = SongOrigin {
+        made_by: made_by(by).into(),
+        based_on: Some(song_id),
+        revisions: Vec::new(),
+        steps: Vec::new(),
+        ..song.origin.clone()
+    };
+    Ok((None, draft))
+}
+
+/// Saves a changed draft: in place, or as a new draft. Returns its id.
+pub fn store_draft(conn: &mut Conn, id: Option<SongId>, draft: &SongDraft) -> Result<SongId> {
+    match id {
+        Some(id) => {
+            save_draft(conn, id, draft)?;
+            Ok(id)
+        }
+        None => insert_draft(conn, draft),
+    }
+}
+
+/// Sings (or, for a podcast, reads) a draft: it joins the library and is made
+/// in the background, like any other.
+pub fn sing(app: &AppHandle, db: &Db, song_id: SongId) -> Result<()> {
+    {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        let song = load_song(conn, song_id)?;
+        if song.status != "draft" {
+            return Err(Error::msg("That one is already made; change it to make a new one."));
+        }
+        if song.kind == "podcast" {
+            crate::podcasts::normalize_episode(draft_of(&song))?;
+            crate::ai::api_key(conn)?;
+        } else {
+            normalize_draft(draft_of(&song))?;
+            kie_key(conn)?;
+            let model = suno_model(conn);
+            diesel::update(songs::table.find(song_id)).set(songs::suno_model.eq(model)).execute(conn)?;
+        }
+        diesel::update(songs::table.find(song_id)).set(songs::created_at.eq(db::now_secs())).execute(conn)?;
+        set_status(conn, song_id, "generating", None)?;
+    }
+    let kind: String = songs::table.find(song_id).select(songs::kind).first(&mut *db.lock())?;
+    if kind == "podcast" {
+        crate::podcasts::spawn_render(app.clone(), song_id);
+    } else {
+        spawn_generation(app.clone(), song_id);
+    }
+    notify(app, song_id);
+    Ok(())
+}
+
+
+pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Result<SongId> {
     // A course that no longer exists is simply not remembered.
-    let topic_id: Option<i64> = match draft.topic_id {
-        Some(id) => topics::table.find(id).select(topics::id).first(conn).optional()?,
+    let course_id: Option<CourseId> = match draft.course_id {
+        Some(id) => courses::table.find(id).select(courses::id).first(conn).optional()?,
         None => None,
     };
     Ok(diesel::insert_into(songs::table)
         .values((
+            songs::id.eq(SongId::new()),
             songs::title.eq(&draft.title),
             songs::chorus_pl.eq(&draft.chorus_pl),
             songs::chorus_en.eq(&draft.chorus_en),
@@ -1058,14 +1365,22 @@ pub fn insert_song(conn: &mut Conn, draft: &SongDraft, suno_model: &str) -> Resu
             songs::suno_model.eq(suno_model),
             songs::status.eq("generating"),
             songs::created_at.eq(db::now_secs()),
-            songs::topic_id.eq(topic_id),
+            songs::course_id.eq(course_id),
             songs::origin.eq(serde_json::to_string(&draft.origin)?),
+            songs::kind.eq(if draft.kind == "podcast" { "podcast" } else { "song" }),
+            songs::podcast.eq(match &draft.podcast {
+                Some(audio) => serde_json::to_string(audio)?,
+                None => "{}".to_string(),
+            }),
         ))
         .returning(songs::id)
         .get_result(conn)?)
 }
 
-fn set_status(conn: &mut Conn, id: i64, status: &str, error: Option<&str>) -> Result<()> {
+pub(crate) fn set_status(conn: &mut Conn, id: SongId, status: &str, error: Option<&str>) -> Result<()> {
+    if let Some(error) = error {
+        crate::diagnostics::note("music", format!("Song or episode {id} failed: {error}"));
+    }
     diesel::update(songs::table.find(id)).set((songs::status.eq(status), songs::error.eq(error))).execute(conn)?;
     Ok(())
 }
@@ -1079,12 +1394,14 @@ fn draft_of(song: &Song) -> SongDraft {
         vocal_gender: song.vocal_gender.clone(),
         sections: song.sections.clone(),
         // Only for generation, which does not file anything.
-        topic_id: None,
+        course_id: None,
         origin: song.origin.clone(),
+        kind: song.kind.clone(),
+        podcast: song.podcast.clone(),
     }
 }
 
-fn notify(app: &AppHandle, song_id: i64) {
+pub(crate) fn notify(app: &AppHandle, song_id: SongId) {
     let _ = app.emit("songs://changed", SongsChanged { song_id });
 }
 
@@ -1095,7 +1412,7 @@ fn notify(app: &AppHandle, song_id: i64) {
 /// Waits for Suno, then downloads every take. Runs detached from the command
 /// that started it, so leaving the screen (or the app) does not lose the song;
 /// unfinished songs are picked up again at the next launch.
-pub fn spawn_generation(app: AppHandle, song_id: i64) {
+pub fn spawn_generation(app: AppHandle, song_id: SongId) {
     // Suno takes minutes; the app has to stay awake for them.
     let busy = crate::work::begin(&app, "Making a song…");
     tauri::async_runtime::spawn(async move {
@@ -1110,7 +1427,7 @@ pub fn spawn_generation(app: AppHandle, song_id: i64) {
     });
 }
 
-async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
+async fn generate(app: &AppHandle, song_id: SongId) -> Result<()> {
     let (key, task_id, model, draft) = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
@@ -1196,7 +1513,7 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
             None => None,
         };
         // Downloading a take again replaces its files.
-        let old: Option<(Option<i64>, Option<i64>)> = song_tracks::table
+        let old: Option<(Option<FileId>, Option<FileId>)> = song_tracks::table
             .filter(song_tracks::song_id.eq(song_id))
             .filter(song_tracks::remote_id.eq(&track.id))
             .select((song_tracks::audio_file_id, song_tracks::image_file_id))
@@ -1204,8 +1521,9 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
             .optional()?;
         diesel::insert_into(song_tracks::table)
             .values((
+                song_tracks::id.eq(TrackId::new()),
                 song_tracks::song_id.eq(song_id),
-                song_tracks::ord.eq(ord as i64),
+                song_tracks::ord.eq(crate::convert::count(ord)),
                 song_tracks::remote_id.eq(&track.id),
                 song_tracks::duration.eq(track.duration),
                 song_tracks::audio_file_id.eq(audio_id),
@@ -1230,7 +1548,7 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
 
     // Word timings, so the lyrics can follow the music. A song without them
     // still plays, and playing it later tries again.
-    let track_ids: Vec<i64> = {
+    let track_ids: Vec<TrackId> = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -1246,16 +1564,29 @@ async fn generate(app: &AppHandle, song_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Resumes songs that were still being made when the app last closed.
+/// Resumes songs and podcast episodes that were still being made when the
+/// app last closed — only those this device started (it wrote the row's
+/// current version: `sync::written_here`). One being made on another device
+/// is that device's to finish; resuming it here too would download the same
+/// song twice, or record the episode twice, as two copies.
 pub fn resume_pending(app: &AppHandle) {
-    let pending: Vec<i64> = {
+    let pending: Vec<(SongId, String)> = {
         let db = app.state::<Db>();
         let mut guard = db.lock();
         let conn = &mut *guard;
-        songs::table.filter(songs::status.eq("generating")).select(songs::id).load(conn).unwrap_or_default()
+        let generating: Vec<(SongId, String)> = songs::table
+            .filter(songs::status.eq("generating"))
+            .select((songs::id, songs::kind))
+            .load(conn)
+            .unwrap_or_default();
+        generating.into_iter().filter(|(id, _)| crate::sync::written_here(conn, "songs", &id.to_string())).collect()
     };
-    for id in pending {
-        spawn_generation(app.clone(), id);
+    for (id, kind) in pending {
+        if kind == "podcast" {
+            crate::podcasts::spawn_render(app.clone(), id);
+        } else {
+            spawn_generation(app.clone(), id);
+        }
     }
 }
 
@@ -1265,7 +1596,29 @@ pub fn resume_pending(app: &AppHandle) {
 
 #[tauri::command]
 pub async fn songs_list(db: State<'_, Db>) -> Result<Vec<Song>> {
-    list_songs(&mut db.lock())
+    let asked = std::time::Instant::now();
+    let mut guard = db.lock();
+    let waited = asked.elapsed();
+    let mut list = list_songs(&mut guard, false)?;
+    drop(guard);
+    // What the writer was given and each revision's draft are for the tutor
+    // (get_song), not for the screens: they stay out of the list.
+    for song in &mut list {
+        song.origin.given = WriterInput::default();
+        song.origin.steps.clear();
+    }
+    // Settings → Diagnostics: tells waiting on the database from the work
+    // itself, if the library is slow to open.
+    crate::diagnostics::note(
+        "timing",
+        format!(
+            "Music library: {} items in {} ms ({} ms waiting for the database)",
+            list.len(),
+            asked.elapsed().as_millis(),
+            waited.as_millis()
+        ),
+    );
+    Ok(list)
 }
 
 /// Asks the songwriter for a draft, or a revision of one.
@@ -1279,7 +1632,7 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     let (key, model, messages) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
-        let context = gather_context(conn, request.topic_id)?;
+        let context = gather_context(conn)?;
         let length = if SONG_LENGTHS.contains(&request.length.as_str()) {
             request.length.clone()
         } else {
@@ -1288,10 +1641,10 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
         (
             ai::api_key(conn)?,
             songwriter_model(conn)?,
-            (songwriter_messages(&request, &context, &length), length),
+            (songwriter_messages(&request, &context, &length), length, context.given()),
         )
     };
-    let (messages, length) = messages;
+    let (messages, length, given) = messages;
     // A long song needs room for its lyrics in the answer.
     let reply = ai::complete_with(&key, &model, &messages, 0.8, 5000).await?;
     let _ = crate::costs::record_tokens(&mut db.lock(), crate::costs::SONGWRITER, &model, reply.cost, "", reply.tokens);
@@ -1299,14 +1652,24 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
     if length == "long" && request.previous.is_none() && !draft.style.contains(LONG_STYLE) {
         draft.style = format!("{}, {LONG_STYLE}", draft.style.trim_end_matches([',', ' ']));
     }
-    draft.topic_id = request.topic_id.or(request.previous.as_ref().and_then(|p| p.topic_id));
+    draft.course_id = request.previous.as_ref().and_then(|p| p.course_id);
+    let by = made_by(&request.made_by);
     draft.origin = match &request.previous {
-        // A revision keeps how the song began and adds what was changed.
+        // A revision keeps how the song began and adds what was changed,
+        // with the draft it changed (which is in its prompt).
         Some(previous) => {
-            let mut origin = previous.origin.clone();
-            origin.revisions.push(match request.feedback.trim() {
+            let feedback = match request.feedback.trim() {
                 "" => "Make it catchier.".to_string(),
                 feedback => feedback.to_string(),
+            };
+            let mut origin = previous.origin.clone();
+            origin.revisions.push(feedback.clone());
+            origin.steps.push(OriginStep {
+                kind: "revise".into(),
+                by: by.into(),
+                text: feedback,
+                model: model.clone(),
+                before: bare(previous),
             });
             origin.songwriter_model = model.clone();
             origin
@@ -1318,7 +1681,12 @@ pub async fn write_draft(db: &Db, request: DraftRequest) -> Result<SongDraft> {
             requested_chorus: request.chorus_pl.trim().to_string(),
             length: length.clone(),
             songwriter_model: model.clone(),
-            revisions: Vec::new(),
+            made_by: by.into(),
+            requirements: request.requirements.trim().to_string(),
+            based_on: request.based_on,
+            given,
+            instructions_version: instructions_version(SONGWRITER_RULES),
+            ..Default::default()
         },
     };
     // The learner's explicit choices beat the model's.
@@ -1342,7 +1710,7 @@ pub async fn song_create(app: AppHandle, db: State<'_, Db>, draft: SongDraft) ->
 }
 
 /// Saves a finished draft and hands it to Suno in the background.
-pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
+pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<SongId> {
     let draft = normalize_draft(draft)?;
     let id = {
         let mut guard = db.lock();
@@ -1357,7 +1725,11 @@ pub fn start_song(app: &AppHandle, db: &Db, draft: SongDraft) -> Result<i64> {
 }
 
 #[tauri::command]
-pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Result<Song> {
+pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: SongId) -> Result<Song> {
+    let kind: String = songs::table.find(song_id).select(songs::kind).first(&mut *db.lock())?;
+    if kind == "podcast" {
+        return crate::podcasts::rerender(&app, &db, song_id, None);
+    }
     {
         let mut guard = db.lock();
         let conn = &mut *guard;
@@ -1369,12 +1741,12 @@ pub async fn song_retry(app: AppHandle, db: State<'_, Db>, song_id: i64) -> Resu
 }
 
 #[tauri::command]
-pub async fn song_delete(db: State<'_, Db>, song_id: i64) -> Result<()> {
+pub async fn song_delete(db: State<'_, Db>, song_id: SongId) -> Result<()> {
     delete_song(&mut db.lock(), song_id)
 }
 
 /// Deletes a song, its takes and their files. Its takes leave every playlist.
-pub fn delete_song(conn: &mut Conn, song_id: i64) -> Result<()> {
+pub fn delete_song(conn: &mut Conn, song_id: SongId) -> Result<()> {
     let takes = song_tracks::table.filter(song_tracks::song_id.eq(song_id));
     let ids = take_files(takes.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?);
     diesel::delete(takes).execute(conn)?;
@@ -1384,13 +1756,13 @@ pub fn delete_song(conn: &mut Conn, song_id: i64) -> Result<()> {
 }
 
 /// The file ids of takes' audio and cover art.
-fn take_files(rows: Vec<(Option<i64>, Option<i64>)>) -> Vec<i64> {
+fn take_files(rows: Vec<(Option<FileId>, Option<FileId>)>) -> Vec<FileId> {
     rows.into_iter().flat_map(|(audio, image)| [audio, image]).flatten().collect()
 }
 
 /// Removes one take, keeping the song and its other takes.
 #[tauri::command]
-pub async fn song_track_delete(db: State<'_, Db>, track_id: i64) -> Result<()> {
+pub async fn song_track_delete(db: State<'_, Db>, track_id: TrackId) -> Result<()> {
     let mut guard = db.lock();
     let conn = &mut *guard;
     let take = song_tracks::table.find(track_id);
@@ -1401,7 +1773,7 @@ pub async fn song_track_delete(db: State<'_, Db>, track_id: i64) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn song_track_played(db: State<'_, Db>, track_id: i64) -> Result<()> {
+pub async fn song_track_played(db: State<'_, Db>, track_id: TrackId) -> Result<()> {
     diesel::update(song_tracks::table.find(track_id))
         .set((song_tracks::play_count.eq(song_tracks::play_count + 1), song_tracks::last_played_at.eq(db::now_secs())))
         .execute(&mut *db.lock())?;
@@ -1414,15 +1786,18 @@ pub async fn song_track_played(db: State<'_, Db>, track_id: i64) -> Result<()> {
 pub async fn song_track_lyrics(
     app: AppHandle,
     db: State<'_, Db>,
-    track_id: i64,
+    track_id: TrackId,
 ) -> Result<Option<Vec<TimedLine>>> {
     let (song_id, has_words) = {
         let mut guard = db.lock();
         let conn = &mut *guard;
         song_tracks::table
             .find(track_id)
-            .select((song_tracks::song_id, song_tracks::aligned_words.is_not_null()))
-            .first::<(i64, bool)>(conn)
+            .select((
+                song_tracks::song_id,
+                song_tracks::aligned_words.is_not_null().or(song_tracks::timed_lines.is_not_null()),
+            ))
+            .first::<(SongId, bool)>(conn)
             .optional()?
             .ok_or_else(|| Error::msg("That song no longer exists."))?
     };
@@ -1450,14 +1825,16 @@ mod tests {
             chorus_en: "A coffee with milk, please".into(),
             style: "acoustic pop".into(),
             vocal_gender: "".into(),
-            topic_id: None,
+            course_id: None,
             origin: SongOrigin::default(),
+            kind: String::new(),
+            podcast: None,
             sections: vec![
                 SongSection {
                     kind: "verse".into(),
                     lines: vec![
-                        SongLine { en: "Good morning".into(), pl: "Dzień dobry".into() },
-                        SongLine { en: "I am hungry".into(), pl: "Jestem głodny".into() },
+                        SongLine { en: "Good morning".into(), pl: "Dzień dobry".into(), ..Default::default() },
+                        SongLine { en: "I am hungry".into(), pl: "Jestem głodny".into(), ..Default::default() },
                     ],
                 },
                 SongSection {
@@ -1465,14 +1842,52 @@ mod tests {
                     lines: vec![SongLine {
                         en: "A coffee with milk, please".into(),
                         pl: "Poproszę kawę z mlekiem".into(),
+                        ..Default::default()
                     }],
                 },
                 SongSection {
                     kind: "verse".into(),
-                    lines: vec![SongLine { en: "Thank you".into(), pl: "Dziękuję".into() }],
+                    lines: vec![SongLine { en: "Thank you".into(), pl: "Dziękuję".into(), ..Default::default() }],
                 },
             ],
         }
+    }
+
+    #[test]
+    fn the_prompt_carries_the_requirements_and_rebuilds_from_what_is_kept() {
+        let context = SongContext {
+            words: vec!["kawa = coffee".into()],
+            sentences: vec![],
+            weak_words: vec!["mleko".into()],
+            existing_choruses: vec![],
+        };
+        let request = DraftRequest { brief: "Coffee".into(), requirements: "Present tense only.".into(), ..Default::default() };
+        let prompt = songwriter_messages(&request, &context, "short");
+        let user = prompt[1].content.clone().unwrap();
+        assert!(user.contains("MUST be met:\nPresent tense only."), "{user}");
+        // What is kept rebuilds the same prompt.
+        let given = context.given();
+        let rebuilt = SongContext {
+            words: given.words,
+            sentences: given.sentences,
+            weak_words: given.weak_words,
+            existing_choruses: given.existing_choruses,
+        };
+        assert_eq!(songwriter_messages(&request, &rebuilt, "short")[1].content, prompt[1].content);
+        // A revision repeats the requirements.
+        let previous = SongDraft {
+            title: "Kawa".into(),
+            origin: SongOrigin { requirements: "Present tense only.".into(), ..Default::default() },
+            ..Default::default()
+        };
+        let revision = DraftRequest { previous: Some(previous), feedback: "Shorter lines.".into(), ..Default::default() };
+        let user = songwriter_messages(&revision, &context, "short")[1].content.clone().unwrap();
+        assert!(user.contains("Shorter lines.") && user.contains("Present tense only."), "{user}");
+        let version = instructions_version(SONGWRITER_RULES);
+        assert!(version.starts_with("v1-") && version.len() == 11, "{version}");
+        // Songs from before keep loading: the new fields are optional.
+        let old: SongOrigin = serde_json::from_str(r#"{"brief":"x","revisions":["catchier"]}"#).unwrap();
+        assert_eq!((old.made_by.as_str(), old.based_on, old.steps.len()), ("", None, 0));
     }
 
     #[test]
@@ -1522,6 +1937,11 @@ mod tests {
         assert_eq!(clean.sections.len(), 3, "empty sections are dropped");
     }
 
+    /// A reply as it comes off the wire, into its struct.
+    fn wire<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
+        serde_json::from_value(value).unwrap()
+    }
+
     #[test]
     fn finished_tasks_yield_their_tracks() {
         let data = serde_json::json!({
@@ -1531,7 +1951,7 @@ mod tests {
                 { "id": "b", "audio_url": "https://x/b.mp3", "duration": 175.0 }
             ]}
         });
-        let TaskState::Done(tracks) = parse_task(&data) else { panic!("not done") };
+        let TaskState::Done(tracks) = parse_task(wire(data)) else { panic!("not done") };
         assert_eq!(tracks.len(), 2);
         assert_eq!(tracks[0].image_url.as_deref(), Some("https://x/a.jpeg"));
         assert_eq!(tracks[1].image_url, None);
@@ -1541,14 +1961,15 @@ mod tests {
             "state": "success",
             "resultJson": "{\"data\":[{\"id\":\"c\",\"audio_url\":\"https://x/c.mp3\"}]}"
         });
-        assert!(matches!(parse_task(&data), TaskState::Done(t) if t[0].id == "c"));
+        assert!(matches!(parse_task(wire(data)), TaskState::Done(t) if t[0].id == "c"));
 
-        assert_eq!(parse_task(&serde_json::json!({ "state": "generating" })), TaskState::Pending);
-        assert_eq!(credits_consumed(&serde_json::json!({ "creditsConsumed": 12 })), Some(12.0));
-        assert_eq!(credits_consumed(&serde_json::json!({ "creditsConsumed": "6.5" })), Some(6.5));
-        assert_eq!(credits_consumed(&serde_json::json!({})), None);
+        assert_eq!(parse_task(wire(serde_json::json!({ "state": "generating" }))), TaskState::Pending);
+        let credits = |v| wire::<RecordInfo>(v).credits_consumed.and_then(|c| c.value());
+        assert_eq!(credits(serde_json::json!({ "creditsConsumed": 12 })), Some(12.0));
+        assert_eq!(credits(serde_json::json!({ "creditsConsumed": "6.5" })), Some(6.5));
+        assert_eq!(credits(serde_json::json!({})), None);
         assert_eq!(
-            parse_task(&serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" })),
+            parse_task(wire(serde_json::json!({ "state": "fail", "failMsg": "lyrics rejected" }))),
             TaskState::Failed("lyrics rejected".into())
         );
     }
@@ -1563,12 +1984,12 @@ mod tests {
             ], "waveformData": [0, 1], "hootCer": 0.38, "isStreamed": false }
         });
         assert_eq!(
-            parse_aligned_words(&direct),
+            parse_aligned_words(wire(direct)),
             Some(vec![TimedWord { text: "[Verse]\nWaggin'".into(), start: 1.36, end: 1.79 }])
         );
         let callback = serde_json::json!({ "aligned_words": [{ "word": "Hej", "start_s": 2.0, "end_s": 2.5 }] });
-        assert_eq!(parse_aligned_words(&callback).unwrap()[0].start, 2.0);
-        assert_eq!(parse_aligned_words(&serde_json::json!({ "data": {} })), None);
+        assert_eq!(parse_aligned_words(wire(callback)).unwrap()[0].start, 2.0);
+        assert_eq!(parse_aligned_words(wire(serde_json::json!({ "data": {} }))), None);
     }
 
     fn word(text: &str, start: f64, end: f64) -> TimedWord {

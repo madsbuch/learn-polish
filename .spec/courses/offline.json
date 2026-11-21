@@ -1,0 +1,170 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Courses kept offline",
+  "summary": "A switch on a course that downloads all of its audio and pictures and keeps them downloaded as it grows.",
+  "status": "accepted",
+  "order": 2,
+  "description": "For a learner about to be without a connection. Audio and pictures are otherwise made the first time a lesson needs them, which takes the network and the learner's key.",
+  "stories": [
+    {
+      "id": "US-OFF-1",
+      "as": "a learner about to board a flight",
+      "want": "one course fully downloaded",
+      "soThat": "I can practise it with no connection",
+      "requirements": [
+        "#OFF-1",
+        "#OFF-2",
+        "#OFF-5"
+      ]
+    },
+    {
+      "id": "US-OFF-2",
+      "as": "a learner who keeps a course offline",
+      "want": "to see what is downloaded and what will still need a connection",
+      "soThat": "I am not surprised mid-lesson",
+      "requirements": [
+        "#OFF-5",
+        "#OFF-9",
+        "#OFF-10"
+      ]
+    },
+    {
+      "id": "US-OFF-3",
+      "as": "a learner downloading a course before a trip",
+      "want": "to see how far the download has come, and have it go on with the app closed",
+      "soThat": "I can put the phone away while it downloads",
+      "requirements": [
+        "#OFF-14",
+        "#OFF-17",
+        "#OFF-18"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "OFF-1",
+      "text": "A course can be marked to be kept offline with a switch on its page; no course is marked until the learner does so."
+    },
+    {
+      "id": "OFF-2",
+      "text": "Switching it on starts downloading everything the course lacks that is not a conversation: audio, example sentences and pictures.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Switching it on starts downloading everything the course lacks: the audio of everything its lessons say and every picture they show.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-3",
+      "text": "The audio counted for a course is everything its lessons say, each at normal speed and slowly: words, sentences, dialogue lines, a story's sentences in each speaker's voice, a scene's sentences, its words' example sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The audio counted for a course is every word, sentence and dialogue line of its lessons, a story's sentences in each speaker's voice, a scene's sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-4",
+      "text": "The pictures counted for a course are the words of its picture lessons, each scene, and each panel of its stories."
+    },
+    {
+      "id": "OFF-5",
+      "text": "A course is ready offline when every counted clip, every word's example sentences and every picture are stored; its page shows how many of each are downloaded.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A course is ready offline when every counted clip and picture is stored; its page shows how many of each are downloaded.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-6",
+      "text": "A course that gains content after it was ready is no longer shown as ready until the new audio and pictures are stored."
+    },
+    {
+      "id": "OFF-7",
+      "text": "For courses kept offline, missing example sentences and audio are fetched by itself at startup and after the tutor adds to a course.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "For courses kept offline, missing audio is fetched by itself at startup and after the tutor adds to a course.",
+          "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-8",
+      "text": "Pictures are drawn for a course kept offline only when the learner switches it on or taps Download now, which also retries pictures that failed before. By itself the app leaves a lesson's pictures to the device that made the lesson."
+    },
+    {
+      "id": "OFF-9",
+      "text": "The page says how many of the course's lessons are conversations, which need a connection whatever is downloaded."
+    },
+    {
+      "id": "OFF-10",
+      "text": "Without an OpenRouter key nothing is downloaded, and the page says a key is needed."
+    },
+    {
+      "id": "OFF-11",
+      "text": "Switching it off deletes nothing that was downloaded."
+    },
+    {
+      "id": "OFF-12",
+      "text": "The mark syncs with the course and what was downloaded syncs as files: a course made ready on one device is ready on the others once they have synced."
+    },
+    {
+      "id": "OFF-13",
+      "text": "A course is downloaded once at a time: asking again while a download runs starts no second one."
+    },
+    {
+      "id": "OFF-14",
+      "text": "While a course downloads on Android, the app is kept alive with a notification, so leaving the app or turning the screen off does not stop the download.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "While a course downloads on Android, the app is kept alive with a quiet notification.",
+          "reason": "The owner wants to follow a download's progress and have it go on when the app is not open.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-15",
+      "text": "Every word of a course kept offline has its example sentences written ahead and stored."
+    },
+    {
+      "id": "OFF-16",
+      "text": "Without a chosen chat model no example sentences are written, and the page says a model is needed."
+    },
+    {
+      "id": "OFF-17",
+      "text": "The notification names the course and shows how many of its items are downloaded out of how many; when the download ends it says the course is ready offline, or how many items could not be downloaded."
+    },
+    {
+      "id": "OFF-18",
+      "text": "If Android stops the app before a download ends, the course's example sentences and audio go on downloading without the app being opened, once there is a connection."
+    }
+  ],
+  "related": [
+    "courses",
+    "speech#SPEECH-1",
+    "lessons/pictures",
+    "lessons/conversations",
+    "data/sync#SYNC-12",
+    "tutor/models"
+  ]
+}

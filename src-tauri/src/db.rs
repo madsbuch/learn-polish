@@ -5,7 +5,7 @@
 //! one-off upgrades of older databases, whose tables no longer exist in the
 //! schema; what those upgrades read back is still typed (`legacy` rows).
 
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use diesel::connection::SimpleConnection;
@@ -15,49 +15,173 @@ use diesel::sql_types::{BigInt, Text};
 #[cfg(test)]
 use crate::content::{self, Conversation};
 use crate::error::{Error, Result};
-use crate::schema::{blocks, course_blocks, settings, song_tracks, topics, tutor_conversations, tutor_messages};
+use crate::schema::{lessons, course_lessons, settings, courses, device_settings};
+#[allow(unused_imports)]
+use crate::ids::*;
 
 /// The app's database connection.
 pub type Conn = SqliteConnection;
 
 /// Guards the single SQLite connection. Every command locks it briefly; there is
 /// no long-running work behind the lock.
-pub struct Db(pub Mutex<Conn>);
+///
+/// It is registered with the app before anything runs and filled in once the
+/// database has opened: on Android the webview can call a command while
+/// startup is still opening it, and such a call waits for it rather than
+/// failing with "state not managed".
+pub struct Db {
+    conn: OnceLock<Mutex<Conn>>,
+    ready: (Mutex<()>, Condvar),
+    /// The same news for async commands, which must not lesson a thread.
+    opened: tokio::sync::watch::Sender<bool>,
+}
+
+impl Default for Db {
+    fn default() -> Self {
+        Self { conn: OnceLock::new(), ready: Default::default(), opened: tokio::sync::watch::channel(false).0 }
+    }
+}
 
 impl Db {
+    /// A database that is open already (tests, tools).
+    #[allow(dead_code)]
+    pub fn new(conn: Conn) -> Self {
+        let db = Self::default();
+        db.fill(conn);
+        db
+    }
+
+    /// Hands over the opened connection and wakes every command waiting for it.
+    pub fn fill(&self, conn: Conn) {
+        let _ = self.conn.set(Mutex::new(conn));
+        let _guard = self.ready.0.lock().unwrap_or_else(|e| e.into_inner());
+        self.ready.1.notify_all();
+        self.opened.send_replace(true);
+    }
+
+    /// Waits, without holding a thread, until the database has opened. The
+    /// first command at startup waits here; giving up after `limit` lets the
+    /// app say so instead of hanging.
+    pub async fn opened(&self, limit: std::time::Duration) -> Result<()> {
+        if self.conn.get().is_some() {
+            return Ok(());
+        }
+        let mut news = self.opened.subscribe();
+        let opened = tokio::time::timeout(limit, news.wait_for(|open| *open)).await.map(|r| r.is_ok());
+        if opened == Ok(true) {
+            Ok(())
+        } else {
+            Err(Error::msg("Your data did not open in time. Try again."))
+        }
+    }
+
+    fn conn(&self) -> &Mutex<Conn> {
+        if let Some(conn) = self.conn.get() {
+            return conn;
+        }
+        let mut guard = self.ready.0.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if let Some(conn) = self.conn.get() {
+                return conn;
+            }
+            guard = self.ready.1.wait(guard).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
     pub fn lock(&self) -> std::sync::MutexGuard<'_, Conn> {
         // A poisoned lock means an earlier command panicked. The connection is
         // still usable, so recover rather than cascading the panic.
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        self.conn().lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// Whether the database at `path` is already at this build's schema, read
+/// without changing anything (a missing file is not made). A background sync
+/// runs only then: upgrading is for the app to do, with the learner there.
+pub fn is_current(path: &std::path::Path) -> Result<bool> {
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let mut conn = SqliteConnection::establish(&path.to_string_lossy())?;
+    let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(&mut conn)?.user_version;
+    Ok(version == SCHEMA_VERSION)
 }
 
 pub fn open(path: &std::path::Path) -> Result<Conn> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // How long each step takes, for Settings → Diagnostics: a slow start
+    // says where it was slow.
+    let mut steps: Vec<(&str, std::time::Duration)> = Vec::new();
+    let mut clock = std::time::Instant::now();
+    let mut lap = |name: &'static str, steps: &mut Vec<(&str, std::time::Duration)>| {
+        steps.push((name, clock.elapsed()));
+        clock = std::time::Instant::now();
+    };
     let mut conn = SqliteConnection::establish(&path.to_string_lossy())?;
     conn.batch_execute(
         "PRAGMA journal_mode = WAL;
          PRAGMA foreign_keys = ON;
          PRAGMA synchronous = NORMAL;
-         PRAGMA busy_timeout = 5000;",
+         PRAGMA busy_timeout = 5000;
+         PRAGMA journal_size_limit = 67108864;",
     )?;
-    migrate(&mut conn)?;
+    lap("open", &mut steps);
+    // An upgrade can take a while on a phone (a backup, then every row);
+    // the loading screen asks [`upgrading`] and says so meanwhile.
+    UPGRADING.store(true, std::sync::atomic::Ordering::Relaxed);
+    let upgraded = back_up_before_upgrade(&mut conn, path).and_then(|()| {
+        lap("backup", &mut steps);
+        migrate(&mut conn)
+    });
+    UPGRADING.store(false, std::sync::atomic::Ordering::Relaxed);
+    upgraded?;
+    lap("upgrade", &mut steps);
+    // Before anything is written: a copy of the database from elsewhere
+    // (restored, carried over) takes a new device id for sync.
+    match crate::sync::instance::check(&mut conn, path) {
+        Ok(crate::sync::instance::Check::Rotated { old_id, new_id }) => crate::diagnostics::note(
+            "sync",
+            format!("This database was copied from elsewhere: the device {old_id} is now {new_id}."),
+        ),
+        Ok(_) => {}
+        Err(error) => crate::diagnostics::note("sync", format!("Could not check where this database was written: {error}")),
+    }
+    lap("instance", &mut steps);
     initialize_courses(&mut conn)?;
+    lap("courses", &mut steps);
     // Files whose owner is gone (a crash between deleting a row and its
     // file, say) are not kept.
     crate::files::collect_orphans(&mut conn)?;
+    lap("orphan files", &mut steps);
     // History left behind by items deleted before the triggers existed.
+    // Only history this device wrote: another device's may simply have
+    // arrived before its word, in a sync that was cut off.
     conn.batch_execute(
-        "DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words);
-         DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences);",
+        "DELETE FROM reviews WHERE kind = 'word' AND item_id NOT IN (SELECT id FROM words)
+             AND EXISTS (SELECT 1 FROM sync_rows r, sync_state s WHERE s.id = 1 AND r.tbl = 'reviews'
+                 AND r.pk = reviews.kind || char(31) || reviews.item_id AND r.origin = s.device_id);
+         DELETE FROM reviews WHERE kind = 'sentence' AND item_id NOT IN (SELECT id FROM sentences)
+             AND EXISTS (SELECT 1 FROM sync_rows r, sync_state s WHERE s.id = 1 AND r.tbl = 'reviews'
+                 AND r.pk = reviews.kind || char(31) || reviews.item_id AND r.origin = s.device_id);",
     )?;
+    lap("old history", &mut steps);
     match foreign_key_violations(&mut conn) {
         Ok(0) => {}
-        Ok(n) => eprintln!("database integrity: {n} rows point at rows that do not exist"),
-        Err(error) => eprintln!("database integrity check failed: {error}"),
+        Ok(n) => crate::diagnostics::note("database", format!("{n} rows point at rows that do not exist")),
+        Err(error) => crate::diagnostics::note("database", format!("The integrity check failed: {error}")),
     }
+    lap("integrity check", &mut steps);
+    let total: std::time::Duration = steps.iter().map(|(_, d)| *d).sum();
+    crate::diagnostics::note(
+        "timing",
+        format!(
+            "Opening the database: {} ms ({})",
+            total.as_millis(),
+            steps.iter().map(|(name, d)| format!("{name} {} ms", d.as_millis())).collect::<Vec<_>>().join(", ")
+        ),
+    );
     Ok(conn)
 }
 
@@ -90,7 +214,7 @@ mod legacy {
     }
 
     #[derive(diesel::QueryableByName)]
-    pub struct Topic {
+    pub struct Course {
         #[diesel(sql_type = BigInt)]
         pub id: i64,
         #[diesel(sql_type = Text)]
@@ -98,12 +222,14 @@ mod legacy {
     }
 }
 
-const SCHEMA_VERSION: i64 = 5;
+pub(crate) const SCHEMA_VERSION: i64 = 18;
 
-const SCHEMA: &str = r#"
--- A topic is a course: a folder of blocks (see course_blocks). `kind` is
--- always 'course' now (it once told built-in topics from programmes).
-CREATE TABLE IF NOT EXISTS topics (
+/// The schema up to version 6 (integer ids): what an older database is
+/// brought to before it is converted to version 7 (upgrade_v7.rs).
+const LEGACY_SCHEMA: &str = r#"
+-- A course is a course: a folder of lessons (see course_lessons). `kind` is
+-- always 'course' now (it once told built-in courses from programmes).
+CREATE TABLE IF NOT EXISTS courses (
     id         INTEGER PRIMARY KEY,
     slug       TEXT    NOT NULL UNIQUE,
     ord        INTEGER NOT NULL,
@@ -117,44 +243,49 @@ CREATE TABLE IF NOT EXISTS topics (
     -- When it was first completed and first mastered (courses::milestones),
     -- so each is celebrated once.
     completed_at INTEGER,
-    mastered_at  INTEGER
+    mastered_at  INTEGER,
+    -- When the learner closed it as mastered: it is kept as a trophy and its
+    -- lessons leave the check-ins (courses::close).
+    closed_at    INTEGER
 );
 
--- Words, sentences and dialogue lines belong to a block — the drill that
+-- Words, sentences and dialogue lines belong to a lesson — the drill that
 -- practises them — and go when it goes. A course reaches them through its
--- blocks. A headword is unique within a block only: two courses may well
+-- lessons. A headword is unique within a lesson only: two courses may well
 -- teach the same word, each with its own history.
 CREATE TABLE IF NOT EXISTS words (
     id       INTEGER PRIMARY KEY,
-    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
     pos      TEXT    NOT NULL,
-    UNIQUE (block_id, pl)
+    -- A picture of it (picture lessons, or added to a word drill).
+    image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    UNIQUE (lesson_id, pl)
 );
-CREATE INDEX IF NOT EXISTS words_block ON words(block_id, ord);
+CREATE INDEX IF NOT EXISTS words_lesson ON words(lesson_id, ord);
 
 CREATE TABLE IF NOT EXISTS sentences (
     id       INTEGER PRIMARY KEY,
-    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL,
-    UNIQUE (block_id, pl)
+    UNIQUE (lesson_id, pl)
 );
-CREATE INDEX IF NOT EXISTS sentences_block ON sentences(block_id, ord);
+CREATE INDEX IF NOT EXISTS sentences_lesson ON sentences(lesson_id, ord);
 
 CREATE TABLE IF NOT EXISTS conversation_lines (
     id       INTEGER PRIMARY KEY,
-    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
     speaker  TEXT    NOT NULL,
     gender   TEXT    NOT NULL DEFAULT 'f',
     pl       TEXT    NOT NULL,
     en       TEXT    NOT NULL
 );
-CREATE INDEX IF NOT EXISTS conversation_block ON conversation_lines(block_id, ord);
+CREATE INDEX IF NOT EXISTS conversation_lesson ON conversation_lines(lesson_id, ord);
 
 -- A word or sentence that goes takes its review history with it.
 CREATE TRIGGER IF NOT EXISTS words_forget AFTER DELETE ON words BEGIN
@@ -178,17 +309,31 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 CREATE INDEX IF NOT EXISTS reviews_due ON reviews(kind, due_day);
 
+-- What earned each day's XP (xplog.rs): every answer and check-in, grouped
+-- by run (one go at a lesson). Days before it have their total only.
+CREATE TABLE IF NOT EXISTS xp_log (
+    id        INTEGER PRIMARY KEY,
+    day       INTEGER NOT NULL,
+    at        INTEGER NOT NULL,
+    run       TEXT    NOT NULL DEFAULT '',
+    lesson_id INTEGER,
+    label     TEXT    NOT NULL,
+    xp        INTEGER NOT NULL,
+    note      TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS xp_log_day ON xp_log(day);
+
 CREATE TABLE IF NOT EXISTS day_log (
     day       INTEGER PRIMARY KEY,
     xp        INTEGER NOT NULL DEFAULT 0,
     answered  INTEGER NOT NULL DEFAULT 0,
     correct   INTEGER NOT NULL DEFAULT 0,
-    topic_id  INTEGER,                    -- unused: the old daily session's topic
+    course_id  INTEGER,                    -- unused: the old daily session's course
     -- The day is done: the daily goal reached, or nothing left due.
     completed INTEGER NOT NULL DEFAULT 0,
     -- Missed, but a streak freeze kept the run going.
     frozen    INTEGER NOT NULL DEFAULT 0,
-    -- Minutes of scheduled check-ins done (by the blocks' size), and how
+    -- Minutes of scheduled check-ins done (by the lessons' size), and how
     -- many of them were done before their day — the daily budget learns
     -- from the first, the "ahead" balance shows the second.
     minutes   INTEGER NOT NULL DEFAULT 0,
@@ -222,6 +367,9 @@ CREATE TABLE IF NOT EXISTS files (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS files_kind ON files(kind);
+-- A file's details without its bytes (files.rs reads them from here: the
+-- row itself holds the bytes before `path`).
+CREATE INDEX IF NOT EXISTS files_meta ON files(id, kind, name, mime, size, path);
 
 -- Generated speech, so a line is only ever paid for once and replays work
 -- offline. Keyed by the exact text plus the model and voice that produced it,
@@ -235,20 +383,22 @@ CREATE TABLE IF NOT EXISTS speech_clips (
     created_at INTEGER NOT NULL
 );
 
--- Blocks: the unit of learning (see blocks.rs). A drill practises its own
--- words, sentences or dialogue; a study block carries a lesson and is checked
+-- Lessons: the unit of learning (see lessons.rs). A drill practises its own
+-- words, sentences or dialogue; a study lesson carries a lesson and is checked
 -- by an examiner. Each has its own check-in schedule, and is listed in one
 -- or more courses.
-CREATE TABLE IF NOT EXISTS blocks (
+CREATE TABLE IF NOT EXISTS lessons (
     id            INTEGER PRIMARY KEY,
     slug          TEXT    UNIQUE,                -- starter lessons: lesson/<slug>
-    kind          TEXT    NOT NULL,              -- drill | study
-    format        TEXT    NOT NULL DEFAULT '',   -- drills: words | memory | typing | sentences | gaps | dialogue; 'song' for listening
+    -- What it is and how it is practised: one of lesson_types::REGISTRY
+    -- (words | pictures | typing | memory | sentences | gaps | dialogue |
+    -- study | listening | writing).
+    lesson_type   TEXT    NOT NULL DEFAULT '',
     ord           INTEGER NOT NULL DEFAULT 0,
     title         TEXT    NOT NULL,
     summary       TEXT    NOT NULL DEFAULT '',
     complexity    TEXT    NOT NULL,              -- low | medium | high
-    lesson        TEXT    NOT NULL DEFAULT '',
+    content       TEXT    NOT NULL DEFAULT '',
     objectives    TEXT    NOT NULL DEFAULT '[]',
     period_days   INTEGER NOT NULL,
     interval_days INTEGER NOT NULL DEFAULT 0,
@@ -258,53 +408,55 @@ CREATE TABLE IF NOT EXISTS blocks (
     reps          INTEGER NOT NULL DEFAULT 0,
     origin        TEXT    NOT NULL DEFAULT 'tutor', -- starter | tutor | you
     created_at    INTEGER NOT NULL,
-    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE, -- listening blocks
-    -- What the last fact check against the block's sources changed, and when.
+    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE, -- listening lessons
+    -- What the last fact check against the lesson's sources changed, and when.
     fact_note       TEXT,
     fact_checked_at INTEGER,
     -- How fast its gaps grow: up when check-ins go easily, down when they
     -- don't (see plan.rs).
     ease          REAL NOT NULL DEFAULT 2.5,
-    -- Writing blocks: how much help the learner gets — 0 guided (word bank,
+    -- Writing lessons: how much help the learner gets — 0 guided (word bank,
     -- hints, simple questions), 1 supported (hints), 2 free. Moves with
     -- their results.
     support_level INTEGER NOT NULL DEFAULT 0,
-    -- Writing blocks: the word bank, made once (JSON).
+    -- Writing lessons: the word bank, made once (JSON).
     scaffold      TEXT,
     -- Beyond the course's level: not needed to complete the course, only to
     -- master it.
     challenge     INTEGER NOT NULL DEFAULT 0,
     -- Passed at least once.
-    passed        INTEGER NOT NULL DEFAULT 0
+    passed        INTEGER NOT NULL DEFAULT 0,
+    -- Mastery points, 0–100, earned by passing it (see lessons::mastery_gain).
+    mastery       INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS blocks_due ON blocks(due_day);
+CREATE INDEX IF NOT EXISTS lessons_due ON lessons(due_day);
 
--- Which courses list a block, in what order. A block may be in several; it is
+-- Which courses list a lesson, in what order. A lesson may be in several; it is
 -- deleted when it is taken out of the last one (courses.rs).
-CREATE TABLE IF NOT EXISTS course_blocks (
-    topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS course_lessons (
+    course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     ord      INTEGER NOT NULL,
-    PRIMARY KEY (topic_id, block_id)
+    PRIMARY KEY (course_id, lesson_id)
 );
-CREATE INDEX IF NOT EXISTS course_blocks_block ON course_blocks(block_id);
+CREATE INDEX IF NOT EXISTS course_lessons_lesson ON course_lessons(lesson_id);
 
--- A course's words, sentences and dialogue: whatever its blocks own, in the
--- course's block order. A block in two courses shows in both.
+-- A course's words, sentences and dialogue: whatever its lessons own, in the
+-- course's lesson order. A lesson in two courses shows in both.
 CREATE VIEW IF NOT EXISTS course_words AS
-    SELECT c.topic_id, w.id, w.block_id, c.ord * 1000 + w.ord AS ord, w.pl, w.en, w.pos
-    FROM words w JOIN course_blocks c ON c.block_id = w.block_id;
+    SELECT c.course_id, w.id, w.lesson_id, c.ord * 1000 + w.ord AS ord, w.pl, w.en, w.pos
+    FROM words w JOIN course_lessons c ON c.lesson_id = w.lesson_id;
 CREATE VIEW IF NOT EXISTS course_sentences AS
-    SELECT c.topic_id, s.id, s.block_id, c.ord * 1000 + s.ord AS ord, s.pl, s.en
-    FROM sentences s JOIN course_blocks c ON c.block_id = s.block_id;
+    SELECT c.course_id, s.id, s.lesson_id, c.ord * 1000 + s.ord AS ord, s.pl, s.en
+    FROM sentences s JOIN course_lessons c ON c.lesson_id = s.lesson_id;
 CREATE VIEW IF NOT EXISTS course_lines AS
-    SELECT c.topic_id, l.id, l.block_id, c.ord * 1000 + l.ord AS ord, l.speaker, l.gender, l.pl, l.en
-    FROM conversation_lines l JOIN course_blocks c ON c.block_id = l.block_id;
+    SELECT c.course_id, l.id, l.lesson_id, c.ord * 1000 + l.ord AS ord, l.speaker, l.gender, l.pl, l.en
+    FROM conversation_lines l JOIN course_lessons c ON c.lesson_id = l.lesson_id;
 
--- A study block's check-in: an interview with the examiner, and its verdict.
+-- A study lesson's check-in: an interview with the examiner, and its verdict.
 CREATE TABLE IF NOT EXISTS checkins (
     id          INTEGER PRIMARY KEY,
-    block_id    INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    lesson_id    INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     started_at  INTEGER NOT NULL,
     finished_at INTEGER,
     result      TEXT,
@@ -337,7 +489,7 @@ CREATE TABLE IF NOT EXISTS tutor_conversations (
 );
 
 -- The messages of a conversation with the tutor. `actions` is a JSON list of what the tutor
--- did in the app during that turn (courses created, blocks made, …), so
+-- did in the app during that turn (courses created, lessons made, …), so
 -- the UI can offer buttons and later turns know what already happened.
 CREATE TABLE IF NOT EXISTS tutor_messages (
     id         INTEGER PRIMARY KEY,
@@ -364,8 +516,8 @@ CREATE TABLE IF NOT EXISTS songs (
     status       TEXT    NOT NULL,          -- generating | ready | failed
     error        TEXT,
     created_at   INTEGER NOT NULL,
-    -- The course whose words it uses, where its listening block goes.
-    topic_id     INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+    -- The course whose words it uses, where its listening lesson goes.
+    course_id     INTEGER REFERENCES courses(id) ON DELETE SET NULL,
     -- JSON: what was asked for and with what (brief, requested style,
     -- length, songwriter model, revisions).
     origin       TEXT    NOT NULL DEFAULT '{}'
@@ -440,12 +592,14 @@ CREATE TABLE IF NOT EXISTS bench_runs (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ai_costs_ref ON ai_costs(ref) WHERE ref IS NOT NULL;
 
--- Wikipedia articles a study block is built on: its sources. The text is
+-- Wikipedia articles a study lesson is built on: its sources. The text is
 -- kept (offline reading, fact checks), with the revision it was read at;
--- a Polish version alongside when there is one. They go with their block.
+-- a Polish version alongside when there is one. They go with their lesson.
 CREATE TABLE IF NOT EXISTS wiki_sources (
     id            INTEGER PRIMARY KEY,
-    block_id      INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    -- Whose source it is: a study lesson's or a podcast episode's.
+    lesson_id     INTEGER REFERENCES lessons(id) ON DELETE CASCADE,
+    song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE,
     ord           INTEGER NOT NULL DEFAULT 0,
     lang          TEXT    NOT NULL,     -- the article's Wikipedia: en, pl, …
     title         TEXT    NOT NULL,
@@ -458,13 +612,16 @@ CREATE TABLE IF NOT EXISTS wiki_sources (
     pl_title      TEXT,                 -- the same article on Polish Wikipedia
     pl_url        TEXT,
     pl_content    TEXT,
+    html          TEXT,                 -- the article as Wikipedia lays it out, for the reader
+    pl_html       TEXT,
     fetched_at    INTEGER NOT NULL,
     checked_at    INTEGER NOT NULL,     -- last compared with Wikipedia
-    UNIQUE (block_id, lang, pageid)
+    UNIQUE (lesson_id, lang, pageid),
+    UNIQUE (song_id, lang, pageid)
 );
 
 -- A word or sentence takes its practice history with it, however it goes
--- (with its block, its course, or edited out), so the counts on the
+-- (with its lesson, its course, or edited out), so the counts on the
 -- progress screen only ever count what exists — and an id SQLite reuses
 -- never inherits someone else's history.
 CREATE TRIGGER IF NOT EXISTS words_take_their_reviews AFTER DELETE ON words
@@ -481,9 +638,216 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Example sentences for a word, shown when it is answered wrong: made once
+-- by the AI (a JSON list of {pl, en}) and kept.
+CREATE TABLE IF NOT EXISTS word_examples (
+    word_id    INTEGER PRIMARY KEY REFERENCES words(id) ON DELETE CASCADE,
+    examples   TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
 "#;
 
+/// The schema: version 8, tagged ids and sync (`schema.sql`).
+pub(crate) const SCHEMA: &str = include_str!("schema.sql");
+
+/// The schema as it was at version 7: what a database from before tagged
+/// ids is converted to, before it is brought up to version 8.
+const SCHEMA_V7: &str = include_str!("schema_v7.sql");
+
+/// Backups kept before upgrades: the newest ones.
+// Spec: DATA-9
+const BACKUPS_KEPT: usize = 2;
+
+/// Before an upgrade changes the database (its `user_version` is behind
+/// [`SCHEMA_VERSION`]), a full copy goes to `backups/` beside it, so a bad
+/// upgrade loses nothing. The newest [`BACKUPS_KEPT`] are kept. A new
+/// database, or one already current, is not copied. Every change to the
+/// schema bumps `SCHEMA_VERSION`, so every upgrade is backed up.
+/// Whether the database is being upgraded right now (set only while one
+/// is due: a backup and a new schema version).
+static UPGRADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the database is being upgraded right now: asked by the loading
+/// screen, so it needs no database itself.
+#[tauri::command]
+pub fn db_upgrading() -> bool {
+    UPGRADING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn back_up_before_upgrade(conn: &mut Conn, path: &std::path::Path) -> Result<()> {
+    let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;
+    if version == 0 || version >= SCHEMA_VERSION {
+        UPGRADING.store(false, std::sync::atomic::Ordering::Relaxed);
+        return Ok(());
+    }
+    let target = back_up(conn, path, &format!("before-v{SCHEMA_VERSION}"), "before-v")?;
+    crate::diagnostics::note("database", format!("Backed up before upgrading from version {version}: {}", target.display()));
+    Ok(())
+}
+
+/// Saves a full copy of the database in `backups/` beside it, named
+/// `<label>-<file>-<seconds>.sqlite`, and returns where it went. Of the
+/// copies whose names start with `family` (`before-v` for every upgrade,
+/// `before-join` before joining a vault), the newest [`BACKUPS_KEPT`] are
+/// kept. The copy is marked as a copy (sync/instance.rs): put back in place
+/// later, it takes a new device id rather than posing as this one.
+pub fn back_up(conn: &mut Conn, path: &std::path::Path, label: &str, family: &str) -> Result<std::path::PathBuf> {
+    let dir = path.parent().map(|p| p.join("backups")).ok_or_else(|| Error::msg("The database has no folder to back up into."))?;
+    std::fs::create_dir_all(&dir)?;
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("db");
+    let target = dir.join(format!("{label}-{stem}-{}.sqlite", now_secs()));
+    // The same backup tried twice in one second (a failed start, retried).
+    let _ = std::fs::remove_file(&target);
+    diesel::sql_query("VACUUM INTO ?")
+        .bind::<diesel::sql_types::Text, _>(target.to_string_lossy().to_string())
+        .execute(conn)?;
+    crate::sync::instance::mark_copy(&target)?;
+    let mut kept: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(family) && n.ends_with(".sqlite")))
+        .collect();
+    kept.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    let excess = kept.len().saturating_sub(BACKUPS_KEPT);
+    for old in kept.into_iter().take(excess) {
+        let _ = std::fs::remove_file(old);
+    }
+    Ok(target)
+}
+
 fn migrate(conn: &mut Conn) -> Result<()> {
+    // A database from before tagged ids: brought up to version 6 the way it
+    // always was, then converted. A new one is made as the current version
+    // directly.
+    if crate::upgrade_v7::needed(conn)? || table_exists(conn, "blocks")? {
+        upgrade_to_v6(conn)?;
+        crate::upgrade_v7::run(conn, SCHEMA_V7)?;
+        // The demo course's rows: the derived ids a fresh install gives them.
+        conn.transaction::<_, Error, _>(crate::demo_course::rekey)?;
+    }
+    // Version 8: sync between devices.
+    if crate::upgrade_v8::needed(conn)? {
+        crate::upgrade_v8::run(conn, SCHEMA)?;
+    }
+    conn.batch_execute(SCHEMA)?;
+    // Version 9: a sentence's endings for word-order tiles (tiles.rs). Older
+    // sentences get none: they keep being built by plain ordering.
+    add_column(conn, "sentences", "endings", "TEXT NOT NULL DEFAULT '[]'")?;
+    // Version 10: a word's near neighbour by sound, for sound-pair cards
+    // (sounds.rs). Older words get none: their lessons use the built-in pairs.
+    add_column(conn, "words", "near_pl", "TEXT NOT NULL DEFAULT ''")?;
+    add_column(conn, "words", "near_en", "TEXT NOT NULL DEFAULT ''")?;
+    // Version 11: scene lessons (scenes.rs) — two new tables, made by the
+    // schema above. Nothing to fill in: only new lessons have scenes.
+    // Version 12: story lessons (stories.rs) — stories and story_panels, made
+    // by the schema above. Nothing to fill in: only new lessons have stories.
+    // Version 13: a course's picture the tutor asked for and no run has drawn
+    // yet (pictures.rs), drawn at the next start. Older courses are not
+    // marked (no backfill): one without a picture offers to draw it.
+    add_column(conn, "courses", "picture_wanted_at", "INTEGER")?;
+    // Version 14: the learning log (attempts, learning_events) and grammar
+    // tags (word_grammar, sentence_grammar) — new tables, made by the schema
+    // above. Nothing is filled in: the log starts now, and older words and
+    // sentences are tagged only when the learner asks the tutor to.
+    // Version 15: context in the learning log — the course and source of
+    // each answer and event, the exact card (key, direction, prompt,
+    // position) and the check-in a verdict belongs to; the words each
+    // answer involved (attempt_items), sentences word by word
+    // (sentence_tokens) and topics (word_topics, sentence_topics,
+    // lesson_topics) — new tables, made by the schema above. Older answers
+    // keep what they had (their course is read from their lesson), and
+    // older content is annotated only when the learner asks the tutor.
+    for (column, definition) in [
+        ("course_id", "TEXT"),
+        ("source", "TEXT NOT NULL DEFAULT ''"),
+        ("card_key", "TEXT NOT NULL DEFAULT ''"),
+        ("direction", "TEXT NOT NULL DEFAULT ''"),
+        ("prompt", "TEXT NOT NULL DEFAULT ''"),
+        ("position", "INTEGER"),
+        ("checkin_id", "TEXT"),
+    ] {
+        add_column(conn, "attempts", column, definition)?;
+    }
+    add_column(conn, "learning_events", "course_id", "TEXT")?;
+    add_column(conn, "learning_events", "source", "TEXT NOT NULL DEFAULT ''")?;
+    // Version 16: the mastery ledger (mastery_log, masterylog.rs) — a new
+    // table, made by the schema above. Nothing is filled in (no backfill):
+    // it starts now, and a lesson's page shows its points from before as
+    // "before the log began".
+    // Version 17: a course kept ready offline (offline.rs). No course is
+    // marked: the learner switches it on, course by course.
+    add_column(conn, "courses", "offline_at", "INTEGER")?;
+    // Version 18: a lesson is in exactly one course (courses::add_lesson).
+    one_course_per_lesson(conn)?;
+    // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
+    conn.batch_execute(
+        "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);
+         CREATE INDEX IF NOT EXISTS attempts_course ON attempts(course_id, at);
+         CREATE INDEX IF NOT EXISTS attempts_lesson ON attempts(lesson_id, at);
+         CREATE INDEX IF NOT EXISTS attempts_exercise ON attempts(exercise, at);
+         CREATE INDEX IF NOT EXISTS attempts_source ON attempts(source, at);
+         CREATE INDEX IF NOT EXISTS learning_events_at ON learning_events(at);
+         CREATE INDEX IF NOT EXISTS learning_events_course ON learning_events(course_id, at);
+         CREATE INDEX IF NOT EXISTS learning_events_lesson ON learning_events(lesson_id, at);",
+    )?;
+    // Every synced table watched by triggers that list its current columns:
+    // a schema change that adds a column (with an idempotent ALTER here, and
+    // a bump of SCHEMA_VERSION) gets its triggers re-made by this.
+    conn.transaction::<_, Error, _>(crate::sync::init)?;
+    conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+    Ok(())
+}
+
+/// A lesson listed in several courses (allowed before version 18) keeps the
+/// course it was first added to and is taken off the others, with ordinary
+/// deletes, so sync carries them as tombstones; its schedule, mastery and
+/// history are the lesson's own and stay. Then a unique index keeps it so.
+///
+/// No row records when a lesson was listed (sync keeps only a row's latest
+/// version, and reordering a course rewrites it), so "first added" is read
+/// from what every device has alike: a lesson is made in a course that
+/// exists when it is made, so the course made last at or before the lesson
+/// is taken; failing that (a lesson older than all its courses) the course
+/// made first; ties by the lower course id. Every device decides the same.
+///
+/// Retiring the old built-in courses looks at whether their lessons are
+/// shared (starter_retirement.rs): a database that has not had that done yet
+/// has it done first, so a lesson shared with the learner's own course is
+/// still seen as theirs.
+fn one_course_per_lesson(conn: &mut Conn) -> Result<()> {
+    let shared = diesel::sql_query(
+        "SELECT count(*) AS n FROM (SELECT lesson_id FROM course_lessons GROUP BY lesson_id HAVING count(*) > 1)",
+    )
+    .get_result::<legacy::Count>(conn)?
+    .n;
+    if shared > 0 {
+        crate::starter_retirement::run(conn)?;
+        conn.transaction::<_, Error, _>(|conn| {
+            conn.batch_execute(
+                "DELETE FROM course_lessons WHERE (course_id, lesson_id) IN (
+                     SELECT course_id, lesson_id FROM (
+                         SELECT cl.course_id, cl.lesson_id, row_number() OVER (
+                             PARTITION BY cl.lesson_id
+                             ORDER BY coalesce(c.created_at, 0) > coalesce(l.created_at, 0),
+                                      CASE WHEN coalesce(c.created_at, 0) <= coalesce(l.created_at, 0)
+                                           THEN -coalesce(c.created_at, 0) ELSE coalesce(c.created_at, 0) END,
+                                      cl.course_id
+                         ) AS n
+                         FROM course_lessons cl
+                         LEFT JOIN courses c ON c.id = cl.course_id
+                         LEFT JOIN lessons l ON l.id = cl.lesson_id
+                     ) WHERE n > 1
+                 );",
+            )?;
+            Ok(())
+        })?;
+    }
+    conn.batch_execute("CREATE UNIQUE INDEX IF NOT EXISTS course_lessons_one_course ON course_lessons(lesson_id);")?;
+    Ok(())
+}
+
+/// Every upgrade up to version 6, in order (integer ids throughout).
+fn upgrade_to_v6(conn: &mut Conn) -> Result<()> {
     let version = diesel::sql_query("PRAGMA user_version").get_result::<legacy::UserVersion>(conn)?.user_version;
     if version < 3 && table_exists(conn, "words")? {
         upgrade_to_english_only(conn)?;
@@ -494,7 +858,11 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     if version < 5 && table_exists(conn, "song_tracks")? {
         upgrade_to_files(conn)?;
     }
-    conn.batch_execute(SCHEMA)?;
+    if version < 6 && table_exists(conn, "blocks")? {
+        upgrade_to_lessons_and_courses(conn)?;
+    }
+    conn.batch_execute(LEGACY_SCHEMA)?;
+    flatten_lesson_types(conn)?;
     // `CREATE TABLE IF NOT EXISTS` leaves existing tables alone, so columns
     // added after the first release need an explicit, idempotent ALTER.
     add_column(conn, "song_tracks", "aligned_words", "TEXT")?;
@@ -505,22 +873,34 @@ fn migrate(conn: &mut Conn) -> Result<()> {
         "INTEGER REFERENCES tutor_conversations(id) ON DELETE CASCADE",
     )?;
     adopt_loose_tutor_messages(conn)?;
-    add_column(conn, "songs", "topic_id", "INTEGER REFERENCES topics(id) ON DELETE SET NULL")?;
+    add_column(conn, "songs", "course_id", "INTEGER REFERENCES courses(id) ON DELETE SET NULL")?;
     add_column(conn, "songs", "origin", "TEXT NOT NULL DEFAULT '{}'")?;
     add_column(conn, "day_log", "frozen", "INTEGER NOT NULL DEFAULT 0")?;
-    add_column(conn, "blocks", "fact_note", "TEXT")?;
-    add_column(conn, "blocks", "fact_checked_at", "INTEGER")?;
-    add_column(conn, "blocks", "ease", "REAL NOT NULL DEFAULT 2.5")?;
-    add_column(conn, "blocks", "support_level", "INTEGER NOT NULL DEFAULT 0")?;
-    add_column(conn, "topics", "completed_at", "INTEGER")?;
-    add_column(conn, "topics", "mastered_at", "INTEGER")?;
-    add_column(conn, "blocks", "scaffold", "TEXT")?;
-    add_column(conn, "blocks", "challenge", "INTEGER NOT NULL DEFAULT 0")?;
-    if add_column(conn, "blocks", "passed", "INTEGER NOT NULL DEFAULT 0")? {
-        // Before this was kept: a block last passed, or done more than once,
+    add_column(conn, "lessons", "fact_note", "TEXT")?;
+    add_column(conn, "lessons", "fact_checked_at", "INTEGER")?;
+    add_column(conn, "lessons", "ease", "REAL NOT NULL DEFAULT 2.5")?;
+    add_column(conn, "lessons", "support_level", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "courses", "completed_at", "INTEGER")?;
+    add_column(conn, "courses", "mastered_at", "INTEGER")?;
+    add_column(conn, "lessons", "scaffold", "TEXT")?;
+    add_column(conn, "lessons", "challenge", "INTEGER NOT NULL DEFAULT 0")?;
+    if add_column(conn, "lessons", "passed", "INTEGER NOT NULL DEFAULT 0")? {
+        // Before this was kept: a lesson last passed, or done more than once,
         // has been passed.
-        conn.batch_execute("UPDATE blocks SET passed = 1 WHERE last_result = 'pass' OR reps > 1")?;
+        conn.batch_execute("UPDATE lessons SET passed = 1 WHERE last_result = 'pass' OR reps > 1")?;
     }
+    if add_column(conn, "lessons", "mastery", "INTEGER NOT NULL DEFAULT 0")? {
+        // Mastery used to mean coming back a month apart. A lesson that already
+        // did keeps its mastery; any other passed lesson keeps credit for its
+        // passes (30 for the first, 25 for each one after), short of mastered.
+        conn.batch_execute(
+            "UPDATE lessons SET mastery = CASE
+                 WHEN passed = 1 AND interval_days >= 30 THEN 100
+                 WHEN passed = 1 THEN min(90, 30 + 25 * max(reps - 1, 0))
+                 ELSE 0 END",
+        )?;
+    }
+    add_column(conn, "words", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
     add_column(conn, "day_log", "minutes", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "ai_costs", "tokens_in", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "ai_costs", "tokens_cached", "INTEGER NOT NULL DEFAULT 0")?;
@@ -530,15 +910,133 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "tutor_conversations", "job_error", "TEXT")?;
     add_column(conn, "tutor_conversations", "tag", "TEXT")?;
     add_column(conn, "tutor_conversations", "about", "TEXT")?;
-    add_column(conn, "topics", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
-    conn.batch_execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+    add_column(conn, "courses", "image_file_id", "INTEGER REFERENCES files(id) ON DELETE SET NULL")?;
+    add_column(conn, "courses", "closed_at", "INTEGER")?;
+    // CEFR levels (levels.rs): a course's, when it was checked, and a
+    // lesson's own when it differs from its course's.
+    add_column(conn, "courses", "level", "TEXT")?;
+    add_column(conn, "courses", "level_checked_at", "INTEGER")?;
+    add_column(conn, "lessons", "level", "TEXT")?;
+    if add_column(conn, "lessons", "mastered_at", "INTEGER")? {
+        // Mastery became permanent (PRINCIPLES.md): a lesson mastered by the
+        // old rule stays mastered. Writing then needed only help level 2; it
+        // now needs a pass without help (level 3), which those have earned.
+        conn.batch_execute(
+            "UPDATE lessons SET support_level = 3
+                 WHERE lesson_type = 'writing' AND passed = 1 AND mastery >= 100 AND support_level >= 2;
+             UPDATE lessons SET mastered_at = strftime('%s','now')
+                 WHERE passed = 1 AND mastery >= 100 AND (lesson_type <> 'writing' OR support_level >= 3);",
+        )?;
+    }
+    add_column(conn, "songs", "kind", "TEXT NOT NULL DEFAULT 'song'")?;
+    add_column(conn, "songs", "podcast", "TEXT NOT NULL DEFAULT '{}'")?;
+    add_column(conn, "song_tracks", "timed_lines", "TEXT")?;
+    if !column_exists(conn, "wiki_sources", "song_id")? {
+        upgrade_sources_for_podcasts(conn)?;
+    }
+    conn.batch_execute("PRAGMA user_version = 6")?;
     Ok(())
+}
+
+/// Version 6: blocks are lessons and topics are courses, in the database too.
+/// Tables and columns are renamed in place, so every row keeps its id and
+/// every reference follows; the views and indexes are made again under the
+/// new names by the schema. The catch-all "Lessons" course becomes "Grammar &
+/// culture", so "lessons" means one thing.
+fn upgrade_to_lessons_and_courses(conn: &mut Conn) -> Result<()> {
+    conn.transaction::<_, Error, _>(|conn| {
+        conn.batch_execute(
+            "DROP VIEW IF EXISTS course_words;
+             DROP VIEW IF EXISTS course_sentences;
+             DROP VIEW IF EXISTS course_lines;
+             DROP INDEX IF EXISTS words_block;
+             DROP INDEX IF EXISTS sentences_block;
+             DROP INDEX IF EXISTS conversation_block;
+             DROP INDEX IF EXISTS blocks_due;
+             DROP INDEX IF EXISTS course_blocks_block;",
+        )?;
+        for (old, new) in [("topics", "courses"), ("blocks", "lessons"), ("course_blocks", "course_lessons")] {
+            if table_exists(conn, old)? && !table_exists(conn, new)? {
+                conn.batch_execute(&format!("ALTER TABLE {old} RENAME TO {new}"))?;
+            }
+        }
+        for (table, old, new) in [
+            ("course_lessons", "topic_id", "course_id"),
+            ("course_lessons", "block_id", "lesson_id"),
+            ("words", "block_id", "lesson_id"),
+            ("sentences", "block_id", "lesson_id"),
+            ("conversation_lines", "block_id", "lesson_id"),
+            ("checkins", "block_id", "lesson_id"),
+            ("wiki_sources", "block_id", "lesson_id"),
+            ("songs", "topic_id", "course_id"),
+            ("day_log", "topic_id", "course_id"),
+            ("lessons", "lesson", "content"),
+        ] {
+            if table_exists(conn, table)? && column_exists(conn, table, old)? && !column_exists(conn, table, new)? {
+                conn.batch_execute(&format!("ALTER TABLE {table} RENAME COLUMN {old} TO {new}"))?;
+            }
+        }
+        if table_exists(conn, "courses")? {
+            diesel::sql_query("UPDATE courses SET title_en = ?, title_pl = ? WHERE slug = 'lessons' AND title_en = 'Lessons'")
+                .bind::<Text, _>(crate::courses::GRAMMAR_CULTURE.0)
+                .bind::<Text, _>(crate::courses::GRAMMAR_CULTURE.1)
+                .execute(conn)?;
+        }
+        Ok(())
+    })
 }
 
 /// Version 5: every file is a row in `files`. Song takes move their bytes (or
 /// the file on disk, for takes from before bytes were stored) into it and
 /// reference it by id; the old speech cache is dropped — clips are made
 /// again, with the current voices, as lines are played.
+/// Sources used to belong only to study lessons; podcast episodes have them
+/// too now, and every source keeps the article's layout for the reader. SQLite
+/// cannot make a column nullable in place, so the table is rebuilt, ids intact.
+fn upgrade_sources_for_podcasts(conn: &mut Conn) -> Result<()> {
+    conn.batch_execute("PRAGMA foreign_keys = OFF")?;
+    let result = conn.batch_execute(
+        r#"
+        BEGIN;
+        CREATE TABLE wiki_sources_v7 (
+            id            INTEGER PRIMARY KEY,
+            lesson_id     INTEGER REFERENCES lessons(id) ON DELETE CASCADE,
+            song_id       INTEGER REFERENCES songs(id) ON DELETE CASCADE,
+            ord           INTEGER NOT NULL DEFAULT 0,
+            lang          TEXT    NOT NULL,
+            title         TEXT    NOT NULL,
+            url           TEXT    NOT NULL,
+            pageid        INTEGER NOT NULL,
+            revid         INTEGER NOT NULL,
+            summary       TEXT    NOT NULL,
+            content       TEXT    NOT NULL,
+            image_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+            pl_title      TEXT,
+            pl_url        TEXT,
+            pl_content    TEXT,
+            html          TEXT,
+            pl_html       TEXT,
+            fetched_at    INTEGER NOT NULL,
+            checked_at    INTEGER NOT NULL,
+            UNIQUE (lesson_id, lang, pageid),
+            UNIQUE (song_id, lang, pageid)
+        );
+        INSERT INTO wiki_sources_v7 (id, lesson_id, ord, lang, title, url, pageid, revid, summary, content,
+                                     image_file_id, pl_title, pl_url, pl_content, fetched_at, checked_at)
+            SELECT id, lesson_id, ord, lang, title, url, pageid, revid, summary, content,
+                   image_file_id, pl_title, pl_url, pl_content, fetched_at, checked_at FROM wiki_sources;
+        DROP TABLE wiki_sources;
+        ALTER TABLE wiki_sources_v7 RENAME TO wiki_sources;
+        COMMIT;
+        "#,
+    );
+    if result.is_err() {
+        let _ = conn.batch_execute("ROLLBACK");
+    }
+    conn.batch_execute("PRAGMA foreign_keys = ON")?;
+    Ok(result?)
+}
+
 fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
     #[derive(diesel::QueryableByName)]
     struct OldTake {
@@ -582,7 +1080,9 @@ fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
             let audio = take.audio_bytes.or_else(|| std::fs::read(&take.audio_path).ok()).filter(|b| !b.is_empty());
             let Some(audio) = audio else {
                 // Nothing left to play: the take goes (and leaves its playlists).
-                diesel::delete(song_tracks::table.find(take.id)).execute(tx)?;
+                diesel::sql_query("DELETE FROM song_tracks WHERE id = ?")
+                    .bind::<diesel::sql_types::BigInt, _>(take.id)
+                    .execute(tx)?;
                 continue;
             };
             let audio_id = moved_file(tx, crate::files::SONG_AUDIO, &take.audio_path, take.song_id, take.ord, &audio, "mp3")?;
@@ -596,8 +1096,10 @@ fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
                 }
                 _ => None,
             };
-            diesel::update(song_tracks::table.find(take.id))
-                .set((song_tracks::audio_file_id.eq(audio_id), song_tracks::image_file_id.eq(image_id)))
+            diesel::sql_query("UPDATE song_tracks SET audio_file_id = ?, image_file_id = ? WHERE id = ?")
+                .bind::<diesel::sql_types::BigInt, _>(audio_id)
+                .bind::<diesel::sql_types::Nullable<diesel::sql_types::BigInt>, _>(image_id)
+                .bind::<diesel::sql_types::BigInt, _>(take.id)
                 .execute(tx)?;
         }
         Ok(())
@@ -615,7 +1117,8 @@ fn upgrade_to_files(conn: &mut Conn) -> Result<()> {
 }
 
 /// A song file from before the files table, as a file row. The copy on disk
-/// is kept where it is.
+/// is kept where it is. (Before schema version 7: ids are still integers,
+/// so this writes plain SQL rather than through the typed schema.)
 fn moved_file(
     conn: &mut Conn,
     kind: &str,
@@ -640,13 +1143,27 @@ fn moved_file(
         _ if kind == crate::files::SONG_AUDIO => "audio/mpeg",
         _ => "image/jpeg",
     };
-    let id = crate::files::store(conn, kind, &format!("song-{song_id}-{ord}.{ext}"), mime, bytes)?;
-    if std::path::Path::new(old_path).exists() {
-        diesel::update(crate::schema::files::table.find(id))
-            .set(crate::schema::files::path.eq(old_path))
-            .execute(conn)?;
+    #[derive(diesel::QueryableByName)]
+    struct NewId {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        id: i64,
     }
-    Ok(id)
+    use sha2::Digest as _;
+    let sha256: String = sha2::Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let path = std::path::Path::new(old_path).exists().then_some(old_path);
+    let row: NewId = diesel::sql_query(
+        "INSERT INTO files (kind, name, mime, size, sha256, bytes, path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind::<diesel::sql_types::Text, _>(kind)
+    .bind::<diesel::sql_types::Text, _>(format!("song-{song_id}-{ord}.{ext}"))
+    .bind::<diesel::sql_types::Text, _>(mime)
+    .bind::<diesel::sql_types::BigInt, _>(crate::convert::count(bytes.len()))
+    .bind::<diesel::sql_types::Text, _>(sha256)
+    .bind::<diesel::sql_types::Binary, _>(bytes)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(path)
+    .bind::<diesel::sql_types::BigInt, _>(now_secs())
+    .get_result(conn)?;
+    Ok(row.id)
 }
 
 fn column_exists(conn: &mut Conn, table: &str, column: &str) -> Result<bool> {
@@ -659,24 +1176,39 @@ fn column_exists(conn: &mut Conn, table: &str, column: &str) -> Result<bool> {
 /// Messages from before conversations existed become one conversation, so
 /// nothing the learner talked about disappears.
 fn adopt_loose_tutor_messages(conn: &mut Conn) -> Result<()> {
-    let loose = tutor_messages::table.filter(tutor_messages::conversation_id.is_null());
-    let times: Vec<i64> = loose.select(tutor_messages::created_at).load(conn)?;
-    let (Some(first), Some(last)) = (times.iter().min(), times.iter().max()) else {
-        return Ok(());
-    };
-    let id: i64 = diesel::insert_into(tutor_conversations::table)
-        .values((
-            tutor_conversations::title.eq("Earlier conversation"),
-            tutor_conversations::created_at.eq(first),
-            tutor_conversations::updated_at.eq(last),
-        ))
-        .returning(tutor_conversations::id)
-        .get_result(conn)?;
-    diesel::update(loose).set(tutor_messages::conversation_id.eq(id)).execute(conn)?;
+    // Before version 7: integer ids, so plain SQL (the typed schema is
+    // version 7's).
+    conn.batch_execute(
+        "INSERT INTO tutor_conversations (title, created_at, updated_at)
+             SELECT 'Earlier conversation', min(created_at), max(created_at)
+             FROM tutor_messages WHERE conversation_id IS NULL HAVING count(*) > 0;
+         UPDATE tutor_messages SET conversation_id = last_insert_rowid()
+             WHERE conversation_id IS NULL AND changes() > 0;",
+    )?;
     Ok(())
 }
 
-fn table_exists(conn: &mut Conn, table: &str) -> Result<bool> {
+/// Lessons had a kind (drill | study) and, under it, a format — two levels,
+/// where writing and listening were "study" with a format. Now one type says
+/// it all: a drill's format is its type; study, writing and listening are
+/// their own.
+fn flatten_lesson_types(conn: &mut Conn) -> Result<()> {
+    if !add_column(conn, "lessons", "lesson_type", "TEXT NOT NULL DEFAULT ''")? {
+        return Ok(());
+    }
+    conn.batch_execute(
+        "UPDATE lessons SET lesson_type = CASE
+             WHEN kind = 'drill' THEN format
+             WHEN format = 'writing' THEN 'writing'
+             WHEN format = 'song' THEN 'listening'
+             ELSE 'study' END;
+         ALTER TABLE lessons DROP COLUMN kind;
+         ALTER TABLE lessons DROP COLUMN format;",
+    )?;
+    Ok(())
+}
+
+pub(crate) fn table_exists(conn: &mut Conn, table: &str) -> Result<bool> {
     let found = diesel::sql_query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
         .bind::<Text, _>(table)
         .load::<legacy::Name>(conn)?;
@@ -768,20 +1300,20 @@ fn upgrade_to_english_only(conn: &mut Conn) -> Result<()> {
     Ok(())
 }
 
-/// Before version 4, words, sentences and dialogue lines belonged to a topic,
-/// drills pointed at some of them (block_items), and each block sat in one
-/// topic. Now each item belongs to one block and blocks are listed in
+/// Before version 4, words, sentences and dialogue lines belonged to a topic
+/// (a course), drills pointed at some of them (block_items), and each block
+/// (a lesson) sat in one topic. Now each item belongs to one lesson and lessons are listed in
 /// courses. Row ids are kept, so review history survives.
 ///
-/// A word two drills shared (a tutor-made drill over words that the topic's
+/// A word two drills shared (a tutor-made drill over words that the course's
 /// own word drills also picked up) goes to the tutor's drill; an automatic
 /// drill left with nothing goes. Items no drill held — or every item, in a
-/// database from before blocks — are cut into new drills of their course.
+/// database from before lessons — are cut into new drills of their course.
 fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
     conn.batch_execute("PRAGMA foreign_keys = OFF")?;
     let result = conn.transaction::<_, Error, _>(|tx| {
-        let had_blocks = table_exists(tx, "blocks")?;
-        if had_blocks {
+        let had_lessons = table_exists(tx, "blocks")?;
+        if had_lessons {
             add_column(tx, "blocks", "song_id", "INTEGER")?;
         }
         tx.batch_execute(
@@ -828,7 +1360,7 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
             );
             "#,
         )?;
-        if had_blocks {
+        if had_lessons {
             tx.batch_execute(
                 r#"
                 INSERT INTO blocks_v4 (id, slug, kind, format, ord, title, summary, complexity, lesson,
@@ -878,9 +1410,9 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
         }
 
         // Whatever no drill held is cut into new drills of its course.
-        let topics = diesel::sql_query("SELECT id, title_pl FROM topics ORDER BY ord").load::<legacy::Topic>(tx)?;
+        let courses = diesel::sql_query("SELECT id, title_pl FROM topics ORDER BY ord").load::<legacy::Course>(tx)?;
         let now = now_secs();
-        let new_block = |tx: &mut Conn, topic: i64, title: &str, format: &str, complexity: &str| -> Result<i64> {
+        let new_lesson = |tx: &mut Conn, course: i64, title: &str, format: &str, complexity: &str| -> Result<i64> {
             let id = diesel::sql_query(
                 "INSERT INTO blocks_v4 (kind, format, title, complexity, period_days, origin, created_at)
                  VALUES ('drill', ?, ?, ?, ?, 'starter', ?) RETURNING id",
@@ -888,7 +1420,7 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
             .bind::<Text, _>(format)
             .bind::<Text, _>(title)
             .bind::<Text, _>(complexity)
-            .bind::<BigInt, _>(crate::blocks::default_period("drill", complexity))
+            .bind::<BigInt, _>(crate::lesson_types::get("words").map_or(2, |t| t.default_period(complexity)))
             .bind::<BigInt, _>(now)
             .get_result::<legacy::Id>(tx)?
             .id;
@@ -896,39 +1428,39 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
                 "INSERT INTO course_blocks (topic_id, block_id, ord)
                  VALUES (?1, ?2, (SELECT COALESCE(MAX(ord), 0) + 1 FROM course_blocks WHERE topic_id = ?1))",
             )
-            .bind::<BigInt, _>(topic)
+            .bind::<BigInt, _>(course)
             .bind::<BigInt, _>(id)
             .execute(tx)?;
             Ok(id)
         };
-        for topic in topics {
+        for course in courses {
             let lines = diesel::sql_query(
                 "SELECT COUNT(*) AS n FROM conversation_lines WHERE topic_id = ?
                    AND id NOT IN (SELECT id FROM conversation_lines_v4)",
             )
-            .bind::<BigInt, _>(topic.id)
+            .bind::<BigInt, _>(course.id)
             .get_result::<legacy::Count>(tx)?
             .n;
             if lines > 0 {
-                let block = new_block(tx, topic.id, &format!("Conversation: {}", topic.title_pl), "dialogue", "low")?;
+                let lesson = new_lesson(tx, course.id, &format!("Conversation: {}", course.title_pl), "dialogue", "low")?;
                 diesel::sql_query(
                     "INSERT INTO conversation_lines_v4 (id, block_id, ord, speaker, gender, pl, en)
                      SELECT id, ?2, ord, speaker, gender, pl, en FROM conversation_lines
                      WHERE topic_id = ?1 AND id NOT IN (SELECT id FROM conversation_lines_v4)",
                 )
-                .bind::<BigInt, _>(topic.id)
-                .bind::<BigInt, _>(block)
+                .bind::<BigInt, _>(course.id)
+                .bind::<BigInt, _>(lesson)
                 .execute(tx)?;
             }
             for (table, title, format, complexity, size, columns) in [
-                ("words", "Words", "words", "low", crate::blocks::WORDS_PER_BLOCK, "pl, en, pos"),
-                ("sentences", "Sentences", "sentences", "medium", crate::blocks::SENTENCES_PER_BLOCK, "pl, en"),
+                ("words", "Words", "words", "low", crate::lessons::WORDS_PER_LESSON, "pl, en, pos"),
+                ("sentences", "Sentences", "sentences", "medium", crate::lessons::SENTENCES_PER_LESSON, "pl, en"),
             ] {
                 let loose: Vec<i64> = diesel::sql_query(format!(
                     "SELECT id FROM {table} WHERE topic_id = ?
                        AND id NOT IN (SELECT id FROM {table}_v4) ORDER BY ord, id"
                 ))
-                .bind::<BigInt, _>(topic.id)
+                .bind::<BigInt, _>(course.id)
                 .load::<legacy::Id>(tx)?
                 .into_iter()
                 .map(|row| row.id)
@@ -937,19 +1469,19 @@ fn upgrade_to_block_owned_items(conn: &mut Conn) -> Result<()> {
                     "SELECT COUNT(*) AS n FROM blocks_v4 b JOIN course_blocks c ON c.block_id = b.id
                      WHERE c.topic_id = ? AND b.format = '{format}'"
                 ))
-                .bind::<BigInt, _>(topic.id)
+                .bind::<BigInt, _>(course.id)
                 .get_result::<legacy::Count>(tx)?
                 .n;
                 for (n, chunk) in loose.chunks(size).enumerate() {
-                    let block = new_block(tx, topic.id, &format!("{title} {}", taken + n as i64 + 1), format, complexity)?;
+                    let lesson = new_lesson(tx, course.id, &format!("{title} {}", taken + crate::convert::count(n) + 1), format, complexity)?;
                     for (ord, id) in chunk.iter().enumerate() {
                         diesel::sql_query(format!(
                             "INSERT OR IGNORE INTO {table}_v4 (id, block_id, ord, {columns})
                              SELECT id, ?2, ?3, {columns} FROM {table} WHERE id = ?1"
                         ))
                         .bind::<BigInt, _>(id)
-                        .bind::<BigInt, _>(block)
-                        .bind::<BigInt, _>(ord as i64)
+                        .bind::<BigInt, _>(lesson)
+                        .bind::<BigInt, _>(crate::convert::count(ord))
                         .execute(tx)?;
                     }
                 }
@@ -1006,6 +1538,8 @@ fn initialize_courses(conn: &mut Conn) -> Result<()> {
         set_setting(conn, "starter_seeded", "1")?;
     }
     crate::starter_retirement::run(conn)?;
+    // One folder for lessons with no course, instead of three.
+    crate::courses::merge_old_folders(conn)?;
     crate::demo_course::seed_once(conn)
 }
 
@@ -1013,36 +1547,36 @@ fn initialize_courses(conn: &mut Conn) -> Result<()> {
 #[cfg(test)]
 pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
     // Historical regression fixtures model the release before the small demo.
-    let demo = topics::table.filter(topics::slug.eq(crate::demo_course::SLUG)).select(topics::id).first::<i64>(conn).optional()?;
+    let demo = courses::table.filter(courses::slug.eq(crate::demo_course::SLUG)).select(courses::id).first::<CourseId>(conn).optional()?;
     if let Some(demo) = demo {
         crate::courses::delete(conn, demo)?;
     }
-    for (index, topic) in content::TOPICS.iter().enumerate() {
-        let convo: Conversation = serde_json::from_str(topic.conversation)?;
-        if convo.slug != topic.slug {
+    for (index, course) in content::COURSES.iter().enumerate() {
+        let convo: Conversation = serde_json::from_str(course.conversation)?;
+        if convo.slug != course.slug {
             return Err(Error::msg(format!(
                 "conversation file for '{}' declares slug '{}'",
-                topic.slug, convo.slug
+                course.slug, convo.slug
             )));
         }
-        let topic_id = crate::courses::ensure(conn, topic.slug, &convo.title_en, &convo.title_pl, &convo.summary_en)?;
-        diesel::update(topics::table.find(topic_id))
-            .set((topics::ord.eq(index as i64 + 1), topics::created_at.eq(0)))
+        let course_id = crate::courses::ensure(conn, course.slug, &convo.title_en, &convo.title_pl, &convo.summary_en)?;
+        diesel::update(courses::table.find(course_id))
+            .set((courses::ord.eq(crate::convert::count(index) + 1), courses::created_at.eq(0)))
             .execute(conn)?;
-        let words: Vec<crate::courses::NewWord> = content::parse_words(topic.words)
+        let words: Vec<crate::courses::NewWord> = content::parse_words(course.words)
             .into_iter()
-            .map(|w| crate::courses::NewWord { pl: w.pl.to_string(), en: w.en.to_string(), pos: w.pos.to_string() })
+            .map(|w| crate::courses::NewWord { pl: w.pl.to_string(), en: w.en.to_string(), pos: w.pos.to_string(), ..Default::default() })
             .collect();
-        let sentences: Vec<crate::courses::NewSentence> = content::parse_sentences(topic.sentences)
+        let sentences: Vec<crate::courses::NewSentence> = content::parse_sentences(course.sentences)
             .into_iter()
-            .map(|s| crate::courses::NewSentence { pl: s.pl.to_string(), en: s.en.to_string() })
+            .map(|s| crate::courses::NewSentence { pl: s.pl.to_string(), en: s.en.to_string(), ..Default::default() })
             .collect();
         let mut lines = Vec::new();
         for line in &convo.lines {
             let gender = convo.speakers.get(&line.speaker).ok_or_else(|| {
                 Error::msg(format!(
                     "conversation '{}' has no gender for speaker '{}'",
-                    topic.slug, line.speaker
+                    course.slug, line.speaker
                 ))
             })?;
             lines.push(crate::courses::NewLine {
@@ -1053,77 +1587,77 @@ pub(crate) fn seed_test_courses(conn: &mut Conn) -> Result<()> {
             });
         }
         // A course that already has a conversation (an older install) keeps it.
-        let has_dialogue = course_blocks::table
-            .inner_join(blocks::table)
-            .filter(course_blocks::topic_id.eq(topic_id))
-            .filter(blocks::format.eq("dialogue"))
+        let has_dialogue = course_lessons::table
+            .inner_join(lessons::table)
+            .filter(course_lessons::course_id.eq(course_id))
+            .filter(lessons::lesson_type.eq("dialogue"))
             .count()
             .get_result::<i64>(conn)?
             > 0;
         crate::courses::cut_into_drills(
             conn,
-            topic_id,
+            course_id,
             &words,
             &sentences,
             if has_dialogue { &[] } else { &lines },
             "starter",
         )?;
     }
-    crate::blocks::seed_lessons(conn)?;
+    crate::lessons::seed_lessons(conn)?;
     Ok(())
 }
 
-/// One kind of folder: every topic is a course, every block is listed in one.
+/// One kind of folder: every course is a course, every lesson is listed in one.
 ///
-/// Built-in topics and the learner's programmes both become plain courses
-/// (programmes after the starter ones, in the order they were made). Blocks
+/// Built-in courses and the learner's programmes both become plain courses
+/// (programmes after the starter ones, in the order they were made). Lessons
 /// no course lists are filed: the starter lessons in "Grammar essentials",
-/// listening blocks in "Listening", the rest in "Lessons". Safe to run twice.
+/// listening lessons in "Listening", the rest in "Grammar & culture". Safe to run twice.
 pub fn unify_courses(conn: &mut Conn) -> Result<()> {
     conn.transaction::<_, Error, _>(|conn| {
         // Starter courses keep their order; former programmes follow.
-        let mut all: Vec<(i64, String, i64, i64)> = topics::table
-            .select((topics::id, topics::kind, topics::ord, topics::created_at))
+        let mut all: Vec<(CourseId, String, i64, i64)> = courses::table
+            .select((courses::id, courses::kind, courses::ord, courses::created_at))
             .load(conn)?;
         all.sort_by_key(|(id, kind, ord, created)| (kind == "programme", *ord, *created, *id));
         for (i, (id, ..)) in all.iter().enumerate() {
-            diesel::update(topics::table.find(id))
-                .set((topics::ord.eq(i as i64 + 1), topics::kind.eq("course")))
+            diesel::update(courses::table.find(*id))
+                .set((courses::ord.eq(crate::convert::count(i) + 1), courses::kind.eq("course")))
                 .execute(conn)?;
         }
 
-        // Blocks no course lists: lessons, listening blocks, anything else.
-        let listed: std::collections::HashSet<i64> =
-            course_blocks::table.select(course_blocks::block_id).load::<i64>(conn)?.into_iter().collect();
-        let mut loose: Vec<(i64, Option<String>, Option<i64>, i64)> = blocks::table
-            .select((blocks::id, blocks::slug, blocks::song_id, blocks::ord))
-            .load::<(i64, Option<String>, Option<i64>, i64)>(conn)?
+        // Lessons no course lists: lessons, listening lessons, anything else.
+        let listed: std::collections::HashSet<LessonId> =
+            course_lessons::table.select(course_lessons::lesson_id).load::<LessonId>(conn)?.into_iter().collect();
+        let mut loose: Vec<(LessonId, Option<String>, Option<SongId>, i64)> = lessons::table
+            .select((lessons::id, lessons::slug, lessons::song_id, lessons::ord))
+            .load::<(LessonId, Option<String>, Option<SongId>, i64)>(conn)?
             .into_iter()
             .filter(|(id, ..)| !listed.contains(id))
             .collect();
         loose.sort_by_key(|(id, _, _, ord)| (*ord, *id));
-        let lesson = |slug: &Option<String>| slug.as_deref().is_some_and(|s| s.starts_with("lesson/"));
-        let groups: [(Vec<i64>, fn(&mut Conn) -> Result<i64>); 3] = [
-            (loose.iter().filter(|(_, slug, ..)| lesson(slug)).map(|b| b.0).collect(), crate::courses::grammar_course),
+        let starter = |slug: &Option<String>| slug.as_deref().is_some_and(|s| s.starts_with("lesson/"));
+        let groups: [(Vec<LessonId>, fn(&mut Conn) -> Result<CourseId>); 3] = [
+            (loose.iter().filter(|(_, slug, ..)| starter(slug)).map(|b| b.0).collect(), crate::courses::grammar_course),
             (
-                loose.iter().filter(|(_, slug, song, _)| !lesson(slug) && song.is_some()).map(|b| b.0).collect(),
-                crate::courses::listening_course,
+                loose.iter().filter(|(_, slug, song, _)| !starter(slug) && song.is_some()).map(|b| b.0).collect(),
+                crate::courses::other_course,
             ),
             (
-                loose.iter().filter(|(_, slug, song, _)| !lesson(slug) && song.is_none()).map(|b| b.0).collect(),
-                crate::courses::lessons_course,
+                loose.iter().filter(|(_, slug, song, _)| !starter(slug) && song.is_none()).map(|b| b.0).collect(),
+                crate::courses::other_course,
             ),
         ];
         for (ids, course) in groups {
             if !ids.is_empty() {
                 let id = course(conn)?;
-                for block in ids {
-                    crate::courses::add_block(conn, id, block)?;
+                for lesson in ids {
+                    crate::courses::add_lesson(conn, id, lesson)?;
                 }
             }
         }
-        diesel::update(blocks::table.filter(blocks::origin.eq_any(["course", "builtin"])))
-            .set(blocks::origin.eq("starter"))
+        diesel::update(lessons::table.filter(lessons::origin.eq_any(["course", "builtin"])))
+            .set(lessons::origin.eq("starter"))
             .execute(conn)?;
         Ok(())
     })
@@ -1133,11 +1667,54 @@ pub fn unify_courses(conn: &mut Conn) -> Result<()> {
 // Settings
 // ---------------------------------------------------------------------------
 
+/// Settings about this device rather than the learner: they stay on it
+/// (`device_settings`) instead of syncing with the rest (docs/SYNC.md). The
+/// seeding marks say what this install has already set up on its own: a
+/// device that joins another's data must not seed the demo course again
+/// into it.
+// Spec: SYNC-11
+pub(crate) const DEVICE_SETTINGS: &[&str] = &[
+    "theme",
+    "tz_offset_minutes",
+    "reminders_enabled",
+    "reminder_hour",
+    "reminder_minute",
+    "tts_prefetch",
+    "player_repeat",
+    // Whether this phone taps and buzzes with the answers: a phone's
+    // preference, not the learner's (a computer has nothing to buzz).
+    "haptics",
+    // Speaking cards: whether this device has a microphone worth using (a
+    // phone, not the computer without one), so its own.
+    crate::speaking::SETTING,
+    "starter_seeded",
+    crate::demo_course::SEEDED,
+    crate::starter_retirement::RETIRED,
+];
+
+/// Whether a setting stays on this device: one of [`DEVICE_SETTINGS`], or
+/// sync's own (`sync_…`).
+fn device_setting(key: &str) -> bool {
+    DEVICE_SETTINGS.contains(&key) || key.starts_with("sync_")
+}
+
 pub fn get_setting(conn: &mut Conn, key: &str) -> Result<Option<String>> {
+    if device_setting(key) {
+        return Ok(device_settings::table.find(key).select(device_settings::value).first(conn).optional()?);
+    }
     Ok(settings::table.find(key).select(settings::value).first(conn).optional()?)
 }
 
 pub fn set_setting(conn: &mut Conn, key: &str, value: &str) -> Result<()> {
+    if device_setting(key) {
+        diesel::insert_into(device_settings::table)
+            .values((device_settings::key.eq(key), device_settings::value.eq(value)))
+            .on_conflict(device_settings::key)
+            .do_update()
+            .set(device_settings::value.eq(value))
+            .execute(conn)?;
+        return Ok(());
+    }
     diesel::insert_into(settings::table)
         .values((settings::key.eq(key), settings::value.eq(value)))
         .on_conflict(settings::key)
@@ -1148,6 +1725,10 @@ pub fn set_setting(conn: &mut Conn, key: &str, value: &str) -> Result<()> {
 }
 
 pub fn delete_setting(conn: &mut Conn, key: &str) -> Result<()> {
+    if device_setting(key) {
+        diesel::delete(device_settings::table.find(key)).execute(conn)?;
+        return Ok(());
+    }
     diesel::delete(settings::table.find(key)).execute(conn)?;
     Ok(())
 }
@@ -1167,7 +1748,7 @@ pub fn get_setting_i64(conn: &mut Conn, key: &str, fallback: i64) -> i64 {
 pub fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| crate::convert::signed(d.as_secs()))
         .unwrap_or(0)
 }
 
@@ -1179,24 +1760,78 @@ pub fn today(conn: &mut Conn) -> i64 {
     (now_secs() + offset_minutes * 60).div_euclid(86_400)
 }
 
-/// The id of the course topic at a position in the course (1-based).
+/// The id of the course at a position in the course list (1-based).
 #[cfg(test)]
-pub fn require_topic_id(conn: &mut Conn, ord: i64) -> Result<i64> {
-    topics::table
-        .filter(topics::ord.eq(ord))
-        .select(topics::id)
+pub fn require_course_id(conn: &mut Conn, ord: i64) -> Result<CourseId> {
+    courses::table
+        .filter(courses::ord.eq(ord))
+        .select(courses::id)
         .first(conn)
         .optional()?
-        .ok_or_else(|| Error::msg(format!("no topic with position {ord}")))
+        .ok_or_else(|| Error::msg(format!("no course with position {ord}")))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Two levels (kind, format) become one type: a drill's format is its
+    /// type; study lessons become study, writing or listening.
+    #[test]
+    fn lesson_kinds_and_formats_flatten_into_types() {
+        use diesel::Connection;
+        let mut conn = Conn::establish(":memory:").unwrap();
+        conn.batch_execute(
+            "CREATE TABLE lessons (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, format TEXT NOT NULL DEFAULT '', song_id INTEGER);
+             INSERT INTO lessons VALUES (1, 'drill', 'words', NULL), (2, 'drill', 'dialogue', NULL),
+                 (3, 'study', '', NULL), (4, 'study', 'writing', NULL), (5, 'study', 'song', 7);",
+        )
+        .unwrap();
+        flatten_lesson_types(&mut conn).unwrap();
+        let types: Vec<String> = crate::schema::lessons::table
+            .select(crate::schema::lessons::lesson_type)
+            .order(crate::schema::lessons::id)
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(types, ["words", "dialogue", "study", "writing", "listening"]);
+        assert!(types.iter().all(|t| crate::lesson_types::get(t).is_ok()));
+        // Run again (every start): nothing changes.
+        flatten_lesson_types(&mut conn).unwrap();
+    }
+
     /// `crate::schema` is what queries are checked against at compile time;
     /// this checks it against the database the app actually creates. Every
     /// table and view's full column list must be selectable as declared.
+    #[test]
+    fn an_async_command_waits_for_the_database_without_a_thread() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let db = std::sync::Arc::new(Db::default());
+        runtime.block_on(async {
+            let late = db.clone();
+            let filler = tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                late.fill(SqliteConnection::establish(":memory:").unwrap());
+            });
+            // One thread only: this works only if waiting does not block it.
+            db.opened(std::time::Duration::from_secs(5)).await.unwrap();
+            filler.await.unwrap();
+            assert!(Db::default().opened(std::time::Duration::from_millis(20)).await.is_err());
+        });
+    }
+
+    #[test]
+    fn a_command_before_the_database_opens_waits_for_it() {
+        let db = std::sync::Arc::new(Db::default());
+        let waiting = {
+            let db = db.clone();
+            std::thread::spawn(move || db.lock().batch_execute("SELECT 1").is_ok())
+        };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        db.fill(SqliteConnection::establish(":memory:").unwrap());
+        assert!(waiting.join().unwrap());
+    }
+
+    // Spec: DATA-11
     #[test]
     fn schema_matches_the_database() {
         let path = std::env::temp_dir()
@@ -1215,10 +1850,12 @@ mod tests {
             })*};
         }
         check!(
-            topics, words, sentences, conversation_lines, reviews, day_log, settings, achievements,
-            files, speech_clips, wiki_sources, blocks, course_blocks, course_words, course_sentences, course_lines, checkins,
+            courses, words, sentences, conversation_lines, reviews, day_log, day_totals, settings, device_settings,
+            achievements, files, file_paths, sync_state, sync_rows, sync_vv, sync_peers, sync_epochs, vault_devices,
+            vault_revocations, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
-            playlist_tracks, ai_costs, memories,
+            playlist_tracks, ai_costs, memories, word_examples, xp_log, scenes, scene_spots, stories,
+            story_panels, attempts, learning_events, mastery_log,
         );
     }
 }

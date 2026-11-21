@@ -26,14 +26,27 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 # Native playback with lock-screen and Bluetooth controls (Kotlin, Android only).
 tauri-plugin-songplayer = { path = "plugins/songplayer" }
+# Sync with the app closed: a WorkManager job every half hour on Wi-Fi that
+# calls back into sync/background.rs (Kotlin, Android only).
+tauri-plugin-sync-background = { path = "plugins/sync-background" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 rand = "0.9"
 # Generated speech crosses the IPC boundary as a data: URI.
 base64 = "0.22"
+# Sharing the API keys with another device as a QR code (keyshare.rs).
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 # Content hashes for the files table.
 sha2 = "0.10"
+# Sync between the learner's devices (sync/): Noise over TCP, messages in
+# MessagePack (blobs as bytes, not arrays of numbers), keys written as hex,
+# and this device's addresses on the local network for the pairing code.
+snow = "0.9"
+rmp-serde = "1"
+serde_bytes = "0.11"
+hex = "0.4"
+if-addrs = "0.13"
 
 # SQLite is compiled in (`bundled`) so Android/macOS do not depend on a system libsqlite3.
 # Typed SQL: queries are checked against src/schema.rs at compile time.
@@ -55,6 +68,19 @@ reqwest = { version = "0.12", default-features = false, features = [
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # net/io-util/fs serve songs to Sonos speakers on the local network.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
+# Speech is stored as MP3 (audio.rs): LAME to encode, compiled in; Symphonia
+# to read stored clips back when a podcast is put together.
+mp3lame-encoder = "0.3"
+symphonia = { version = "0.5", default-features = false, features = ["mp3"] }
+# Shrinking word pictures to a small JPEG (pictures.rs).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+
+# Scanning another device's API-key QR code. The plugin only exists on phones.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "~2.4"
+# A tap under the finger for right and wrong answers (src/lib/haptics.ts).
+# 2.3 is the last line built for this Tauri (2.4 needs tauri 2.12).
+tauri-plugin-haptics = "~2.3.3"
 
 [features]
 # This feature is used for production builds where `devUrl` points to the filesystem.
@@ -67,3 +93,11 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# No unsafe code, and no `as` casts (they truncate or wrap silently): use
+# From/TryFrom, or the checked helpers in src/convert.rs.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+as_conversions = "deny"

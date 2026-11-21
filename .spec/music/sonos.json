@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Playing on a Sonos speaker",
+  "summary": "Moves the queue to a Sonos room on the same Wi-Fi, with no Sonos account.",
+  "status": "accepted",
+  "order": 3,
+  "description": "For learning at the kitchen speaker. The app serves its stored songs on the local network and loads them into the speaker's queue.",
+  "stories": [
+    {
+      "id": "US-SONOS-1",
+      "as": "a learner with a Sonos speaker at home",
+      "want": "to play my songs on it without an account",
+      "soThat": "the songs fill the room while I do other things",
+      "requirements": [
+        "#SONOS-1",
+        "#SONOS-2",
+        "#SONOS-5"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SONOS-1",
+      "text": "Sonos rooms and groups on the same network are found automatically; a speaker can also be given by IP address."
+    },
+    {
+      "id": "SONOS-2",
+      "text": "No Sonos account is involved."
+    },
+    {
+      "id": "SONOS-3",
+      "text": "The queue is loaded into the speaker's own queue, and the speaker handles next and repeat itself."
+    },
+    {
+      "id": "SONOS-4",
+      "text": "The speaker streams each song from the app, whole or by byte range."
+    },
+    {
+      "id": "SONOS-5",
+      "text": "While a speaker plays, the phone's lock screen, notification and volume keys control the speaker."
+    }
+  ],
+  "related": [
+    "music/player",
+    "data#DATA-4"
+  ]
+}

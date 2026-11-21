@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Writing",
+  "summary": "A situation written out with a partner who understands only the language learnt.",
+  "status": "accepted",
+  "order": 3,
+  "description": "Getting a point across in writing, in a situation, with help that steps back as the learner gets better.",
+  "requirements": [
+    {
+      "id": "WRT-1",
+      "text": "A writing lesson needs a title, a situation and at least one goal."
+    },
+    {
+      "id": "WRT-2",
+      "text": "At the first level of help the learner has a word bank and hints beside the chat; at the second only hints; after that none."
+    },
+    {
+      "id": "WRT-3",
+      "text": "The partner writes at the level of the lesson or its course, and in the simplest sentences of that level while the word bank is shown."
+    },
+    {
+      "id": "WRT-4",
+      "text": "A mastered writing lesson's help no longer changes."
+    }
+  ],
+  "related": [
+    "lessons/conversations#CONV-6",
+    "lessons/conversations#CONV-7",
+    "lessons/conversations#CONV-8",
+    "lessons/conversations#CONV-9",
+    "lessons/conversations#CONV-10",
+    "lessons/conversations#CONV-12"
+  ]
+}

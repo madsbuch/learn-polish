@@ -1,0 +1,174 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "The app shell",
+  "summary": "Four tabs, a back button that walks back through the app, and a layout that follows the window.",
+  "status": "accepted",
+  "order": 10,
+  "description": "One interface for a phone, a tablet and a computer, built from a small design system.",
+  "stories": [
+    {
+      "id": "US-SHELL-1",
+      "as": "a learner using a phone and a computer",
+      "want": "the same app laid out for each screen",
+      "soThat": "I do not relearn it",
+      "requirements": [
+        "#SHELL-1",
+        "#SHELL-4",
+        "#SHELL-5"
+      ]
+    },
+    {
+      "id": "US-SHELL-2",
+      "as": "an Android user",
+      "want": "the back button to walk back through the app",
+      "soThat": "it behaves like every other app on my phone",
+      "requirements": [
+        "#SHELL-3"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SHELL-1",
+      "text": "The app's tabs are `nav.tabs`."
+    },
+    {
+      "id": "SHELL-2",
+      "text": "Exercises is the home screen: today's lessons on top, then the courses."
+    },
+    {
+      "id": "SHELL-3",
+      "text": "Android's back button closes a sheet first, then the page, then goes from another tab to Exercises, and leaves the app only from Exercises."
+    },
+    {
+      "id": "SHELL-4",
+      "text": "Below `layout.rail-from` of window width the tabs are at the bottom; from `layout.rail-from` they form a rail at the left edge."
+    },
+    {
+      "id": "SHELL-5",
+      "text": "From `layout.split-from` a course's or a lesson's page is laid out in two columns, and Settings shows its menu beside the open page."
+    },
+    {
+      "id": "SHELL-6",
+      "text": "Search lists every word and sentence in the app, met or not, filterable by course and searchable in Polish or English."
+    },
+    {
+      "id": "SHELL-7",
+      "text": "On Android the page lays out above the keyboard, and the tab bar is hidden while typing."
+    },
+    {
+      "id": "SHELL-8",
+      "text": "Light and dark themes are both supported; the theme is a setting of the device."
+    },
+    {
+      "id": "SHELL-9",
+      "text": "The design system's buttons are `control.md` high by default and `control.sm` in their small size."
+    },
+    {
+      "id": "SHELL-10",
+      "text": "Destructive actions use the design system's confirm button, which asks before acting."
+    },
+    {
+      "id": "SHELL-11",
+      "text": "The design system has an empty state for lists, which says what would be there and can offer the action that fills it."
+    },
+    {
+      "id": "SHELL-12",
+      "text": "The build fails when a screen breaks the design system's mechanical rules."
+    },
+    {
+      "id": "SHELL-13",
+      "text": "The brand colour is `color.brand`, the background `color.bg` and body text `color.text`, each with its own value in the dark theme."
+    },
+    {
+      "id": "SHELL-14",
+      "text": "A right answer is shown in `color.ok` and a wrong one in `color.bad`."
+    },
+    {
+      "id": "SHELL-15",
+      "text": "All text is set in `font.family`."
+    }
+  ],
+  "values": [
+    {
+      "id": "nav.tabs",
+      "type": "list",
+      "value": [
+        "Exercises",
+        "Tutor",
+        "Music",
+        "Settings"
+      ],
+      "description": "The app's tabs, in order."
+    },
+    {
+      "id": "layout.rail-from",
+      "type": "dimension",
+      "value": "768px",
+      "description": "The window width from which the tabs are a rail at the left."
+    },
+    {
+      "id": "layout.split-from",
+      "type": "dimension",
+      "value": "1000px",
+      "description": "The window width from which pages are laid out in two columns."
+    },
+    {
+      "id": "control.md",
+      "type": "dimension",
+      "value": "44px",
+      "description": "The height of a button."
+    },
+    {
+      "id": "control.sm",
+      "type": "dimension",
+      "value": "36px",
+      "description": "The height of a small button, for dense rows."
+    },
+    {
+      "id": "color.bg",
+      "type": "color",
+      "value": "#f6f5fb",
+      "dark": "#0c0b16",
+      "description": "The app's background."
+    },
+    {
+      "id": "color.text",
+      "type": "color",
+      "value": "#16132d",
+      "dark": "#f2f0fb",
+      "description": "Body text."
+    },
+    {
+      "id": "color.brand",
+      "type": "color",
+      "value": "#5b3df5",
+      "dark": "#7c5cff",
+      "description": "The brand colour: primary buttons and what is selected."
+    },
+    {
+      "id": "color.ok",
+      "type": "color",
+      "value": "#16a34a",
+      "dark": "#22c55e",
+      "description": "A right answer."
+    },
+    {
+      "id": "color.bad",
+      "type": "color",
+      "value": "#e11d48",
+      "dark": "#f43f5e",
+      "description": "A wrong answer."
+    },
+    {
+      "id": "font.family",
+      "type": "font",
+      "value": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", system-ui, sans-serif",
+      "description": "The typeface of all text."
+    }
+  ],
+  "related": [
+    "today",
+    "releases"
+  ]
+}

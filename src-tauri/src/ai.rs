@@ -49,32 +49,134 @@ pub fn image_model(conn: &mut Conn) -> String {
     if model.is_empty() { DEFAULT_IMAGE_MODEL.to_string() } else { model }
 }
 
+/// Finds the things in a scene lesson's picture unless another model is
+/// chosen: Gemini Flash reads pictures well, is good at boxing things in
+/// them, keeps to a JSON schema, and costs a fraction of a cent a picture.
+pub const DEFAULT_VISION_MODEL: &str = "google/gemini-2.5-flash";
+
+pub fn vision_model(conn: &mut Conn) -> String {
+    let model = stored_model(conn, "vision_model");
+    if model.is_empty() { DEFAULT_VISION_MODEL.to_string() } else { model }
+}
+
+/// Hears the learner speak (speaking cards, the mic in the chat boxes)
+/// unless another model is chosen: Gemini Flash takes sound in the chat API
+/// (an `input_audio` part), knows Polish well, keeps to a JSON schema, and a
+/// few seconds of speech cost a fraction of a cent.
+pub const DEFAULT_HEARING_MODEL: &str = "google/gemini-2.5-flash";
+
+pub fn hearing_model(conn: &mut Conn) -> String {
+    let model = stored_model(conn, "hearing_model");
+    if model.is_empty() { DEFAULT_HEARING_MODEL.to_string() } else { model }
+}
+
+#[derive(Serialize)]
+struct ImageRequest<'a> {
+    model: &'a str,
+    messages: [ImageAsk<'a>; 1],
+    modalities: [&'static str; 2],
+    /// The picture's shape, for the models that take one (Gemini's); the
+    /// others ignore it and the prompt says it too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_config: Option<ImageConfig<'a>>,
+    usage: UsageRequest,
+}
+
+#[derive(Serialize)]
+struct ImageConfig<'a> {
+    aspect_ratio: &'a str,
+}
+
+#[derive(Serialize)]
+struct ImageAsk<'a> {
+    role: &'static str,
+    content: &'a str,
+}
+
+/// The work notification's text while a request to the AI runs (work.rs).
+const WORKING: &str = "Working with the AI…";
+
 /// Asks an image model for a picture. Returns its type, bytes and cost.
 pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(String, Vec<u8>, Option<f64>)> {
+    generate_image_shaped(key, model, prompt, None).await
+}
+
+/// [`generate_image`] in a given shape ("4:3"), where the model takes one.
+pub async fn generate_image_shaped(
+    key: &str,
+    model: &str,
+    prompt: &str,
+    aspect_ratio: Option<&str>,
+) -> Result<(String, Vec<u8>, Option<f64>)> {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": [{ "role": "user", "content": prompt }],
-            "modalities": ["image", "text"],
-            "usage": { "include": true },
-        }))
+        .json(&ImageRequest {
+            model,
+            messages: [ImageAsk { role: "user", content: prompt }],
+            modalities: ["image", "text"],
+            image_config: aspect_ratio.map(|aspect_ratio| ImageConfig { aspect_ratio }),
+            usage: UsageRequest { include: true },
+        })
         .send()
         .await?;
     let status = response.status();
-    let body: serde_json::Value = response
+    /// What is read of an image reply.
+    #[derive(Deserialize)]
+    struct ImageReply {
+        #[serde(default)]
+        error: Option<ImageError>,
+        #[serde(default)]
+        choices: Vec<ImageChoice>,
+        #[serde(default)]
+        usage: Option<ImageUsage>,
+    }
+    #[derive(Deserialize)]
+    struct ImageError {
+        #[serde(default)]
+        message: String,
+    }
+    #[derive(Deserialize)]
+    struct ImageChoice {
+        message: ImageMessage,
+    }
+    #[derive(Deserialize)]
+    struct ImageMessage {
+        #[serde(default)]
+        images: Vec<ImagePart>,
+    }
+    #[derive(Deserialize)]
+    struct ImagePart {
+        image_url: ImageUrl,
+    }
+    #[derive(Deserialize)]
+    struct ImageUrl {
+        url: String,
+    }
+    #[derive(Deserialize)]
+    struct ImageUsage {
+        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        cost: Option<f64>,
+    }
+    let body: ImageReply = response
         .json()
         .await
         .map_err(|_| Error::msg(format!("OpenRouter returned an unexpected response ({status}).")))?;
-    if let Some(message) = body.pointer("/error/message").and_then(|m| m.as_str()) {
-        return Err(Error::msg(format!("OpenRouter: {message}")));
+    if let Some(error) = body.error {
+        return Err(Error::msg(format!("OpenRouter: {}", error.message)));
     }
+    let cost = body.usage.and_then(|u| u.cost);
     let url = body
-        .pointer("/choices/0/message/images/0/image_url/url")
-        .and_then(|u| u.as_str())
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|c| c.message.images.into_iter().next())
+        .map(|image| image.image_url.url)
         .ok_or_else(|| Error::msg(format!("The model {model} sent no picture. Pick one that makes images in Settings.")))?;
     // A data URI: data:image/png;base64,....
     let (head, data) = url
@@ -86,7 +188,6 @@ pub async fn generate_image(key: &str, model: &str, prompt: &str) -> Result<(Str
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.trim())
         .map_err(|_| Error::msg("The picture could not be decoded."))?;
-    let cost = body.pointer("/usage/cost").and_then(|c| c.as_f64());
     Ok((mime, bytes, cost))
 }
 
@@ -141,6 +242,7 @@ pub fn partner_model(conn: &mut Conn) -> Result<String> {
 /// Speech is pinned to Gemini: it handles Polish well, it is the cheapest of
 /// the models that do, and pinning it means the voice list can ship with the
 /// app instead of needing a network round trip to populate a dropdown.
+// Spec: AI-3
 pub const SPEECH_MODEL: &str = "google/gemini-3.1-flash-tts-preview";
 pub const DEFAULT_FEMALE_VOICE: &str = "Kore";
 pub const DEFAULT_MALE_VOICE: &str = "Puck";
@@ -207,9 +309,9 @@ pub fn voice_for(conn: &mut Conn, gender: &str) -> String {
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
-    /// The messages, as JSON: with cache marks where the provider needs them
-    /// (see [`cached_messages`]).
-    messages: serde_json::Value,
+    /// The messages, with cache marks where the provider needs them (see
+    /// [`cached_messages`]).
+    messages: Vec<Outgoing<'a>>,
     temperature: f32,
     max_tokens: u32,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -217,9 +319,23 @@ struct ChatRequest<'a> {
     /// OpenAI-style function definitions, for the tutor.
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<&'a serde_json::Value>,
+    /// `{"type": "json_object"}` when the answer must be JSON. Providers that
+    /// cannot do it ignore it; the reply is still parsed leniently.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat>,
     /// Asks OpenRouter to report what the request cost, for the cost center.
     usage: UsageRequest,
 }
+
+/// What form the answer must take.
+#[derive(Serialize, Clone, Copy, Debug)]
+pub struct ResponseFormat {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+/// A JSON object, please.
+pub const JSON_OBJECT: ResponseFormat = ResponseFormat { kind: "json_object" };
 
 #[derive(Serialize)]
 struct UsageRequest {
@@ -268,6 +384,9 @@ impl Usage {
 #[derive(Debug)]
 pub struct Reply {
     pub text: String,
+    /// The model hit `max_tokens` before it finished (its thinking counts
+    /// too, for reasoning models), so the text is cut off.
+    pub truncated: bool,
     pub cost: Option<f64>,
     pub tokens: Tokens,
 }
@@ -278,37 +397,74 @@ fn needs_cache_marks(model: &str) -> bool {
     model.starts_with("anthropic/") || model.starts_with("google/gemini")
 }
 
-/// The messages as JSON, with cache marks for providers that need them: on
+/// A message as it is sent: as stored, or — for a provider that caches only
+/// what is marked — with its text as one part carrying a cache mark.
+#[derive(Serialize, Debug)]
+pub struct Outgoing<'a> {
+    role: &'a str,
+    content: Option<Content<'a>>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    tool_calls: &'a [ToolCall],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<&'a str>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+enum Content<'a> {
+    Text(&'a str),
+    Marked([MarkedText<'a>; 1]),
+}
+
+#[derive(Serialize, Debug)]
+struct MarkedText<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    text: &'a str,
+    cache_control: CacheControl,
+}
+
+#[derive(Serialize, Debug)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+/// The messages to send, with cache marks for providers that need them: on
 /// the system prompt (the same every turn) and on the newest text message
 /// (so the next request — the next tool round or the next turn — reads
 /// everything up to it from the cache). Repeated input then costs a fraction.
-pub fn cached_messages(model: &str, messages: &[Wire]) -> serde_json::Value {
-    let mut list = serde_json::to_value(messages).unwrap_or_else(|_| serde_json::json!([]));
-    if !needs_cache_marks(model) {
-        return list;
-    }
-    let Some(items) = list.as_array_mut() else { return list };
-    let mark = |item: &mut serde_json::Value| {
-        if let Some(text) = item.get("content").and_then(|c| c.as_str()).map(str::to_string) {
-            item["content"] = serde_json::json!([
-                { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
-            ]);
+pub fn cached_messages<'a>(model: &str, messages: &'a [Wire]) -> Vec<Outgoing<'a>> {
+    let mut marked = vec![false; messages.len()];
+    if needs_cache_marks(model) {
+        if messages.first().is_some_and(|m| m.role == "system" && m.content.is_some()) {
+            marked[0] = true;
         }
-    };
-    if let Some(first) = items.first_mut().filter(|m| m["role"] == "system") {
-        mark(first);
+        // The newest plain user or assistant message (tool results and tool
+        // requests carry no plain text to mark).
+        if let Some(last) = (1..messages.len())
+            .rev()
+            .find(|&i| (messages[i].role == "user" || messages[i].role == "assistant") && messages[i].content.is_some())
+        {
+            marked[last] = true;
+        }
     }
-    // The newest plain user or assistant message (tool results and tool
-    // requests carry no plain text to mark).
-    if let Some(last) = items
-        .iter_mut()
-        .skip(1)
-        .rev()
-        .find(|m| (m["role"] == "user" || m["role"] == "assistant") && m["content"].is_string())
-    {
-        mark(last);
-    }
-    list
+    messages
+        .iter()
+        .zip(marked)
+        .map(|(m, mark)| Outgoing {
+            role: &m.role,
+            content: m.content.as_deref().map(|text| {
+                if mark {
+                    Content::Marked([MarkedText { kind: "text", text, cache_control: CacheControl { kind: "ephemeral" } }])
+                } else {
+                    Content::Text(text)
+                }
+            }),
+            tool_calls: &m.tool_calls,
+            tool_call_id: m.tool_call_id.as_deref(),
+        })
+        .collect()
 }
 
 /// One message on the wire. `content` is null on an assistant turn that only
@@ -395,6 +551,8 @@ struct ChatResponse {
 #[derive(Deserialize)]
 struct Choice {
     message: Wire,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -415,11 +573,34 @@ pub async fn complete_with(
     temperature: f32,
     max_tokens: u32,
 ) -> Result<Reply> {
+    request(key, model, messages, temperature, max_tokens, None).await
+}
+
+/// A completion whose answer must be a JSON object: JSON mode where the
+/// provider has it, and room to spare — reasoning models (Gemini Flash and
+/// others) spend part of `max_tokens` thinking, and a JSON answer cut off
+/// halfway is useless. Read the reply with [`json_in`].
+pub async fn complete_json(key: &str, model: &str, messages: &[Wire], max_tokens: u32) -> Result<Reply> {
+    let format = JSON_OBJECT;
+    request(key, model, messages, 0.3, max_tokens, Some(format)).await
+}
+
+async fn request(
+    key: &str,
+    model: &str,
+    messages: &[Wire],
+    temperature: f32,
+    max_tokens: u32,
+    response_format: Option<ResponseFormat>,
+) -> Result<Reply> {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
         // OpenRouter uses these for attribution on its dashboard.
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .json(&ChatRequest {
             model,
@@ -428,6 +609,7 @@ pub async fn complete_with(
             max_tokens,
             stream: false,
             tools: None,
+            response_format,
             usage: UsageRequest { include: true },
         })
         .send()
@@ -452,14 +634,154 @@ pub async fn complete_with(
 
     let tokens = parsed.usage.as_ref().map(Usage::tokens).unwrap_or_default();
     let cost = parsed.usage.and_then(|u| u.cost);
-    parsed
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|c| c.message.content)
-        .filter(|text| !text.trim().is_empty())
-        .map(|text| Reply { text, cost, tokens })
-        .ok_or_else(|| Error::msg("OpenRouter returned an empty answer."))
+    let choice = parsed.choices.into_iter().next();
+    let truncated = choice.as_ref().and_then(|c| c.finish_reason.as_deref()) == Some("length");
+    match choice.and_then(|c| c.message.content).filter(|text| !text.trim().is_empty()) {
+        Some(text) => Ok(Reply { text, truncated, cost, tokens }),
+        None if truncated => Err(Error::msg(
+            "The model used up its room thinking and gave no answer. Try again, or pick another model in Settings.",
+        )),
+        None => Err(Error::msg("OpenRouter returned an empty answer.")),
+    }
+}
+
+/// The JSON in a model's reply, which may be wrapped in prose or a code
+/// fence: the text of the first complete object or array, from its opening
+/// bracket (so braces in prose after it do no harm). It is only located
+/// here; read it into a struct with [`json_in`].
+pub fn json_text(text: &str) -> Option<&str> {
+    let mut from = 0;
+    while let Some(at) = text[from..].find(['{', '[']) {
+        let start = from + at;
+        let mut values = serde_json::Deserializer::from_str(&text[start..]).into_iter::<serde::de::IgnoredAny>();
+        match values.next() {
+            Some(Ok(_)) => return Some(&text[start..start + values.byte_offset()]),
+            // Cut off: an object inside it would only be a fragment.
+            Some(Err(error)) if error.is_eof() => return None,
+            _ => from = start + 1,
+        }
+    }
+    None
+}
+
+/// The JSON in a model's reply, read as `T`: an error when there is none,
+/// or it has another shape.
+pub fn json_in<T: serde::de::DeserializeOwned>(text: &str) -> std::result::Result<T, String> {
+    let json = json_text(text).ok_or_else(|| "no JSON in the reply".to_string())?;
+    serde_json::from_str(json).map_err(|e| e.to_string())
+}
+
+/// Shows a vision model a picture and asks about it; the answer must follow
+/// `schema` (a JSON Schema, sent as a strict structured output where the
+/// provider has it: elsewhere it is still asked for in the prompt and read
+/// leniently with [`json_in`]).
+pub async fn look_at_image(
+    key: &str,
+    model: &str,
+    prompt: &str,
+    mime: &str,
+    image: &[u8],
+    schema_name: &str,
+    schema: &serde_json::Value,
+) -> Result<Reply> {
+    use base64::Engine as _;
+    let data = base64::engine::general_purpose::STANDARD.encode(image);
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": prompt },
+                { "type": "image_url", "image_url": { "url": format!("data:{mime};base64,{data}") } },
+            ],
+        }],
+        "temperature": 0.1,
+        // Room for a reasoning model's thinking as well as the boxes.
+        "max_tokens": 6000,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": { "name": schema_name, "strict": true, "schema": schema },
+        },
+        "usage": { "include": true },
+    });
+    let empty = format!("The model {model} said nothing about the picture. Pick one that reads images in Settings.");
+    post_for_reply(key, &body, &empty).await
+}
+
+/// Posts a ready-made chat request (pictures, sound) and reads its reply:
+/// the text, whether it was cut off, and what it cost. `empty` is the error
+/// when the model says nothing.
+async fn post_for_reply(key: &str, body: &serde_json::Value, empty: &str) -> Result<Reply> {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
+    let response = crate::http::api()
+        .post(format!("{BASE_URL}/chat/completions"))
+        .bearer_auth(key)
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
+        .header("X-Title", "Polski")
+        .json(body)
+        .send()
+        .await?;
+    let status = response.status();
+    let text = response.text().await?;
+    let parsed: ChatResponse = serde_json::from_str(&text).map_err(|_| {
+        Error::msg(format!(
+            "OpenRouter returned an unexpected response ({status}): {}",
+            text.chars().take(300).collect::<String>()
+        ))
+    })?;
+    if let Some(error) = parsed.error {
+        return Err(Error::msg(format!("OpenRouter: {}", error.message)));
+    }
+    if !status.is_success() {
+        return Err(Error::msg(format!("OpenRouter returned HTTP {status}")));
+    }
+    let tokens = parsed.usage.as_ref().map(Usage::tokens).unwrap_or_default();
+    let cost = parsed.usage.and_then(|u| u.cost);
+    let choice = parsed.choices.into_iter().next();
+    let truncated = choice.as_ref().and_then(|c| c.finish_reason.as_deref()) == Some("length");
+    match choice.and_then(|c| c.message.content).filter(|text| !text.trim().is_empty()) {
+        Some(text) => Ok(Reply { text, truncated, cost, tokens }),
+        None => Err(Error::msg(empty.to_string())),
+    }
+}
+
+/// Lets a model that hears listen to a recording (base64, in `format`:
+/// "wav", "mp3", "m4a", …, sent as an `input_audio` part) and answer
+/// `prompt`; the answer must follow `schema`, as with pictures. The
+/// recording goes no further than this request: nothing keeps it.
+pub async fn listen_to_audio(
+    key: &str,
+    model: &str,
+    prompt: &str,
+    format: &str,
+    audio_base64: &str,
+    schema_name: &str,
+    schema: &serde_json::Value,
+) -> Result<Reply> {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": prompt },
+                { "type": "input_audio", "input_audio": { "data": audio_base64, "format": format } },
+            ],
+        }],
+        "temperature": 0.0,
+        // A transcript is short; the room is for a reasoning model's
+        // thinking, kept low so the answer comes quickly.
+        "max_tokens": 2000,
+        "reasoning": { "effort": "low" },
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": { "name": schema_name, "strict": true, "schema": schema },
+        },
+        "usage": { "include": true },
+    });
+    let empty = format!("The model {model} heard nothing. Pick one that takes sound in Settings → AI.");
+    post_for_reply(key, &body, &empty).await
 }
 
 // ---------------------------------------------------------------------------
@@ -655,12 +977,15 @@ pub async fn stream_turn<F>(
 where
     F: FnMut(&str),
 {
+    // Kept alive while it waits on the network (work.rs): the app may be
+    // put in the background meanwhile.
+    let _busy = crate::work::busy(WORKING);
     use futures_util::StreamExt;
 
     let response = crate::http::api()
         .post(format!("{BASE_URL}/chat/completions"))
         .bearer_auth(key)
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .header("Accept", "text/event-stream")
         .json(&ChatRequest {
@@ -671,6 +996,7 @@ where
             max_tokens: if tools.is_some() { 8000 } else { 1200 },
             stream: true,
             tools,
+            response_format: None,
             usage: UsageRequest { include: true },
         })
         .send()
@@ -751,6 +1077,8 @@ struct ModelEntry {
 #[derive(Deserialize)]
 struct Architecture {
     #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
     output_modalities: Vec<String>,
 }
 
@@ -788,7 +1116,9 @@ async fn fetch_catalogue(query: &str) -> Result<Vec<AiModel>> {
             tools: m
                 .supported_parameters
                 .is_some_and(|params| params.iter().any(|p| p == "tools")),
-            images: m.architecture.is_some_and(|a| a.output_modalities.iter().any(|o| o == "image")),
+            images: m.architecture.as_ref().is_some_and(|a| a.output_modalities.iter().any(|o| o == "image")),
+            vision: m.architecture.as_ref().is_some_and(|a| a.input_modalities.iter().any(|i| i == "image")),
+            hears: m.architecture.as_ref().is_some_and(|a| a.input_modalities.iter().any(|i| i == "audio")),
             id: m.id,
         })
         .collect();
@@ -822,14 +1152,15 @@ pub type Clip = (String, Vec<u8>);
 /// speak PCM (Gemini), and finally without `speed`, which not every model
 /// honours. The original error is what surfaces if none of it works.
 pub async fn synthesize(key: &str, model: &str, voice: &str, text: &str, slow: bool) -> Result<Clip> {
-    let first = speech_request(key, model, voice, text, slow, "mp3").await;
+    let prompt = speech_prompt(text, slow);
+    let first = speech_request(key, model, voice, &prompt, "mp3").await;
     let error = match first {
         Ok(clip) => return Ok(clip),
         Err(error) => error,
     };
     // Some providers only speak PCM, and say so when asked for MP3.
     if error.to_string().to_lowercase().contains("pcm") {
-        if let Ok(clip) = speech_request(key, model, voice, text, slow, "pcm").await {
+        if let Ok(clip) = speech_request(key, model, voice, &prompt, "pcm").await {
             return Ok(clip);
         }
     }
@@ -856,22 +1187,42 @@ pub fn speech_prompt(text: &str, slow: bool) -> String {
     }
 }
 
-async fn speech_request(
-    key: &str,
-    model: &str,
-    voice: &str,
-    text: &str,
-    slow: bool,
-    format: &str,
-) -> Result<Clip> {
+/// Speech as raw audio (a WAV clip), never MP3: a podcast episode is clips
+/// joined end to end with silence between them, which only works on samples.
+/// `prompt` is the whole instruction: see `speech_prompt` and
+/// `english_speech_prompt`.
+pub async fn synthesize_pcm(key: &str, model: &str, voice: &str, prompt: &str) -> Result<Clip> {
+    let clip = speech_request(key, model, voice, prompt, "pcm").await?;
+    if clip.0 != "audio/wav" {
+        return Err(Error::msg(format!(
+            "The speech model sent {} instead of raw audio, so the clips cannot be joined.",
+            clip.0
+        )));
+    }
+    Ok(clip)
+}
+
+/// English read aloud, for the English half of a podcast's sentence pairs.
+pub fn english_speech_prompt(text: &str) -> String {
+    format!(
+        "Read the following English text aloud in a calm, friendly narrator's voice, clearly and \
+         at a relaxed pace. Say exactly this and nothing else: {text}"
+    )
+}
+
+async fn speech_request(key: &str, model: &str, voice: &str, prompt: &str, format: &str) -> Result<Clip> {
+    // No foreground work here: a single clip is fetched while the learner
+    // taps a speaker button, and a "working" notification flashing up for
+    // every word would be noise. Bulk downloads in the background hold
+    // their own (speech.rs).
     let response = crate::http::api()
         .post(format!("{BASE_URL}/audio/speech"))
         .bearer_auth(key)
-        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish-")
+        .header("HTTP-Referer", "https://github.com/madsbuch/learn-polish")
         .header("X-Title", "Polski")
         .json(&SpeechRequest {
             model,
-            input: &speech_prompt(text, slow),
+            input: prompt,
             response_format: format,
             voice,
             // Playback sets the speed (the app's speaking-speed setting);
@@ -909,7 +1260,7 @@ async fn speech_request(
     // `audio/pcm;rate=24000;channels=1`.
     if content_type.starts_with("audio/pcm") || content_type.starts_with("audio/l16") {
         let rate = content_type_param(&content_type, "rate").unwrap_or(24_000);
-        let channels = content_type_param(&content_type, "channels").unwrap_or(1) as u16;
+        let channels = content_type_param(&content_type, "channels").and_then(|c| u16::try_from(c).ok()).unwrap_or(1);
         return Ok(("audio/wav".to_string(), wav_from_pcm(&bytes, rate, channels)));
     }
 
@@ -937,30 +1288,48 @@ fn content_type_param(content_type: &str, name: &str) -> Option<u32> {
 }
 
 /// Wraps signed 16-bit little-endian PCM in a minimal WAV container.
-fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
+pub(crate) fn wav_from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
     const BITS: u16 = 16;
-    let block_align = channels * BITS / 8;
-    let byte_rate = sample_rate * u32::from(block_align);
+    let lesson_align = channels * BITS / 8;
+    let byte_rate = sample_rate * u32::from(lesson_align);
 
     let mut out = Vec::with_capacity(44 + pcm.len());
     out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+    out.extend_from_slice(&36u32.saturating_add(u32::try_from(pcm.len()).unwrap_or(u32::MAX)).to_le_bytes());
     out.extend_from_slice(b"WAVEfmt ");
     out.extend_from_slice(&16u32.to_le_bytes()); // PCM header size
     out.extend_from_slice(&1u16.to_le_bytes()); // format: PCM
     out.extend_from_slice(&channels.to_le_bytes());
     out.extend_from_slice(&sample_rate.to_le_bytes());
     out.extend_from_slice(&byte_rate.to_le_bytes());
-    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&lesson_align.to_le_bytes());
     out.extend_from_slice(&BITS.to_le_bytes());
     out.extend_from_slice(b"data");
-    out.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+    out.extend_from_slice(&u32::try_from(pcm.len()).unwrap_or(u32::MAX).to_le_bytes());
     out.extend_from_slice(pcm);
     out
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn json_is_found_in_whatever_wraps_it() {
+        assert_eq!(json_text("{\"a\": 1}"), Some("{\"a\": 1}"));
+        assert_eq!(json_text("Sure! ```json\n{\"a\": [1, 2]}\n``` Hope it helps {x}"), Some("{\"a\": [1, 2]}"));
+        assert_eq!(json_text("[{\"a\": 1}]"), Some("[{\"a\": 1}]"));
+        // Prose in brackets before the JSON is skipped.
+        assert_eq!(json_text("[note] {\"a\": 1}"), Some("{\"a\": 1}"));
+        // A cut-off answer gives nothing, not a fragment of it.
+        assert_eq!(json_text("{\"goals\": [{\"goal\": \"x\"}, {\"goal\": "), None);
+        assert_eq!(json_text("no json here"), None);
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct A {
+            a: Vec<i64>,
+        }
+        assert_eq!(json_in::<A>("Here: {\"a\": [1, 2]}"), Ok(A { a: vec![1, 2] }));
+        assert!(json_in::<A>("{\"b\": 1}").is_err(), "the wrong shape is an error");
+    }
+
     use super::*;
 
     #[test]
@@ -1049,13 +1418,13 @@ mod tests {
             Wire::user("second"),
             Wire::tool_result("call_1", "{}"),
         ];
-        let marked = cached_messages("anthropic/claude-x", &messages);
+        let marked = serde_json::to_value(cached_messages("anthropic/claude-x", &messages)).unwrap();
         assert_eq!(marked[0]["content"][0]["cache_control"]["type"], "ephemeral");
         assert!(marked[1]["content"].is_string());
         assert_eq!(marked[3]["content"][0]["text"], "second");
         assert!(marked[4]["content"].is_string(), "tool results stay as they are");
         // Providers that cache on their own get the messages untouched.
-        assert!(cached_messages("openai/gpt-x", &messages)[0]["content"].is_string());
+        assert!(serde_json::to_value(cached_messages("openai/gpt-x", &messages)).unwrap()[0]["content"].is_string());
     }
 
     #[test]
@@ -1091,7 +1460,7 @@ mod tests {
             vec![ToolCall {
                 id: "c1".into(),
                 kind: "function".into(),
-                function: FunctionCall { name: "list_topics".into(), arguments: "{}".into() },
+                function: FunctionCall { name: "list_courses".into(), arguments: "{}".into() },
             }],
         );
         let json = serde_json::to_value(&request).unwrap();

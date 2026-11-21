@@ -1,21 +1,47 @@
 # Polski
 
-A Polish learning app for English speakers. Everything is a small block —
-a quick drill or a short lesson with a check-in — filed in courses: the
+A Polish learning app for English speakers. Everything is a small lesson —
+a quick drill, or a conversation with an examiner — filed in courses: the
 small First steps demo, and courses on any theme you like, built for you by
 the tutor.
 
 Built with Tauri 2 (Rust + SQLite) and React, packaged as a native
-**Android** app. (Tauri can also build it for macOS locally; CI no longer does.)
+**Android** and **macOS** app.
+
+The rules that settle design questions are in
+[PRINCIPLES.md](PRINCIPLES.md); how data is kept, in [DATA.md](DATA.md).
 
 ---
 
+## The spec
+
+What the app is meant to do is written down in [`.spec`](.spec): one JSON
+file per part of the product, each with user stories and requirements that
+can be checked against the app (`MAST-7`, `SYNC-3`). The format is the one
+described in
+[spec-llms.txt](https://raw.githubusercontent.com/madsbuch/better-github/refs/heads/main/spec-llms.txt);
+read it before changing the spec. The spec comes first: a change to what the
+app does starts as a new requirement, a new version of one with the reason,
+or a deprecation with the reason — never a deletion. It does not record
+whether something is built.
+
+Numbers, colours and lists the app decides once are **named values** in the
+spec (`mastery.full`, `color.brand`); the constants and tokens in the code
+follow them. Code that meets a requirement says which, in a comment above it
+(`// Spec: MAST-7`), and so does a test that proves one.
+`bun run build` checks the spec (`bun run check:spec` alone).
+
+Dansk ([learn-danish](https://github.com/madsbuch/learn-danish)) has the same spec, item for
+item and id for id; a requirement added or changed here is ported there.
+
 ## What's in it
 
-The app starts with one small **First steps / Pierwsze kroki** demo course:
-12 essential words and phrases, four simple sentences, and a six-line
-introduction dialogue, arranged into four short drills. It works offline
-without an API key.
+The app starts with one small **First steps / Pierwsze kroki** demo course
+with a lesson of every type: a dialogue, words, typing, memory cards,
+pictures, a scene, sentences, gaps, a story, a study lesson, a listening
+lesson and a writing lesson, on saying hello and introducing yourself. The
+drills work offline without an API key; the lessons that need pictures, a
+recording or an AI model say so until a key is set, and then make them.
 
 The demo is installed once and belongs to you: rename, edit or delete it.
 Deleting it is permanent; the app never refills it. Ask the tutor for more
@@ -26,75 +52,112 @@ Edited, extended or shared courses are preserved, along with user-created
 courses, XP and settings. Historical course data exists only as regression
 test fixtures and is excluded from production builds.
 
-## Blocks
+## Lessons
 
-Learning happens in **blocks**: small units with one job each.
+Learning happens in **lessons**: small units with one job each. Every lesson
+has one **type**, from a single flat list, and the type says everything about
+it — how it is practised, what its page shows, what mastering it takes (see
+[ADDING_A_LESSON_TYPE.md](ADDING_A_LESSON_TYPE.md)).
 
-- **Drills** are mechanical practice on a handful of items, in one format:
-  *words* (new-word cards, multiple choice, typing once known, a memory round),
-  *memory* cards, *typing*, *sentences* (build them, then fill gaps), *gaps*,
-  or a *dialogue* (read it, then fill its lines).
-- **Study blocks** are short lessons — a conjugation, a grammar point, a bit of
-  culture — with objectives. Their check-in is an interview: an **examiner**
+- **Drills** are practice on a handful of items: *words* (new-word cards,
+  multiple choice, typing once known, a memory round), *pictures* (everyday
+  objects, each drawn once: see the picture and pick the word, see the word
+  and pick the picture), *memory* cards, *typing*, *sentences* (build them,
+  then fill gaps), *gaps*, or a *dialogue* (read it, then fill its lines).
+- **Study lessons** are short texts — a conjugation, a grammar point, a bit of
+  culture — with objectives. Each is a conversation: an **examiner**
   agent asks one question at a time (more, and harder ones, the more complex the
-  block), gives a line of feedback after each answer, and ends with a verdict:
+  lesson), gives a line of feedback after each answer, and ends with a verdict:
   pass, partial or fail, plus what to review (`src-tauri/src/examiner.rs`).
 
-- **Listening blocks** tie a study block to a song: play it (the lyrics stay
+- **Listening lessons** tie a study lesson to a song: play it (the lyrics stay
   hidden unless asked for), then the examiner asks about what you heard —
   what the chorus means, the missing word in a line, a line to translate, and
-  for deeper blocks the grammar of what is sung. The song can be replayed
-  during the check-in. Every song the tutor makes gets one; any song's page
+  for deeper lessons the grammar of what is sung. The song can be replayed
+  during the conversation. Every song the tutor makes gets one; any song's page
   has *Listen and answer questions*.
 
-- **Writing blocks** are a situation played out in writing — tell a new
+- **Writing lessons** are a situation played out in writing — tell a new
   neighbour where you live, order dinner — with an AI partner who writes and
   understands only Polish. It answers anything else with "Przepraszam, nie
   rozumiem…". The conversation ends, with a verdict and corrections, as soon
   as you have got every goal across (or when you tap End). The partner runs on
   its own model (Settings → Writing partner), so a small, fast one can be used.
-  Writing blocks without a course go in *Writing*.
+  Writing lessons without a course go in *Other lessons*.
 
-Every block has a **complexity** — low (1–2 min), medium (5–10 min) or deep
-(20+ min) — set by how hard its subject is, not by how much is in it. And every
-block has its own **check-in period**: the first pass brings it back after the
-period, each further pass doubles the gap (up to four months), a partial pass
-repeats the period, and a fail brings it back tomorrow. The period can be
-changed on the block's page.
+Drills are tapped through; study, listening and writing lessons are
+**conversations**. A **check-in** is a lesson of either kind coming back on
+its schedule.
+
+Every lesson has a **complexity** — quick, medium or deep: how long it takes
+and how deep it goes, not its level. Its minutes come from one table per type
+(`lesson_types::minutes`: drills about 2/4/8, conversations about 5/10/20),
+used by the badges, the summaries and the daily budget alike. And every
+lesson has its own **check-in period**: the first pass brings it back after
+the period; each further pass multiplies the time since the last one by the
+lesson's ease (about 2.5, more after an ace, less after a struggle; up to
+four months); a partial pass repeats the period, and a fail brings it back
+tomorrow. The period can be changed on the lesson's page.
 
 Three levels:
 
-- A **course** is a folder on one theme. It lists blocks, in order.
-- A **block** is one thing you do, with its own check-in schedule. A drill
-  **owns** the words, sentences or dialogue lines it practises; a lesson owns
-  its text and objectives.
-- A **word** (or sentence) belongs to exactly one block, and a course reaches
-  its words only through its blocks.
+- A **course** is a folder on one theme. It lists lessons, in order.
+- A **lesson** is one thing you do, with its own check-in schedule. A drill
+  **owns** the words, sentences or dialogue lines it practises; a study lesson
+  owns its text and objectives.
+- A **word** (or sentence) belongs to exactly one lesson, and a course reaches
+  its words only through its lessons.
 
 Giving a course words, sentences or a dialogue cuts them into drills — the
 dialogue, words in eights, sentences in fives — skipping anything the course
-already teaches. A block can be listed in **several courses** (one block, one
-schedule, shown in each); it can be moved between courses, and taking it out
-of its last course deletes it, with its words and their history. On a block's
-page, *Also in…* and *Move to…* do this by hand; the tutor has tools for it.
-A lesson the tutor writes without a better home goes in *Lessons*. A song remembers the course whose words it uses, and
-its listening block is filed there; like any block it can be moved or shared
+already teaches. A lesson is in **exactly one course** (*Other lessons* counts
+as one) and is never moved: for the same practice elsewhere, the tutor makes a
+new lesson there. Taking a lesson out of its course deletes it, with its words
+and their history. (Before version 18 a lesson could be listed in several
+courses; upgrading keeps it in the course it was first added to.)
+Grammar, culture, listening and writing lessons belong in the course whose
+material they use; one that fits no course goes in *Other lessons*, a single
+folder at the bottom of the course list that never ends. A song remembers the course whose words it uses, and
+its listening lesson is filed there; like any lesson it can be moved or shared
 afterwards. The tutor files songs itself: it picks the course a new song fits,
-and reads the lyrics of songs left in *Listening* to move them where they
-belong. The
+and offers to file lessons left in *Other lessons* where they belong. The
 **tutor** builds more: courses on any theme, single drills in a chosen format,
-and study blocks with their own lessons and objectives.
+and study lessons with their own text and objectives.
 
-The **Exercises** tab reads top to bottom: **today** (the XP ring and the next
-thing to do — a due block, or else the next unstarted one), **Due now** (blocks
-whose check-in has come), and **Courses**.
+The **Exercises** tab reads top to bottom: **today's lessons** and **Courses**.
+Each day the app picks the five most important lessons (the number is a
+setting) and keeps them for the day: a lesson that slipped last time and is
+due again, then the other due ones, most overdue first, then — while there
+is room — at most two new ones, from the newest courses (`src-tauri/src/plan.rs`),
+and, if a place is still free, at most one mastered lesson whose words are due
+for review (`reviews.due_day`), as a light review that can never cost it its
+mastery.
+Doing them is the day **done**, with a celebration and nothing more: what is
+due never piles up on the home screen. For more, a course's page lists its
+lessons in the same order of importance.
 
-A day is **done** — for the goal ring and the streak alike — when the daily
-XP goal is reached, or when, having practised, nothing is left due.
+A course is **completed** when its core lessons are passed once, and
+**mastered** when every lesson — challenges too — has full mastery points
+(writing: passed once without help). Mastery is earned by passing, never by
+waiting for a check-in: the first pass earns 30, another the same day 10, one
+a day to two weeks later 16 to 35, an ace a quarter more. A partial (60–84%
+right) earns half what a repeat pass would at that gap, without passing it; a
+fail costs 20, but nothing on extra practice. One sitting gets a lesson to 90;
+the last stretch needs a pass on a second day (any later day), so a lesson is
+never mastered by cramming. Every change is written in the lesson's **mastery
+ledger** (`mastery_log`, `masterylog.rs`), shown on its page as "Mastery
+points" and to the tutor as `get_mastery_log`.
+Mastery is for good — a mastered lesson is never due again and never loses it
+(its words can come back as a light review in the daily list).
+A mastered course is **ready to close**: *Close as mastered* is the learner's
+own celebration, and final — the course becomes a trophy in **Mastered**. To
+revisit a theme, the tutor makes a new course on it, a level up
+([PRINCIPLES.md](PRINCIPLES.md)). The daily list offers a course's challenges
+once its other lessons are passed.
 
 ### Scheduling
 
-Blocks have their own schedule (`src-tauri/src/blocks.rs`). Inside a drill, an
+Lessons have their own schedule (`src-tauri/src/lessons.rs`). Inside a drill, an
 SM-2 style scheduler (`src-tauri/src/srs.rs`) still tracks every word and
 sentence, so exercise difficulty follows each item's history: brand-new items
 are introduced on a card, then drilled with multiple choice; once an item has
@@ -103,10 +166,10 @@ about diacritics and case — `czesc` counts as `cześć`.
 
 ### Wikipedia sources
 
-A study block — culture especially: a city, a custom, a bit of history — can
+A study lesson — culture especially: a city, a custom, a bit of history — can
 be built on Wikipedia articles (`src-tauri/src/wiki.rs`). The tutor searches
 and reads Wikipedia, writes the lesson from the article and attaches it to
-the block (new blocks or existing ones). The block page lists its sources;
+the lesson (new lessons or existing ones). The lesson page lists its sources;
 each opens in the app's reader — stored, so offline — with a switch to the
 Polish article when Polish Wikipedia has one, and the credit the licence
 (CC BY-SA 4.0) asks for. The examiner keeps its questions to what the
@@ -116,33 +179,46 @@ Every three months the lesson is checked again: at start, each source's
 current revision is compared with the stored one (cheap); an article that
 changed is fetched again, and an AI corrects only what the lesson now gets
 wrong — a figure, a name, an officeholder — noting what changed on the
-block page. Check now does it on demand. Wikipedia needs no key.
+lesson page. Check now does it on demand. Wikipedia needs no key.
 
 ### Gamification
 
 It rewards what was really done, by effort (`src-tauri/src/stats.rs`):
 
 - **XP** per answer — harder exercise types pay more, wrong answers nothing,
-  and cards that are only read (a new word, a dialogue) nothing either.
-  Check-ins pay by effort: 30/80/160 for low/medium/high (half for partial),
-  plus 10 per goal in a writing block.
-- **Extra practice**: a block that is not due can always be done again, at
-  half XP, without moving its schedule.
-- **The day** is done when the goal is reached (150 XP by default, about a
-  drill and a check-in) or nothing is left due. The **streak** counts done
+  and cards that are only read (a new word, a dialogue) nothing either. A
+  typed answer one letter off a word of four letters or more, or a dictation
+  or spoken sentence of three words or more with one word off, is **almost**:
+  still a mistake in the log, but half XP, its review comes back sooner
+  rather than starting over, and it counts as half right in the drill's
+  score (85% passes — in a drill of three to six scored cards, one miss is
+  allowed — and 60% is a partial). An ace needs every answer fully right. A
+  drill with nothing scored is not graded.
+  Conversations pay by effort: 30/80/160 for low/medium/high (half for
+  partial), plus 10 per goal in a writing lesson.
+- **Extra practice**: a lesson already passed today can always be done again,
+  at half XP, without moving its schedule; it still earns mastery points, and a
+  fail there costs none. A
+  lesson done before it is due is an early check-in: full XP, and it moves.
+- **The day** is done when today's lessons are and something was practised —
+  a failed check-in or a quick game counts as much as a drill. The **streak** counts done
   days and survives until the end of the next one. Every seven-day run earns
   a **streak freeze** (two at most), spent automatically on a missed day.
 - **Reminders** come once a day for the week ahead; today's is skipped once
   the day is done, and says what is due.
-- **Mastered** means a word's review interval has reached three weeks.
+- A word **sticks** when its review interval has reached three weeks
+  ("Words that stick"); an item counts once a day, so only answers on
+  different days grow it, and a near miss never lengthens it. *Mastered* is
+  kept for lessons and courses.
 - **Achievements** for showing up, words that stick, and the deeper work:
-  check-ins, writing blocks, listening, songs, a finished course.
+  check-ins, writing lessons, listening, songs, a finished course.
 
 ## The tutor (optional)
 
 Add an [OpenRouter](https://openrouter.ai/keys) API key in Settings and pick a
-model, and the **Tutor** tab becomes an assistant for the whole app. It speaks
-English (it only switches to Polish conversation if you ask it to) and acts in
+model, and the **Tutor** tab becomes an assistant for the whole app. It replies in
+the language you write in — English when that is unclear — (it only switches
+to Polish conversation if you ask it to) and acts in
 the app through tools, implemented in `src-tauri/src/tutor.rs`:
 
 The tutor answers in the background: a message is stored at once and the
@@ -153,13 +229,13 @@ button to ask again.
 
 | Tool | What it does |
 |---|---|
-| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), lessons on the grammar it uses, sentence drills, and a writing block last |
-| `create_study_block`, `create_drill_block`, `create_listening_block`, `create_writing_block` | Writes a lesson with objectives, one drill in a chosen format, a listening block for a song, or a writing situation with goals |
-| `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study blocks (new or existing) |
-| `list_blocks`, `get_block`, `update_block`, `delete_block`, `schedule_block`, `suggest_block` | Sees and manages blocks, including the examiner's verdicts |
+| `create_course` | Builds a course on a theme as a small path: the conversation, word drills (every third batch typed), study lessons on the grammar it uses, sentence drills, and a writing lesson last; the tutor then mixes in other lesson types where they fit |
+| `create_study_lesson`, `create_drill_lesson`, `create_listening_lesson`, `create_writing_lesson` | Writes a study lesson with objectives, one drill in a chosen format, a listening lesson for a song, or a writing situation with goals |
+| `wiki_search`, `wiki_read`, `attach_source`, `remove_source` | Writes culture and fact lessons from Wikipedia and attaches the articles to study lessons (new or existing) |
+| `list_lessons`, `get_lesson`, `update_lesson`, `delete_lesson`, `schedule_lesson`, `suggest_lesson` | Sees and manages lessons, including the examiner's verdicts |
 | `add_to_course`, `edit_course`, `delete_course` | Changes any course, the demo included |
-| `move_block`, `add_block_to_course`, `remove_block_from_course`, `order_course_blocks` | Rearranges blocks between and within courses |
-| `update_practice_settings` | Daily XP goal |
+| `remove_lesson_from_course`, `order_course_lessons` | Takes a lesson out of its course (deleting it) and orders a course's lessons |
+| `update_practice_settings` | Lessons a day |
 | `list_courses`, `get_course`, `search_vocabulary`, `get_progress` | Lets it see what you have and how you are doing |
 | `make_song`, `list_songs`, `get_song`, `delete_songs` | Has a song written and sung (filed in the course it fits); reads a song's lyrics to file it; tidies up songs |
 | `list_playlists`, `create_playlist`, `add_to_playlist`, `remove_from_playlist`, `rename_playlist`, `delete_playlist` | Manages playlists by song (a song's most-played take goes in) |
@@ -202,7 +278,7 @@ The tutor and the examiner share a long-term memory (`memories` table): short
 facts about the learner, each a goal, preference, context, strength or
 struggle. Both agents see every memory in their system prompt and have
 `remember`, `update_memory` and `forget_memory` tools, so what the examiner
-notices in a check-in reaches the tutor and the other way round. They are told
+notices in a conversation reaches the tutor and the other way round. They are told
 to keep memories true — update a struggle once it is overcome rather than add
 a contradicting one — and to save lasting patterns, not scores the app already
 records. Whatever an agent saves shows up in the chat as a "Remembered: …"
@@ -241,7 +317,7 @@ tab makes them to order:
 Every file the app keeps — speech clips, song audio, cover art — is a row in
 one `files` table (bytes, type, size, SHA-256), and other tables reference it
 by id: `speech_clips.file_id`, `song_tracks.audio_file_id` and
-`image_file_id`, `topics.image_file_id`. A course's picture is drawn by an
+`image_file_id`, `courses.image_file_id`. A course's picture is drawn by an
 OpenRouter image model (Settings → Course pictures; Gemini 2.5 Flash Image by
 default) from its title, summary and words. The database alone is a complete backup.
 
@@ -315,6 +391,14 @@ line by line. Audio comes from whichever of these is available:
    wrapped in a WAV header built from the rate and channel count in the
    response's `Content-Type`.
 
+   **Speech is stored as MP3.** Raw audio is nearly 3 MB a minute, so every
+   clip and podcast episode is encoded before it is stored (`audio.rs`: LAME,
+   48 kbit/s for the model's one channel at 24 kHz — an eighth of the size).
+   A podcast is clips joined sample by sample, so it is put together from the
+   raw audio and its stored clips are decoded again when an episode is
+   rebuilt. Speech stored as WAV by earlier versions is re-encoded once, in
+   the background at startup, and the database is vacuumed afterwards.
+
    **Conversations are read in two voices.** Every speaker in the ten
    dialogues is tagged female or male in the content files, and each line is
    synthesised in the matching voice — so the shop assistant and the customer
@@ -347,6 +431,19 @@ instantly, for free, offline. Changing voice does not serve stale audio.
 - Settings shows how many sentences are stored and how much disk
   they take, with a button to clear them.
 
+### Courses kept offline
+
+A course's page has **Keep this course offline**. Switched on, the app
+downloads everything in the course that is not a conversation — the audio of
+every word, sentence and line (a story's and a scene's too, and the words of
+its sound pairs), at normal speed and slowly; the example sentences a wrong
+answer shows for each word; and every picture — and shows how much is there.
+A course that grows is topped up: missing examples and audio are fetched at
+startup and after the tutor adds to it; *Download now* fetches the rest, pictures that failed before
+included (`src-tauri/src/offline.rs`). Conversation lessons talk to a model
+and need a connection whatever is downloaded; the page says how many there
+are. Switching it off deletes nothing.
+
 ## AI costs
 
 **Settings → AI costs** shows what the AI features cost today, over the last
@@ -358,7 +455,7 @@ OpenRouter for usage accounting and store the `usage.cost` it reports (also on
 streamed answers). Suno songs store the `creditsConsumed` kie.ai reports,
 converted at about $0.005 a credit, once per task. OpenRouter's speech endpoint
 reports no price, so speech is counted in clips (with the characters spoken)
-and shown as unpriced. Costs survive a progress reset.
+and shown as unpriced.
 
 ## Your data
 
@@ -387,7 +484,7 @@ Requires [Bun](https://bun.sh) and a Rust toolchain.
 bun install
 bun run app:dev         # native desktop app
 bun run app:dev:tablet  # tablet-sized window; resize to test the phone layout
-bun tauri android dev  # on a device or emulator
+bun run android:dev     # on a device or emulator
 ```
 
 Tests:
@@ -415,7 +512,8 @@ rules (`bun run check:design` runs the check alone).
 The app draws edge to edge, which stops Android from shrinking it when the
 keyboard opens (it would pan the whole screen up instead, sliding the header
 away). `src-tauri/android/MainActivity.kt` replaces the activity `tauri android
-init` generates — CI copies it in and sets `adjustResize` — and turns the
+init` generates — `scripts/prepare-android.mjs` copies it in and sets
+`adjustResize`, the same way locally (`bun run android:init`) and in CI — and turns the
 keyboard's height into bottom padding, so the page lays out above it.
 `src/lib/keyboard.ts` then hides the tab bar while you type.
 
@@ -432,25 +530,29 @@ belongs to the app as a whole.
 src-tauri/src/
   schema.rs      every table and view as Rust types (Diesel): queries are checked against it
   db.rs          the connection, schema SQL, migrations (old databases are rebuilt in place, ids kept), one-time demo setup
-  courses.rs     courses: the folders blocks are listed in; cutting items into drills; moving blocks
-  blocks.rs      blocks: what they own, their check-in schedule, the home screen's lists
-  session.rs     a drill's exercises, by format
-  practice.rs    doing a block: checking answers, finishing a drill, the results
+  courses.rs     courses: the folders lessons are listed in; cutting items into drills; moving lessons
+  lessons.rs     lessons: what they own, their check-in schedule, mastery
+  masterylog.rs  the mastery ledger: every change to a lesson's points, and why
+  lesson_types/  every lesson type, one module each, and their registry
+  session.rs     the building blocks of a drill's exercises
+  practice.rs    doing a lesson: checking answers, finishing a drill, the results
   srs.rs         the per-item scheduler inside drills
   stats.rs       XP, levels, streaks, achievements, per-course progress
   agent.rs       the one AI loop: streaming, tool rounds, memory tools, costs
   ai.rs          OpenRouter transport: chat (streamed, with tool calls) and speech
   tutor.rs       the tutor's prompt and tools (each declared with its status line)
-  examiner.rs    the check-in interviewer and its verdict
+  examiner.rs    the conversation examiner (and writing partner) and its verdict
   memories.rs    long-term memory shared by the agents
   costs.rs       the cost center
   speech.rs      Polish read aloud, the voices, the audio cache
+  offline.rs     courses kept offline: what a course lacks, and downloading it
+  audio.rs       speech as MP3: encoding, reading clips back, shrinking old WAV
   songs.rs       songwriter prompt, kie.ai/Suno generation, downloads, lyric timing
   playlists.rs   playlists, and saving or sharing a take's MP3
   cast.rs        Sonos/UPnP casting
   http.rs        the HTTP clients (OpenRouter, downloads, home network)
   text.rs        shared text helpers
-  commands.rs    app-level commands: settings, keys, browsing, explain, reset, export
+  commands.rs    app-level commands: settings, keys, browsing, explain, export
 
 src/
   design/                  the design system: tokens, components (see DESIGN.md)
@@ -458,7 +560,8 @@ src/
   lib/useAiStream.ts       any streamed AI answer: text, tool status, errors, stale streams
   lib/back.ts              Android's back button over in-app pages
   lib/player.ts            the app-wide music player and queue
-  screens/                 one file per screen (Exercises, BlockPage, Session, CheckIn, Tutor, Music…)
+  screens/                 one file per screen (Exercises, LessonPage, Session, CheckIn, Tutor, Music…)
+  exercises/               one module per exercise kind, and their registry (Session draws them)
   components/              pieces shared between screens (Markdown, SetExercises, Cover…)
 ```
 
@@ -477,10 +580,10 @@ A few conventions keep it that way:
 - **Every AI feature goes through `agent::Agent`.** A new agent declares its
   tools with `agent::tool(name, status line, description, schema)` and says
   how to run a call; streaming, costs, memory and errors come with it.
-- **Words reach a course only through its blocks.** Query a course's items
+- **Words reach a course only through its lessons.** Query a course's items
   through the `course_words`, `course_sentences` and `course_lines` views.
-- **"Topic" in the code is "course" in the app.** The table and ids kept the
-  old name (`topics`, `topic_id`); everything the learner sees says course.
+- **"Course" in the code is "course" in the app.** The table and ids kept the
+  old name (`courses`, `course_id`); everything the learner sees says course.
 - **Pages with a way back use `Screen`'s `onBack`/`onClose` or a `Sheet`**, so
   the system back button works without extra code.
 
@@ -493,15 +596,15 @@ then the page you are on, then from another tab to Exercises — and only
 leaves the app from Exercises (`src/lib/back.ts`: every page with a ← or ⌄,
 and every sheet, adds a history entry that back pops).
 
-Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Blocks** (in the course's
+Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Lessons** (in the course's
 order), **Words** and **Sentences** — every item with the drill it belongs to,
 one tap away — and *Rename* / *Delete course*. A conversation drill's
 dialogue is on that drill's page. Two screens open from it rather than taking a tab:
 
 - **Progress** — tap the streak or level chip, or *Your progress*: stats,
-  the 18-week activity map, per-topic progress and achievements.
+  the 18-week activity map, per-course progress and achievements.
 - **Search** — the 🔍 button: every word and sentence in the app, whether or
-  not you have met it yet, filterable by topic and searchable in Polish or
+  not you have met it yet, filterable by course and searchable in Polish or
   English. Each row has its own 🔊.
 
 ### Editing the curriculum
@@ -512,7 +615,7 @@ never overwrites edits or returns after deletion.
 
 The former collection is kept under `src-tauri/test-fixtures/retired-courses/`
 only for regression tests. Production builds exclude it. Tests verify that
-fresh installs have exactly one demo, deleting it is respected, and upgrading
+fresh installs have exactly one demo with a lesson of every type, deleting it is respected, and upgrading
 removes only unchanged default courses while preserving customized data.
 
 ---
@@ -520,24 +623,35 @@ removes only unchanged default courses while preserving customized data.
 ## Releases
 
 Every merge to `main` runs `.github/workflows/release.yml`, which tests, builds
-an Android `.apk`, and replaces the rolling
-[**latest**](../../releases/tag/latest) release.
+an Android `.apk` and a macOS `.dmg`, and replaces the rolling
+[**latest**](../../releases/tag/latest) release. Pull requests run the tests
+and compile the Android and macOS apps too, but only `main` publishes.
 
 ### Installing
 
 **Android** — download `Polski-android-universal.apk` from the latest release,
 open it on the phone and allow installation from that source.
 
+**macOS** — download `Polski-macos-universal.dmg` (one universal app for Apple
+Silicon and Intel), open it and drag Polski into Applications. The app is
+ad-hoc signed but not notarized, so Gatekeeper blocks the first launch: run
+`xattr -dr com.apple.quarantine /Applications/Polski.app`, or choose *Open
+Anyway* in System Settings → Privacy & Security after the first attempt.
+
 ### Android signing
 
-Out of the box CI signs each APK with a throwaway key, which is enough to
-install but not to *upgrade* an existing install. To fix that once:
+Release signing requires the four repository secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`); a missing secret stops the release rather than
+publishing an APK that cannot upgrade an existing install. Pull requests build
+unsigned test APKs and never touch the release key.
+
+For a new installation, create a key once:
 
 ```bash
 ./scripts/make-android-keystore.sh
 ```
 
-It creates a keystore and prints the four repository secrets to add
-(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PASSWORD`). Keep the `.jks` file — losing it means future builds
-can never upgrade the installed app.
+It creates a keystore and prints the four secrets to add. Keep the `.jks`
+file (a local backup can go in the ignored `.signing/` directory) — losing it
+means future builds can never upgrade the installed app.

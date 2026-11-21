@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { api } from "./api";
-import type { AgentStatus, StreamEvent, TutorDone } from "./types";
+import { onEvent } from "./events";
+import { AgentStatusSchema, StreamEventSchema, TutorDoneSchema } from "./types";
+import type { ConversationId } from "./types";
 
 /**
  * Follows a conversation's background reply: whether the tutor is working,
  * the text so far, what a tool is doing, and a failure. `finished` counts
  * replies that ended while watching, so the caller can reload.
  */
-export function useTutorJob(conversationId: number | null) {
+export function useTutorJob(conversationId: ConversationId | null) {
   const [working, setWorking] = useState(false);
   const [text, setText] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -34,18 +35,18 @@ export function useTutorJob(conversationId: number | null) {
     if (conversationId === null) return;
     const id = `tutor-${conversationId}`;
     const offs = [
-      listen<StreamEvent>("ai://stream", (event) => {
+      onEvent(StreamEventSchema, "ai://stream", (event) => {
         if (event.payload.id !== id || !event.payload.delta) return;
         setWorking(true);
         setStatus(null);
         setText((current) => current + event.payload.delta);
       }),
-      listen<AgentStatus>("agent://status", (event) => {
+      onEvent(AgentStatusSchema, "agent://status", (event) => {
         if (event.payload.id !== id) return;
         setWorking(true);
         setStatus(event.payload.label);
       }),
-      listen<TutorDone>("tutor://done", (event) => {
+      onEvent(TutorDoneSchema, "tutor://done", (event) => {
         if (event.payload.conversationId !== conversationId) return;
         setWorking(false);
         setText("");

@@ -107,10 +107,13 @@ export function DialogueView({ lines, revealAll }: { lines: DialogueLine[]; reve
           </div>
         );
       })}
+      {/* While it is read out, the floating control covers the foot of the
+          screen: room below the last line, so it can scroll clear of it. */}
+      {conversation ? <div className="dialogue-clearance" aria-hidden="true" /> : null}
       {talking ? (
         <WordChat
           itemKind="line"
-          itemId={0}
+          itemId=""
           title={talking.pl}
           meaning={talking.meaning}
           onClose={() => setTalking(null)}
@@ -150,7 +153,7 @@ export function DialogueToolbar({
   return (
     <div className="inline gap-2">
       <div className="grow">
-        <Button size="sm" block onClick={onToggleReveal}>
+        <Button size="sm" wide onClick={onToggleReveal}>
           {revealAll ? "Hide translations" : "Show translations"}
         </Button>
       </div>

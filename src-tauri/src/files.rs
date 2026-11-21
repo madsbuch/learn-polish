@@ -12,8 +12,10 @@
 //! detail of this module — callers only ever hold a file id.
 //!
 //! Only Android's native player needs a real file, so song audio and art also
-//! have a copy on disk, `path`. That copy is only a cache: it is written from
-//! the bytes when missing, and deleted with the row.
+//! have a copy on disk, its path in `file_paths`. That copy is only a cache:
+//! it is written from the bytes when missing, and deleted with the row. The
+//! path is this device's alone (`file_paths` does not sync): another device
+//! writes its own copy where it keeps them.
 
 use std::path::{Path, PathBuf};
 
@@ -23,25 +25,52 @@ use tauri::{AppHandle, Manager};
 
 use crate::db::{self, Conn, Db};
 use crate::error::{Error, Result};
-use crate::schema::files;
+use crate::ids::*;
+use crate::schema::{file_paths, files};
 
 pub const SPEECH: &str = "speech";
 pub const SONG_AUDIO: &str = "song_audio";
 pub const SONG_IMAGE: &str = "song_image";
 pub const COURSE_IMAGE: &str = "course_image";
 pub const WIKI_IMAGE: &str = "wiki_image";
+/// A word's picture (picture lessons).
+pub const WORD_IMAGE: &str = "word_image";
+/// A scene lesson's picture (scenes.rs).
+pub const SCENE_IMAGE: &str = "scene_image";
+/// A story lesson's panel picture (stories.rs).
+pub const STORY_IMAGE: &str = "story_image";
 
 /// A file's details, without its bytes.
 #[allow(dead_code)] // every column, though not every caller reads each
-#[derive(Debug, Clone, Queryable, Selectable)]
-#[diesel(table_name = files, check_for_backend(diesel::sqlite::Sqlite))]
+#[derive(Debug, Clone, QueryableByName)]
 pub struct FileInfo {
-    pub id: i64,
+    #[diesel(sql_type = FileIdSql)]
+    pub id: FileId,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub kind: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub mime: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub size: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub path: Option<String>,
+}
+
+// A file's details are read through the `files_meta` index, never the row:
+// reading a column that comes after `bytes` from the row walks the whole
+// file — a song's audio, megabytes — from disk. Read from the index, the
+// Music tab's 30 songs took a fraction of a millisecond instead of a second.
+const META: &str = "SELECT f.id AS id, f.kind AS kind, f.name AS name, f.mime AS mime, f.size AS size, p.path AS path
+    FROM files f INDEXED BY files_meta LEFT JOIN file_paths p ON p.file_id = f.id";
+
+#[derive(QueryableByName)]
+struct PathRow {
+    #[diesel(sql_type = FileIdSql)]
+    id: FileId,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    path: String,
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -49,13 +78,15 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Stores a file and returns its id.
-pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<i64> {
+// Spec: DATA-2, DATA-3
+pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<FileId> {
     Ok(diesel::insert_into(files::table)
         .values((
+            files::id.eq(FileId::new()),
             files::kind.eq(kind),
             files::name.eq(name),
             files::mime.eq(mime),
-            files::size.eq(bytes.len() as i64),
+            files::size.eq(crate::convert::count(bytes.len())),
             files::sha256.eq(sha256_hex(bytes)),
             files::bytes.eq(bytes),
             files::created_at.eq(db::now_secs()),
@@ -64,17 +95,16 @@ pub fn store(conn: &mut Conn, kind: &str, name: &str, mime: &str, bytes: &[u8]) 
         .get_result(conn)?)
 }
 
-pub fn info(conn: &mut Conn, id: i64) -> Result<FileInfo> {
-    files::table
-        .find(id)
-        .select(FileInfo::as_select())
-        .first(conn)
+pub fn info(conn: &mut Conn, id: FileId) -> Result<FileInfo> {
+    diesel::sql_query(format!("{META} WHERE f.id = ?"))
+        .bind::<FileIdSql, _>(id)
+        .get_result(conn)
         .optional()?
         .ok_or_else(|| Error::msg("That file no longer exists."))
 }
 
 /// A file's type and contents.
-pub fn read(conn: &mut Conn, id: i64) -> Result<(String, Vec<u8>)> {
+pub fn read(conn: &mut Conn, id: FileId) -> Result<(String, Vec<u8>)> {
     files::table
         .find(id)
         .select((files::mime, files::bytes))
@@ -84,19 +114,22 @@ pub fn read(conn: &mut Conn, id: i64) -> Result<(String, Vec<u8>)> {
 }
 
 /// Where each file's copy on disk is, for those that have one.
-pub fn paths(conn: &mut Conn, ids: &[i64]) -> Result<std::collections::HashMap<i64, String>> {
-    Ok(files::table
-        .filter(files::id.eq_any(ids))
-        .filter(files::path.is_not_null())
-        .select((files::id, files::path.assume_not_null()))
-        .load::<(i64, String)>(conn)?
-        .into_iter()
-        .collect())
+pub fn paths(conn: &mut Conn, ids: &[FileId]) -> Result<std::collections::HashMap<FileId, String>> {
+    let mut found = std::collections::HashMap::new();
+    for chunk in ids.chunks(500) {
+        found.extend(
+            file_paths::table
+                .filter(file_paths::file_id.eq_any(chunk))
+                .select((file_paths::file_id, file_paths::path))
+                .load::<(FileId, String)>(conn)?,
+        );
+    }
+    Ok(found)
 }
 
 /// Deletes files and their copies on disk. A file still referenced where
 /// that is not allowed (a take's audio) is refused, and nothing is deleted.
-pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
+pub fn delete(conn: &mut Conn, ids: &[FileId]) -> Result<usize> {
     if ids.is_empty() {
         return Ok(0);
     }
@@ -105,6 +138,7 @@ pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
         let mut deleted = 0;
         for chunk in ids.chunks(500) {
             deleted += diesel::delete(files::table.filter(files::id.eq_any(chunk))).execute(tx)?;
+            diesel::delete(file_paths::table.filter(file_paths::file_id.eq_any(chunk))).execute(tx)?;
         }
         Ok(deleted)
     })?;
@@ -115,32 +149,91 @@ pub fn delete(conn: &mut Conn, ids: &[i64]) -> Result<usize> {
     Ok(deleted)
 }
 
+/// The files of the given types, without reading any of them.
+pub fn with_types(conn: &mut Conn, mimes: &[&str]) -> Result<Vec<FileId>> {
+    let wanted = mimes.iter().map(|m| format!("'{}'", m.replace('\'', "''"))).collect::<Vec<_>>().join(", ");
+    Ok(diesel::sql_query(format!("{META} WHERE f.mime IN ({wanted}) ORDER BY f.id"))
+        .load::<FileInfo>(conn)?
+        .into_iter()
+        .map(|file| file.id)
+        .collect())
+}
+
+/// Puts the same sound in another format in a stored audio file's place: a
+/// new file, as a file's bytes never change, which the clip or take that
+/// pointed at the old one now points at, and the old one is deleted. With
+/// `dir`, a song file gets its copy on disk (the old one's goes). Returns the
+/// new file's id, or `None` if the old file is gone.
+pub fn replace_audio(conn: &mut Conn, dir: Option<&Path>, old: FileId, mime: &str, bytes: &[u8]) -> Result<Option<FileId>> {
+    use crate::schema::{song_tracks, speech_clips};
+    conn.transaction(|conn| {
+        let Ok(file) = info(conn, old) else { return Ok(None) };
+        let stem = file.name.rsplit_once('.').map_or(file.name.as_str(), |(stem, _)| stem);
+        let new = store(conn, &file.kind, &format!("{stem}.{}", extension_for(mime)), mime, bytes)?;
+        diesel::update(speech_clips::table.filter(speech_clips::file_id.eq(old)))
+            .set(speech_clips::file_id.eq(new))
+            .execute(conn)?;
+        diesel::update(song_tracks::table.filter(song_tracks::audio_file_id.eq(old)))
+            .set(song_tracks::audio_file_id.eq(new))
+            .execute(conn)?;
+        delete(conn, &[old])?;
+        if let (Some(dir), SONG_AUDIO) = (dir, file.kind.as_str()) {
+            materialize(conn, dir, new)?;
+        }
+        Ok(Some(new))
+    })
+}
+
 /// Every file some row points at. This is the one list of the columns that
 /// reference files: a new one belongs here, with a foreign key in the schema.
-pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<i64>> {
-    use crate::schema::{song_tracks, speech_clips, topics, wiki_sources};
-    let mut ids: std::collections::HashSet<i64> =
-        speech_clips::table.select(speech_clips::file_id).load::<i64>(conn)?.into_iter().collect();
-    let takes: Vec<(Option<i64>, Option<i64>)> =
+pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> {
+    use crate::schema::{scenes, song_tracks, speech_clips, story_panels, courses, wiki_sources, words};
+    let mut ids: std::collections::HashSet<FileId> =
+        speech_clips::table.select(speech_clips::file_id).load::<FileId>(conn)?.into_iter().collect();
+    let takes: Vec<(Option<FileId>, Option<FileId>)> =
         song_tracks::table.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?;
     ids.extend(takes.into_iter().flat_map(|(audio, image)| [audio, image]).flatten());
-    ids.extend(topics::table.select(topics::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
-    ids.extend(wiki_sources::table.select(wiki_sources::image_file_id).load::<Option<i64>>(conn)?.into_iter().flatten());
+    ids.extend(courses::table.select(courses::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(wiki_sources::table.select(wiki_sources::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(words::table.select(words::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(scenes::table.select(scenes::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(story_panels::table.select(story_panels::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     Ok(ids)
 }
 
 /// Deletes files nothing references (and their copies on disk). Returns how
 /// many went.
+///
+/// Only files this device stored: one from another device may simply have
+/// arrived before the row that uses it, in a sync that was cut off, and
+/// deleting it would delete it on every device. The device that stored it
+/// collects it once the row that used it is gone there too.
+// Spec: DATA-7
 pub fn collect_orphans(conn: &mut Conn) -> Result<usize> {
     let used = referenced(conn)?;
-    let orphans: Vec<i64> =
-        files::table.select(files::id).load::<i64>(conn)?.into_iter().filter(|id| !used.contains(id)).collect();
-    delete(conn, &orphans)
+    let orphans: Vec<FileId> = files::table
+        .select(files::id)
+        .load::<FileId>(conn)?
+        .into_iter()
+        .filter(|id| !used.contains(id))
+        .filter(|id| crate::sync::written_here(conn, "files", &id.to_string()))
+        .collect();
+    let removed = delete(conn, &orphans)?;
+    // Copies on disk of files that are gone (deleted by another device).
+    let stale: Vec<PathRow> = diesel::sql_query(
+        "SELECT p.file_id AS id, p.path AS path FROM file_paths p WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.id = p.file_id)",
+    )
+    .load(conn)?;
+    for row in &stale {
+        let _ = std::fs::remove_file(&row.path);
+        diesel::delete(file_paths::table.find(row.id)).execute(conn)?;
+    }
+    Ok(removed)
 }
 
 /// Writes a file's copy into `dir` unless a copy is already there, and
 /// returns its path.
-pub fn materialize(conn: &mut Conn, dir: &Path, id: i64) -> Result<String> {
+pub fn materialize(conn: &mut Conn, dir: &Path, id: FileId) -> Result<String> {
     let file = info(conn, id)?;
     if let Some(path) = &file.path {
         if Path::new(path).exists() {
@@ -154,7 +247,12 @@ pub fn materialize(conn: &mut Conn, dir: &Path, id: i64) -> Result<String> {
     std::fs::write(&partial, &bytes)?;
     std::fs::rename(&partial, &target)?;
     let path = target.to_string_lossy().to_string();
-    diesel::update(files::table.find(id)).set(files::path.eq(&path)).execute(conn)?;
+    diesel::insert_into(file_paths::table)
+        .values((file_paths::file_id.eq(id), file_paths::path.eq(&path)))
+        .on_conflict(file_paths::file_id)
+        .do_update()
+        .set(file_paths::path.eq(&path))
+        .execute(conn)?;
     Ok(path)
 }
 
@@ -177,11 +275,21 @@ extern "SQL" {
 
 /// Part of a file's bytes, read in SQLite so a range request does not load
 /// a whole song.
-pub fn read_range(conn: &mut Conn, id: i64, start: u64, length: u64) -> Result<Vec<u8>> {
+pub fn read_range(conn: &mut Conn, id: FileId, start: u64, length: u64) -> Result<Vec<u8>> {
     Ok(files::table
         .find(id)
-        .select(substr(files::bytes, start as i64 + 1, length as i64))
+        .select(substr(files::bytes, crate::convert::signed(start) + 1, crate::convert::signed(length)))
         .first(conn)?)
+}
+
+/// Part of a file on disk.
+fn read_file_range(path: &str, start: u64, length: u64) -> std::io::Result<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::with_capacity(crate::convert::offset(length));
+    file.take(length).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 /// What part of a file a request asks for.
@@ -210,25 +318,47 @@ pub fn slice(size: u64, range: Option<(u64, Option<u64>)>) -> Slice {
 
 /// Answers a `media://<id>` request from the webview: the file, or the
 /// requested range of it (audio seeks this way).
+// Spec: DATA-4
 pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{header, Response, StatusCode};
     let not_found = || Response::builder().status(StatusCode::NOT_FOUND).body(Vec::new()).unwrap();
-    let Some(id) = request.uri().path().trim_matches('/').split('/').next().and_then(|s| s.parse::<i64>().ok())
+    let Some(id) = request.uri().path().trim_matches('/').split('/').next().and_then(|s| FileId::parse(s).ok())
     else {
         return not_found();
     };
     let db = app.state::<Db>();
-    let mut guard = db.lock();
-    let conn = &mut *guard;
-    let Ok(file) = info(conn, id) else { return not_found() };
-    let size = file.size as u64;
+    let Ok(file) = info(&mut db.lock(), id) else { return not_found() };
+    let size = crate::convert::unsigned(file.size);
     let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).and_then(parse_range);
+    // Song audio and cover art have a copy on disk: read it from there, not
+    // from the database, so a big file never holds every other screen up.
+    let on_disk = file.path.clone().filter(|path| Path::new(path).exists());
     let response = Response::builder()
         .header(header::CONTENT_TYPE, &file.mime)
         .header(header::ACCEPT_RANGES, "bytes")
         // A file's bytes never change: a new picture or clip is a new id.
         .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    if let Some(path) = on_disk {
+        let result = match slice(size, range) {
+            Slice::Whole => std::fs::read(&path).ok().map(|bytes| response.status(StatusCode::OK).body(bytes)),
+            Slice::Part(start, end) => read_file_range(&path, start, end - start + 1).ok().map(|bytes| {
+                response
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
+                    .body(bytes)
+            }),
+            Slice::Unsatisfiable => Some(
+                response
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{size}"))
+                    .body(Vec::new()),
+            ),
+        };
+        return result.and_then(|r| r.ok()).unwrap_or_else(not_found);
+    }
+    let mut guard = db.lock();
+    let conn = &mut *guard;
     let result = match slice(size, range) {
         Slice::Whole => read(conn, id).map(|(_, bytes)| response.status(StatusCode::OK).body(bytes)),
         Slice::Part(start, end) => read_range(conn, id, start, end - start + 1).map(|bytes| {
@@ -247,10 +377,15 @@ pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri:
 
 /// Makes sure every song file has its copy on disk for the native player —
 /// after a restore, on a new phone, or when the copies were cleared — in the
-/// background.
+/// background. Before that, speech still stored as WAV is made into MP3.
 pub fn sync_to_disk(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
+        // First, so that no copy is written of a file about to be replaced:
+        // speech stored as WAV becomes MP3 (audio.rs).
+        if let Err(error) = crate::audio::compress_stored(&app) {
+            crate::diagnostics::note("background", format!("Making stored audio smaller failed: {error}"));
+        }
         let result = (|| -> Result<()> {
             let dir = media_dir(&app)?;
             let db = app.state::<Db>();
@@ -259,10 +394,13 @@ pub fn sync_to_disk(app: &AppHandle) {
             if let Ok(data) = app.path().app_data_dir() {
                 let _ = std::fs::remove_dir_all(data.join("pictures"));
             }
-            diesel::update(files::table.filter(files::kind.ne_all([SONG_AUDIO, SONG_IMAGE])))
-                .set(files::path.eq(None::<String>))
-                .execute(&mut *db.lock())?;
-            let ids: Vec<i64> = files::table
+            // Only song files keep a copy: the paths of any others go.
+            diesel::sql_query(format!(
+                "DELETE FROM file_paths WHERE file_id IN \
+                 (SELECT id FROM files INDEXED BY files_meta WHERE kind NOT IN ('{SONG_AUDIO}', '{SONG_IMAGE}'))"
+            ))
+            .execute(&mut *db.lock())?;
+            let ids: Vec<FileId> = files::table
                 .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
                 .select(files::id)
                 .load(&mut *db.lock())?;
@@ -272,7 +410,7 @@ pub fn sync_to_disk(app: &AppHandle) {
             Ok(())
         })();
         if let Err(error) = result {
-            eprintln!("writing song files to disk failed: {error}");
+            crate::diagnostics::note("background", format!("Writing song files to disk failed: {error}"));
         }
     });
 }
@@ -281,7 +419,7 @@ pub fn sync_to_disk(app: &AppHandle) {
 pub fn extension_for(mime: &str) -> &'static str {
     match mime {
         "audio/mpeg" | "audio/mp3" => "mp3",
-        "audio/wav" | "audio/x-wav" => "wav",
+        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
         "audio/ogg" => "ogg",
         "audio/mp4" | "audio/aac" => "m4a",
         "image/jpeg" => "jpg",

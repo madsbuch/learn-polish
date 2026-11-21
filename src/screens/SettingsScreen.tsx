@@ -1,650 +1,177 @@
-import { ModelSetting } from "../components/ModelPicker";
-import { Benchmark } from "../components/Benchmark";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { CostCenter } from "../components/CostCenter";
-import { megabytes } from "./AudioScreen";
-import { MemoryIcon, PlayerIcon } from "../components/icons";
 import {
-  Button,
-  Card,
-  ConfirmButton,
-  Field,
-  IconButton,
-  Inline,
-  List,
-  ListItem,
-  Screen,
-  Section,
-  Segmented,
-  SettingRow,
-  Stack,
-  Switch,
-  Text,
-} from "../design";
-import { api, errorMessage } from "../lib/api";
-import { toast } from "../lib/toast";
-import { useThemePreference, type ThemePreference } from "../lib/theme";
-import { sendTestNotification, syncReminder } from "../lib/notifications";
-import { playClip } from "../lib/speech";
-import { playCorrect, setSoundsEnabled, soundsEnabled } from "../lib/sounds";
-import type {
-  AudioCacheStats,
-  Settings,
-  SettingsPatch,
-  Voice,
-} from "../lib/types";
+  CalendarIcon,
+  DataIcon,
+  DevicesIcon,
+  MemoryIcon,
+  NavIcon,
+  SpeakerIcon,
+  StudyIcon,
+  ThemeIcon,
+} from "../components/icons";
+import { List, ListItem, Screen, Section, SplitView, Text, useWideLayout } from "../design";
+import { api } from "../lib/api";
+import { useThemePreference } from "../lib/theme";
+import type { Settings } from "../lib/types";
+import { Devices } from "./Devices";
+import { HowToUse } from "./HowToUse";
+import { Memories } from "./Memories";
+import { modelName, sunoLabel, type SettingsPage, type SettingsPageProps } from "./settings/actions";
+import { AiSettings } from "./settings/AiSettings";
+import { AppearanceSettings } from "./settings/AppearanceSettings";
+import { DataSettings } from "./settings/DataSettings";
+import { PracticeSettings, reminderTime } from "./settings/PracticeSettings";
+import { SongSettings } from "./settings/SongSettings";
+import { SoundSettings } from "./settings/SoundSettings";
 
-/** Spoken when testing a voice, so you can hear whether it handles Polish. */
-const VOICE_TEST_LINE = "Dzień dobry! Uczę się języka polskiego.";
+export type { SettingsPage } from "./settings/actions";
 
+/** What opens beside the menu on a wide window before anything is picked. */
+const FIRST_PAGE: SettingsPage = "practice";
 
-export function SettingsScreen({
-  settings,
-  onSettings,
-  onReset,
-  onOpenMemories,
-  onOpenAudio,
-}: {
+interface Shared {
   settings: Settings;
   onSettings: (settings: Settings) => void;
-  onReset: () => void;
-  onOpenMemories: () => void;
-  /** The downloaded-audio page. */
+  /** The downloaded-audio page (under Voices & sound). */
   onOpenAudio: () => void;
+}
+
+/**
+ * The Settings tab: a short menu, each row opening a sub-screen with that
+ * topic's settings. On a phone the sub-screen is pushed over the tabs (App
+ * shows it, see SettingsPageView); on a wide window it sits beside the menu.
+ */
+export function SettingsScreen({
+  page,
+  onPage,
+  ...shared
+}: Shared & {
+  /** The sub-screen open, if any. */
+  page: SettingsPage | null;
+  onPage: (page: SettingsPage) => void;
 }) {
-  const [keyDraft, setKeyDraft] = useState("");
-  const [sounds, setSounds] = useState(soundsEnabled);
-  const [kieDraft, setKieDraft] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [voices, setVoices] = useState<Voice[] | null>(null);
-  const [cache, setCache] = useState<AudioCacheStats | null>(null);
-  const [includeKeys, setIncludeKeys] = useState(false);
-  const [theme, setTheme] = useThemePreference();
+  const wide = useWideLayout();
+  if (!wide) return <SettingsMenu settings={shared.settings} current={null} onPage={onPage} />;
+  const current = page ?? FIRST_PAGE;
+  return (
+    <SplitView
+      list={<SettingsMenu settings={shared.settings} current={current} onPage={onPage} />}
+      detail={<SettingsPageView key={current} page={current} onOpenPage={onPage} {...shared} />}
+    />
+  );
+}
 
-  const refreshCache = useCallback(() => {
-    api.audioCacheStats().then(setCache).catch(() => setCache(null));
-  }, []);
+/**
+ * One Settings sub-screen. With `onBack` it is a pushed screen (a phone);
+ * without, it is the pane beside the menu.
+ */
+export function SettingsPageView({
+  page,
+  ...props
+}: Shared & Omit<SettingsPageProps, "settings" | "onSettings"> & { page: SettingsPage }) {
+  switch (page) {
+    case "howTo":
+      return <HowToUse onBack={props.onBack} />;
+    case "practice":
+      return <PracticeSettings {...props} />;
+    case "memories":
+      return <Memories onBack={props.onBack} />;
+    case "ai":
+      return <AiSettings {...props} />;
+    case "sound":
+      return <SoundSettings {...props} />;
+    case "songs":
+      return <SongSettings {...props} />;
+    case "appearance":
+      return <AppearanceSettings onBack={props.onBack} />;
+    case "devices":
+      return <Devices onBack={props.onBack} />;
+    case "data":
+      return <DataSettings {...props} />;
+  }
+}
 
-  useEffect(refreshCache, [refreshCache, settings.ttsVoiceFemale, settings.ttsVoiceMale]);
-
-  // The voice list ships with the app, so this never blocks on the network.
+function SettingsMenu({
+  settings,
+  current,
+  onPage,
+}: {
+  settings: Settings;
+  /** The row whose sub-screen shows beside the menu (wide windows). */
+  current: SettingsPage | null;
+  onPage: (page: SettingsPage) => void;
+}) {
+  const [theme] = useThemePreference();
+  const [otherDevices, setOtherDevices] = useState<number | null>(null);
   useEffect(() => {
-    api.listVoices().then(setVoices).catch(() => setVoices(null));
+    api
+      .syncStatus()
+      .then((status) => setOtherDevices(status.devices.filter((device) => !device.isSelf).length))
+      .catch(() => setOtherDevices(null));
   }, []);
 
-  const [benchmark, setBenchmark] = useState(false);
-  // Every model row shares the starred models.
-  const models = {
-    favorites: settings.favoriteModels ?? [],
-    onFavorites: (favorites: string[]) => void patch({ favoriteModels: favorites }, "favorites"),
-  };
+  const row = (page: SettingsPage, leading: ReactNode, title: string, subtitle: string) => (
+    <ListItem
+      leading={leading}
+      title={title}
+      subtitle={subtitle}
+      selected={current === page}
+      onClick={() => onPage(page)}
+    />
+  );
 
-  async function patch(update: SettingsPatch, label: string) {
-    setBusy(label);
-    try {
-      const next = await api.updateSettings(update);
-      onSettings(next);
-      if (
-        update.remindersEnabled !== undefined ||
-        update.reminderHour !== undefined ||
-        update.reminderMinute !== undefined
-      ) {
-        const active = await syncReminder({
-          enabled: next.remindersEnabled,
-          hour: next.reminderHour,
-          minute: next.reminderMinute,
-        });
-        if (next.remindersEnabled && !active) {
-          toast("Notifications are switched off for this app in your system settings.", "error");
-        }
-      }
-    } catch (cause) {
-      toast(errorMessage(cause), "error");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function run(label: string, action: () => Promise<void>) {
-    setBusy(label);
-    try {
-      await action();
-    } catch (cause) {
-      toast(errorMessage(cause), "error");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const voiceName = (gender: "f" | "m") =>
-    gender === "f" ? settings.ttsVoiceFemale : settings.ttsVoiceMale;
-  const sunoLabel = (model: string) =>
-    model === "V6_MINI" ? "V6 Mini" : model === "V6_WILD" ? "V6 Wild" : model;
+  const lessons = `${settings.dailyLessons} ${settings.dailyLessons === 1 ? "lesson" : "lessons"} a day`;
+  const practice = settings.remindersEnabled
+    ? `${lessons} · reminder at ${reminderTime(settings.reminderHour, settings.reminderMinute)}`
+    : `${lessons} · no reminder`;
+  const ai = !settings.hasApiKey
+    ? "Add your OpenRouter key"
+    : settings.aiModel
+      ? `Connected · ${modelName(settings.aiModel)}`
+      : "Connected · pick a tutor model";
+  const sound = `${settings.ttsVoiceFemale} and ${settings.ttsVoiceMale} · ${settings.ttsSpeed.toFixed(2)}×`;
+  const length = { short: "~2 min", medium: "~3 min", long: "4–5 min" }[settings.songLength];
+  const songs = settings.hasKieKey
+    ? `kie.ai connected · ${sunoLabel(settings.sunoModel)} · ${length}`
+    : "Add a kie.ai key to make songs";
+  const appearance = theme === "system" ? "Same as the system" : theme === "dark" ? "Dark" : "Light";
+  const devices =
+    otherDevices === null
+      ? "Keep your phone and computer in step"
+      : otherDevices === 0
+        ? "Just this one — add another"
+        : `${otherDevices + 1} devices in step`;
 
   return (
     <Screen title="Settings">
-
-      <Section title="Practice">
+      <Section title="Getting started">
         <List>
-          <SettingRow
-            label="Daily goal"
-            description="Reach it — or clear today's check-ins — and the day counts for your streak"
-            value={`${settings.dailyGoal} XP`}
-            stacked
-            control={
-              <input
-                type="range"
-                min={50}
-                max={500}
-                step={10}
-                value={settings.dailyGoal}
-                aria-label="Daily goal"
-                onChange={(event) => patch({ dailyGoal: Number(event.target.value) }, "goal")}
-              />
-            }
-          />
-          <SettingRow
-            label="Check-ins on a quiet day"
-            description="Today's list follows what you usually do, but is never shorter than this. Keep going for more"
-            value={`${settings.reviewFloorMinutes ?? 10} min`}
-            stacked
-            control={
-              <input
-                type="range"
-                min={5}
-                max={60}
-                step={5}
-                value={settings.reviewFloorMinutes ?? 10}
-                aria-label="Check-ins on a quiet day, in minutes"
-                onChange={(event) => patch({ reviewFloorMinutes: Number(event.target.value) }, "floor")}
-              />
-            }
-          />
-          <SettingRow
-            label="Daily reminder"
-            description={settings.remindersEnabled ? "A nudge if you have not practised yet" : "Off"}
-            control={
-              <Switch
-                label="Daily reminder"
-                checked={settings.remindersEnabled}
-                onChange={(enabled) => patch({ remindersEnabled: enabled }, "remind")}
-              />
-            }
-          />
-          {settings.remindersEnabled ? (
-            <SettingRow
-              label="Remind me at"
-              control={
-                <div className="no-shrink">
-                  <input
-                    type="time"
-                    aria-label="Reminder time"
-                    value={`${String(settings.reminderHour).padStart(2, "0")}:${String(settings.reminderMinute).padStart(2, "0")}`}
-                    onChange={(event) => {
-                      const [hour, minute] = event.target.value.split(":").map(Number);
-                      if (Number.isFinite(hour) && Number.isFinite(minute)) {
-                        patch({ reminderHour: hour, reminderMinute: minute }, "remind-time");
-                      }
-                    }}
-                  />
-                </div>
-              }
-            />
-          ) : null}
-        </List>
-        {settings.remindersEnabled ? (
-          <Button
-            variant="plain"
-            size="sm"
-            loading={busy === "test-note"}
-            onClick={() =>
-              run("test-note", async () => {
-                const sent = await sendTestNotification();
-                toast(sent ? "Sent — check your notifications." : "This device did not allow the notification.");
-              })
-            }
-          >
-            Send a test notification
-          </Button>
-        ) : null}
-      </Section>
-
-      <Section title="Appearance">
-        <Segmented
-          value={theme}
-          onChange={(value) => setTheme(value as ThemePreference)}
-          options={[
-            { value: "system", label: "System" },
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
-          ]}
-        />
-      </Section>
-
-      <Section
-        title="OpenRouter"
-        info={
-          <>
-            <p>Powers the tutor, the songwriter and the Polish voice.</p>
-            <p>
-              Get a key at openrouter.ai/keys. It is stored in the app's private database on this
-              device, and requests are made from the app's core — the key never reaches the web
-              layer.
-            </p>
-          </>
-        }
-      >
-        {settings.hasApiKey ? (
-          <List>
-            <SettingRow
-              label="API key"
-              description="Saved on this device"
-              control={
-                <Inline gap={1}>
-                  <Button
-                    variant="plain"
-                    size="sm"
-                    loading={busy === "test-key"}
-                    onClick={() =>
-                      run("test-key", async () => {
-                        const reply = await api.aiTestKey();
-                        toast(`The model replied “${reply}” — everything works.`);
-                      })
-                    }
-                  >
-                    Test
-                  </Button>
-                  <Button
-                    variant="plain"
-                    size="sm"
-                    onClick={() => run("clear-key", async () => onSettings(await api.aiClearKey()))}
-                  >
-                    Remove
-                  </Button>
-                </Inline>
-              }
-            />
-          </List>
-        ) : (
-          <Card>
-            <Stack gap={3}>
-              <Field label="API key">
-                <input
-                  value={keyDraft}
-                  type="password"
-                  placeholder="sk-or-v1-…"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  onChange={(event) => setKeyDraft(event.target.value)}
-                />
-              </Field>
-              <Button
-                variant="primary"
-                block
-                loading={busy === "save-key"}
-                disabled={keyDraft.trim().length === 0}
-                onClick={() =>
-                  run("save-key", async () => {
-                    onSettings(await api.aiSetKey(keyDraft));
-                    setKeyDraft("");
-                  })
-                }
-              >
-                Save key
-              </Button>
-            </Stack>
-          </Card>
-        )}
-      </Section>
-
-      <Section
-        title="AI models"
-        info={
-          <>
-            <p>
-              <b>Tutor</b> answers in the Tutor tab. To build
-              courses, lessons and songs it needs a model that can use tools — those are marked 🛠.
-            </p>
-            <p>
-              <b>Songwriter</b> writes song lyrics. "Same as the tutor" reuses the tutor's model.
-            </p>
-            <p>
-              <b>Writing partner</b> plays the other person in writing blocks. <b>Talk about it</b>{" "}
-              chats with you about a word or sentence. Both are short replies, so a small, fast
-              model is enough; pick one marked 🛠 so it can still make a drill when you ask.
-            </p>
-          </>
-        }
-      >
-        <List>
-          <ModelSetting
-            label="Tutor"
-            job="tutor"
-            value={settings.aiModel}
-            need="tools"
-            {...models}
-            onChange={(model) => patch({ aiModel: model }, "model")}
-          />
-          <ModelSetting
-            label="Songwriter"
-            job="songwriter"
-            value={settings.songwriterModel}
-            fallback="Same as the tutor"
-            {...models}
-            onChange={(model) => patch({ songwriterModel: model }, "songwriter-model")}
-          />
-          <ModelSetting
-            label="Writing partner"
-            job="partner"
-            value={settings.partnerModel}
-            fallback="Same as the tutor"
-            need="tools"
-            {...models}
-            onChange={(model) => patch({ partnerModel: model }, "partner-model")}
-          />
-          <ModelSetting
-            label="Talk about it"
-            job="word chat"
-            value={settings.wordChatModel}
-            fallback="Same as the tutor"
-            need="tools"
-            {...models}
-            onChange={(model) => patch({ wordChatModel: model }, "word-chat-model")}
-          />
-          <ModelSetting
-            label="Course pictures"
-            job="pictures"
-            value={settings.imageModel}
-            fallback="Default (Gemini 2.5 Flash Image)"
-            need="images"
-            {...models}
-            onChange={(model) => patch({ imageModel: model }, "image-model")}
-          />
-          <ListItem
-            title="Benchmark"
-            subtitle="Test a model on this app's own jobs, and compare scores, speed and price"
-            onClick={() => setBenchmark(true)}
-          />
-        </List>
-        {benchmark ? <Benchmark onClose={() => setBenchmark(false)} /> : null}
-      </Section>
-
-      <Section
-        title="Songs"
-        info={
-          <>
-            <p>Suno sings the learning songs, through your kie.ai account.</p>
-            <p>Requests go from the app's core straight to kie.ai. Finished songs are kept on this device.</p>
-          </>
-        }
-      >
-        {settings.hasKieKey ? (
-          <List>
-            <SettingRow
-              label="kie.ai key"
-              description="Saved on this device"
-              control={
-                <Inline gap={1}>
-                  <Button
-                    variant="plain"
-                    size="sm"
-                    loading={busy === "kie-credits"}
-                    onClick={() =>
-                      run("kie-credits", async () => {
-                        const credits = await api.kieCredits();
-                        toast(`kie.ai works — ${credits} credits left.`);
-                      })
-                    }
-                  >
-                    Credits
-                  </Button>
-                  <Button
-                    variant="plain"
-                    size="sm"
-                    onClick={() => run("kie-clear", async () => onSettings(await api.kieClearKey()))}
-                  >
-                    Remove
-                  </Button>
-                </Inline>
-              }
-            />
-            <SettingRow
-              label="Song length"
-              description="Suno sings as long as the lyrics are; this sets how much the songwriter writes."
-              stacked
-              control={
-                <Segmented
-                  value={settings.songLength}
-                  onChange={(length) => patch({ songLength: length }, "song-length")}
-                  options={[
-                    { value: "short", label: "~2 min" },
-                    { value: "medium", label: "~3 min" },
-                    { value: "long", label: "4–5 min" },
-                  ]}
-                />
-              }
-            />
-            <SettingRow
-              label="Suno model"
-              stacked
-              control={
-                <Segmented
-                  value={settings.sunoModel}
-                  onChange={(model) => patch({ sunoModel: model }, "suno-model")}
-                  options={settings.sunoModels.map((model) => ({ value: model, label: sunoLabel(model) }))}
-                />
-              }
-            />
-          </List>
-        ) : (
-          <Card>
-            <Stack gap={3}>
-              <Field label="kie.ai API key">
-                <input
-                  value={kieDraft}
-                  type="password"
-                  placeholder="Paste your kie.ai key"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  onChange={(event) => setKieDraft(event.target.value)}
-                />
-              </Field>
-              <Button
-                variant="primary"
-                block
-                loading={busy === "kie-save"}
-                disabled={kieDraft.trim().length === 0}
-                onClick={() =>
-                  run("kie-save", async () => {
-                    onSettings(await api.kieSetKey(kieDraft));
-                    setKieDraft("");
-                  })
-                }
-              >
-                Save key
-              </Button>
-            </Stack>
-          </Card>
-        )}
-      </Section>
-
-      <Section
-        title="Polish voices"
-        info={
-          <p>
-            Android has no built-in Polish speech, so the speaker buttons use Gemini on
-            OpenRouter. Dialogue lines use the voice matching the speaker. Each line is made once,
-            then kept on the device.
-          </p>
-        }
-      >
-        <List>
-          {(["f", "m"] as const).map((gender) => {
-            const current = voiceName(gender);
-            const options = (voices ?? []).filter((voice) => voice.gender === gender);
-            return (
-              <SettingRow
-                key={gender}
-                label={gender === "f" ? "Female voice" : "Male voice"}
-                stacked
-                control={
-                  <Inline gap={2}>
-                    <select
-                      value={current}
-                      aria-label={gender === "f" ? "Female voice" : "Male voice"}
-                      disabled={options.length === 0}
-                      onChange={(event) =>
-                        patch(
-                          gender === "f" ? { ttsVoiceFemale: event.target.value } : { ttsVoiceMale: event.target.value },
-                          `voice-${gender}`,
-                        )
-                      }
-                    >
-                      {options.length === 0 ? <option value={current}>{current}</option> : null}
-                      {options.map((voice) => (
-                        <option key={voice.name} value={voice.name}>
-                          {voice.name} — {voice.description}
-                        </option>
-                      ))}
-                    </select>
-                    <IconButton
-                      variant="tinted"
-                      icon={<PlayerIcon.play size={16} />}
-                      label={`Hear ${current}`}
-                      loading={busy === `preview-${gender}`}
-                      onClick={() =>
-                        run(`preview-${gender}`, async () => {
-                          await playClip(await api.previewVoice(current, VOICE_TEST_LINE));
-                        })
-                      }
-                    />
-                  </Inline>
-                }
-              />
-            );
-          })}
-          <SettingRow
-            label="Speaking speed"
-            description="Every line plays at this speed, stored ones too. For one slow line, use 🐢 next to it."
-            value={`${settings.ttsSpeed.toFixed(2)}×`}
-            stacked
-            control={
-              <input
-                type="range"
-                min={0.5}
-                max={1.5}
-                step={0.05}
-                value={settings.ttsSpeed}
-                aria-label="Speaking speed"
-                onChange={(event) => patch({ ttsSpeed: Number(event.target.value) }, "tts-speed")}
-              />
-            }
-          />
+          {row("howTo", <StudyIcon />, "How to use", "How the app works, and why")}
         </List>
       </Section>
 
-      <Section title="Sound">
+      <Section title="Learning">
         <List>
-          <ListItem
-            leading={<PlayerIcon.download />}
-            title="Downloaded audio"
-            subtitle={
-              cache
-                ? `${cache.clips} clips · ${megabytes(cache.bytes)} — see what's stored, per course`
-                : "See what's stored, per course"
-            }
-            onClick={onOpenAudio}
-          />
-          <SettingRow
-            label="Answer sounds"
-            description="A chime when you're right, a bump when you're not"
-            control={
-              <Switch
-                label="Answer sounds"
-                checked={sounds}
-                onChange={(on) => {
-                  setSoundsEnabled(on);
-                  setSounds(on);
-                  if (on) playCorrect();
-                }}
-              />
-            }
-          />
-          <SettingRow
-            label="Fetch a session's audio up front"
-            description="So no line waits on the network"
-            control={
-              <Switch
-                label="Fetch a session's audio up front"
-                checked={settings.ttsPrefetch}
-                onChange={(prefetch) => patch({ ttsPrefetch: prefetch }, "prefetch")}
-              />
-            }
-          />
+          {row("practice", <CalendarIcon />, "Practice", practice)}
+          {row("memories", <MemoryIcon />, "Memories", "What the tutor remembers about you")}
         </List>
       </Section>
 
-      <Section title="Memories">
+      <Section title="AI and sound">
         <List>
-          <ListItem
-            leading={<MemoryIcon />}
-            title="What the agents remember"
-            subtitle="Goals, preferences and struggles the tutor and examiner noted"
-            onClick={onOpenMemories}
-          />
+          {row("ai", <NavIcon.tutor />, "AI", ai)}
+          {row("sound", <SpeakerIcon />, "Voices & sound", sound)}
+          {row("songs", <NavIcon.songs />, "Songs", songs)}
         </List>
       </Section>
 
-      <CostCenter />
-
-      <Section
-        title="Your data"
-        info={
-          <p>
-            Everything the app keeps — progress, courses, the tutor conversations, settings,
-            downloaded audio and your songs — lives in one SQLite database on this device. Export
-            saves a copy wherever you choose; it opens in any SQLite tool.
-          </p>
-        }
-      >
+      <Section title="This app">
         <List>
-          <SettingRow
-            label="Include API keys"
-            description="Off keeps your keys out of the copy"
-            control={<Switch label="Include API keys" checked={includeKeys} onChange={setIncludeKeys} />}
-          />
+          {row("appearance", <ThemeIcon />, "Appearance", appearance)}
+          {row("devices", <DevicesIcon />, "Devices", devices)}
+          {row("data", <DataIcon />, "Your data", "Export, copy keys, diagnostics, reset")}
         </List>
-        <Button
-          block
-          icon={<PlayerIcon.download />}
-          loading={busy === "export"}
-          onClick={() =>
-            run("export", async () => {
-              const where = await api.exportDatabase(includeKeys);
-              if (where) toast(`Exported to ${decodeURIComponent(where)}`);
-            })
-          }
-        >
-          Export database
-        </Button>
-      </Section>
-
-      <Section title="Reset">
-        <ConfirmButton
-          label="Reset progress"
-          confirmLabel="Erase progress"
-          question="Erase every review, streak and achievement, the daily focus and the tutor conversation? Courses, memories and songs stay."
-          block
-          onConfirm={() =>
-            run("reset", async () => {
-              await api.resetProgress();
-              onReset();
-            })
-          }
-        />
       </Section>
 
       <Text variant="caption" tone="faint" align="center">

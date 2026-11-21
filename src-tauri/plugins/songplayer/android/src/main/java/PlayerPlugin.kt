@@ -5,8 +5,10 @@ import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
@@ -79,6 +81,11 @@ class ShareArgs {
 class KeepWorkingArgs {
     var on: Boolean = false
     var label: String = "Working…"
+    /** A progress bar: done of total; none when total is 0. */
+    var done: Long = 0
+    var total: Long = 0
+    /** How the work went, said in a notification of its own. */
+    var result: String? = null
 }
 
 @InvokeArg
@@ -343,15 +350,25 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
 
     /**
      * Starts or stops [WorkService], which keeps the app alive with the screen
-     * off while the tutor writes or a song is made. Called from Rust.
+     * off while the tutor writes, a song is made or a course downloads, or
+     * redraws its notification while it runs. Called from Rust.
      */
     @Command
     fun keepWorking(invoke: Invoke) {
         val args = invoke.parseArgs(KeepWorkingArgs::class.java)
         val context = activity.applicationContext
-        val intent = Intent(context, WorkService::class.java).putExtra(WorkService.EXTRA_LABEL, args.label)
+        val intent = Intent(context, WorkService::class.java)
+            .putExtra(WorkService.EXTRA_LABEL, args.label)
+            .putExtra(WorkService.EXTRA_DONE, args.done)
+            .putExtra(WorkService.EXTRA_TOTAL, args.total)
+        args.result?.let { WorkService.showResult(context, it) }
         try {
-            if (args.on) {
+            if (args.on && WorkService.running) {
+                // Running already: only its notification changes (a course's
+                // download counting up). Starting it again from the
+                // background would be refused.
+                WorkService.redraw(context, args.label, args.done, args.total)
+            } else if (args.on) {
                 WorkService.stopRequested = false
                 ContextCompat.startForegroundService(context, intent)
             } else if (WorkService.running) {
@@ -368,12 +385,28 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 // notification, would crash the app. It stops once it has.
                 WorkService.stopRequested = true
             }
-            invoke.resolve()
+            invoke.resolve(workReport())
         } catch (error: Exception) {
             // Android refuses a foreground service started from the
             // background; the work then runs as long as Android allows.
-            invoke.reject(error.message ?: "Could not keep working in the background")
+            invoke.reject("${error.javaClass.simpleName}: ${error.message ?: "could not keep working in the background"}")
         }
+    }
+
+    /**
+     * What the app should know about keeping working: an earlier refusal
+     * inside the service (said once), and whether its notification can be
+     * seen — on Android 13 and later only once notifications are allowed.
+     */
+    private fun workReport(): JSObject {
+        val report = JSObject()
+        WorkService.lastFailure?.let { report.put("refused", it) }
+        WorkService.lastFailure = null
+        val allowed = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(activity, "android.permission.POST_NOTIFICATIONS") ==
+            PackageManager.PERMISSION_GRANTED
+        report.put("notificationsAllowed", allowed)
+        return report
     }
 
     @Command

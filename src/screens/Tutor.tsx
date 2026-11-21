@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
-import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon } from "../components/icons";
+import { CheckIcon, MemoryIcon, MoreIcon, NavIcon, PlayerIcon, PlusIcon } from "../components/icons";
 import { Composer } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
 import {
@@ -19,8 +18,11 @@ import {
   Section,
   Segmented,
   Spinner,
+  Typing,
+  SplitView,
   Stack,
   Text,
+  useWideLayout,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useDraft, writeDraft } from "../lib/drafts";
@@ -28,7 +30,15 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { useTutorJob } from "../lib/tutorJob";
 import { ensurePermission } from "../lib/notifications";
-import type { ChatMessage, Conversation, TutorAction, TutorDone } from "../lib/types";
+import type { ChatMessage, Conversation, ConversationId, CourseId, LessonId, SongId, TutorAction } from "../lib/types";
+import { onEvent } from "../lib/events";
+import { TutorDoneSchema } from "../lib/types";
+
+/** A message as shown: stored, or the learner's just sent (not stored yet). */
+type Shown = Omit<ChatMessage, "id" | "conversationId"> & {
+  id: ChatMessage["id"] | `pending-${number}`;
+  conversationId: ConversationId | null;
+};
 
 const STARTERS = [
   "Build me a course for learning the colours",
@@ -37,7 +47,6 @@ const STARTERS = [
   "Make me a song about ordering coffee",
   "When do I use “ty” and when “pan” or “pani”?",
 ];
-
 
 /** "3 min ago", "yesterday", "12 Nov" — for the conversation list. */
 function when(seconds: number): string {
@@ -51,16 +60,24 @@ function when(seconds: number): string {
 
 type Shared = {
   /** Opens a course page. */
-  onOpenTopic: (topicId: number) => void;
-  /** Opens a block's page. */
-  onOpenBlock: (blockId: number) => void;
+  onOpenCourse: (courseId: CourseId) => void;
+  /** Opens a lesson's page. */
+  onOpenLesson: (lessonId: LessonId) => void;
   /** Shows a song in the Music tab. */
-  onOpenSong: (songId: number) => void;
+  onOpenSong: (songId: SongId) => void;
   /** The tutor changed something in the app; reload what the screens show. */
   onChanged: () => void;
   /** Opens what the agents remember. */
   onOpenMemories: () => void;
 };
+
+/**
+ * The list as last loaded, and the conversation last open, kept while the
+ * app runs: leaving the tab and coming back shows them at once (the list
+ * then refreshes), never a spinner behind a slow database.
+ */
+let cachedConversations: Conversation[] | null = null;
+let lastOpen: ConversationId | null = null;
 
 /**
  * The Tutor tab: your conversations, newest first, with a box at the bottom
@@ -70,22 +87,42 @@ export function Tutor({
   hasApiKey,
   hasModel,
   onOpenSettings,
+  ask = null,
+  onAsked,
   ...shared
 }: Shared & {
+  /** A message to start a new conversation with (a button elsewhere asked the tutor). */
+  ask?: string | null;
+  onAsked?: () => void;
   hasApiKey: boolean;
   /** A key alone is not enough — a model has to be chosen too. */
   hasModel: boolean;
   onOpenSettings: () => void;
 }) {
   // null: the list; "new": a blank conversation; a number: that conversation.
-  const [open, setOpen] = useState<number | "new" | null>(null);
-  const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [open, setOpenState] = useState<ConversationId | "new" | null>(lastOpen);
+  const [conversations, setConversations] = useState<Conversation[] | null>(cachedConversations);
+  // A started conversation is remembered for coming back to the tab; a new
+  // one is not (its first message would be sent again).
+  const setOpen = useCallback((next: ConversationId | "new" | null) => {
+    lastOpen = next === "new" ? null : next;
+    setOpenState(next);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useDraft("list");
   // The message a new conversation opens with, sent as soon as it shows.
   const [opening, setOpening] = useState<string | null>(null);
   // All conversations, or only the ones about a word ("Talk about it").
   const [filter, setFilter] = useState<"all" | "word">("all");
+  const wide = useWideLayout();
+
+  // Asked from elsewhere: a new conversation that starts with the request.
+  useEffect(() => {
+    if (!ask) return;
+    setOpening(ask);
+    setOpen("new");
+    onAsked?.();
+  }, [ask, onAsked, setOpen]);
 
   function start(text: string) {
     const message = text.trim();
@@ -98,14 +135,20 @@ export function Tutor({
   const refresh = useCallback(() => {
     api
       .tutorConversations()
-      .then(setConversations)
+      .then((list) => {
+        cachedConversations = list;
+        setConversations(list);
+        setError(null);
+        // One deleted elsewhere (another device) is no longer remembered.
+        if (lastOpen !== null && !list.some((entry) => entry.id === lastOpen)) lastOpen = null;
+      })
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
 
   useEffect(refresh, [refresh]);
   // A reply finished in the background: the list's "writing…" changes.
   useEffect(() => {
-    const off = listen<TutorDone>("tutor://done", () => refresh());
+    const off = onEvent(TutorDoneSchema, "tutor://done", () => refresh());
     return () => {
       void off.then((stop) => stop());
     };
@@ -123,32 +166,37 @@ export function Tutor({
             </Button>
           }
         >
-          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can
-          build courses, lessons and songs for you.
+          The tutor runs on your own OpenRouter account. Choose a model marked 🛠, so it can build courses, lessons and
+          songs for you.
         </EmptyState>
       </Screen>
     );
   }
 
-  if (open !== null) {
-    const conversation =
-      open === "new" ? null : (conversations?.find((entry) => entry.id === open) ?? null);
+  // A conversation: on its own screen, or beside the list (`inSplit`), where
+  // it has no way back because the list stays in view.
+  const chat = (target: ConversationId | "new", inSplit: boolean) => {
+    const conversation = target === "new" ? null : (conversations?.find((entry) => entry.id === target) ?? null);
     return (
       <Chat
-        key={open}
-        conversationId={open === "new" ? null : open}
+        key={target}
+        conversationId={target === "new" ? null : target}
         title={conversation?.title ?? "New conversation"}
-        firstMessage={open === "new" ? opening : null}
+        firstMessage={target === "new" ? opening : null}
         onStarted={(id) => {
           setOpening(null);
           setOpen(id);
           refresh();
         }}
-        onBack={() => {
-          setOpening(null);
-          setOpen(null);
-          refresh();
-        }}
+        onBack={
+          inSplit
+            ? undefined
+            : () => {
+                setOpening(null);
+                setOpen(null);
+                refresh();
+              }
+        }
         onRenamed={refresh}
         onDeleted={() => {
           setOpen(null);
@@ -157,64 +205,99 @@ export function Tutor({
         {...shared}
       />
     );
-  }
+  };
 
-  return (
-    <Screen
-      title="Tutor"
-      info={<TutorInfo />}
-      footer={<Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" onSend={start} />}
-    >
-      {error ? <Banner tone="error">{error}</Banner> : null}
-      {conversations === null ? (
-        <Spinner />
-      ) : conversations.length === 0 ? (
-        <Section title="Try asking">
-          <List>
-            {STARTERS.map((starter) => (
-              <ListItem key={starter} title={starter} onClick={() => start(starter)} />
-            ))}
-          </List>
-        </Section>
-      ) : (
-        <Section title="Conversations">
-          {conversations.some((c) => c.tag === "word") ? (
-            <Segmented
-              value={filter}
-              options={[
-                { value: "all", label: "All" },
-                { value: "word", label: "Words" },
-              ]}
-              onChange={setFilter}
+  // A tablet in landscape: the list, and the open conversation beside it —
+  // a new one when none is open.
+  if (wide) {
+    const current = open ?? "new";
+    return <SplitView list={list(current)} detail={chat(current, true)} />;
+  }
+  if (open !== null) return chat(open, false);
+  return list(null);
+
+  /** The conversations; `current` is the one open beside them (wide windows). */
+  function list(current: ConversationId | "new" | null) {
+    const inSplit = current !== null;
+    return (
+      <Screen
+        title="Tutor"
+        info={<TutorInfo />}
+        footer={
+          inSplit ? undefined : (
+            <Composer draft={draft} setDraft={setDraft} placeholder="Ask the tutor" dictate onSend={start} />
+          )
+        }
+        actions={
+          inSplit ? (
+            <IconButton
+              variant={current === "new" ? "primary" : undefined}
+              icon={<PlusIcon />}
+              label="New conversation"
+              onClick={() => {
+                setOpening(null);
+                setOpen("new");
+              }}
             />
-          ) : null}
-          <List>
-            {conversations
-              .filter((c) => filter === "all" || c.tag === filter)
-              .map((conversation) => (
-              <ListItem
-                key={conversation.id}
-                oneLine
-                title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
-                subtitle={
-                  conversation.working
-                    ? "The tutor is writing…"
-                    : [
-                        conversation.tag === "word" ? "Word" : null,
-                        when(conversation.updatedAt),
-                        conversation.error ? "didn't finish" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
-                }
-                onClick={() => setOpen(conversation.id)}
+          ) : null
+        }
+      >
+        {error ? <Banner tone="error">{error}</Banner> : null}
+        {conversations === null ? (
+          <Spinner />
+        ) : conversations.length === 0 && inSplit ? (
+          <Text variant="small" tone="dim">
+            No conversations yet — ask anything on the right.
+          </Text>
+        ) : conversations.length === 0 ? (
+          <Section title="Try asking">
+            <List>
+              {STARTERS.map((starter) => (
+                <ListItem key={starter} title={starter} onClick={() => start(starter)} />
+              ))}
+            </List>
+          </Section>
+        ) : (
+          <Section title="Conversations">
+            {conversations.some((c) => c.tag === "word") ? (
+              <Segmented
+                value={filter}
+                options={[
+                  { value: "all", label: "All" },
+                  { value: "word", label: "Words" },
+                ]}
+                onChange={setFilter}
               />
-            ))}
-          </List>
-        </Section>
-      )}
-    </Screen>
-  );
+            ) : null}
+            <List>
+              {conversations
+                .filter((c) => filter === "all" || c.tag === filter)
+                .map((conversation) => (
+                  <ListItem
+                    key={conversation.id}
+                    oneLine
+                    title={conversation.tag === "word" ? `💬 ${conversation.title}` : conversation.title}
+                    subtitle={
+                      conversation.working
+                        ? "The tutor is writing…"
+                        : [
+                            conversation.tag === "word" ? "Word" : null,
+                            when(conversation.updatedAt),
+                            conversation.error ? "didn't finish" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                    }
+                    selected={current === conversation.id}
+                    onClick={() => setOpen(conversation.id)}
+                  />
+                ))}
+            </List>
+          </Section>
+        )}
+      </Screen>
+    );
+  }
 }
 
 function Chat({
@@ -225,23 +308,24 @@ function Chat({
   onBack,
   onRenamed,
   onDeleted,
-  onOpenTopic,
-  onOpenBlock,
+  onOpenCourse,
+  onOpenLesson,
   onOpenSong,
   onOpenMemories,
 }: Shared & {
   /** null for a conversation not yet started. */
-  conversationId: number | null;
+  conversationId: ConversationId | null;
   title: string;
   /** Sent once when the conversation opens (typed on the list). */
   firstMessage: string | null;
   /** The first reply arrived; the conversation now exists with this id. */
-  onStarted: (id: number) => void;
-  onBack: () => void;
+  onStarted: (id: ConversationId) => void;
+  /** Back to the list; left out beside it, where the list stays in view. */
+  onBack?: () => void;
   onRenamed: () => void;
   onDeleted: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<Shown[]>([]);
   // What is being written survives leaving the conversation, and keeps
   // going while the tutor answers.
   const [draft, setDraft] = useDraft(conversationId === null ? "new" : String(conversationId));
@@ -298,7 +382,7 @@ function Chat({
     // time tutorSend returns, and answers in the background.
     setMessages((current) => [
       ...current,
-      { id: -Date.now(), conversationId: conversationId ?? 0, role: "user", content: message, actions: [] },
+      { id: `pending-${Date.now()}`, conversationId, role: "user", content: message, actions: [] },
     ]);
     scroll.follow();
     job.begin();
@@ -321,9 +405,9 @@ function Chat({
   }
 
   function ActionRow({ action }: { action: TutorAction }) {
-    const { topicId, songId, blockId } = action;
+    const { courseId, songId, lessonId } = action;
     const opensCourse =
-      topicId !== null &&
+      courseId !== null &&
       ["courseCreated", "courseUpdated", "programmeCreated", "programmeUpdated"].includes(action.kind);
     return (
       <div className="tutor-action">
@@ -349,13 +433,13 @@ function Chat({
             </Button>
           </Inline>
         ) : null}
-        {blockId !== null && action.kind !== "blockDeleted" ? (
+        {lessonId !== null && action.kind !== "lessonDeleted" ? (
           <Inline gap={2} wrap>
             <Button
               variant="primary"
               size="sm"
               icon={<PlayerIcon.play size={14} />}
-              onClick={() => onOpenBlock(blockId)}
+              onClick={() => onOpenLesson(lessonId)}
             >
               Open
             </Button>
@@ -367,7 +451,7 @@ function Chat({
               variant="primary"
               size="sm"
               icon={<PlayerIcon.play size={14} />}
-              onClick={() => onOpenTopic(topicId)}
+              onClick={() => onOpenCourse(courseId)}
             >
               Open course
             </Button>
@@ -386,6 +470,7 @@ function Chat({
           draft={draft}
           setDraft={setDraft}
           placeholder="Ask the tutor"
+          dictate
           canSend={!sending}
           onSend={(text) => void send(text)}
         />
@@ -434,7 +519,13 @@ function Chat({
 
       <div className="chat">
         {messages.map((message) => (
-          <div key={message.id} className="msg selectable" data-role={message.role}>
+          <div
+            key={message.id}
+            className="msg selectable"
+            data-role={message.role}
+            // Just sent: it rises into place (history and stored replies don't).
+            data-fresh={(typeof message.id === "string" && message.id.startsWith("pending-")) || undefined}
+          >
             {message.role === "assistant" ? (
               <>
                 <Markdown text={message.content} />
@@ -448,7 +539,7 @@ function Chat({
           </div>
         ))}
         {sending ? (
-          <div className="msg" data-role="assistant">
+          <div className="msg" data-role="assistant" data-fresh>
             {live ? (
               <div>
                 <Markdown text={live} />
@@ -457,7 +548,7 @@ function Chat({
             ) : null}
             {status || !live ? (
               <Inline gap={2}>
-                <Spinner />
+                <Typing />
                 <Text variant="small" tone="faint">
                   {status ?? "Thinking…"}
                 </Text>
@@ -495,7 +586,7 @@ function Chat({
             label="Delete conversation"
             confirmLabel="Delete"
             question="Delete this conversation? Courses and songs the tutor made stay."
-            block
+            wide
             onConfirm={async () => {
               await api.tutorDelete(conversationId);
               onDeleted();
@@ -503,7 +594,6 @@ function Chat({
           />
         </Sheet>
       ) : null}
-
     </Screen>
   );
 }
@@ -514,16 +604,16 @@ function TutorInfo() {
       <p>Your assistant for the app. It speaks English and can:</p>
       <ul>
         <li>Build a course on any theme — words, sentences and a dialogue, cut into drills</li>
-        <li>Write lessons (a conjugation, a grammar point, culture) with a check-in</li>
-        <li>Add to, edit or delete any course or block</li>
+        <li>Write study lessons (a conjugation, a grammar point, culture), then talk them through</li>
+        <li>Add to, edit or delete any course or lesson</li>
         <li>Look at your progress and the words you find hardest</li>
         <li>Make learning songs, and tidy up the ones you don't want</li>
         <li>Make playlists and add songs to them, or take them out</li>
         <li>Explain grammar, words and phrases</li>
       </ul>
       <p>
-        It needs a model that can use tools (marked 🛠 in Settings). It runs on your own
-        OpenRouter key, which never leaves the app's core.
+        It needs a model that can use tools (marked 🛠 in Settings → AI). It runs on your own OpenRouter key, which never
+        leaves the app's core.
       </p>
     </>
   );

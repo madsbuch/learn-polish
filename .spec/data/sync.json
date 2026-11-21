@@ -1,0 +1,148 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Sync between devices",
+  "summary": "A learner's phone and computer keep one set of data in step, directly over the local network.",
+  "status": "accepted",
+  "order": 2,
+  "description": "One learner, several devices, no server and no account. Whole rows sync, and every device reaches the same result whatever order changes arrive in.",
+  "stories": [
+    {
+      "id": "US-SYNC-1",
+      "as": "a learner with a phone and a computer",
+      "want": "both to show the same progress without an account or a server",
+      "soThat": "I can practise on whichever is at hand",
+      "requirements": [
+        "#SYNC-1",
+        "#SYNC-3",
+        "#SYNC-7"
+      ]
+    },
+    {
+      "id": "US-SYNC-2",
+      "as": "a learner who lost a phone",
+      "want": "to remove it from my devices",
+      "soThat": "it can no longer read or change my data",
+      "requirements": [
+        "#SYNC-6",
+        "#SYNC-15"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SYNC-1",
+      "text": "Two devices are paired by scanning a QR code that carries a one-time token valid for `sync.pairing-ttl`."
+    },
+    {
+      "id": "SYNC-2",
+      "text": "Joining a vault replaces the joining device's synced data with the vault's; a device holding data of its own says what it holds and asks first, and a backup is taken before it is replaced."
+    },
+    {
+      "id": "SYNC-3",
+      "text": "A local change is synced within a few seconds while a paired device is reachable, and a Sync now button syncs on demand."
+    },
+    {
+      "id": "SYNC-4",
+      "text": "On Android the app also syncs in the background about every `sync.background-every`, on unmetered networks only."
+    },
+    {
+      "id": "SYNC-5",
+      "text": "Coming back to the front asks for a sync and reloads what is on screen; a drill or check-in in progress keeps its own data."
+    },
+    {
+      "id": "SYNC-6",
+      "text": "A device can be removed from the vault; its key is revoked and it is refused from then on."
+    },
+    {
+      "id": "SYNC-7",
+      "text": "When two devices changed the same row without seeing each other, the later change wins, with ties settled by device id."
+    },
+    {
+      "id": "SYNC-8",
+      "text": "Append-only tables (the learning log, the mastery ledger, an answer's words) are written once by one device and never conflict."
+    },
+    {
+      "id": "SYNC-9",
+      "text": "A day's totals are kept per device and summed when read."
+    },
+    {
+      "id": "SYNC-10",
+      "text": "Deletes sync as tombstones."
+    },
+    {
+      "id": "SYNC-11",
+      "text": "Settings about the device stay on it: theme, time zone, reminders, audio prefetch, repeat mode, haptics, speaking cards and the marks that say built-in content was seeded."
+    },
+    {
+      "id": "SYNC-12",
+      "text": "Work in progress is carried on only by the device that started it: a song being made, a picture being drawn, a tutor reply being written."
+    },
+    {
+      "id": "SYNC-13",
+      "text": "A database put back from an older copy is noticed and takes a new device identity before it syncs."
+    },
+    {
+      "id": "SYNC-14",
+      "text": "Devices sync only when their schema versions are equal, and debug and release builds never sync with each other."
+    },
+    {
+      "id": "SYNC-15",
+      "text": "Connections are encrypted with Noise, and a peer whose key is not in the vault, or is revoked, is refused."
+    },
+    {
+      "id": "SYNC-16",
+      "text": "An interrupted sync resumes: changes are pulled in batches of at most `sync.batch-rows` rows and about 4 MB, applied in small transactions, and the bookmark moves only with a batch's last part."
+    },
+    {
+      "id": "SYNC-17",
+      "text": "On a computer in a vault a snapshot of the database is kept daily: one a day for `snapshot.daily`, then one a week up to `snapshot.weekly-until`."
+    },
+    {
+      "id": "SYNC-18",
+      "text": "Android's own backup of the app's data is off."
+    },
+    {
+      "id": "SYNC-19",
+      "text": "Every synced table's triggers list all of its columns; a test fails otherwise."
+    }
+  ],
+  "values": [
+    {
+      "id": "sync.pairing-ttl",
+      "type": "duration",
+      "value": "10min",
+      "description": "How long a pairing code's token is valid."
+    },
+    {
+      "id": "sync.background-every",
+      "type": "duration",
+      "value": "30min",
+      "description": "How often Android syncs in the background."
+    },
+    {
+      "id": "sync.batch-rows",
+      "type": "number",
+      "value": 500,
+      "description": "The most rows pulled in one batch."
+    },
+    {
+      "id": "snapshot.daily",
+      "type": "duration",
+      "value": "7d",
+      "description": "How far back a snapshot is kept for every day."
+    },
+    {
+      "id": "snapshot.weekly-until",
+      "type": "duration",
+      "value": "28d",
+      "description": "How far back a snapshot is kept for every week."
+    }
+  ],
+  "related": [
+    "data",
+    "today#TODAY-11",
+    "music#SONG-7",
+    "courses/demo#DEMO-5",
+    "progress/insights#LOG-4"
+  ]
+}
