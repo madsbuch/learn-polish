@@ -42,6 +42,7 @@ const MAX_ROUNDS: usize = 8;
 // Prompt
 // ---------------------------------------------------------------------------
 
+// Spec: TUTOR-6
 pub(crate) const RULES: &str = "\
 You are the tutor in Polski, an app for learning Polish. You explain Polish, suggest what to \
 practise, and — when asked — change the app with your tools.

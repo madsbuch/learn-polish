@@ -32,7 +32,7 @@
   "requirements": [
     {
       "id": "LSN-1",
-      "text": "Every lesson has exactly one type from the registry: words, pictures, scene, story, typing, memory, sentences, gaps, dialogue, study, listening or writing."
+      "text": "Every lesson has exactly one type from the registry, `lesson.types`."
     },
     {
       "id": "LSN-2",
@@ -73,6 +73,27 @@
     {
       "id": "LSN-11",
       "text": "Every registered type can be made and practised, and every exercise it produces is one the screens can draw; a test fails otherwise."
+    }
+  ],
+  "values": [
+    {
+      "id": "lesson.types",
+      "type": "list",
+      "value": [
+        "words",
+        "pictures",
+        "scene",
+        "story",
+        "typing",
+        "memory",
+        "sentences",
+        "gaps",
+        "dialogue",
+        "study",
+        "listening",
+        "writing"
+      ],
+      "description": "Every lesson type, in the order they are offered."
     }
   ],
   "related": [

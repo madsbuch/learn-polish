@@ -21,15 +21,15 @@
   "requirements": [
     {
       "id": "MEM-1",
-      "text": "A memory is one short fact of a kind: goal, preference, context, strength or struggle."
+      "text": "A memory is one short fact of one of the kinds in `memory.kinds`."
     },
     {
       "id": "MEM-2",
-      "text": "A memory is at most 400 characters."
+      "text": "A memory is at most `memory.max-chars` characters."
     },
     {
       "id": "MEM-3",
-      "text": "The tutor and the examiner both see the current memories in their prompt, at most the 80 most recently touched of each kind, and both can save, update and forget memories."
+      "text": "The tutor and the examiner both see the current memories in their prompt, at most the `memory.prompt-limit` most recently touched of each kind, and both can save, update and forget memories."
     },
     {
       "id": "MEM-4",
@@ -42,6 +42,32 @@
     {
       "id": "MEM-6",
       "text": "With memory switched off, the agents neither read nor save memories."
+    }
+  ],
+  "values": [
+    {
+      "id": "memory.kinds",
+      "type": "list",
+      "value": [
+        "goal",
+        "preference",
+        "context",
+        "strength",
+        "struggle"
+      ],
+      "description": "The kinds a memory can be."
+    },
+    {
+      "id": "memory.max-chars",
+      "type": "number",
+      "value": 400,
+      "description": "The longest a memory can be."
+    },
+    {
+      "id": "memory.prompt-limit",
+      "type": "number",
+      "value": 80,
+      "description": "The most memories of one kind shown to an agent."
     }
   ],
   "related": [

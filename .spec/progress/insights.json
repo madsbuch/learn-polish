@@ -50,7 +50,7 @@
     },
     {
       "id": "LOG-6",
-      "text": "The raw log lists every answer and event, newest first, in pages of at most 200 rows, and can be filtered by item, course, lesson, exercise, mistake, topic, grammar, right or wrong, and period."
+      "text": "The raw log lists every answer and event, newest first, in pages of at most `log.page-max` rows, and can be filtered by item, course, lesson, exercise, mistake, topic, grammar, right or wrong, and period."
     },
     {
       "id": "LOG-7",
@@ -62,11 +62,25 @@
     },
     {
       "id": "LOG-9",
-      "text": "The raw log can be exported as CSV or JSON, up to 100,000 rows."
+      "text": "The raw log can be exported as CSV or JSON, up to `log.export-max` rows."
     },
     {
       "id": "LOG-10",
       "text": "A word's statistics can be broken down by context: the course, the role the word had, its grammatical context, the topic and the exercise."
+    }
+  ],
+  "values": [
+    {
+      "id": "log.page-max",
+      "type": "number",
+      "value": 200,
+      "description": "The most rows in one page of the raw log."
+    },
+    {
+      "id": "log.export-max",
+      "type": "number",
+      "value": 100000,
+      "description": "The most rows in one export of the raw log."
     }
   ],
   "related": [

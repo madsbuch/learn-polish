@@ -19,11 +19,14 @@ use crate::db::{self, Conn};
 use crate::schema::memories;
 use crate::error::{Error, Result};
 
+// Spec: MEM-1
 pub const CATEGORIES: [&str; 5] = ["goal", "preference", "context", "strength", "struggle"];
 
 /// How many memories go into a prompt: the most recently touched first.
+// Spec: MEM-3
 const PROMPT_LIMIT: usize = 80;
 /// A memory is a sentence or two, not an essay.
+// Spec: MEM-2
 const MAX_CHARS: usize = 400;
 /// Above this, the agents are told to merge or forget before adding more.
 const SOFT_LIMIT: i64 = 150;

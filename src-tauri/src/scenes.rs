@@ -30,14 +30,17 @@ use crate::schema::{scene_spots, scenes, words};
 
 /// Things in a scene: enough to explore and choose between, few enough to
 /// draw clearly and tap on a phone.
+// Spec: PIC-3
 pub const MIN_THINGS: usize = 6;
 pub const MAX_THINGS: usize = 10;
 /// Fewer found than this and the scene is looked at again, or drawn again.
+// Spec: PIC-5
 pub const MIN_SPOTS: usize = 5;
 /// "Where is it?" sentences a scene keeps.
 pub const MAX_STATEMENTS: usize = 6;
 /// The prepositions whose sentences can be checked against the boxes (see
 /// [`holds`]): a sentence the picture does not bear out is never asked.
+// Spec: PIC-4
 pub const PREPOSITIONS: &[&str] = &["pod", "na", "nad", "obok", "przy", "w"];
 
 /// What a place preposition means, and the case it takes when it says

@@ -63,7 +63,7 @@
     },
     {
       "id": "SPEECH-9",
-      "text": "Speech is stored as MP3: raw audio from the speech model is encoded before it is stored, at 48 kbit/s for one channel."
+      "text": "Speech is stored as MP3: raw audio from the speech model is encoded before it is stored, at `speech.bitrate` for one channel."
     },
     {
       "id": "SPEECH-10",
@@ -84,6 +84,15 @@
     {
       "id": "SPEECH-14",
       "text": "Without an OpenRouter key, the platform's own speech engine is used where the webview has one."
+    }
+  ],
+  "values": [
+    {
+      "id": "speech.bitrate",
+      "type": "number",
+      "value": 48,
+      "unit": "kbit/s",
+      "description": "The MP3 bitrate of stored speech, for one channel."
     }
   ],
   "related": [

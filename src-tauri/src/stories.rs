@@ -31,6 +31,7 @@ use crate::schema::{course_words, stories, story_panels, words};
 use crate::singalong::GlossWord;
 
 /// Panels in a story: long enough to be a story, short enough for one sitting.
+// Spec: PIC-6
 pub const MIN_PANELS: usize = 4;
 pub const MAX_PANELS: usize = 8;
 /// Sentences under one panel.

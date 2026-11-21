@@ -26,6 +26,7 @@ const KIE_BASE_URL: &str = "https://api.kie.ai/api/v1";
 const KIE_MUSIC_MODEL: &str = "ai-music-api/generate";
 
 /// Suno versions kie.ai currently accepts for new songs.
+// Spec: SONG-4
 pub const SUNO_MODELS: &[&str] = &["V6", "V6_MINI", "V6_WILD"];
 pub const DEFAULT_SUNO_MODEL: &str = "V6";
 
@@ -637,6 +638,7 @@ pub fn songwriter_model(conn: &mut Conn) -> Result<String> {
 
 /// How long a song should be. Suno has no duration setting: a song lasts as
 /// long as its lyrics, so each length is a structure for the songwriter.
+// Spec: SONG-3
 pub const SONG_LENGTHS: &[&str] = &["short", "medium", "long"];
 pub const DEFAULT_SONG_LENGTH: &str = "long";
 

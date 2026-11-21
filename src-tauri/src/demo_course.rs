@@ -14,6 +14,7 @@ use crate::error::{Error, Result};
 use crate::schema::courses as courses_table;
 
 pub(crate) const SLUG: &str = "demo-first-steps";
+// Spec: DEMO-2
 pub(crate) const SEEDED: &str = "demo_first_steps_seeded_v1";
 
 /// What a demo scene or story picture says until a key is set. Also how
@@ -556,6 +557,7 @@ mod tests {
         assert!(again.scenes.is_empty() && again.stories.is_empty());
     }
 
+    // Spec: DEMO-2
     #[test]
     fn deleting_the_demo_is_respected_after_reopen() {
         let mut conn = fresh("deleted");

@@ -74,6 +74,7 @@ fn answers_match(expected: &str, given: &str) -> bool {
 /// words are left out: one letter off "kot" is another word ("kod"), not a
 /// slip. Checked like [`answers_match`]: the whole answer, or any one of its
 /// listed alternatives.
+// Spec: DRILL-3
 fn almost_matches(expected: &str, given: &str) -> bool {
     let given = normalize(given);
     if given.is_empty() {
@@ -133,6 +134,7 @@ pub struct SubmitAnswer {
 
 /// Cards that are only read (a new word, a new sentence, a dialogue to read
 /// through): nothing is answered, so nothing is scored.
+// Spec: DRILL-9
 pub const READING_KINDS: &[&str] = &["intro", "sentenceIntro", "dialogueRead", "pictureIntro", "sceneExplore", "storyPanel", "storyEnd"];
 
 #[derive(Debug, Serialize)]
@@ -511,6 +513,7 @@ fn lesson_finish_steps(
     // Every answer fully right is an ace: the gap grows faster. An almost
     // is a slip, however small, and one miss is a miss, however long the
     // drill (DRILL-8).
+    // Spec: DRILL-8
     let ace = almost == 0 && correct >= total;
     let go = lessons::Go { via: "drill", run, score: Some((correct, almost, total)), extra };
     let (lesson, entry) = if extra {

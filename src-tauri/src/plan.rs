@@ -32,10 +32,13 @@ use crate::schema::{course_lessons, courses, lessons, day_log};
 use crate::ids::*;
 
 /// Lessons a day, unless the learner sets another number (Settings).
+// Spec: TODAY-2
 pub const DEFAULT_DAILY: i64 = 5;
 /// At most this many new lessons a day: what is due comes first.
+// Spec: TODAY-5
 pub const MAX_NEW: usize = 2;
 /// At most this many mastered lessons a day come back as a review.
+// Spec: TODAY-6
 pub const MAX_REVIEWS: usize = 1;
 
 /// How many lessons a day asks for (Settings).
@@ -45,6 +48,7 @@ pub fn daily_count(conn: &mut Conn) -> i64 {
 
 /// The lightest day near `today + gap` for a lesson's next check-in:
 /// within a tenth of the gap either side (short gaps stay exact).
+// Spec: SCHED-11
 pub fn spread(conn: &mut Conn, today: i64, gap: i64, lesson_id: LessonId) -> Result<i64> {
     let target = today + gap;
     if gap < 4 {

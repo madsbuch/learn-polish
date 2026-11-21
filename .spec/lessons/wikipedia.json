@@ -37,7 +37,7 @@
     },
     {
       "id": "WIKI-5",
-      "text": "A lesson with sources is checked every 90 days: each source's current revision is compared with the stored one."
+      "text": "A lesson with sources is checked every `wiki.check-every`: each source's current revision is compared with the stored one."
     },
     {
       "id": "WIKI-6",
@@ -50,6 +50,14 @@
     {
       "id": "WIKI-8",
       "text": "Reading Wikipedia needs no key."
+    }
+  ],
+  "values": [
+    {
+      "id": "wiki.check-every",
+      "type": "duration",
+      "value": "90d",
+      "description": "How often a lesson is checked against its sources."
     }
   ],
   "related": [

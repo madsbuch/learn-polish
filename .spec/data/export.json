@@ -25,7 +25,7 @@
     },
     {
       "id": "EXP-2",
-      "text": "The suggested file name carries the calendar date: `polski-YYYY-MM-DD.sqlite`."
+      "text": "The suggested file name carries the calendar date: `export.file-name`."
     },
     {
       "id": "EXP-3",
@@ -42,6 +42,14 @@
     {
       "id": "EXP-6",
       "text": "Cancelling the save dialog writes nothing and leaves no temporary copy behind."
+    }
+  ],
+  "values": [
+    {
+      "id": "export.file-name",
+      "type": "text",
+      "value": "polski-YYYY-MM-DD.sqlite",
+      "description": "The file name an export suggests."
     }
   ],
   "related": [

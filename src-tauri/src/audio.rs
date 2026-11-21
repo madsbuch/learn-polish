@@ -71,6 +71,7 @@ pub fn pcm_of(wav: &[u8]) -> Result<(u32, u16, &[u8])> {
 /// A WAV clip as MP3: 48 kbit/s for one channel, which speech at the model's
 /// 24 kHz does not need more than, at a constant rate so that seeking by
 /// byte lands where it should.
+// Spec: SPEECH-9
 pub fn mp3_from_wav(wav: &[u8]) -> Result<Vec<u8>> {
     let (rate, channels, data) = pcm_of(wav)?;
     let failed = |what: &dyn std::fmt::Display| Error::msg(format!("Could not make an MP3 of the audio: {what}"));
@@ -170,6 +171,7 @@ pub fn wav_from_mp3(mp3: &[u8]) -> Result<Vec<u8>> {
 
 /// Audio as it is stored: WAV becomes MP3, anything else stays what it is —
 /// as does a WAV clip that cannot be encoded.
+// Spec: SPEECH-10, POD-10
 pub fn compact(mime: String, bytes: Vec<u8>) -> (String, Vec<u8>) {
     if is_wav(&mime) {
         if let Ok(mp3) = mp3_from_wav(&bytes) {
@@ -187,6 +189,7 @@ pub fn compact(mime: String, bytes: Vec<u8>) -> (String, Vec<u8>) {
 /// finished; stopped halfway, it carries on next time. The database is only
 /// held to read a file and to put its replacement in place, never while
 /// encoding.
+// Spec: SPEECH-11, SPEECH-12
 pub fn compress_stored(app: &AppHandle) -> Result<usize> {
     let db = app.state::<Db>();
     if files::with_types(&mut db.lock(), WAV_TYPES)?.is_empty() {

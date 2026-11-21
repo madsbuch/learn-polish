@@ -31,7 +31,7 @@
   "requirements": [
     {
       "id": "SYNC-1",
-      "text": "Two devices are paired by scanning a QR code that carries a one-time token valid for 10 minutes."
+      "text": "Two devices are paired by scanning a QR code that carries a one-time token valid for `sync.pairing-ttl`."
     },
     {
       "id": "SYNC-2",
@@ -43,7 +43,7 @@
     },
     {
       "id": "SYNC-4",
-      "text": "On Android the app also syncs in the background about every 30 minutes, on unmetered networks only."
+      "text": "On Android the app also syncs in the background about every `sync.background-every`, on unmetered networks only."
     },
     {
       "id": "SYNC-5",
@@ -91,11 +91,11 @@
     },
     {
       "id": "SYNC-16",
-      "text": "An interrupted sync resumes: changes are pulled in batches of at most 500 rows and about 4 MB, applied in small transactions, and the bookmark moves only with a batch's last part."
+      "text": "An interrupted sync resumes: changes are pulled in batches of at most `sync.batch-rows` rows and about 4 MB, applied in small transactions, and the bookmark moves only with a batch's last part."
     },
     {
       "id": "SYNC-17",
-      "text": "On a computer in a vault a snapshot of the database is kept daily: one a day for 7 days, then one a week up to 28 days."
+      "text": "On a computer in a vault a snapshot of the database is kept daily: one a day for `snapshot.daily`, then one a week up to `snapshot.weekly-until`."
     },
     {
       "id": "SYNC-18",
@@ -104,6 +104,38 @@
     {
       "id": "SYNC-19",
       "text": "Every synced table's triggers list all of its columns; a test fails otherwise."
+    }
+  ],
+  "values": [
+    {
+      "id": "sync.pairing-ttl",
+      "type": "duration",
+      "value": "10min",
+      "description": "How long a pairing code's token is valid."
+    },
+    {
+      "id": "sync.background-every",
+      "type": "duration",
+      "value": "30min",
+      "description": "How often Android syncs in the background."
+    },
+    {
+      "id": "sync.batch-rows",
+      "type": "number",
+      "value": 500,
+      "description": "The most rows pulled in one batch."
+    },
+    {
+      "id": "snapshot.daily",
+      "type": "duration",
+      "value": "7d",
+      "description": "How far back a snapshot is kept for every day."
+    },
+    {
+      "id": "snapshot.weekly-until",
+      "type": "duration",
+      "value": "28d",
+      "description": "How far back a snapshot is kept for every week."
     }
   ],
   "related": [

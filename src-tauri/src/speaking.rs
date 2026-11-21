@@ -137,6 +137,7 @@ pub fn read_transcript(text: &str) -> Result<String> {
 /// The recording formats a hearing model is sent (OpenRouter's names).
 const FORMATS: &[&str] = &["wav", "mp3", "m4a", "aac", "ogg", "webm", "flac"];
 /// More than this (base64) is no short sentence: about a minute of WAV.
+// Spec: SPK-6
 const MAX_AUDIO: usize = 4 * 1024 * 1024;
 
 /// What was heard, and — for a speaking card — how it compares.

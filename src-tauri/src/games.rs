@@ -37,20 +37,26 @@ use crate::ids::*;
 /// The games, by the name the screens use.
 const GAMES: &[&str] = &["match", "flip", "dictation", "sounds", "say"];
 /// Sentences in a game of Dictation…
+// Spec: GAME-3
 const DICTATION_SENTENCES: usize = 5;
 /// …and at least this many met to play it.
 pub const MIN_SENTENCES: usize = 3;
 /// Pairs in a game of Sound pairs.
+// Spec: GAME-3
 const SOUND_ROUNDS: usize = 8;
 /// Pairs in a game of Match pairs.
+// Spec: GAME-2
 const MATCH_PAIRS: usize = 8;
 /// Pairs in a game of Flip and match (twelve cards).
+// Spec: GAME-2
 const FLIP_PAIRS: usize = 6;
 /// Fewer met words than this and there is no game to play.
 pub const MIN_PAIRS: usize = 4;
 /// XP for a game finished…
+// Spec: GAME-4
 const GAME_XP: i64 = 10;
 /// …up to this much a day, over every device: a few games, not a lesson's worth.
+// Spec: GAME-4
 pub const GAME_XP_PER_DAY: i64 = 30;
 /// The XP log's run key of a game starts with this (xplog.rs names the run).
 pub const RUN_PREFIX: &str = "game:";

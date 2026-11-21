@@ -449,6 +449,7 @@ pub fn civil_date(days: i64) -> (i64, i64, i64) {
 /// tutor conversation, settings, cached audio and songs — to a file the
 /// learner picks. API keys are left out unless asked for. Returns where it
 /// went, or `None` if the learner cancelled the dialog.
+// Spec: EXP-1, EXP-3, EXP-4, EXP-5, EXP-6
 #[tauri::command]
 pub async fn export_database( app: tauri::AppHandle, db: State<'_, Db>, include_keys: bool, ) -> Result<Option<String>> {
     use tauri::Manager;
@@ -521,6 +522,7 @@ pub async fn export_database( app: tauri::AppHandle, db: State<'_, Db>, include_
 mod tests {
     use super::*;
 
+    // Spec: EXP-2
     #[test]
     fn export_names_carry_the_calendar_date() {
         assert_eq!(civil_date(0), (1970, 1, 1));

@@ -52,6 +52,7 @@ use crate::schema::{sync_epochs, sync_peers, sync_state, vault_devices, vault_re
 pub const PROTOCOL: u32 = 1;
 /// Rows and bytes per batch over the wire: big enough to move along, small
 /// enough that one transaction never holds the database for long.
+// Spec: SYNC-16
 const BATCH_ROWS: i64 = 500;
 const BATCH_BYTES: usize = 4 * 1024 * 1024;
 /// A pulled batch is taken in parts of at most this many changes and about
@@ -61,6 +62,7 @@ const APPLY_ROWS: usize = 50;
 const APPLY_BYTES: usize = 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 /// How long a QR code works.
+// Spec: SYNC-1
 pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 /// The most a device may send before it's known to belong to the vault.
 const PRE_AUTH_LIMIT: usize = 64 * 1024;

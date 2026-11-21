@@ -18,6 +18,7 @@ use crate::schema::{lessons, songs, wiki_sources};
 use crate::ids::*;
 
 /// How often a lesson's lesson is compared with its sources again.
+// Spec: WIKI-5
 pub const CHECK_EVERY_DAYS: i64 = 90;
 /// The most of an article an AI reads at once (fact checks, the tutor).
 const READ_LIMIT: usize = 12_000;

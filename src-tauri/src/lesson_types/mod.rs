@@ -33,6 +33,7 @@ mod words;
 mod writing;
 
 /// Every lesson type, in the order they are offered.
+// Spec: LSN-1, LSN-2
 pub const REGISTRY: &[&LessonType] = &[
     &words::TYPE,
     &pictures::TYPE,
@@ -123,6 +124,7 @@ impl LessonType {
     }
 
     /// A sensible check-in period for a new lesson, in days.
+    // Spec: SCHED-1
     pub fn default_period(&self, complexity: &str) -> i64 {
         match (self.is_drill(), complexity) {
             (true, "low") => 2,
@@ -136,6 +138,7 @@ impl LessonType {
 
     /// About how many minutes a lesson takes: what the daily budget is
     /// counted in.
+    // Spec: LSN-6
     pub fn minutes(&self, complexity: &str) -> i64 {
         match (self.is_drill(), complexity) {
             (true, "low") => 2,

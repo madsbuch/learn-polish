@@ -656,6 +656,7 @@ pub(crate) const SCHEMA: &str = include_str!("schema.sql");
 const SCHEMA_V7: &str = include_str!("schema_v7.sql");
 
 /// Backups kept before upgrades: the newest ones.
+// Spec: DATA-9
 const BACKUPS_KEPT: usize = 2;
 
 /// Before an upgrade changes the database (its `user_version` is behind
@@ -1671,6 +1672,7 @@ pub fn unify_courses(conn: &mut Conn) -> Result<()> {
 /// seeding marks say what this install has already set up on its own: a
 /// device that joins another's data must not seed the demo course again
 /// into it.
+// Spec: SYNC-11
 pub(crate) const DEVICE_SETTINGS: &[&str] = &[
     "theme",
     "tz_offset_minutes",
@@ -1829,6 +1831,7 @@ mod tests {
         assert!(waiting.join().unwrap());
     }
 
+    // Spec: DATA-11
     #[test]
     fn schema_matches_the_database() {
         let path = std::env::temp_dir()

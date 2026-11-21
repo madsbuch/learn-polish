@@ -14,9 +14,11 @@ use crate::ids::*;
 
 /// About ten minutes: a drill and a conversation.
 /// Streak freezes kept at most; one is earned with every seven-day run.
+// Spec: PROG-7
 pub const MAX_FREEZES: i64 = 2;
 /// A word is mastered once its review interval has reached three weeks:
 /// remembered across real spacing, not just answered a few times in a row.
+// Spec: PROG-9
 const MASTERY_INTERVAL: i64 = 21;
 const HISTORY_DAYS: i64 = 120;
 
@@ -35,6 +37,7 @@ pub fn level_from_xp(xp: i64) -> i64 {
 
 /// XP for one answer. Harder exercise types pay more, and only correct answers
 /// score — otherwise the goal ring would fill by guessing.
+// Spec: PROG-1, PROG-2
 pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
     if !correct {
         return 0;
@@ -59,6 +62,7 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
 /// XP for a check-in, paid by effort: a check-in takes as long as several
 /// drills and is the deeper work, so it pays like it. A writing lesson adds
 /// a bonus per goal got across. Failing earns none.
+// Spec: CONV-12
 pub fn xp_for_checkin(complexity: &str, result: &str, writing_goals: usize) -> i64 {
     let base = match complexity {
         "low" => 30,
@@ -121,6 +125,7 @@ pub fn record_answer(conn: &mut Conn, day: i64, xp: i64, correct: bool) -> Resul
 /// ring, the streak and the reminder. Practising is doing the work, not
 /// earning XP: a check-in that failed (no XP) counts, and so does a quick
 /// game played after the day's game XP is used up.
+// Spec: PROG-4, PROG-5
 pub fn day_is_done(conn: &mut Conn, day: i64) -> Result<bool> {
     Ok(practised_on(conn, day)? && crate::plan::remaining(conn, day)? == 0)
 }
@@ -171,6 +176,7 @@ pub fn mark_practised(conn: &mut Conn, day: i64) -> Result<bool> {
 /// the streak is read: if the days missed since the last done day (today
 /// not counted — it is not over) are no more than the freezes kept, each is
 /// marked frozen. Frozen days keep a run going but do not add to it.
+// Spec: PROG-8
 pub fn apply_freezes(conn: &mut Conn, today: i64) -> Result<()> {
     let last: Option<i64> = day_totals::table
         .filter(day_totals::completed.eq(1).or(day_totals::frozen.eq(1)))
@@ -476,6 +482,7 @@ const DEFINITIONS: &[Definition] = &[
 /// How far along an achievement is: what it counts now, and how many it
 /// takes. The one place both come from, so the unlock check and the
 /// progress shown always agree.
+// Spec: PROG-11
 fn measure(code: &str, c: &Counts, longest_streak: i64) -> (i64, i64) {
     match code {
         "first_day" => (c.days_done, 1),

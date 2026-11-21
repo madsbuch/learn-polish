@@ -27,9 +27,12 @@ use crate::ids::*;
 
 /// Words per word drill when a course's words are cut into drills: enough to
 /// be worth it, small enough to finish in a minute or two.
+// Spec: CRS-2
 pub const WORDS_PER_LESSON: usize = 8;
+// Spec: CRS-2
 pub const SENTENCES_PER_LESSON: usize = 5;
 /// Longest gap between check-ins, however often a lesson was passed.
+// Spec: SCHED-10
 const MAX_INTERVAL: i64 = 120;
 
 
@@ -461,8 +464,10 @@ fn load_in_order(conn: &mut Conn, ids: &[LessonId]) -> Result<Vec<Lesson>> {
 // ---------------------------------------------------------------------------
 
 /// The share of a drill that passes it.
+// Spec: DRILL-6
 pub const PASS_SHARE: f64 = 0.85;
 /// The share that is partly there.
+// Spec: DRILL-7
 const PARTIAL_SHARE: f64 = 0.6;
 /// A drill this small (or smaller) passes with one miss: 85% of six cards
 /// is more than five, so otherwise a single slip would cost the pass.
@@ -474,6 +479,7 @@ pub const SMALL_DRILL: i64 = 6;
 /// one miss); 60% is partly there; less is a fail. A drill with nothing
 /// scored is not graded at all (see `practice::lesson_finish`), so it never
 /// gets here with `total` 0 — if it does, it is a fail, never a free pass.
+// Spec: DRILL-6, DRILL-7
 pub fn result_from_score(correct: i64, almost: i64, total: i64) -> &'static str {
     if total <= 0 {
         return "fail";
@@ -518,6 +524,7 @@ impl Grade {
 const MIN_EASE: f64 = 1.3;
 const MAX_EASE: f64 = 3.0;
 /// A new lesson's ease (the schema's default).
+// Spec: SCHED-9
 pub const START_EASE: f64 = 2.5;
 
 /// The next gap and ease after a check-in.
@@ -529,6 +536,7 @@ pub const START_EASE: f64 = 2.5;
 /// faster and raises the ease; a partial repeats the lesson's period and
 /// lowers it; a fail means tomorrow and lowers it more. The first check-in
 /// starts from the period (an ace: three times it).
+// Spec: SCHED-3, SCHED-4, SCHED-5, SCHED-6, SCHED-7, SCHED-8
 pub fn next_gap(grade: Grade, reps_before: i64, interval: i64, period: i64, ease: f64, elapsed: i64) -> (i64, f64) {
     let period = period.max(1);
     let (ease, gap) = if reps_before == 0 {
@@ -556,6 +564,7 @@ pub fn next_gap(grade: Grade, reps_before: i64, interval: i64, period: i64, ease
 }
 
 /// The mastery points at which a lesson is mastered.
+// Spec: MAST-7, MAST-8
 pub const MASTERY_FULL: i64 = 100;
 
 /// The gap, in days, at which a pass earns its most mastery points.
@@ -575,6 +584,7 @@ const MASTERY_SPACED_DAYS: i64 = 14;
 /// (nothing on extra practice: see [`credit_mastery`]).
 ///
 /// The last stretch takes two days: see [`MASTERY_HELD_AT`].
+// Spec: MAST-1, MAST-2, MAST-3, MAST-4, MAST-5, MAST-6
 pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
     let base = match grade {
         // Half a repeat pass at the same gap, passed before or not: a
@@ -595,6 +605,7 @@ pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
 /// Whether a lesson is mastered: passed, with full mastery points, and —
 /// for a type that asks it (writing) — done without help (see examiner's
 /// support levels).
+// Spec: MAST-8, MAST-9
 pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level: i64) -> bool {
     let unaided = crate::lesson_types::get(lesson_type).is_ok_and(|t| t.unaided_to_master);
     passed && mastery >= MASTERY_FULL && (!unaided || support_level >= 3)
@@ -606,6 +617,7 @@ pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level:
 /// another day (any later day: no waiting for a check-in). Before its first
 /// pass, partials stop there too. A lesson passed before the mastery ledger
 /// began counts as passed on an earlier day.
+// Spec: MAST-7
 pub const MASTERY_HELD_AT: i64 = 90;
 
 /// Marks a lesson mastered once it has earned it. Mastery is for good
@@ -651,6 +663,7 @@ pub use crate::masterylog::Go;
 /// fail on extra practice costs nothing: playing a passed lesson again for
 /// fun must not be a risk. Points stay within 0–100, and at
 /// [`MASTERY_HELD_AT`] until the lesson has passes on two different days.
+// Spec: MAST-6, MAST-10
 pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64, go: &Go) -> Result<crate::masterylog::MasteryEntry> {
     let grade = Grade::of(result, ace);
     let days_since = before.last_day.map(|last| (today - last).max(0));

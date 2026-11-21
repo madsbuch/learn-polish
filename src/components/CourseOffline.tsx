@@ -30,6 +30,7 @@ function summary(status: OfflineStatus): string {
  * switch, how much of the course's audio and pictures is stored, and what
  * will still need a connection.
  */
+// Spec: OFF-1, OFF-5, OFF-9, OFF-10, OFF-16
 export function CourseOffline({ courseId }: { courseId: CourseId }) {
   const [status, setStatus] = useState<OfflineStatus | null>(null);
   const [error, setError] = useState<string | null>(null);

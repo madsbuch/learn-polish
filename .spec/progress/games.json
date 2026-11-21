@@ -33,7 +33,7 @@
     },
     {
       "id": "GAME-4",
-      "text": "A finished game pays 10 XP, up to 30 XP from games a day."
+      "text": "A finished game pays `game.xp`, up to `game.xp-per-day` from games a day."
     },
     {
       "id": "GAME-5",
@@ -50,6 +50,22 @@
     {
       "id": "GAME-8",
       "text": "A game played after the day's game XP is used up still counts as having practised that day."
+    }
+  ],
+  "values": [
+    {
+      "id": "game.xp",
+      "type": "number",
+      "value": 10,
+      "unit": "XP",
+      "description": "What a finished quick game pays."
+    },
+    {
+      "id": "game.xp-per-day",
+      "type": "number",
+      "value": 30,
+      "unit": "XP",
+      "description": "The most quick games pay in a day."
     }
   ],
   "related": [

@@ -242,6 +242,7 @@ pub fn partner_model(conn: &mut Conn) -> Result<String> {
 /// Speech is pinned to Gemini: it handles Polish well, it is the cheapest of
 /// the models that do, and pinning it means the voice list can ship with the
 /// app instead of needing a network round trip to populate a dropdown.
+// Spec: AI-3
 pub const SPEECH_MODEL: &str = "google/gemini-3.1-flash-tts-preview";
 pub const DEFAULT_FEMALE_VOICE: &str = "Kore";
 pub const DEFAULT_MALE_VOICE: &str = "Puck";

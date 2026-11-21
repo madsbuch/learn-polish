@@ -75,6 +75,7 @@ pub async fn preview_voice(db: State<'_, Db>, voice: String, text: String) -> Re
 
 /// Cache identity: the same text spoken by a different model or voice is a
 /// different clip. Unit separators keep the parts from running together.
+// Spec: SPEECH-1, SPEECH-2
 pub(crate) fn audio_key(model: &str, voice: &str, text: &str) -> String {
     format!("{model}\u{1}{voice}\u{1}{text}")
 }
@@ -152,6 +153,7 @@ fn voice_variant(voice: &str, slow: bool) -> String {
 
 /// One lock per clip being made, so two asks for the same line — a 🔊 tap
 /// while the background download is on it — make it once, not twice.
+// Spec: SPEECH-13
 fn clip_lock(key: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
     static LOCKS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>> =
         std::sync::OnceLock::new();
@@ -596,6 +598,7 @@ pub fn course_audio_in(conn: &mut Conn, course_id: CourseId) -> Result<Vec<Audio
 }
 
 /// Deletes the clips no course uses with the current voices.
+// Spec: SPEECH-8
 pub fn delete_unused_audio_in(conn: &mut Conn) -> Result<i64> {
     let voices = Voices::current(conn);
     let course_ids: Vec<CourseId> = courses::table.select(courses::id).load(conn)?;

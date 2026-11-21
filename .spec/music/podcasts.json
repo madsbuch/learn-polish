@@ -21,11 +21,11 @@
   "requirements": [
     {
       "id": "POD-1",
-      "text": "An episode is written from 1 to 5 Wikipedia articles, from today's news, or from none as a made-up story."
+      "text": "An episode is written from 1 to `podcast.max-articles` Wikipedia articles, from today's news, or from none as a made-up story."
     },
     {
       "id": "POD-2",
-      "text": "An episode holds at most 120 sentences."
+      "text": "An episode holds at most `podcast.max-sentences` sentences."
     },
     {
       "id": "POD-3",
@@ -33,7 +33,7 @@
     },
     {
       "id": "POD-4",
-      "text": "An episode can have a cast of up to 4 speakers, each keeping the same voice when the audio is made again."
+      "text": "An episode can have a cast of up to `podcast.max-cast` speakers, each keeping the same voice when the audio is made again."
     },
     {
       "id": "POD-5",
@@ -58,6 +58,26 @@
     {
       "id": "POD-10",
       "text": "An episode's audio is stored as MP3, or as it came when it cannot be encoded."
+    }
+  ],
+  "values": [
+    {
+      "id": "podcast.max-articles",
+      "type": "number",
+      "value": 5,
+      "description": "The most Wikipedia articles an episode is written from."
+    },
+    {
+      "id": "podcast.max-sentences",
+      "type": "number",
+      "value": 120,
+      "description": "The most sentences in an episode."
+    },
+    {
+      "id": "podcast.max-cast",
+      "type": "number",
+      "value": 4,
+      "description": "The most speakers in an episode's cast."
     }
   ],
   "related": [
