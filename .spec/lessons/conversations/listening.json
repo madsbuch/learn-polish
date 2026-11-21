@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Listening",
+  "summary": "A song to understand by ear, then the examiner asks what was heard.",
+  "status": "accepted",
+  "order": 2,
+  "description": "Understanding real Polish sung at speed, which reading does not train.",
+  "requirements": [
+    {
+      "id": "LIS-1",
+      "text": "A song has at most one listening lesson; asking for another gives the one it has."
+    },
+    {
+      "id": "LIS-2",
+      "text": "A listening lesson's objectives follow its complexity: the chorus and familiar words; from medium also translating a line and filling a missing word; at high also the grammar of a line and retelling the song."
+    },
+    {
+      "id": "LIS-3",
+      "text": "A listening lesson made without a complexity is of medium complexity."
+    },
+    {
+      "id": "LIS-4",
+      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in Other lessons."
+    },
+    {
+      "id": "LIS-5",
+      "text": "The examiner is given the song's lyrics and asks about what was heard, quoting at most one short line per question."
+    }
+  ],
+  "related": [
+    "lessons/conversations#CONV-4",
+    "lessons/conversations#CONV-5",
+    "music"
+  ]
+}

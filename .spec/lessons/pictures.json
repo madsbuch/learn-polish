@@ -76,6 +76,9 @@
   "related": [
     "lessons/drills",
     "tutor/models#AI-6",
-    "data#DATA-3"
+    "data#DATA-3",
+    "lessons/drills/pictures",
+    "lessons/drills/scene",
+    "lessons/drills/story"
   ]
 }

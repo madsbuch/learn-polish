@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Pictures",
+  "summary": "Everyday objects learnt from a drawing of each instead of a translation.",
+  "status": "accepted",
+  "order": 2,
+  "description": "For concrete things, the word attaches to the thing faster from a picture than from English.",
+  "requirements": [
+    {
+      "id": "PICT-1",
+      "text": "The tutor makes a picture lesson from at least four concrete objects, with its own tool; it is always of low complexity."
+    },
+    {
+      "id": "PICT-2",
+      "text": "A picture lesson can be started at once; its pictures are drawn in the background."
+    },
+    {
+      "id": "PICT-3",
+      "text": "A word whose picture is not drawn yet is left out of practice until it is."
+    },
+    {
+      "id": "PICT-4",
+      "text": "Asked to pick a picture, the learner chooses among four, each of a different word; with fewer than four pictures to choose from, the picture is shown and the word picked instead."
+    },
+    {
+      "id": "PICT-5",
+      "text": "A picture lesson ends with a memory round matching pictures with their words, when at least four pictured words differ."
+    }
+  ],
+  "related": [
+    "lessons/pictures#PIC-1",
+    "lessons/pictures#PIC-2",
+    "lessons/pictures#PIC-7",
+    "lessons/pictures#PIC-8",
+    "tutor/models#AI-6"
+  ]
+}

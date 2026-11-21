@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Words",
+  "summary": "New words met on cards, then chosen, then typed, with a memory round to end.",
+  "status": "accepted",
+  "order": 1,
+  "description": "The first drill for a handful of new words: meet each one, then recall it.",
+  "requirements": [
+    {
+      "id": "WRD-1",
+      "text": "A words lesson shows each new word on a card and then asks it by multiple choice, before the words met before, which come in a shuffled order."
+    },
+    {
+      "id": "WRD-2",
+      "text": "Where speaking cards are on and at least three of its words have been answered before, a words lesson asks one of them to be said aloud instead of practised."
+    },
+    {
+      "id": "WRD-3",
+      "text": "A words lesson ends with a memory round of its words, when they make at least four pairs."
+    },
+    {
+      "id": "WRD-4",
+      "text": "A course's new words are cut into lessons of eight, every third of them a typing lesson and the rest words lessons."
+    }
+  ],
+  "related": [
+    "lessons/drills#DRILL-1",
+    "lessons/speaking#SPK-9",
+    "lessons/drills/memory"
+  ]
+}

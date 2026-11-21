@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Memory cards",
+  "summary": "Turn cards to match each word with its meaning.",
+  "status": "accepted",
+  "order": 6,
+  "description": "A light game over words already met.",
+  "requirements": [
+    {
+      "id": "MCARD-1",
+      "text": "A memory lesson is made only of memory games: cards turned two at a time to match each word with its meaning."
+    },
+    {
+      "id": "MCARD-2",
+      "text": "A memory game has at most six pairs; a lesson with more words plays several games."
+    },
+    {
+      "id": "MCARD-3",
+      "text": "A group of fewer than four pairs is not played."
+    }
+  ],
+  "related": [
+    "lessons/drills/words"
+  ]
+}

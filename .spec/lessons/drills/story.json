@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Story",
+  "summary": "A short illustrated story read panel by panel, then its words practised.",
+  "status": "accepted",
+  "order": 4,
+  "description": "Reading and listening in context: a story at the lesson's level, built from the course's words.",
+  "requirements": [
+    {
+      "id": "STO-1",
+      "text": "A story is read one panel at a time: a picture with its sentences, each of which can be heard."
+    },
+    {
+      "id": "STO-2",
+      "text": "A sentence a character says is read in a voice of that character's gender."
+    },
+    {
+      "id": "STO-3",
+      "text": "Every word of a panel can be tapped for its meaning."
+    },
+    {
+      "id": "STO-4",
+      "text": "Each panel is followed by one question: the tutor's who, what or where, or, at most once each, which of two pictures shows a sentence and which of two things happened first."
+    },
+    {
+      "id": "STO-5",
+      "text": "The story's last page lists its words; then its words and the sentences marked to practise are practised as in a drill."
+    },
+    {
+      "id": "STO-6",
+      "text": "A story teaches 1 to 12 words and keeps at most 4 of its sentences to practise."
+    },
+    {
+      "id": "STO-7",
+      "text": "A story the tutor makes is checked first: with any problem nothing is made, and the tutor gets every problem at once."
+    },
+    {
+      "id": "STO-8",
+      "text": "A story can be read while its pictures are still being drawn."
+    },
+    {
+      "id": "STO-9",
+      "text": "A story lesson's page shows the story as a picture book."
+    }
+  ],
+  "related": [
+    "lessons/pictures#PIC-6",
+    "lessons/pictures#PIC-7",
+    "lessons/pictures#PIC-8",
+    "tutor/models#AI-6",
+    "speech"
+  ]
+}
