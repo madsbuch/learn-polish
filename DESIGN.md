@@ -46,7 +46,7 @@ Use the variables, never the numbers.
 | Type | `caption` 12 · `small` 13.5 · `body` 15 · `lead` 17 · `title` 20 · `headline` 26 · `display` 32 (each `--font-*` with its `--leading-*`) |
 | Weight | `--weight-regular` · `-medium` · `-bold` · `-heavy` |
 | Radius | `--radius-sm` 8 · `-md` 12 · `-lg` 16 · `-xl` 22 · `-full` |
-| Controls | `--control-sm` 36 · `-md` 44 · `-lg` 52; icons `--icon-sm` 18 · `-md` 22 · `-lg` 26 |
+| Controls | `--control-sm` 36 · `-md` 44 · `-lg` 52; icons `--icon-xs` 14 · `--icon-sm` 18 · `-md` 22 · `-lg` 26 |
 | Surfaces | `--bg`, `--surface`, `--surface-raised`, `--surface-sunken`, `--line`, `--line-soft` |
 | Text | `--text`, `--text-dim`, `--text-faint`, `--brand-ink`, `--crimson-ink` (Polish) |
 | State | `--ok`/`--ok-bg`/`--ok-line`, `--bad`/`--bad-bg`/`--bad-line`, `--info-*` |
@@ -118,7 +118,7 @@ Every screen is a `Screen`:
 | `Field` | A labelled input, select or textarea, with an optional hint. |
 | `Segmented` | Two to four views of the same thing. |
 | `ChoiceRow`, `Choice` | Filters and presets that scroll sideways. |
-| `Badge` | A small status: streak, level, "Failed". |
+| `Badge` | A small status: streak, level, "Failed". `outline` (with an `icon`) marks what a thing is, inline after its title: a challenge. |
 | `Banner` | A message: `info`, `ok` or `error`. |
 | `EmptyState` | What an empty list shows. |
 | `Progress`, `StatGrid`, `Stat`, `Spinner`, `Loading` | Feedback. `Progress` fills in as it appears; `memory` makes it move on from where it was last seen. |

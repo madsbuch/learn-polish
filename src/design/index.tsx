@@ -746,25 +746,43 @@ export function Choice({
 
 export type BadgeTone = "neutral" | "brand" | "gold" | "mint" | "sky" | "crimson";
 
-/** A small status label. With `onClick` it is a button. */
+/**
+ * A small status label. With `onClick` it is a button. `outline` makes it a
+ * mark of what a thing is (a challenge) rather than where it stands: smaller,
+ * unfilled, set inline after a title; `icon` goes before its word.
+ */
 export function Badge({
   tone = "neutral",
   onClick,
   label,
+  outline,
+  icon,
   children,
 }: {
   tone?: BadgeTone;
   onClick?: () => void;
   label?: string;
+  outline?: boolean;
+  icon?: ReactNode;
   children: ReactNode;
 }) {
-  return onClick ? (
-    <button className="badge" data-tone={tone} onClick={onClick} aria-label={label}>
+  const content = (
+    <>
+      {icon ? (
+        <span className="badge__icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
       {children}
+    </>
+  );
+  return onClick ? (
+    <button className="badge" data-tone={tone} data-outline={outline} onClick={onClick} aria-label={label}>
+      {content}
     </button>
   ) : (
-    <span className="badge" data-tone={tone}>
-      {children}
+    <span className="badge" data-tone={tone} data-outline={outline}>
+      {content}
     </span>
   );
 }

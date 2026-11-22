@@ -799,6 +799,25 @@ button.badge:active {
   background: rgba(225, 29, 72, 0.14);
   color: var(--crimson-ink);
 }
+/* A mark of what a thing is, inline after a title: unfilled and smaller. */
+.badge[data-outline="true"] {
+  min-height: 20px;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  gap: 2px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  vertical-align: 2px;
+}
+.badge__icon {
+  display: flex;
+}
+.badge__icon svg {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+.hero .badge[data-outline="true"] {
+  color: var(--on-hero);
+}
 
 .banner {
   border-radius: var(--radius-md);

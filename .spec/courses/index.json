@@ -133,6 +133,10 @@
     {
       "id": "CRS-19",
       "text": "Upgrading takes a lesson listed in several courses off every course but the one it was first added to."
+    },
+    {
+      "id": "CRS-20",
+      "text": "A course's page that lists a challenge says what one is, in `lesson.challenge-explained`."
     }
   ],
   "values": [
@@ -153,6 +157,12 @@
       "type": "text",
       "value": "Other lessons",
       "description": "The folder for lessons that fit no course."
+    },
+    {
+      "id": "lesson.challenge-explained",
+      "type": "text",
+      "value": "A challenge is beyond its course's level: not needed to complete the course, only to master it.",
+      "description": "What a challenge is, where the app explains it."
     }
   ],
   "related": [

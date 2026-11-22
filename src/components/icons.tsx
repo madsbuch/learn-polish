@@ -439,6 +439,16 @@ export function StarIcon({ on }: { on?: boolean }) {
   );
 }
 
+/** A peak: a challenge, a lesson beyond its course's level. */
+export function ChallengeIcon() {
+  return (
+    <Glyph>
+      <path d="M3 19.5l6.5-11 4 6.5 2.5-3.5 5 8z" />
+      <path d="M7.4 12.1l2.1 1.4 2-1.2" />
+    </Glyph>
+  );
+}
+
 /** A QR code: showing something for another device to scan. */
 export function QrIcon() {
   return (

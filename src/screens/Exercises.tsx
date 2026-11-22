@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import { LessonRow } from "../components/LessonRow";
+import { ChallengeMark, LessonRow } from "../components/LessonRow";
 import { ChevronIcon, Logo, SearchIcon } from "../components/icons";
 import { CourseList } from "../components/CourseList";
 import {
@@ -135,6 +135,13 @@ export function Exercises({
   const [showMastered, setShowMastered] = useState(false);
   // The next of today's lessons; when they are done, nothing more.
   const upNext = overview.due[0] ?? null;
+  // Spec: LSN-12
+  const upNextMark = upNext?.challenge ? (
+    <>
+      {" "}
+      <ChallengeMark />
+    </>
+  ) : null;
   const rise = useStagger();
 
   return (
@@ -216,6 +223,7 @@ export function Exercises({
                       </Button>
                       <Text variant="caption" tone="dim" align="center" as="div">
                         {upNext.title}
+                        {upNextMark}
                         {upNext.courseTitle ? ` · ${upNext.courseTitle}` : ""} · {minutes(upNext)}
                       </Text>
                     </Stack>

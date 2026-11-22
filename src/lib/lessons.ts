@@ -38,6 +38,11 @@ export function dueLabel(lesson: Lesson, today: number): string {
 
 /** The mastery points at which a lesson is mastered (lessons.rs). */
 export const MASTERY_FULL = 100;
+/** The mark on a challenge (spec `lesson.challenge-label`). */
+export const CHALLENGE_LABEL = "Challenge";
+/** What a challenge is (spec `lesson.challenge-explained`). */
+export const CHALLENGE_EXPLAINED =
+  "A challenge is beyond its course's level: not needed to complete the course, only to master it.";
 /** Where the points stop until a lesson is passed on two different days (lessons.rs `MASTERY_HELD_AT`). */
 export const MASTERY_HELD_AT = 90;
 

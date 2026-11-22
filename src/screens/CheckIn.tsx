@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Composer } from "../components/Composer";
+import { ChallengeMark } from "../components/LessonRow";
 import { MemoryIcon, PlayerIcon } from "../components/icons";
 import { playSong, useSongItem } from "../components/SongToListen";
 import { Markdown } from "../components/Markdown";
@@ -65,6 +66,7 @@ export function CheckIn({
   songId,
   writing,
   title,
+  challenge,
   onClose,
   onFinished,
 }: {
@@ -76,6 +78,8 @@ export function CheckIn({
   /** For a writing lesson: the conversation is with a partner, in Polish. */
   writing?: Writing | null;
   title: string;
+  /** The lesson is a challenge: marked as one while it runs. */
+  challenge?: boolean;
   onClose: () => void;
   /** The verdict is in; `first` is true when it earned today's streak. */
   onFinished: (first: boolean, checkinId: CheckinId, assessment: Assessment) => void;
@@ -162,11 +166,20 @@ export function CheckIn({
   }
 
   const verdict = assessment ? VERDICT[assessment.result] : null;
+  const kind = writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Conversation";
+  // Spec: LSN-12
+  const subtitle = challenge ? (
+    <>
+      <ChallengeMark /> {kind}
+    </>
+  ) : (
+    kind
+  );
 
   return (
     <Screen
       title={title}
-      subtitle={writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Conversation"}
+      subtitle={subtitle}
       onClose={onClose}
       nav={false}
       actions={

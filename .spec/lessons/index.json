@@ -26,6 +26,17 @@
         "#LSN-10",
         "#LSN-11"
       ]
+    },
+    {
+      "id": "US-LSN-3",
+      "as": "a learner",
+      "want": "to see at a glance which lessons are challenges",
+      "soThat": "a hard one reads as meant to be hard, and I know the course does not need it",
+      "requirements": [
+        "#LSN-12",
+        "#LSN-13",
+        "#CRS-20"
+      ]
     }
   ],
   "requirements": [
@@ -72,6 +83,14 @@
     {
       "id": "LSN-11",
       "text": "Every registered type can be made and practised, and every exercise it produces is one the screens can draw; a test fails otherwise."
+    },
+    {
+      "id": "LSN-12",
+      "text": "A challenge is marked as one wherever a lesson is listed or shown: the day's list and its next lesson, a course's lessons, the lesson's page, and a drill or conversation while it runs."
+    },
+    {
+      "id": "LSN-13",
+      "text": "The mark is the word `lesson.challenge-label` with an icon, in `color.challenge`, so it never rests on colour alone."
     }
   ],
   "values": [
@@ -93,6 +112,19 @@
         "writing"
       ],
       "description": "Every lesson type, in the order they are offered."
+    },
+    {
+      "id": "lesson.challenge-label",
+      "type": "text",
+      "value": "Challenge",
+      "description": "The mark on a challenge."
+    },
+    {
+      "id": "color.challenge",
+      "type": "color",
+      "value": "#b45309",
+      "dark": "#fbbf24",
+      "description": "The challenge mark: the design system's gold ink."
     }
   ],
   "related": [

@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
 import { Avatar, Badge, ListItem } from "../design";
-import { complexityTone, dueLabel, kindName, minutes } from "../lib/lessons";
+import { CHALLENGE_LABEL, complexityTone, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { Lesson } from "../lib/types";
 import { lessonType } from "../lib/lessonTypes";
-import { DrillIcon, NavIcon, PictureIcon, SceneIcon, StoryIcon, StudyIcon, WriteIcon } from "./icons";
+import { ChallengeIcon, DrillIcon, NavIcon, PictureIcon, SceneIcon, StoryIcon, StudyIcon, WriteIcon } from "./icons";
 
 /**
  * A lesson in a list: what kind it is, how long it takes, and when it is due.
@@ -28,6 +28,14 @@ export function LessonRow({
   onOpen: (lesson: Lesson) => void;
 }) {
   const due = dueLabel(lesson, today);
+  // Spec: LSN-12
+  const title = lesson.challenge ? (
+    <>
+      {lesson.title} <ChallengeMark />
+    </>
+  ) : (
+    lesson.title
+  );
   const parts = [
     showCourse && lesson.courseTitle ? lesson.courseTitle : kindName(lesson),
     status ?? (lesson.lastResult === "fail" ? "needs another go" : due),
@@ -39,12 +47,22 @@ export function LessonRow({
           <LessonIcon lesson={lesson} />
         </Avatar>
       }
-      title={lesson.title}
+      title={title}
       subtitle={parts.join(" · ")}
       trailing={trailing ?? <Badge tone={complexityTone(lesson.complexity)}>{minutes(lesson)}</Badge>}
       chevron
       onClick={() => onOpen(lesson)}
     />
+  );
+}
+
+/** The mark on a challenge, wherever a lesson is listed or shown. */
+// Spec: LSN-12, LSN-13
+export function ChallengeMark() {
+  return (
+    <Badge tone="gold" outline icon={<ChallengeIcon />}>
+      {CHALLENGE_LABEL}
+    </Badge>
   );
 }
 

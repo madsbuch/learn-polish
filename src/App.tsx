@@ -72,12 +72,13 @@ type Overlay =
       from: PracticeContext;
       back: Overlay;
     }
-  | { kind: "session"; plan: SessionPlan; back: Overlay }
+  | { kind: "session"; plan: SessionPlan; challenge: boolean; back: Overlay }
   | {
       kind: "checkin";
       lessonId: LessonId;
       from: PracticeContext;
       title: string;
+      challenge: boolean;
       songId: SongId | null;
       /** A writing lesson's situation and goals, shown above the conversation. */
       writing: Writing | null;
@@ -337,11 +338,11 @@ export default function App() {
 
   /** Starts a drill lesson's exercises. */
   const startDrill = useCallback(
-    async (lessonId: LessonId, back: Overlay, from: PracticeContext) => {
+    async (lessonId: LessonId, challenge: boolean, back: Overlay, from: PracticeContext) => {
       stopAudio();
       try {
         const session = await api.lessonSession(lessonId, from);
-        setOverlay({ kind: "session", plan: session, back });
+        setOverlay({ kind: "session", plan: session, challenge, back });
         prefetchAudio(session);
       } catch (cause) {
         setError(errorMessage(cause));
@@ -524,6 +525,7 @@ export default function App() {
       <div className="app">
         <Session
           plan={overlay.plan}
+          challenge={overlay.challenge}
           onQuit={() => {
             stopAudio();
             markBack();
@@ -619,8 +621,8 @@ export default function App() {
             setOverlay(overlay.back);
             void refresh();
           }}
-          onStartDrill={(lessonId) =>
-            void startDrill(lessonId, overlay, overlay.from)
+          onStartDrill={(lessonId, challenge) =>
+            void startDrill(lessonId, challenge, overlay, overlay.from)
           }
           onCheckIn={async (lessonId) => {
             const detail = await api.lessonDetail(lessonId).catch(() => null);
@@ -629,6 +631,7 @@ export default function App() {
               lessonId,
               from: overlay.from,
               title: detail?.title ?? "Conversation",
+              challenge: detail?.challenge ?? false,
               songId: detail?.songId ?? null,
               writing:
                 // A type with a writing section is played out with a partner.
@@ -660,6 +663,7 @@ export default function App() {
           songId={overlay.songId}
           writing={overlay.writing}
           title={overlay.title}
+          challenge={overlay.challenge}
           onClose={() => {
             setOverlay(overlay.back);
             void refresh();

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ChallengeMark } from "../components/LessonRow";
 import { WordChat } from "../components/WordChat";
 import { WrongAnswerReview } from "../components/WrongAnswerReview";
 import { CloseIcon } from "../components/icons";
@@ -26,10 +27,13 @@ type Phase = "answering" | "checked";
 
 export function Session({
   plan,
+  challenge,
   onFinished,
   onQuit,
 }: {
   plan: SessionPlan;
+  /** The lesson is a challenge: marked as one while it runs. */
+  challenge?: boolean;
   onFinished: (result: LessonFinished, sessionXp: number) => void;
   onQuit: () => void;
 }) {
@@ -334,6 +338,9 @@ export function Session({
     sessionXp,
   };
 
+  // Spec: LSN-12
+  const challengeMark = challenge ? <ChallengeMark /> : null;
+
   return (
     <div className={module.wide ? "session session--wide" : "session"}>
       <div className="session-top">
@@ -341,6 +348,7 @@ export function Session({
         <div className="grow">
           <Progress value={index} max={total} />
         </div>
+        {challengeMark}
         <span className="bump-target" ref={xpRef}>
           <Badge tone="gold">
             +<CountUp value={sessionXp} duration={400} /> XP

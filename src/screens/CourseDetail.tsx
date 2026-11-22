@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { LessonRow } from "../components/LessonRow";
+import { ChallengeMark, LessonRow } from "../components/LessonRow";
 import { CourseClosedCelebration } from "../components/CourseClosedCelebration";
 import { CourseOffline } from "../components/CourseOffline";
 import { LevelInfo } from "../components/LevelInfo";
@@ -27,7 +27,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
-import { dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
+import { CHALLENGE_EXPLAINED, dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
 import type { CourseClosed, CoursePictureStatus, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/types";
 import { onEvent } from "../lib/events";
 import { useSyncReload } from "../lib/sync";
@@ -507,6 +507,12 @@ function CourseLessons({
   const [showMastered, setShowMastered] = useState(false);
   const open = lessons.filter((lesson) => standing(lesson) !== "mastered");
   const masteredNow = lessons.filter((lesson) => standing(lesson) === "mastered");
+  // Spec: CRS-20
+  const explained = lessons.some((lesson) => lesson.challenge) ? (
+    <p>
+      <ChallengeMark /> {CHALLENGE_EXPLAINED}
+    </p>
+  ) : null;
   const row = (lesson: Lesson) => {
     const where = standing(lesson);
     return (
@@ -519,7 +525,7 @@ function CourseLessons({
             ? lesson.passed
               ? "Mastered"
               : "Not passed"
-            : `${lesson.challenge ? "Challenge · " : ""}${standingText(lesson, today)}`
+            : standingText(lesson, today)
         }
         trailing={
           where === "mastered" ? (
@@ -532,19 +538,23 @@ function CourseLessons({
       />
     );
   };
+  const info = (
+    <>
+      <p>
+        Most important first: a lesson that slipped last time and is due again, then the ones whose time has come,
+        then the next new ones, then the rest. Every pass adds mastery points, up to 100 (a near miss, half as many); a
+        mastered lesson never comes back.
+      </p>
+      {explained}
+    </>
+  );
   return (
     <Stack gap={4}>
       {open.length > 0 ? (
         <Section
           id="to-pass"
           title={`Lessons · ${open.length}`}
-          info={
-            <p>
-              Most important first: a lesson that slipped last time and is due again, then the ones whose time has come,
-              then the next new ones, then the rest. Every pass adds mastery points, up to 100 (a near miss, half as many); a mastered lesson never
-              comes back. Challenges are beyond the course's level: not needed to complete it, but needed to master it.
-            </p>
-          }
+          info={info}
         >
           <List stagger>{open.map(row)}</List>
         </Section>
@@ -552,6 +562,7 @@ function CourseLessons({
       {masteredNow.length > 0 ? (
         <Section
           title={`Mastered · ${masteredNow.length}`}
+          info={explained ?? undefined}
           action={
             <Button size="sm" onClick={() => setShowMastered((shown) => !shown)}>
               {showMastered ? "Hide" : "Show"}

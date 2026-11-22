@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { LessonIcon } from "../components/LessonRow";
+import { ChallengeMark, LessonIcon } from "../components/LessonRow";
 import { PlayerIcon } from "../components/icons";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
@@ -35,7 +35,7 @@ import { api, errorMessage } from "../lib/api";
 import { lessonType } from "../lib/lessonTypes";
 import { useSyncReload } from "../lib/sync";
 import { MasteryPoints } from "../components/MasteryPoints";
-import { PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
+import { CHALLENGE_EXPLAINED, CHALLENGE_LABEL, PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
 import type { LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/types";
 
 /** Sections that head the page, above its columns: a scene, a story. */
@@ -67,7 +67,7 @@ export function LessonPage({
   from: PracticeContext;
   today: number;
   onBack: () => void;
-  onStartDrill: (lessonId: LessonId) => void;
+  onStartDrill: (lessonId: LessonId, challenge: boolean) => void;
   onCheckIn: (lessonId: LessonId) => void;
   onDeleted: () => void;
 }) {
@@ -306,6 +306,9 @@ export function LessonPage({
     }
   }
 
+  // Spec: LSN-12
+  const challengeMark = lesson.challenge ? <ChallengeMark /> : null;
+
   return (
     <Screen title={lesson.title} subtitle={lesson.courseTitle ?? undefined} onBack={onBack} nav={false}>
       {error ? <Banner tone="error">{error}</Banner> : null}
@@ -324,6 +327,7 @@ export function LessonPage({
         <div className="page-split__info">
           <Stack gap={3}>
             <Inline gap={2} wrap>
+              {challengeMark}
               <Badge tone="brand">
                 <Inline gap={1}>
                   <LessonIcon lesson={lesson} />
@@ -338,7 +342,6 @@ export function LessonPage({
               ) : started ? (
                 <Badge>{dueLabel(lesson, today)}</Badge>
               ) : null}
-              {lesson.challenge ? <Badge tone="gold">Challenge</Badge> : null}
               {lesson.level ? (
                 <Badge tone="brand" label={`${lesson.level}: what it means`} onClick={() => setLevelInfo(true)}>
                   {`${lesson.level} ⓘ`}
@@ -358,7 +361,7 @@ export function LessonPage({
               size="lg"
               wide
               icon={<PlayerIcon.play size={18} />}
-              onClick={() => (type.engine === "conversation" ? onCheckIn(lesson.id) : onStartDrill(lesson.id))}
+              onClick={() => (type.engine === "conversation" ? onCheckIn(lesson.id) : onStartDrill(lesson.id, lesson.challenge))}
             >
               {started ? type.againLabel : type.startLabel}
             </Button>
@@ -452,11 +455,11 @@ export function LessonPage({
           <Section title="Manage">
             <List>
               <SettingRow
-                label="Challenge"
-                description="Beyond the course's level: not needed to complete it, only to master it"
+                label={CHALLENGE_LABEL}
+                description={CHALLENGE_EXPLAINED}
                 control={
                   <Switch
-                    label="Challenge"
+                    label={CHALLENGE_LABEL}
                     checked={lesson.challenge}
                     onChange={async (challenge) => {
                       try {
