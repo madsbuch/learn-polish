@@ -29,7 +29,10 @@
   "requirements": [
     {
       "id": "AI-1",
-      "text": "The chat model is chosen from the catalogue loaded from OpenRouter; none is built in."
+      "text": "The chat model is chosen from the catalogue loaded from OpenRouter; none is built in.",
+      "related": [
+        "#POL-6"
+      ]
     },
     {
       "id": "AI-2",
@@ -37,7 +40,10 @@
     },
     {
       "id": "AI-3",
-      "text": "Speech always uses one fixed speech model, and the list of voices ships with the app."
+      "text": "Speech always uses one fixed speech model, and the list of voices ships with the app.",
+      "related": [
+        "#SPEECH-3"
+      ]
     },
     {
       "id": "AI-4",
@@ -45,7 +51,10 @@
     },
     {
       "id": "AI-5",
-      "text": "API keys can be moved to another device as a QR code that the other device scans."
+      "text": "API keys can be moved to another device as a QR code that the other device scans.",
+      "related": [
+        "#POL-5"
+      ]
     },
     {
       "id": "AI-6",

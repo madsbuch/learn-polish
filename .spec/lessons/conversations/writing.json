@@ -24,7 +24,10 @@
     },
     {
       "id": "WRT-2",
-      "text": "At the first level of help the learner has a word bank and hints beside the chat; at the second only hints; after that none."
+      "text": "At the first level of help the learner has a word bank and hints beside the chat; at the second only hints; after that none.",
+      "related": [
+        "#CONV-9"
+      ]
     },
     {
       "id": "WRT-3",
@@ -32,7 +35,10 @@
     },
     {
       "id": "WRT-4",
-      "text": "A mastered writing lesson's help no longer changes."
+      "text": "A mastered writing lesson's help no longer changes.",
+      "related": [
+        "#CONV-10"
+      ]
     },
     {
       "id": "CONV-6",
@@ -44,7 +50,10 @@
     },
     {
       "id": "CONV-8",
-      "text": "The writing partner has its own model setting and uses the tutor's model when none is chosen."
+      "text": "The writing partner has its own model setting and uses the tutor's model when none is chosen.",
+      "related": [
+        "#AI-4"
+      ]
     },
     {
       "id": "CONV-9",

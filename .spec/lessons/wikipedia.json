@@ -20,11 +20,18 @@
   "requirements": [
     {
       "id": "WIKI-1",
-      "text": "The tutor can attach Wikipedia articles to a study lesson, new or existing, and remove them."
+      "text": "The tutor can attach Wikipedia articles to a study lesson, new or existing, and remove them.",
+      "related": [
+        "#CONV-11"
+      ]
     },
     {
       "id": "WIKI-2",
-      "text": "A lesson's page lists its sources; each opens in the app's reader from the stored copy, without the network."
+      "text": "A lesson's page lists its sources; each opens in the app's reader from the stored copy, without the network.",
+      "related": [
+        "#STU-2",
+        "#POD-7"
+      ]
     },
     {
       "id": "WIKI-3",

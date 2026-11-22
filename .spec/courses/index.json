@@ -87,11 +87,17 @@
     },
     {
       "id": "CRS-8",
-      "text": "`term.other-lessons` is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
+      "text": "`term.other-lessons` is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed.",
+      "related": [
+        "#PRIN-10"
+      ]
     },
     {
       "id": "CRS-9",
-      "text": "A course is completed when every core lesson (every lesson that is not a challenge) has been passed once. A course of challenges only counts those as its core."
+      "text": "A course is completed when every core lesson (every lesson that is not a challenge) has been passed once. A course of challenges only counts those as its core.",
+      "related": [
+        "#PROG-10"
+      ]
     },
     {
       "id": "CRS-10",
@@ -103,7 +109,12 @@
     },
     {
       "id": "CRS-12",
-      "text": "Only a mastered course can be closed, by the learner's own choice; a closed course is listed under Mastered and can no longer be renamed, changed or added to. It can still be deleted."
+      "text": "Only a mastered course can be closed, by the learner's own choice; a closed course is listed under Mastered and can no longer be renamed, changed or added to. It can still be deleted.",
+      "related": [
+        "#PRIN-7",
+        "#TUTOR-4",
+        "#TODAY-8"
+      ]
     },
     {
       "id": "CRS-13",
@@ -111,7 +122,10 @@
     },
     {
       "id": "CRS-14",
-      "text": "A course without a level is given one only when the learner asks: the Exercises tab offers a button that asks the tutor."
+      "text": "A course without a level is given one only when the learner asks: the Exercises tab offers a button that asks the tutor.",
+      "related": [
+        "#PRIN-4"
+      ]
     },
     {
       "id": "CRS-15",
@@ -128,7 +142,10 @@
     },
     {
       "id": "CRS-18",
-      "text": "Every lesson is in exactly one course; `term.other-lessons` counts as one."
+      "text": "Every lesson is in exactly one course; `term.other-lessons` counts as one.",
+      "related": [
+        "#LSN-4"
+      ]
     },
     {
       "id": "CRS-19",

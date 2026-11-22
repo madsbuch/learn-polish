@@ -15,7 +15,10 @@
     },
     {
       "id": "STU-3",
-      "text": "The examiner is given the lesson's text and objectives and asks about every objective."
+      "text": "The examiner is given the lesson's text and objectives and asks about every objective.",
+      "related": [
+        "#CONV-1"
+      ]
     },
     {
       "id": "CONV-1",

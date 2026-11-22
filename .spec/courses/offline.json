@@ -55,6 +55,10 @@
           "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#SPEECH-6",
+        "#SPEECH-7"
       ]
     },
     {
@@ -74,6 +78,9 @@
           "reason": "Lessons now play only sound pairs with their own words, from words lessons and sentences lessons.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#SPEECH-1"
       ]
     },
     {
@@ -112,7 +119,11 @@
     },
     {
       "id": "OFF-8",
-      "text": "Pictures are drawn for a course kept offline only when the learner switches it on or taps Download now, which also retries pictures that failed before. By itself the app leaves a lesson's pictures to the device that made the lesson."
+      "text": "Pictures are drawn for a course kept offline only when the learner switches it on or taps Download now, which also retries pictures that failed before. By itself the app leaves a lesson's pictures to the device that made the lesson.",
+      "related": [
+        "#PICT-2",
+        "#SYNC-12"
+      ]
     },
     {
       "id": "OFF-9",

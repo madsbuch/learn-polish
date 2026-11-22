@@ -44,15 +44,25 @@
     },
     {
       "id": "SCHED-7",
-      "text": "A partial repeats the period and lowers the ease by 0.15."
+      "text": "A partial repeats the period and lowers the ease by 0.15.",
+      "related": [
+        "#TODAY-3"
+      ]
     },
     {
       "id": "SCHED-8",
-      "text": "A fail brings the lesson back the next day and lowers the ease by 0.2."
+      "text": "A fail brings the lesson back the next day and lowers the ease by 0.2.",
+      "related": [
+        "#TODAY-3",
+        "#PRIN-14"
+      ]
     },
     {
       "id": "SCHED-9",
-      "text": "Ease starts at `ease.start` and stays between `ease.min` and `ease.max`."
+      "text": "Ease starts at `ease.start` and stays between `ease.min` and `ease.max`.",
+      "related": [
+        "#TODAY-4"
+      ]
     },
     {
       "id": "SCHED-10",
@@ -64,7 +74,10 @@
     },
     {
       "id": "SCHED-12",
-      "text": "A lesson done before it is due is an early check-in: full XP, and its schedule moves."
+      "text": "A lesson done before it is due is an early check-in: full XP, and its schedule moves.",
+      "related": [
+        "#LSN-9"
+      ]
     },
     {
       "id": "SCHED-13",
@@ -77,6 +90,9 @@
           "reason": "What extra practice pays is said once, in PROG-3; the schedule keeps only what it decides.",
           "date": "2026-11-21"
         }
+      ],
+      "related": [
+        "#term.extra-practice"
       ]
     }
   ],

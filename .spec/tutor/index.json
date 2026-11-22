@@ -35,7 +35,11 @@
     },
     {
       "id": "TUTOR-2",
-      "text": "The tutor can create a course on a theme as a path: the dialogue first, then word and sentence drills with study lessons between, listening after, and a writing lesson last."
+      "text": "The tutor can create a course on a theme as a path: the dialogue first, then word and sentence drills with study lessons between, listening after, and a writing lesson last.",
+      "related": [
+        "#PRIN-1",
+        "#CRS-17"
+      ]
     },
     {
       "id": "TUTOR-3",
@@ -101,7 +105,11 @@
     },
     {
       "id": "TUTOR-14",
-      "text": "An id of the wrong kind, or a made-up id, passed to a tool fails with a message saying what was expected, instead of acting on another row."
+      "text": "An id of the wrong kind, or a made-up id, passed to a tool fails with a message saying what was expected, instead of acting on another row.",
+      "related": [
+        "#DATA-6",
+        "#PRIN-13"
+      ]
     },
     {
       "id": "TUTOR-15",

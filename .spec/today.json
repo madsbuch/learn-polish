@@ -20,7 +20,10 @@
   "requirements": [
     {
       "id": "TODAY-1",
-      "text": "Today's lessons are chosen once a day and kept for that day; they are chosen again only when the learner changes how many lessons a day they want, or when the kept choice names no lesson this device has."
+      "text": "Today's lessons are chosen once a day and kept for that day; they are chosen again only when the learner changes how many lessons a day they want, or when the kept choice names no lesson this device has.",
+      "related": [
+        "#PRIN-9"
+      ]
     },
     {
       "id": "TODAY-2",
@@ -40,7 +43,11 @@
     },
     {
       "id": "TODAY-6",
-      "text": "If a place is still free, at most `daily.max-reviews` mastered lesson whose words are due for review is added as a light review."
+      "text": "If a place is still free, at most `daily.max-reviews` mastered lesson whose words are due for review is added as a light review.",
+      "related": [
+        "#MAST-8",
+        "#term.light-review"
+      ]
     },
     {
       "id": "TODAY-7",
@@ -65,11 +72,19 @@
     },
     {
       "id": "TODAY-10",
-      "text": "Finishing the list is the day done, shown with a celebration; lessons due beyond the list are not shown on the home screen."
+      "text": "Finishing the list is the day done, shown with a celebration; lessons due beyond the list are not shown on the home screen.",
+      "related": [
+        "#PRIN-9",
+        "#PROG-4",
+        "#PROG-14"
+      ]
     },
     {
       "id": "TODAY-11",
-      "text": "Today's lessons are the same on all of the learner's devices; if two devices chose them while apart, the later choice wins."
+      "text": "Today's lessons are the same on all of the learner's devices; if two devices chose them while apart, the later choice wins.",
+      "related": [
+        "#SYNC-7"
+      ]
     }
   ],
   "values": [

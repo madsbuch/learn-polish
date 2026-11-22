@@ -70,11 +70,18 @@
     },
     {
       "id": "SYNC-11",
-      "text": "Settings about the device stay on it: theme, time zone, reminders, audio prefetch, repeat mode, haptics, speaking cards and the marks that say built-in content was seeded."
+      "text": "Settings about the device stay on it: theme, time zone, reminders, audio prefetch, repeat mode, haptics, speaking cards and the marks that say built-in content was seeded.",
+      "related": [
+        "#PLAY-10",
+        "#SPEECH-6"
+      ]
     },
     {
       "id": "SYNC-12",
-      "text": "Work in progress is carried on only by the device that started it: a song being made, a picture being drawn, a tutor reply being written."
+      "text": "Work in progress is carried on only by the device that started it: a song being made, a picture being drawn, a tutor reply being written.",
+      "related": [
+        "#SONG-7"
+      ]
     },
     {
       "id": "SYNC-13",

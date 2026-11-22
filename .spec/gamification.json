@@ -1,0 +1,267 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Gamification",
+  "summary": "The game layer through Octalysis: what each core drive does in the app, and the limits on the drives that pressure.",
+  "order": 1.6,
+  "description": "The game layer is there to keep the learner practising, in the ways that build memory. It is described through Yu-kai Chou's Octalysis framework of eight core drives, and stands on the white hat drives, which leave the learner feeling capable and in control. The drives that work by pressure are kept to the few uses stated here.",
+  "stories": [
+    {
+      "id": "US-OCT-1",
+      "as": "a learner who practises alone",
+      "want": "reasons to come back each day that do not nag or rush me",
+      "soThat": "practising becomes a habit I keep",
+      "requirements": [
+        "#OCT-1",
+        "#OCT-11",
+        "#OCT-13",
+        "#OCT-14",
+        "#OCT-15",
+        "#OCT-16",
+        "#OCT-18"
+      ]
+    },
+    {
+      "id": "US-OCT-2",
+      "as": "a learner looking at my XP, mastery points and achievements",
+      "want": "them to say how I am really doing",
+      "soThat": "I can trust them and be proud of them",
+      "requirements": [
+        "#OCT-2",
+        "#OCT-3",
+        "#OCT-4",
+        "#OCT-5",
+        "#OCT-6",
+        "#OCT-7",
+        "#OCT-12",
+        "#OCT-17"
+      ]
+    },
+    {
+      "id": "US-OCT-3",
+      "as": "a learner who just got something wrong",
+      "want": "the miss to show me what to work on, and cost me nothing I earned",
+      "soThat": "a mistake is part of learning, not a setback",
+      "requirements": [
+        "#OCT-8",
+        "#OCT-9",
+        "#OCT-10",
+        "#OCT-17"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "OCT-1",
+      "text": "Epic meaning: every course is made around what the learner asked to learn Polish for, so each lesson serves the learner's own goal.",
+      "related": [
+        "#PRIN-1",
+        "#TUTOR-2"
+      ]
+    },
+    {
+      "id": "OCT-2",
+      "text": "Accomplishment: XP and mastery points are earned only by answering, passing or finishing practice; opening the app, waiting and cards that are only read earn none.",
+      "related": [
+        "#PROG-1",
+        "#PROG-2",
+        "#DRILL-9",
+        "#MAST-1",
+        "#GAME-4",
+        "#PRIN-5",
+        "#PRIN-14"
+      ]
+    },
+    {
+      "id": "OCT-3",
+      "text": "A drill's XP grows with the difficulty of the kind of card answered and with the lesson's level.",
+      "related": [
+        "#PROG-2",
+        "#DRILL-14",
+        "#DRILL-15",
+        "#DRILL-16",
+        "#PRIN-14"
+      ]
+    },
+    {
+      "id": "OCT-4",
+      "text": "Repeating pays less than spacing: extra practice pays a share of the XP, and a pass on the same day earns fewer mastery points than a pass after a gap.",
+      "related": [
+        "#PROG-3",
+        "#MAST-2",
+        "#MAST-3"
+      ]
+    },
+    {
+      "id": "OCT-5",
+      "text": "Each count the app rewards with (XP, mastery points, the streak, streak freezes) is defined in Terms and called by its term wherever it is shown.",
+      "related": [
+        "terms",
+        "#TERM-1",
+        "#SUM-11"
+      ]
+    },
+    {
+      "id": "OCT-6",
+      "text": "Each achievement says what earns it and shows the learner's progress toward it before it unlocks.",
+      "related": [
+        "#PROG-10",
+        "#PROG-11",
+        "#PROG-16"
+      ]
+    },
+    {
+      "id": "OCT-7",
+      "text": "A course completed, a course mastered and a course closed are each marked as a milestone, once.",
+      "related": [
+        "#CRS-11",
+        "#CRS-12",
+        "#SUM-9",
+        "#PRIN-7"
+      ]
+    },
+    {
+      "id": "OCT-8",
+      "text": "Feedback: every scored card is judged as soon as it is answered, and a wrong or almost answer is shown with the right one.",
+      "related": [
+        "#SHELL-14",
+        "#SPK-1",
+        "#DRILL-5",
+        "#CONV-1"
+      ]
+    },
+    {
+      "id": "OCT-9",
+      "text": "A miss shows what to work on: example sentences for a missed word, the sound a misheard word confused, and in the summary the cards missed and what they kept from the go.",
+      "related": [
+        "#DRILL-11",
+        "#SPK-4",
+        "#SUM-7",
+        "#SUM-8",
+        "#LOG-2"
+      ]
+    },
+    {
+      "id": "OCT-10",
+      "text": "The summary leads with the grade, and celebrates in step with it: most for mastering a lesson, then an ace, then a pass, a partial only with encouragement, and a fail not at all.",
+      "related": [
+        "#SUM-1",
+        "#SUM-2",
+        "#SUM-5",
+        "#SUM-6",
+        "#SUM-9"
+      ]
+    },
+    {
+      "id": "OCT-11",
+      "text": "Empowerment: the learner shapes their own practice, asking the tutor for the courses, lessons, songs and podcasts they choose, and taking any lesson beyond today's lessons.",
+      "related": [
+        "#PRIN-1",
+        "#PRIN-9",
+        "#TUTOR-2",
+        "#TUTOR-3",
+        "#TUTOR-5",
+        "#SONG-1",
+        "#POD-1"
+      ]
+    },
+    {
+      "id": "OCT-12",
+      "text": "Ownership: the learner's courses and songs are kept as theirs, a mastered lesson stays mastered, and a closed course is kept under Mastered as a trophy.",
+      "related": [
+        "#PRIN-6",
+        "#PRIN-7",
+        "#MAST-8",
+        "#CRS-12",
+        "#SONG-8"
+      ]
+    },
+    {
+      "id": "OCT-13",
+      "text": "Curiosity: songs, podcasts, quick games and story and scene lessons give variety the learner chooses, and no reward is left to chance.",
+      "related": [
+        "#GAME-1",
+        "#SONG-1",
+        "#POD-1",
+        "lessons/drills/story",
+        "lessons/drills/scene"
+      ]
+    },
+    {
+      "id": "OCT-14",
+      "text": "Social influence is not used: there are no leaderboards, and the learner is compared with nobody.",
+      "related": [
+        "#US-SYNC-1"
+      ]
+    },
+    {
+      "id": "OCT-15",
+      "text": "Scarcity: today's lessons are capped at the learner's number, and once they are done nothing asks for more that day.",
+      "related": [
+        "#TODAY-2",
+        "#TODAY-10",
+        "#PROG-14",
+        "#PRIN-9",
+        "#GAME-4"
+      ]
+    },
+    {
+      "id": "OCT-16",
+      "text": "Loss: the streak is the only thing a missed day can cost, and streak freezes cover missed days by themselves.",
+      "related": [
+        "#PROG-6",
+        "#PROG-7",
+        "#PROG-8",
+        "#term.streak-freeze"
+      ]
+    },
+    {
+      "id": "OCT-17",
+      "text": "No go, miss or day away takes away XP, mastery points, an achievement or a lesson's mastered status.",
+      "related": [
+        "#MAST-6",
+        "#MAST-8",
+        "#PRIN-6",
+        "#PRIN-14",
+        "#PROG-11"
+      ]
+    },
+    {
+      "id": "OCT-18",
+      "text": "Nothing in a lesson is timed; only Match pairs, a quick game the learner chooses, is played against the clock.",
+      "related": [
+        "#GAME-2"
+      ]
+    }
+  ],
+  "values": [
+    {
+      "id": "octalysis.leaned-on",
+      "type": "list",
+      "value": [
+        "Epic Meaning & Calling",
+        "Development & Accomplishment",
+        "Empowerment of Creativity & Feedback",
+        "Ownership & Possession",
+        "Unpredictability & Curiosity"
+      ],
+      "description": "The core drives the game layer stands on, the white hat drives first."
+    },
+    {
+      "id": "octalysis.kept-minimal",
+      "type": "list",
+      "value": [
+        "Social Influence & Relatedness",
+        "Scarcity & Impatience",
+        "Loss & Avoidance"
+      ],
+      "description": "The core drives the game layer uses little or not at all."
+    }
+  ],
+  "related": [
+    "principles",
+    "progress",
+    "lessons/summary",
+    "lessons/mastery",
+    "learning"
+  ]
+}

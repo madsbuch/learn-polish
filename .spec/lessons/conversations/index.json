@@ -28,12 +28,42 @@
     },
     {
       "id": "CONV-12",
-      "text": "A conversation pays 30, 80 or 160 XP for low, medium or high complexity, plus 10 for each goal a writing lesson has; a partial pays half of that and a fail nothing."
+      "text": "A conversation pays `xp.conversation-low`, `xp.conversation-medium` or `xp.conversation-high` for low, medium or high complexity, plus `xp.writing-goal` for each goal a writing lesson has; a partial pays half of that and a fail nothing."
     }
   ],
   "related": [
     "lessons",
     "tutor/memory",
     "lessons/mastery"
+  ],
+  "values": [
+    {
+      "id": "xp.conversation-low",
+      "type": "number",
+      "value": 30,
+      "unit": "XP",
+      "description": "What a passed conversation of low complexity pays."
+    },
+    {
+      "id": "xp.conversation-medium",
+      "type": "number",
+      "value": 80,
+      "unit": "XP",
+      "description": "What a passed conversation of medium complexity pays."
+    },
+    {
+      "id": "xp.conversation-high",
+      "type": "number",
+      "value": 160,
+      "unit": "XP",
+      "description": "What a passed conversation of high complexity pays."
+    },
+    {
+      "id": "xp.writing-goal",
+      "type": "number",
+      "value": 10,
+      "unit": "XP",
+      "description": "What each goal of a writing lesson adds to what its conversation pays."
+    }
   ]
 }

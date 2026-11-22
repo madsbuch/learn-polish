@@ -51,11 +51,19 @@
           "reason": "Card difficulty now follows the lesson's level as well as the learner's history, for sentences as well as words.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#WRD-1",
+        "#SNT-1",
+        "#TYP-2"
       ]
     },
     {
       "id": "DRILL-2",
-      "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks."
+      "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks.",
+      "related": [
+        "#SPK-2"
+      ]
     },
     {
       "id": "DRILL-3",
@@ -67,7 +75,12 @@
     },
     {
       "id": "DRILL-5",
-      "text": "An almost-right answer is logged as a mistake, earns half the XP, counts as half right in the drill's score, and brings the item back sooner instead of starting its reviews over."
+      "text": "An almost-right answer is logged as a mistake, earns `drill.almost-share` of the XP, counts as `drill.almost-share` right in the drill's score, and brings the item back sooner instead of starting its reviews over.",
+      "related": [
+        "#PROG-1",
+        "#SUM-2",
+        "#term.almost"
+      ]
     },
     {
       "id": "DRILL-6",
@@ -88,11 +101,18 @@
           "reason": "The owner decided an ace means every answer right: at 95%, a long drill could have a miss and still be an ace.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#term.ace",
+        "#SUM-5"
       ]
     },
     {
       "id": "DRILL-9",
-      "text": "Cards that are only read (a new word, a dialogue to read, a story panel) are not scored, and a drill with nothing scored is not graded."
+      "text": "Cards that are only read (a new word, a dialogue to read, a story panel) are not scored, and a drill with nothing scored is not graded.",
+      "related": [
+        "#SUM-2"
+      ]
     },
     {
       "id": "DRILL-10",
@@ -109,27 +129,51 @@
     },
     {
       "id": "DRILL-11",
-      "text": "A wrong answer on a word shows example sentences for it: made once by a model and kept, or, without a key, taken from the learner's own courses."
+      "text": "A wrong answer on a word shows example sentences for it: made once by a model and kept, or, without a key, taken from the learner's own courses.",
+      "related": [
+        "#OFF-15",
+        "#OFF-16"
+      ]
     },
     {
       "id": "DRILL-12",
-      "text": "After a word or sentence card is answered, the learner can talk about it with the tutor straight from the exercise; that chat has its own model setting and otherwise uses the tutor's model."
+      "text": "After a word or sentence card is answered, the learner can talk about it with the tutor straight from the exercise; that chat has its own model setting and otherwise uses the tutor's model.",
+      "related": [
+        "#AI-4"
+      ]
     },
     {
       "id": "DRILL-13",
-      "text": "Each word's and sentence's review interval grows with right answers on different days, to at most `review.max-interval`; an item counts once a day."
+      "text": "Each word's and sentence's review interval grows with right answers on different days, to at most `review.max-interval`; an item counts once a day.",
+      "related": [
+        "#PROG-9",
+        "#GAME-5"
+      ]
     },
     {
       "id": "DRILL-14",
-      "text": "A word's or sentence's card is only of a kind its level allows: `drill.cards-a1` at A1; A2, B1 and B2 add `drill.cards-a2`, `drill.cards-b1` and `drill.cards-b2` in turn, each keeping those below it; C1 and C2 allow every kind."
+      "text": "A word's or sentence's card is only of a kind its level allows: `drill.cards-a1` at A1; A2, B1 and B2 add `drill.cards-a2`, `drill.cards-b1` and `drill.cards-b2` in turn, each keeping those below it; C1 and C2 allow every kind.",
+      "related": [
+        "#PRIN-2",
+        "#PRIN-14",
+        "#SPK-12"
+      ]
     },
     {
       "id": "DRILL-15",
-      "text": "A known word's or sentence's card is the kind at its familiarity's step in `drill.word-cards` or `drill.sentence-cards`, counting only the kinds its level allows and stopping at the hardest. Familiarity rises by one for each day the item was answered with no miss and falls by one for each day with a miss, never below 0."
+      "text": "A known word's or sentence's card is the kind at its familiarity's step in `drill.word-cards` or `drill.sentence-cards`, counting only the kinds its level allows and stopping at the hardest. Familiarity rises by one for each day the item was answered with no miss and falls by one for each day with a miss, never below 0.",
+      "related": [
+        "#SNT-2",
+        "#WRD-2"
+      ]
     },
     {
       "id": "DRILL-16",
-      "text": "The level a drill's cards follow is the lesson's own, else its course's; a lesson and course without one count as A1."
+      "text": "The level a drill's cards follow is the lesson's own, else its course's; a lesson and course without one count as A1.",
+      "related": [
+        "#CRS-13",
+        "#PROG-2"
+      ]
     },
     {
       "id": "DRILL-17",
@@ -137,11 +181,20 @@
     },
     {
       "id": "DRILL-18",
-      "text": "Where a card's kind cannot be given (saying aloud with speaking cards off, or beyond a lesson's own cap on them), the next easier kind its level allows is."
+      "text": "Where a card's kind cannot be given (saying aloud with speaking cards off, or beyond a lesson's own cap on them), the next easier kind its level allows is.",
+      "related": [
+        "#TYP-1",
+        "#SPK-8",
+        "#SNT-3",
+        "#WRD-2"
+      ]
     },
     {
       "id": "PIC-7",
-      "text": "A drawing that was not finished when the app closed is resumed the next time it starts, by the device that started it."
+      "text": "A drawing that was not finished when the app closed is resumed the next time it starts, by the device that started it.",
+      "related": [
+        "#SYNC-12"
+      ]
     },
     {
       "id": "PIC-8",
@@ -162,6 +215,13 @@
       "value": 60,
       "unit": "%",
       "description": "The share that is a partial."
+    },
+    {
+      "id": "drill.almost-share",
+      "type": "number",
+      "value": 50,
+      "unit": "%",
+      "description": "What an almost-right answer counts for, of a right answer's score and XP."
     },
     {
       "id": "review.max-interval",

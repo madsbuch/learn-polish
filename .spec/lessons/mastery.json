@@ -34,15 +34,18 @@
     },
     {
       "id": "MAST-2",
-      "text": "A later pass on the same day as the last go earns `mastery.same-day`."
+      "text": "A later pass on the same day as the last go earns `mastery.same-day`.",
+      "related": [
+        "#PRIN-5"
+      ]
     },
     {
       "id": "MAST-3",
-      "text": "A later pass a day or more after the last go earns 15, plus up to 20 more as the gap grows to 14 days."
+      "text": "A later pass a day or more after the last go earns `mastery.later-pass`, plus up to `mastery.spacing-bonus` more as the gap grows to `mastery.spacing-full`."
     },
     {
       "id": "MAST-4",
-      "text": "An ace earns a quarter more than a pass would."
+      "text": "An ace earns `mastery.ace-bonus` more than a pass would."
     },
     {
       "id": "MAST-5",
@@ -55,6 +58,11 @@
           "reason": "Credit jumped at the pass and partial cut-offs, so one answer could halve a go's points; credit in proportion to the score rewards every right answer without a cliff.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#DRILL-6",
+        "#DRILL-7",
+        "#CONV-3"
       ]
     },
     {
@@ -68,15 +76,28 @@
           "reason": "A fail took points for the moment of learning and discouraged the learner; the schedule already answers a fail by bringing the lesson back tomorrow.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#PRIN-14"
       ]
     },
     {
       "id": "MAST-7",
-      "text": "Points stay between 0 and `mastery.full`, and stop at `mastery.held-at` until the lesson has been passed on two different days."
+      "text": "Points stay between 0 and `mastery.full`, and stop at `mastery.held-at` until the lesson has been passed on two different days.",
+      "related": [
+        "#PRIN-5",
+        "#SUM-3"
+      ]
     },
     {
       "id": "MAST-8",
-      "text": "A lesson is mastered when it has been passed and has `mastery.full` points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in today's lessons."
+      "text": "A lesson is mastered when it has been passed and has `mastery.full` points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in today's lessons.",
+      "related": [
+        "#PRIN-6",
+        "#TODAY-7",
+        "#TODAY-8",
+        "#CONV-10"
+      ]
     },
     {
       "id": "MAST-9",
@@ -91,15 +112,24 @@
     },
     {
       "id": "MAST-10",
-      "text": "Every graded go writes a row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing; the go that masters the lesson adds a second row marking it mastered."
+      "text": "Every graded go writes a row in the lesson's mastery ledger, with the points before and after and the reason, including a go that changed nothing; the go that masters the lesson adds a second row marking it mastered.",
+      "related": [
+        "#SUM-3"
+      ]
     },
     {
       "id": "MAST-11",
-      "text": "Ledger rows are never changed after they are written."
+      "text": "Ledger rows are never changed after they are written.",
+      "related": [
+        "#SYNC-8"
+      ]
     },
     {
       "id": "MAST-12",
-      "text": "The ledger is shown on the lesson's page as Mastery points and is readable by the tutor."
+      "text": "The ledger is shown on the lesson's page as Mastery points and is readable by the tutor.",
+      "related": [
+        "#TUTOR-9"
+      ]
     },
     {
       "id": "MAST-13",
@@ -130,6 +160,31 @@
       "type": "number",
       "value": 10,
       "description": "What a later pass on the same day earns."
+    },
+    {
+      "id": "mastery.later-pass",
+      "type": "number",
+      "value": 15,
+      "description": "What a later pass a day or more after the last go earns before its gap adds more."
+    },
+    {
+      "id": "mastery.spacing-bonus",
+      "type": "number",
+      "value": 20,
+      "description": "The most a later pass's gap adds."
+    },
+    {
+      "id": "mastery.spacing-full",
+      "type": "duration",
+      "value": "14d",
+      "description": "The gap at which a later pass earns all of `mastery.spacing-bonus`."
+    },
+    {
+      "id": "mastery.ace-bonus",
+      "type": "number",
+      "value": 25,
+      "unit": "%",
+      "description": "How much more an ace earns than a pass would."
     },
     {
       "id": "mastery.credit-from",

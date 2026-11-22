@@ -32,7 +32,10 @@
     },
     {
       "id": "GAME-4",
-      "text": "A finished game pays `game.xp`, up to `game.xp-per-day` from games a day."
+      "text": "A finished game pays `game.xp`, up to `game.xp-per-day` from games a day.",
+      "related": [
+        "#PROG-5"
+      ]
     },
     {
       "id": "GAME-5",

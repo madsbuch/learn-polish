@@ -40,7 +40,10 @@
     },
     {
       "id": "PIC-1",
-      "text": "In a picture lesson each word is drawn once and the drawing is kept; the learner sees the picture and picks the word, and sees the word and picks the picture."
+      "text": "In a picture lesson each word is drawn once and the drawing is kept; the learner sees the picture and picks the word, and sees the word and picks the picture.",
+      "related": [
+        "#PICT-4"
+      ]
     },
     {
       "id": "PIC-2",

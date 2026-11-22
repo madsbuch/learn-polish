@@ -57,7 +57,10 @@
     },
     {
       "id": "SONG-8",
-      "text": "Both takes and their cover art are downloaded and stored in the database, and play offline."
+      "text": "Both takes and their cover art are downloaded and stored in the database, and play offline.",
+      "related": [
+        "#DATA-5"
+      ]
     },
     {
       "id": "SONG-9",
@@ -69,7 +72,10 @@
     },
     {
       "id": "SONG-11",
-      "text": "Enough of what a song was made from is kept to rebuild the prompt that made it."
+      "text": "Enough of what a song was made from is kept to rebuild the prompt that made it.",
+      "related": [
+        "#PRIN-11"
+      ]
     },
     {
       "id": "SONG-12",

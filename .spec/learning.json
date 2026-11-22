@@ -1,0 +1,226 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Learning research",
+  "summary": "What the app does because research on memory and second-language learning supports it.",
+  "order": 1.7,
+  "description": "Polski is designed from what research on memory and on learning a second language finds works. Each requirement names the finding, briefly with its source, and states what the app does because of it.",
+  "stories": [
+    {
+      "id": "US-LRN-1",
+      "as": "an adult learning Polish in spare minutes",
+      "want": "my practice to be the kind that research shows makes words stick",
+      "soThat": "the minutes I have turn into Polish I keep",
+      "requirements": [
+        "#LRN-1",
+        "#LRN-2",
+        "#LRN-3",
+        "#LRN-4",
+        "#LRN-8",
+        "#LRN-12",
+        "#LRN-13",
+        "#LRN-17"
+      ]
+    },
+    {
+      "id": "US-LRN-2",
+      "as": "a learner whose first language is English",
+      "want": "practice pitched at what I am ready for, with help where English misleads me",
+      "soThat": "I make progress instead of guessing",
+      "requirements": [
+        "#LRN-5",
+        "#LRN-6",
+        "#LRN-7",
+        "#LRN-9",
+        "#LRN-10",
+        "#LRN-11",
+        "#LRN-14",
+        "#LRN-15",
+        "#LRN-16",
+        "#LRN-18"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "LRN-1",
+      "text": "Spaced practice: each lesson comes back on its own schedule, with gaps that grow as it is passed again after longer.",
+      "related": [
+        "#SCHED-3",
+        "#SCHED-4",
+        "#SCHED-5",
+        "#SCHED-10",
+        "#TODAY-4"
+      ]
+    },
+    {
+      "id": "LRN-2",
+      "text": "Spacing over cramming: the last stretch to mastered needs a pass on a second day, and a pass after a longer gap earns more mastery points.",
+      "related": [
+        "#MAST-3",
+        "#MAST-7",
+        "#PRIN-5",
+        "#OCT-4"
+      ]
+    },
+    {
+      "id": "LRN-3",
+      "text": "Each word and sentence has spaced reviews of its own, and answering it more than once in a day counts once.",
+      "related": [
+        "#DRILL-13",
+        "#PROG-9"
+      ]
+    },
+    {
+      "id": "LRN-4",
+      "text": "Retrieval practice (the testing effect): a word or sentence is only read on a card the first time; after that every card asks the learner to recall or recognise it.",
+      "related": [
+        "#DRILL-1",
+        "#DRILL-9",
+        "#WRD-1",
+        "#SNT-1",
+        "#TYP-2"
+      ]
+    },
+    {
+      "id": "LRN-5",
+      "text": "Receptive before productive (Nation): a word's or sentence's cards go from recognising it to producing it, a step up for each day it is answered without a miss and a step down after a day with one.",
+      "related": [
+        "#DRILL-15",
+        "#drill.word-cards",
+        "#drill.sentence-cards"
+      ]
+    },
+    {
+      "id": "LRN-6",
+      "text": "Processability (Pienemann): the learner chooses a word's ending, such as a noun's case or a verb's person, only from A2, between two forms, and from every form only from B1; at A1 a sentence's endings are given and only its order is built.",
+      "related": [
+        "#DRILL-10",
+        "#DRILL-14",
+        "#DRILL-16"
+      ]
+    },
+    {
+      "id": "LRN-7",
+      "text": "Comprehensible input (Krashen): the tutor keeps a course's core lessons at the course's level and marks a lesson beyond it a challenge, and a writing partner writes at its lesson's level.",
+      "related": [
+        "#LSN-7",
+        "#LSN-8",
+        "#CRS-13",
+        "#WRT-3"
+      ]
+    },
+    {
+      "id": "LRN-8",
+      "text": "Desirable difficulties (Bjork) near the 85% success sweet spot (Wilson and others): a drill passes at `drill.pass-share` right, and its cards harden as its items become known.",
+      "related": [
+        "#DRILL-6",
+        "#DRILL-15",
+        "#DRILL-17",
+        "#OCT-3"
+      ]
+    },
+    {
+      "id": "LRN-9",
+      "text": "Partial credit: an answer one slip off is almost right and counts as `drill.almost-share` right, and a go short of a pass earns a share of mastery points.",
+      "related": [
+        "#DRILL-3",
+        "#DRILL-4",
+        "#DRILL-5",
+        "#MAST-5"
+      ]
+    },
+    {
+      "id": "LRN-10",
+      "text": "Immediate corrective feedback: a scored card is judged as soon as it is answered, and a miss is shown with the right answer, which is also read aloud.",
+      "related": [
+        "#SPK-1",
+        "#SHELL-14",
+        "#OCT-8"
+      ]
+    },
+    {
+      "id": "LRN-11",
+      "text": "Worked examples on a miss: a word answered wrong is shown in example sentences.",
+      "related": [
+        "#DRILL-11",
+        "#OFF-15",
+        "#OCT-9"
+      ]
+    },
+    {
+      "id": "LRN-12",
+      "text": "A miss is answered by more practice, not a penalty: it brings the lesson or the item back sooner, and takes no points away.",
+      "related": [
+        "#SCHED-7",
+        "#SCHED-8",
+        "#DRILL-5",
+        "#MAST-6",
+        "#PRIN-14",
+        "#SUM-8",
+        "#OCT-17"
+      ]
+    },
+    {
+      "id": "LRN-13",
+      "text": "Interleaving: a drill mixes kinds of card, each item on the card its own familiarity gives, and a words lesson asks the words met before in a shuffled order.",
+      "related": [
+        "#DRILL-15",
+        "#WRD-1"
+      ]
+    },
+    {
+      "id": "LRN-14",
+      "text": "Minimal-pair training for sounds an English ear runs together (such as sz and ś): words and sentences lessons have a round of sound pairs built from their own words, and a spoken word heard as its pair is named by the sound confused.",
+      "related": [
+        "#SPK-4",
+        "#SPK-9",
+        "#SPK-11",
+        "#SPK-12"
+      ]
+    },
+    {
+      "id": "LRN-15",
+      "text": "Dual coding (Paivio): concrete words can be learnt from a drawing of each, and a place's words where the things are in one drawing of it.",
+      "related": [
+        "#PIC-1",
+        "#PICT-1",
+        "#SCN-3"
+      ]
+    },
+    {
+      "id": "LRN-16",
+      "text": "Relevance: every course is built on what the learner asked to learn Polish for.",
+      "related": [
+        "#PRIN-1",
+        "#TUTOR-2",
+        "#OCT-1"
+      ]
+    },
+    {
+      "id": "LRN-17",
+      "text": "Retrieval after mastery: a mastered lesson's words still come back now and then as a light review.",
+      "related": [
+        "#TODAY-6",
+        "#MAST-8"
+      ]
+    },
+    {
+      "id": "LRN-18",
+      "text": "Pushed output (Swain): a writing lesson has the learner get a point across to a partner who understands only Polish, with help that steps back after each pass.",
+      "related": [
+        "#CONV-6",
+        "#CONV-7",
+        "#CONV-9",
+        "#WRT-2"
+      ]
+    }
+  ],
+  "related": [
+    "principles#PRIN-14",
+    "lessons/drills",
+    "lessons/schedule",
+    "lessons/mastery",
+    "lessons/speaking",
+    "gamification"
+  ]
+}

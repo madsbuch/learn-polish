@@ -9,8 +9,9 @@
 // - a named value has its type's form, its history says what it was and
 //   why, and a requirement that names something dotted in backticks names a
 //   value that exists;
-// - every reference (`related`, `replacedBy`, a story's `requirements`)
-//   points at an item, story, requirement or value that exists, a story's
+// - every reference (`related` on an item, story, requirement or value,
+//   `replacedBy`, a story's `requirements`) points at an item, story,
+//   requirement or value that exists, a story's
 //   `requirements` at requirements, and a reference to a version ("#ID@2")
 //   at a version the requirement has had;
 // - a requirement above version 1 has the history of all its earlier
@@ -36,10 +37,10 @@ const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const root = join(repo, ".spec");
 
 const ITEM_KEYS = ["$schema", "title", "summary", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related"];
-const STORY_KEYS = ["id", "as", "want", "soThat", "requirements", "deprecation"];
-const REQUIREMENT_KEYS = ["id", "text", "level", "version", "history", "deprecation"];
+const STORY_KEYS = ["id", "as", "want", "soThat", "requirements", "related", "deprecation"];
+const REQUIREMENT_KEYS = ["id", "text", "level", "version", "history", "related", "deprecation"];
 const HISTORY_KEYS = ["version", "text", "level", "reason", "date"];
-const VALUE_KEYS = ["id", "type", "value", "description", "deprecation", "history"];
+const VALUE_KEYS = ["id", "type", "value", "description", "related", "deprecation", "history"];
 const VALUE_HISTORY_KEYS = ["value", "dark", "reason", "date"];
 const DEPRECATION_KEYS = ["reason", "replacedBy", "date"];
 const FIGURE_KEYS = ["src", "alt", "caption"];
@@ -148,6 +149,14 @@ function checkDeprecation(where, deprecation) {
   }
 }
 
+function checkRelated(where, thing) {
+  if (thing.related === undefined) return;
+  if (!Array.isArray(thing.related)) return problems.push(`${where}: "related" is not a list`);
+  for (const reference of thing.related) {
+    if (!resolve(reference).ok) problems.push(`${where}: related "${reference}" does not exist`);
+  }
+}
+
 function checkId(where, thing) {
   if (typeof thing.id !== "string" || !ID.test(thing.id)) problems.push(`${where}: not a valid id`);
 }
@@ -181,6 +190,7 @@ for (const [id, item] of items) {
     if (!isText(story.as) || !isText(story.want)) problems.push(`${where}: a story says who (as) wants what (want)`);
     if (story.soThat !== undefined && !isText(story.soThat)) problems.push(`${where}: "soThat" is empty`);
     checkDeprecation(where, story.deprecation);
+    checkRelated(where, story);
     if (story.requirements !== undefined && !Array.isArray(story.requirements)) problems.push(`${where}: "requirements" is not a list`);
     for (const reference of story.requirements ?? []) {
       const { ok, code } = resolve(reference);
@@ -197,6 +207,7 @@ for (const [id, item] of items) {
     const version = requirement.version ?? 1;
     if (!Number.isInteger(version) || version < 1) problems.push(`${where}: version ${version} is not a whole number from 1`);
     checkDeprecation(where, requirement.deprecation);
+    checkRelated(where, requirement);
     if (requirement.history !== undefined && !Array.isArray(requirement.history)) problems.push(`${where}: "history" is not a list`);
     const history = Array.isArray(requirement.history) ? requirement.history : [];
     const versions = history.map((earlier) => earlier?.version);
@@ -228,6 +239,7 @@ for (const [id, item] of items) {
     if (value.unit !== undefined && !isText(value.unit)) problems.push(`${where}: "unit" is empty`);
     if (value.description !== undefined && typeof value.description !== "string") problems.push(`${where}: "description" is not text`);
     checkDeprecation(where, value.deprecation);
+    checkRelated(where, value);
     if (value.history !== undefined && !Array.isArray(value.history)) problems.push(`${where}: "history" is not a list`);
     for (const earlier of Array.isArray(value.history) ? value.history : []) {
       if (!isObject(earlier)) continue;
@@ -240,10 +252,7 @@ for (const [id, item] of items) {
     }
   }
 
-  if (item.related !== undefined && !Array.isArray(item.related)) problems.push(`${here}: "related" is not a list`);
-  for (const reference of item.related ?? []) {
-    if (!resolve(reference).ok) problems.push(`${here}: related "${reference}" does not exist`);
-  }
+  checkRelated(here, item);
   for (const figure of list(item, "figures")) {
     unknownKeys(`${here} figure`, figure, FIGURE_KEYS);
     if (!isText(figure.src) || figure.src.startsWith("/") || !existsSync(join(root, figure.src))) problems.push(`${here}: figure "${figure.src}" is not in .spec`);

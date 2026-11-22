@@ -55,7 +55,10 @@
     },
     {
       "id": "DEMO-5",
-      "text": "A device that joins another device's data does not seed the demo course into it again."
+      "text": "A device that joins another device's data does not seed the demo course into it again.",
+      "related": [
+        "#SYNC-2"
+      ]
     },
     {
       "id": "DEMO-6",

@@ -38,7 +38,12 @@
     },
     {
       "id": "SPEECH-3",
-      "text": "Dialogue lines are read in a female or a male voice according to the speaker; the learner chooses the female voice from 14 and the male voice from 16, each with a preview."
+      "text": "Dialogue lines are read in a female or a male voice according to the speaker; the learner chooses the female voice from 14 and the male voice from 16, each with a preview.",
+      "related": [
+        "#STO-2",
+        "#DLG-6",
+        "#POD-4"
+      ]
     },
     {
       "id": "SPEECH-4",
@@ -62,7 +67,10 @@
     },
     {
       "id": "SPEECH-9",
-      "text": "Speech is stored as MP3: raw audio from the speech model is encoded before it is stored, at `speech.bitrate` for one channel."
+      "text": "Speech is stored as MP3: raw audio from the speech model is encoded before it is stored, at `speech.bitrate` for one channel.",
+      "related": [
+        "#POD-10"
+      ]
     },
     {
       "id": "SPEECH-10",

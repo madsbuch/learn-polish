@@ -29,7 +29,10 @@
   "requirements": [
     {
       "id": "LOG-1",
-      "text": "Every graded answer is written to the learning log in the same transaction as its grade."
+      "text": "Every graded answer is written to the learning log in the same transaction as its grade.",
+      "related": [
+        "#DATA-12"
+      ]
     },
     {
       "id": "LOG-2",
@@ -41,11 +44,17 @@
     },
     {
       "id": "LOG-4",
-      "text": "Log rows are append-only: never updated after they are written."
+      "text": "Log rows are append-only: never updated after they are written.",
+      "related": [
+        "#SYNC-8"
+      ]
     },
     {
       "id": "LOG-5",
-      "text": "The Insights pages and the tutor's analysis tools use the same queries."
+      "text": "The Insights pages and the tutor's analysis tools use the same queries.",
+      "related": [
+        "#TUTOR-9"
+      ]
     },
     {
       "id": "LOG-6",

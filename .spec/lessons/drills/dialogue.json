@@ -7,11 +7,17 @@
   "requirements": [
     {
       "id": "DLG-1",
-      "text": "A course's dialogue lines make up one dialogue lesson of that course; lines added later join it."
+      "text": "A course's dialogue lines make up one dialogue lesson of that course; lines added later join it.",
+      "related": [
+        "#CRS-3"
+      ]
     },
     {
       "id": "DLG-2",
-      "text": "The tutor makes a dialogue only as part of a course, never as a lesson on its own."
+      "text": "The tutor makes a dialogue only as part of a course, never as a lesson on its own.",
+      "related": [
+        "#TUTOR-3"
+      ]
     },
     {
       "id": "DLG-3",
@@ -31,7 +37,10 @@
     },
     {
       "id": "DLG-7",
-      "text": "Where speaking cards are on, one of the what-comes-next lines is said aloud instead of chosen."
+      "text": "Where speaking cards are on, one of the what-comes-next lines is said aloud instead of chosen.",
+      "related": [
+        "#SPK-7"
+      ]
     }
   ],
   "related": [

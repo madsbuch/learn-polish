@@ -32,7 +32,10 @@
     },
     {
       "id": "SNT-5",
-      "text": "A course's new sentences are cut into sentences lessons of `drill.sentences-max`."
+      "text": "A course's new sentences are cut into sentences lessons of `drill.sentences-max`.",
+      "related": [
+        "#CRS-2"
+      ]
     }
   ],
   "related": [

@@ -56,7 +56,7 @@
     },
     {
       "id": "SUM-2",
-      "text": "The grade comes first, as its term's shown word (Aced, Passed, Partly there, Not yet), with the lesson's title and a drill's score as right answers of the cards scored, each almost counting half; extra practice is named beside it, and a go with nothing scored says `summary.not-graded` instead."
+      "text": "The grade comes first, as its term's shown word (Aced, Passed, Partly there, Not yet), with the lesson's title and a drill's score as right answers of the cards scored, each almost counting `drill.almost-share`; extra practice is named beside it, and a go with nothing scored says `summary.not-graded` instead."
     },
     {
       "id": "SUM-3",
@@ -73,7 +73,13 @@
     },
     {
       "id": "SUM-4",
-      "text": "One line under the mastery says when the lesson comes back: `summary.back-on` after a pass, `summary.partial-next` after a partial, `summary.fail-next` after a fail, and `summary.extra-next` on extra practice."
+      "text": "One line under the mastery says when the lesson comes back: `summary.back-on` after a pass, `summary.partial-next` after a partial, `summary.fail-next` after a fail, and `summary.extra-next` on extra practice.",
+      "related": [
+        "#SCHED-3",
+        "#SCHED-7",
+        "#SCHED-8",
+        "#SCHED-13"
+      ]
     },
     {
       "id": "SUM-5",
@@ -107,15 +113,28 @@
           "reason": "Misses no longer cost points, only points not earned, so the go's own change can be nothing but never a loss.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#DRILL-6",
+        "#DRILL-7",
+        "#MAST-5",
+        "#DRILL-5"
       ]
     },
     {
       "id": "SUM-9",
-      "text": "A go that masters its lesson gets a celebration of its own in place of the pass's: the Mastered badge, the lesson's title and `summary.mastered-line`, with motion of its own; a course completed or mastered by the same go is told on the same screen without a second celebration."
+      "text": "A go that masters its lesson gets a celebration of its own in place of the pass's: the Mastered badge, the lesson's title and `summary.mastered-line`, with motion of its own; a course completed or mastered by the same go is told on the same screen without a second celebration.",
+      "related": [
+        "#CRS-11"
+      ]
     },
     {
       "id": "SUM-10",
-      "text": "The longer term is one muted row at the bottom: the go's XP and today's, the streak, a streak freeze only when this go earned one, and `summary.day-done` only when this go finished today's lessons."
+      "text": "The longer term is one muted row at the bottom: the go's XP and today's, the streak, a streak freeze only when this go earned one, and `summary.day-done` only when this go finished today's lessons.",
+      "related": [
+        "#TODAY-10",
+        "#PROG-7"
+      ]
     },
     {
       "id": "SUM-11",

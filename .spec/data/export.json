@@ -28,7 +28,10 @@
     },
     {
       "id": "EXP-3",
-      "text": "API keys are removed from the copy unless the learner chooses to include them, and are not left in the file's free pages."
+      "text": "API keys are removed from the copy unless the learner chooses to include them, and are not left in the file's free pages.",
+      "related": [
+        "#POL-5"
+      ]
     },
     {
       "id": "EXP-4",
@@ -36,7 +39,10 @@
     },
     {
       "id": "EXP-5",
-      "text": "An exported copy is marked as a copy: a device opened from it takes a new sync identity."
+      "text": "An exported copy is marked as a copy: a device opened from it takes a new sync identity.",
+      "related": [
+        "#SYNC-13"
+      ]
     },
     {
       "id": "EXP-6",

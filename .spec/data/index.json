@@ -36,7 +36,10 @@
     },
     {
       "id": "DATA-3",
-      "text": "A file's bytes never change: a new picture or clip is a new file with a new id."
+      "text": "A file's bytes never change: a new picture or clip is a new file with a new id.",
+      "related": [
+        "#SPEECH-12"
+      ]
     },
     {
       "id": "DATA-4",

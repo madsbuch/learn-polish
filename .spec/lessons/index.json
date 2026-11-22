@@ -58,7 +58,12 @@
     },
     {
       "id": "LSN-5",
-      "text": "Every lesson has a complexity of low, medium or high (shown as quick, medium, deep), which says how long it takes and how deep it goes, not its level."
+      "text": "Every lesson has a complexity of low, medium or high (shown as quick, medium, deep), which says how long it takes and how deep it goes, not its level.",
+      "related": [
+        "#SCHED-1",
+        "#CONV-2",
+        "#CONV-12"
+      ]
     },
     {
       "id": "LSN-6",
@@ -66,15 +71,29 @@
     },
     {
       "id": "LSN-7",
-      "text": "A lesson can carry its own CEFR level; without one it has its course's."
+      "text": "A lesson can carry its own CEFR level; without one it has its course's.",
+      "related": [
+        "#CRS-13",
+        "#PRIN-2",
+        "#DRILL-16"
+      ]
     },
     {
       "id": "LSN-8",
-      "text": "A lesson can be marked a challenge: it does not count toward completing its course, and today's lessons offer it only once the course's other lessons are passed."
+      "text": "A lesson can be marked a challenge: it does not count toward completing its course, and today's lessons offer it only once the course's other lessons are passed.",
+      "related": [
+        "#TODAY-9",
+        "#CRS-9"
+      ]
     },
     {
       "id": "LSN-9",
-      "text": "A lesson already passed today can be practised again at any time as extra practice."
+      "text": "A lesson already passed today can be practised again at any time as extra practice.",
+      "related": [
+        "#term.extra-practice",
+        "#PROG-3",
+        "#SCHED-13"
+      ]
     },
     {
       "id": "LSN-10",
@@ -86,7 +105,10 @@
     },
     {
       "id": "LSN-12",
-      "text": "A challenge is marked as one wherever a lesson is listed or shown: today's lessons and their next lesson, a course's lessons, the lesson's page, and a drill or conversation while it runs."
+      "text": "A challenge is marked as one wherever a lesson is listed or shown: today's lessons and their next lesson, a course's lessons, the lesson's page, and a drill or conversation while it runs.",
+      "related": [
+        "#CRS-20"
+      ]
     },
     {
       "id": "LSN-13",

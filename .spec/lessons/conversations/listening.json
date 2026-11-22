@@ -19,11 +19,17 @@
     },
     {
       "id": "LIS-4",
-      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in `term.other-lessons`."
+      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in `term.other-lessons`.",
+      "related": [
+        "#SONG-10"
+      ]
     },
     {
       "id": "LIS-5",
-      "text": "The examiner is given the song's lyrics and asks about what was heard, quoting at most one short line per question."
+      "text": "The examiner is given the song's lyrics and asks about what was heard, quoting at most one short line per question.",
+      "related": [
+        "#CONV-4"
+      ]
     },
     {
       "id": "CONV-4",
@@ -31,7 +37,10 @@
     },
     {
       "id": "CONV-5",
-      "text": "A song the tutor makes gets a listening lesson unless the tutor opts out, and any song's page can start one."
+      "text": "A song the tutor makes gets a listening lesson unless the tutor opts out, and any song's page can start one.",
+      "related": [
+        "#TUTOR-5"
+      ]
     }
   ],
   "related": [

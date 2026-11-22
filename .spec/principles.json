@@ -85,11 +85,17 @@
     },
     {
       "id": "PRIN-12",
-      "text": "A lesson type is declared in one place, and the screens and the lesson flow ask the type instead of branching on it."
+      "text": "A lesson type is declared in one place, and the screens and the lesson flow ask the type instead of branching on it.",
+      "related": [
+        "#LSN-2"
+      ]
     },
     {
       "id": "PRIN-13",
-      "text": "Every row that names a thing (a course, a lesson, a word, a song, a memory) has a tagged id that says what it is; screens show the title of the thing instead of the id."
+      "text": "Every row that names a thing (a course, a lesson, a word, a song, a memory) has a tagged id that says what it is; screens show the title of the thing instead of the id.",
+      "related": [
+        "#DATA-6"
+      ]
     },
     {
       "id": "PRIN-14",

@@ -95,7 +95,7 @@
       "id": "term.extra-practice",
       "type": "text",
       "value": "extra practice",
-      "description": "A go at a lesson already passed today: it pays half XP and leaves the schedule as it was."
+      "description": "A go at a lesson already passed today: it pays `xp.extra-share` of the XP and leaves the schedule as it was."
     },
     {
       "id": "term.pass",
@@ -125,7 +125,7 @@
       "id": "term.almost",
       "type": "text",
       "value": "almost",
-      "description": "An answer one slip off, a typed word one letter off or a sentence with one word wrong, which counts as half right. Not: nearly right."
+      "description": "An answer one slip off, a typed word one letter off or a sentence with one word wrong, which counts as `drill.almost-share` right. Not: nearly right."
     },
     {
       "id": "term.mastery-points",
@@ -197,7 +197,7 @@
       "id": "term.streak-freeze",
       "type": "text",
       "value": "streak freeze",
-      "description": "Earned every seventh day of a streak, it covers a missed day by itself."
+      "description": "Earned each `streak.freeze-every` days of a streak, it covers a missed day by itself."
     },
     {
       "id": "term.quick-game",

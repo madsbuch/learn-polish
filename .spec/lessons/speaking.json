@@ -38,11 +38,17 @@
     },
     {
       "id": "SPK-3",
-      "text": "A spoken answer is written down by the model chosen as Hearing you speak and compared word by word as a dictation is."
+      "text": "A spoken answer is written down by the model chosen as Hearing you speak and compared word by word as a dictation is.",
+      "related": [
+        "#AI-4"
+      ]
     },
     {
       "id": "SPK-4",
-      "text": "When a spoken word is heard as another that differs by a known sound contrast, the card says which sound and what to try."
+      "text": "When a spoken word is heard as another that differs by a known sound contrast, the card says which sound and what to try.",
+      "related": [
+        "#LOG-2"
+      ]
     },
     {
       "id": "SPK-5",
@@ -54,11 +60,18 @@
     },
     {
       "id": "SPK-7",
-      "text": "Speaking cards take the place of a lesson's usual practice cards and do not add to its length."
+      "text": "Speaking cards take the place of a lesson's usual practice cards and do not add to its length.",
+      "related": [
+        "#SNT-3",
+        "#WRD-2"
+      ]
     },
     {
       "id": "SPK-8",
-      "text": "Whether speaking cards are shown is a setting of the device, not of the learner."
+      "text": "Whether speaking cards are shown is a setting of the device, not of the learner.",
+      "related": [
+        "#SYNC-11"
+      ]
     },
     {
       "id": "SPK-9",
@@ -71,15 +84,26 @@
           "reason": "Pairs that only shared a sound with the lesson's words felt unrelated to it, and still counted towards its grade.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#WRD-3",
+        "#OFF-3"
       ]
     },
     {
       "id": "SPK-10",
-      "text": "The built-in sound pairs ship with the app; nothing is written to the database for them."
+      "text": "The built-in sound pairs ship with the app; nothing is written to the database for them.",
+      "related": [
+        "#GAME-1"
+      ]
     },
     {
       "id": "SPK-11",
-      "text": "A sentences lesson has a round of up to `sound-pairs.round` sound pairs before its fill-the-gaps cards, each with a whole word of one of its sentences: a built-in pair that has the word, or the near neighbour of a course word that stands in a sentence as it is or in a form the sentence's tiles give it; with none, there is no round."
+      "text": "A sentences lesson has a round of up to `sound-pairs.round` sound pairs before its fill-the-gaps cards, each with a whole word of one of its sentences: a built-in pair that has the word, or the near neighbour of a course word that stands in a sentence as it is or in a form the sentence's tiles give it; with none, there is no round.",
+      "related": [
+        "#SNT-4",
+        "#OFF-3"
+      ]
     },
     {
       "id": "SPK-12",

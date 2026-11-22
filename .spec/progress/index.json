@@ -31,11 +31,14 @@
   "requirements": [
     {
       "id": "PROG-1",
-      "text": "A wrong answer earns no XP."
+      "text": "A wrong answer that is not almost right earns no XP.",
+      "related": [
+        "#PRIN-14"
+      ]
     },
     {
       "id": "PROG-2",
-      "text": "XP per right answer is its kind of card's amount, 2 more for an item answered the first time, times its level's factor (`xp.level-factor-a1` to `xp.level-factor-c`), rounded: picking a meaning or a picture pays 6, picking the word or tiles with the endings set 8, tiles with two endings to choose or a dictation from a word bank 10, tiles with every form or a word written from hearing 12, typing, a dictation, a typed gap or saying it aloud 14, and filling gaps from a bank 16.",
+      "text": "XP per right answer is what its kind of card pays (`xp.pick-meaning`, `xp.pick-word`, `xp.tiles-two`, `xp.tiles-all`, `xp.typed`, `xp.gaps-from-bank`), plus `xp.first-time` for an item answered the first time, times its level's factor (`xp.level-factor-a1` to `xp.level-factor-c`), rounded.",
       "version": 2,
       "history": [
         {
@@ -44,11 +47,18 @@
           "reason": "Harder kinds of card and harder material are worth more; the new, easier sentence cards pay less than the ones they lead to.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#DRILL-14",
+        "#PRIN-14"
       ]
     },
     {
       "id": "PROG-3",
-      "text": "Extra practice on a lesson already passed today pays half XP."
+      "text": "Extra practice on a lesson already passed today pays `xp.extra-share` of the XP.",
+      "related": [
+        "#SCHED-13"
+      ]
     },
     {
       "id": "PROG-4",
@@ -56,15 +66,24 @@
     },
     {
       "id": "PROG-5",
-      "text": "A failed conversation or a quick game counts as having practised, even when it earned no XP."
+      "text": "A failed conversation or a quick game counts as having practised, even when it earned no XP.",
+      "related": [
+        "#GAME-8"
+      ]
     },
     {
       "id": "PROG-6",
-      "text": "The streak counts done days in a row and still shows as alive on the day after the last done day."
+      "text": "The streak counts done days in a row and still shows as alive on the day after the last done day.",
+      "related": [
+        "#term.streak"
+      ]
     },
     {
       "id": "PROG-7",
-      "text": "Every seventh day of a run earns a streak freeze; at most `streak.freezes-max` are kept."
+      "text": "Each `streak.freeze-every` days of a streak earn a streak freeze; at most `streak.freezes-max` are kept.",
+      "related": [
+        "#term.streak-freeze"
+      ]
     },
     {
       "id": "PROG-8",
@@ -123,6 +142,69 @@
       "type": "duration",
       "value": "21d",
       "description": "The review interval at which a word sticks."
+    },
+    {
+      "id": "xp.pick-meaning",
+      "type": "number",
+      "value": 6,
+      "unit": "XP",
+      "description": "What picking a meaning or a picture pays (`pick-meaning`, `pick-picture`)."
+    },
+    {
+      "id": "xp.pick-word",
+      "type": "number",
+      "value": 8,
+      "unit": "XP",
+      "description": "What picking the word, or tiles with the endings set, pays (`pick-word`, `tiles-set`)."
+    },
+    {
+      "id": "xp.tiles-two",
+      "type": "number",
+      "value": 10,
+      "unit": "XP",
+      "description": "What tiles with two endings to choose, or a dictation from a word bank, pays (`tiles-two`, `bank-dictation`)."
+    },
+    {
+      "id": "xp.tiles-all",
+      "type": "number",
+      "value": 12,
+      "unit": "XP",
+      "description": "What tiles with every form, or a word written from hearing, pays (`tiles-all`, `hear-word`)."
+    },
+    {
+      "id": "xp.typed",
+      "type": "number",
+      "value": 14,
+      "unit": "XP",
+      "description": "What typing a word, a dictation, a typed gap or saying it aloud pays (`type-word`, `dictation`, `gap-typed`, `say-word`, `say-sentence`)."
+    },
+    {
+      "id": "xp.gaps-from-bank",
+      "type": "number",
+      "value": 16,
+      "unit": "XP",
+      "description": "What filling gaps from a word bank pays (`gaps-from-bank`)."
+    },
+    {
+      "id": "xp.first-time",
+      "type": "number",
+      "value": 2,
+      "unit": "XP",
+      "description": "What an item answered for the first time adds."
+    },
+    {
+      "id": "xp.extra-share",
+      "type": "number",
+      "value": 50,
+      "unit": "%",
+      "description": "The share of its XP that extra practice pays."
+    },
+    {
+      "id": "streak.freeze-every",
+      "type": "number",
+      "value": 7,
+      "unit": "days",
+      "description": "How many days of a streak earn a streak freeze."
     },
     {
       "id": "xp.level-factor-a1",
