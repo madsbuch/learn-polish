@@ -334,6 +334,12 @@ impl Tally {
 /// What the learner is told when a download ends: the course is ready, or
 /// how much could not be downloaded. Nothing when neither (its pictures are
 /// still being drawn).
+/// The app's address for a course's page, which a tap on its download's
+/// notification opens.
+pub(crate) fn address(course_id: CourseId) -> String {
+    format!("/{course_id}")
+}
+
 fn result_line(title: &str, ready: bool, sum: Step) -> Option<String> {
     let missing = sum.total - sum.done;
     if ready {
@@ -462,9 +468,9 @@ pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: 
     if !claim(course_id) {
         return;
     }
-    // Its notification, tapped, opens the course (the app's address for it).
+    // Its notification, tapped, opens the course.
     // Spec: SHELL-20
-    let busy = crate::work::begin_counted(app, &title, Some(format!("/{course_id}")));
+    let busy = crate::work::begin_counted(app, &title, Some(address(course_id)));
     keep_going_without_the_app(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {

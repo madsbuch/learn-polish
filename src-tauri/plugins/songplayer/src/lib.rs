@@ -99,3 +99,25 @@ pub fn keep_working<R: Runtime>(
     let _ = (app, on, label, progress, result, work);
     Ok(WorkReport { refused: None, notifications_allowed: true })
 }
+
+/// Shows a message (a tutor reply) in a notification of its own, which a
+/// tap opens at `address` (the app's address for its page), also when the
+/// tap starts the app. Returns whether it was shown here: off Android it is
+/// not, and the caller shows it through the notification plugin.
+pub fn show_message<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str, address: &str) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        #[derive(serde::Serialize)]
+        struct Args<'a> {
+            title: &'a str,
+            body: &'a str,
+            address: &'a str,
+        }
+        if let Some(native) = app.try_state::<Native<R>>() {
+            return native.0.run_mobile_plugin::<serde::de::IgnoredAny>("showMessage", Args { title, body, address }).is_ok();
+        }
+    }
+    let _ = (app, title, body, address);
+    false
+}

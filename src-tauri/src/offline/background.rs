@@ -30,27 +30,32 @@ tauri_plugin_sync_background::offline_jni_entry!(
 );
 
 /// How the run went, for the job: a line for Android's log, whether to come
-/// back later, and what to tell the learner.
+/// back later, what to tell the learner, and the page a tap on that opens
+/// (the course, when it is about one).
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Outcome {
     log: String,
     retry: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    address: Option<String>,
 }
 
 impl Outcome {
     fn said(log: impl Into<String>) -> Self {
-        Self { log: log.into(), retry: false, result: None }
+        Self { log: log.into(), retry: false, result: None, address: None }
     }
 }
 
-/// How far the download in the background has come, for its notification.
+/// How far the download in the background has come, for its notification,
+/// and the page a tap on it opens (the course downloading).
 #[derive(Debug, Clone, Serialize, PartialEq)]
 struct Shown {
     text: String,
     done: i64,
     total: i64,
+    address: String,
 }
 
 static SHOWN: Mutex<Option<Shown>> = Mutex::new(None);
@@ -138,11 +143,12 @@ pub async fn run_once(db_path: &Path) -> Outcome {
     };
     let courses = match plan(&mut store.lock()) {
         Ok(Plan::Skip(why)) => return Outcome::said(why),
-        Ok(Plan::Wait) => return Outcome { log: "the app is downloading; later".into(), retry: true, result: None },
+        Ok(Plan::Wait) => return Outcome { retry: true, ..Outcome::said("the app is downloading; later") },
         Ok(Plan::Download(courses)) => courses,
         Err(e) => return Outcome::said(format!("couldn't read the courses: {e}")),
     };
     let mut results = Vec::new();
+    let mut about = Vec::new();
     for course_id in courses {
         // The app took it meanwhile.
         if !super::claim(course_id) {
@@ -151,17 +157,23 @@ pub async fn run_once(db_path: &Path) -> Outcome {
         let title = super::title(&mut store.lock(), course_id);
         changed(course_id);
         let tally = Tally::default();
+        // Tapped, its notification opens the course.
+        // Spec: SHELL-20
         let told = |step: Step| {
             show(Some(Shown {
                 text: format!("{title} · {} of {}", step.finished(), step.total),
                 done: step.finished(),
                 total: step.total,
+                address: super::address(course_id),
             }))
         };
         super::fetch(&store, course_id, &tally, &told).await;
         super::release(course_id);
         let ready = super::status(&mut store.lock(), course_id).is_ok_and(|s| s.ready);
-        results.extend(super::result_line(&title, ready, tally.sum()));
+        if let Some(line) = super::result_line(&title, ready, tally.sum()) {
+            results.push(line);
+            about.push(course_id);
+        }
         changed(course_id);
     }
     Outcome {
@@ -169,6 +181,12 @@ pub async fn run_once(db_path: &Path) -> Outcome {
         // The app began a download meanwhile: stay, in case it is stopped.
         retry: super::any_working(),
         result: (!results.is_empty()).then(|| results.join(" ")),
+        // Tapped, it opens the course it is about; about several, none.
+        // Spec: SHELL-20
+        address: match about[..] {
+            [one] => Some(super::address(one)),
+            _ => None,
+        },
     }
 }
 
@@ -245,14 +263,17 @@ mod tests {
         assert_eq!(plan(&mut conn).unwrap(), Plan::Skip("nothing left to download"));
     }
 
+    // Spec: SHELL-20
     #[test]
     fn progress_is_shown_once_a_download_starts() {
         show(None);
         assert_eq!(progress_now(), "");
-        show(Some(Shown { text: "Pierwsze kroki · 34 of 120".into(), done: 34, total: 120 }));
-        assert_eq!(progress_now(), r#"{"text":"Pierwsze kroki · 34 of 120","done":34,"total":120}"#);
+        show(Some(Shown { text: "Pierwsze kroki · 34 of 120".into(), done: 34, total: 120, address: "/crs_1".into() }));
+        assert_eq!(progress_now(), r#"{"text":"Pierwsze kroki · 34 of 120","done":34,"total":120,"address":"/crs_1"}"#);
         show(None);
-        let outcome = Outcome { log: "x".into(), retry: true, result: None };
+        let outcome = Outcome { log: "x".into(), retry: true, result: None, address: None };
         assert_eq!(serde_json::to_string(&outcome).unwrap(), r#"{"log":"x","retry":true}"#);
+        let outcome = Outcome { result: Some("Ready".into()), address: Some("/crs_1".into()), ..Outcome::said("x") };
+        assert_eq!(serde_json::to_string(&outcome).unwrap(), r#"{"log":"x","retry":false,"result":"Ready","address":"/crs_1"}"#);
     }
 }

@@ -3282,15 +3282,15 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
         (None, Some(error)) => format!("The tutor could not answer: {error}"),
         (None, None) => "The tutor answered.".into(),
     };
-    // Tapped, it opens the conversation (the app's address for it).
+    let title = format!("Tutor: {title}");
+    // Tapped, it opens the conversation (the app's address for it), also when
+    // the tap starts the app: on Android a notification of the song player's,
+    // as the notification plugin's tap says nothing of what it was sent with.
     // Spec: SHELL-20
-    let _ = app
-        .notification()
-        .builder()
-        .title(format!("Tutor: {title}"))
-        .body(body)
-        .extra("address", format!("/tutor/{}", done.conversation_id))
-        .show();
+    let address = format!("/tutor/{}", done.conversation_id);
+    if !tauri_plugin_songplayer::show_message(app, &title, &body, &address) {
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
 }
 
 /// Runs one reply to the conversation's last message and stores it.

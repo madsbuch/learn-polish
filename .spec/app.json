@@ -125,7 +125,16 @@
     },
     {
       "id": "SHELL-20",
-      "text": "Tapping a notification opens what it is about: a tutor reply its conversation, a reminder Exercises, a download its course, playback the player."
+      "text": "Tapping a notification opens what it is about, also when the tap starts the app: a reminder Exercises, the test notification Practice settings, a tutor reply its conversation, a course downloading or downloaded that course, playback the player. On a computer, which does not say which notification was tapped, the app comes to the front on the page it was on.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Tapping a notification opens what it is about: a tutor reply its conversation, a reminder Exercises, a download its course, playback the player.",
+          "reason": "A tap that started the app, and any tap on a reminder or a tutor reply, opened the app where it was; each notification now names what it opens, and a computer's limit is said.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SHELL-21",

@@ -93,6 +93,14 @@ class KeepWorkingArgs {
 }
 
 @InvokeArg
+class MessageArgs {
+    var title: String = ""
+    var body: String = ""
+    /** The page a tap opens (an address of the app's). */
+    lateinit var address: String
+}
+
+@InvokeArg
 class KeepAwakeArgs {
     var enabled: Boolean = false
 }
@@ -101,6 +109,12 @@ class KeepAwakeArgs {
 class MulticastArgs {
     var enabled: Boolean = false
 }
+
+/** On the launch intent of a notification the notification plugin showed (a reminder): its id. */
+private const val NOTIFICATION_ID = "NotificationId"
+
+/** Set on an intent whose notification id was taken, which stays for the notification plugin. */
+private const val TAP_TAKEN = "com.polski.songplayer.TAP_TAKEN"
 
 /**
  * The app's bridge to [PlaybackService]. Playback state is pushed to the app
@@ -121,42 +135,56 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    /** A page a tapped notification asked for before the app listened ("open"). */
-    private var pendingOpen: String? = null
+    /** A notification tapped before the app listened ("open"). */
+    private var pendingOpen: JSObject? = null
 
     override fun load(webView: WebView) {
         super.load(webView)
         main.post { connect() }
         // Started by tapping a notification: its page, once the app listens.
-        takeAddress(activity.intent)?.let { pendingOpen = it }
+        tapped(activity.intent)?.let { pendingOpen = it }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        takeAddress(intent)?.let { open(it) }
+        tapped(intent)?.let { open(it) }
     }
 
-    /** The app starts listening: a page asked for before then is opened now. */
+    /** The app starts listening: a notification tapped before then is opened now. */
     @Command
     override fun registerListener(invoke: Invoke) {
         super.registerListener(invoke)
-        val address = pendingOpen ?: return
+        val tap = pendingOpen ?: return
         if (hasListener("open")) {
             pendingOpen = null
-            open(address)
+            open(tap)
         }
     }
 
-    private fun takeAddress(intent: Intent?): String? {
-        val address = intent?.getStringExtra(WorkService.OPEN_ADDRESS) ?: return null
-        intent.removeExtra(WorkService.OPEN_ADDRESS)
-        return address
+    /**
+     * The notification an intent comes from, taken once: the address the
+     * app's own carry ([WorkService.OPEN_ADDRESS]), or the id of one the
+     * notification plugin showed, which the app turns into its page (that
+     * plugin's own tap event says nothing it was sent with). The id stays
+     * on the intent: that plugin reads it too, to dismiss the notification.
+     */
+    // Spec: SHELL-20
+    private fun tapped(intent: Intent?): JSObject? {
+        if (intent == null) return null
+        val address = intent.getStringExtra(WorkService.OPEN_ADDRESS)
+        if (address != null) {
+            intent.removeExtra(WorkService.OPEN_ADDRESS)
+            return JSObject().put("address", address)
+        }
+        if (!intent.hasExtra(NOTIFICATION_ID) || intent.getBooleanExtra(TAP_TAKEN, false)) return null
+        intent.putExtra(TAP_TAKEN, true)
+        return JSObject().put("notification", intent.getIntExtra(NOTIFICATION_ID, 0))
     }
 
-    /** Asks the app to show the page at `address` (lib/navigation.ts). */
-    private fun open(address: String) {
-        if (hasListener("open")) trigger("open", JSObject().apply { put("address", address) })
-        else pendingOpen = address
+    /** Asks the app to show a tapped notification's page (lib/notifications.ts). */
+    private fun open(tap: JSObject) {
+        if (hasListener("open")) trigger("open", tap)
+        else pendingOpen = tap
     }
 
     private fun connect() {
@@ -445,6 +473,17 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
             PackageManager.PERMISSION_GRANTED
         report.put("notificationsAllowed", allowed)
         return report
+    }
+
+    /**
+     * A notification of its own for a message (a tutor reply), which a tap
+     * opens at `address`. Called from Rust.
+     */
+    @Command
+    fun showMessage(invoke: Invoke) {
+        val args = invoke.parseArgs(MessageArgs::class.java)
+        WorkService.showMessage(activity.applicationContext, args.title, args.body, args.address)
+        invoke.resolve()
     }
 
     @Command

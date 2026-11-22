@@ -116,6 +116,7 @@ class WorkService : Service() {
         @Volatile
         var lastFailure: String? = null
         private const val CHANNEL_ID = "polski-work"
+        private const val MESSAGES_CHANNEL_ID = "polski-messages"
         private const val NOTIFICATION_ID = 7301
         private const val RESULT_ID = 7302
 
@@ -142,6 +143,29 @@ class WorkService : Service() {
                 context.getSystemService(NotificationManager::class.java).notify(RESULT_ID, notification)
             } catch (error: Exception) {
                 // Notifications off: the course page says the same.
+            }
+        }
+
+        /**
+         * A message of its own (a tutor reply), one per page: a newer one
+         * for the same page takes the older's place. A tap opens `address`.
+         */
+        // Spec: SHELL-20
+        fun showMessage(context: Context, title: String, text: String, address: String) {
+            try {
+                // Its id is its request code too, so each keeps its own address.
+                val id = address.hashCode()
+                val notification = builder(context, MESSAGES_CHANNEL_ID, "Tutor replies", NotificationManager.IMPORTANCE_DEFAULT)
+                    .setSmallIcon(android.R.drawable.sym_action_chat)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setStyle(Notification.BigTextStyle().bigText(text))
+                    .setAutoCancel(true)
+                    .setContentIntent(openApp(context, address, id))
+                    .build()
+                context.getSystemService(NotificationManager::class.java).notify(id, notification)
+            } catch (error: Exception) {
+                // Notifications off: the conversation shows the reply.
             }
         }
 
@@ -173,13 +197,16 @@ class WorkService : Service() {
                 PendingIntent.getActivity(context, requestCode, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             }
 
-        private fun builder(context: Context): Notification.Builder =
+        private fun builder(
+            context: Context,
+            channelId: String = CHANNEL_ID,
+            channelName: String = "Working in the background",
+            importance: Int = NotificationManager.IMPORTANCE_LOW,
+        ): Notification.Builder =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val manager = context.getSystemService(NotificationManager::class.java)
-                manager.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Working in the background", NotificationManager.IMPORTANCE_LOW)
-                )
-                Notification.Builder(context, CHANNEL_ID)
+                manager.createNotificationChannel(NotificationChannel(channelId, channelName, importance))
+                Notification.Builder(context, channelId)
             } else {
                 @Suppress("DEPRECATION")
                 Notification.Builder(context)

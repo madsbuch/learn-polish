@@ -2,7 +2,6 @@ import { addPluginListener } from "@tauri-apps/api/core";
 import {
   Schedule,
   cancel,
-  onAction,
   isPermissionGranted,
   pending,
   requestPermission,
@@ -22,6 +21,8 @@ import { toast } from "./toast";
  */
 const FIRST_ID = 42;
 const DAYS_AHEAD = 7;
+/** The test notification's id, which a tap turns into its page. */
+const TEST_ID = FIRST_ID - 1;
 
 const GENERIC = [
   { title: "Czas na polski!", body: "A drill and a conversation — about ten minutes." },
@@ -89,9 +90,6 @@ export async function syncReminder(options: {
         title: nudge.title,
         body: nudge.body,
         schedule: Schedule.at(at, false, true),
-        // Tapped, it opens Exercises.
-        // Spec: SHELL-20
-        extra: { address: "/" },
       });
     }
     return true;
@@ -105,6 +103,7 @@ export async function sendTestNotification(): Promise<boolean> {
   if (!(await ensurePermission())) return false;
   try {
     await sendNotification({
+      id: TEST_ID,
       title: "Cześć! 👋",
       body: "Reminders are working. See you at practice time.",
     });
@@ -174,43 +173,45 @@ export async function askForNotificationsToFollowDownloads(): Promise<void> {
   await ensurePermission();
 }
 
-/** The address a tapped notification carries (`extra.address`), wherever the plugin put it. */
-const TappedSchema = z.union([
-  z.object({ notification: z.object({ extra: z.object({ address: z.string() }) }) }).transform((n) => n.notification.extra.address),
-  z.object({ extra: z.object({ address: z.string() }) }).transform((n) => n.extra.address),
-]);
-const OpenSchema = z.object({ address: z.string() });
+/**
+ * A tapped notification, as Android says it (the song player's "open"): the
+ * address the app's own notifications carry, or the id of one the
+ * notification plugin showed, which carries nothing else.
+ */
+const TappedSchema = z.object({ address: z.string().optional(), notification: z.number().int().optional() });
+
+/** The page a tapped notification opens, or none (the app as it was). */
+// Spec: SHELL-20
+export function addressOfTap(tapped: unknown): string | null {
+  const parsed = TappedSchema.safeParse(tapped);
+  if (!parsed.success) return null;
+  const { address, notification } = parsed.data;
+  if (address) return address;
+  if (notification === TEST_ID) return "/settings/practice";
+  if (notification !== undefined && notification >= FIRST_ID && notification <= FIRST_ID + DAYS_AHEAD) return "/";
+  return null;
+}
 
 /**
- * Calls `open` with the address of a notification the learner taps: a
- * reminder's (Exercises), a tutor reply's (its conversation), and on
- * Android the work notification's (a course downloading) and the player's.
- * The app's own notifications come through the notification plugin; the
- * background work's and the player's through the song player's ("open"),
- * which keeps one tapped while the app was closed until this listens.
+ * Calls `open` with the page of a notification the learner taps on Android:
+ * a reminder's (Exercises), the test's (Practice settings), a tutor reply's
+ * (its conversation), a course downloading's and the player's. All come
+ * through the song player's "open", which keeps a tap that started the app
+ * until this listens. The notification plugin's own tap event is not used:
+ * on Android it never carries what was sent with the notification, and on a
+ * computer there is none (the system brings the app to the front).
  */
 // Spec: SHELL-20
 export async function onNotificationOpened(open: (address: string) => void): Promise<() => void> {
-  const stops: (() => void)[] = [];
   try {
-    const listener = await onAction((tapped: unknown) => {
-      const parsed = TappedSchema.safeParse(tapped);
-      if (parsed.success) open(parsed.data);
+    if (platform() !== "android") return () => {};
+    const listener = await addPluginListener("songplayer", "open", (tapped: unknown) => {
+      const address = addressOfTap(tapped);
+      if (address) open(address);
     });
-    stops.push(() => void listener.unregister());
+    return () => void listener.unregister();
   } catch {
-    // No notification plugin here (a computer without one).
+    // Not on Android: nothing to listen to.
+    return () => {};
   }
-  try {
-    if (platform() === "android") {
-      const listener = await addPluginListener("songplayer", "open", (payload: unknown) => {
-        const parsed = OpenSchema.safeParse(payload);
-        if (parsed.success) open(parsed.data.address);
-      });
-      stops.push(() => void listener.unregister());
-    }
-  } catch {
-    // Not on Android: nothing else to listen to.
-  }
-  return () => stops.forEach((stop) => stop());
 }

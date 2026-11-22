@@ -66,7 +66,7 @@ class OfflineWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
         if (shown && !foreground) manager.cancel(NOTIFICATION_ID)
         if (outcome != null && !outcome.isNull("result")) {
             try {
-                manager.notify(RESULT_ID, result(outcome.getString("result")))
+                manager.notify(RESULT_ID, result(outcome.getString("result"), outcome.optString("address").ifEmpty { null }))
             } catch (e: Exception) {
                 // Notifications off: the course page says the same.
             }
@@ -76,10 +76,10 @@ class OfflineWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
     }
 
     /** Expedited work on Android 11 and earlier runs as a foreground service with this. */
-    override fun getForegroundInfo(): ForegroundInfo = foregroundInfo(progress("Downloading for offline use…", 0, 0))
+    override fun getForegroundInfo(): ForegroundInfo = foregroundInfo(progress("Downloading for offline use…", 0, 0, null))
 
     private fun show(now: JSONObject) {
-        val notification = progress(now.optString("text"), now.optLong("done"), now.optLong("total"))
+        val notification = progress(now.optString("text"), now.optLong("done"), now.optLong("total"), now.optString("address").ifEmpty { null })
         if (!shown) {
             shown = true
             foreground = try {
@@ -104,8 +104,8 @@ class OfflineWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
             ForegroundInfo(NOTIFICATION_ID, notification)
         }
 
-    private fun progress(text: String, done: Long, total: Long): Notification {
-        val builder = builder()
+    private fun progress(text: String, done: Long, total: Long, address: String?): Notification {
+        val builder = builder(address, OPEN_PROGRESS)
             // A plain system icon, as the app's other work notification.
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("Polski")
@@ -118,15 +118,17 @@ class OfflineWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
         return builder.build()
     }
 
-    private fun result(text: String): Notification =
-        builder()
+    private fun result(text: String, address: String?): Notification =
+        builder(address, OPEN_RESULT)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Polski")
             .setContentText(text)
             .setAutoCancel(true)
             .build()
 
-    private fun builder(): Notification.Builder {
+    /** A tap opens the app: at `address` when there is one (the course), else where it was left. */
+    // Spec: SHELL-20
+    private fun builder(address: String?, requestCode: Int): Notification.Builder {
         val context = applicationContext
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -139,10 +141,10 @@ class OfflineWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
             @Suppress("DEPRECATION")
             Notification.Builder(context)
         }
-        // Tapping it opens the app.
         context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
+            if (address != null) it.putExtra(OPEN_ADDRESS, address)
             builder.setContentIntent(
-                PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT),
+                PendingIntent.getActivity(context, requestCode, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT),
             )
         }
         return builder
@@ -157,5 +159,13 @@ class OfflineWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params
 
         // Shared with the app's own work notification (songplayer's WorkService): the latest result.
         private const val RESULT_ID = 7302
+
+        // The song player's WorkService.OPEN_ADDRESS, which it reads as the app starts.
+        private const val OPEN_ADDRESS = "com.polski.songplayer.OPEN_ADDRESS"
+
+        // Each notification's own request code, so one's address never ends up on another's tap;
+        // the result's is WorkService's, as it takes the same place.
+        private const val OPEN_PROGRESS = 7304
+        private const val OPEN_RESULT = 7302
     }
 }
