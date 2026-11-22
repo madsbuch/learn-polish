@@ -150,7 +150,6 @@ pub struct AnswerResult {
     pub xp_gained: i64,
     pub total_xp: i64,
     pub day_xp: i64,
-    pub level: i64,
     /// A dictation: what was written, word by word against the sentence
     /// (dictation.rs); a speaking card: what was heard. Empty for every
     /// other kind.
@@ -202,7 +201,6 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
             xp_gained: 0,
             total_xp,
             day_xp,
-            level: stats::level_from_xp(total_xp),
             diff: vec![],
             tips: vec![],
         });
@@ -340,7 +338,6 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         xp_gained: xp,
         total_xp,
         day_xp,
-        level: stats::level_from_xp(total_xp),
         diff,
         tips,
     })
@@ -536,6 +533,8 @@ fn lesson_finish_steps(
         lessons::record_go(conn, lesson_id, result, ace, &go)?
     };
     let first = stats::mark_practised(conn, today)?;
+    // Spec: SUM-9
+    let mastered_now = !current.mastered && lesson.mastered;
     Ok(LessonFinished {
         lesson,
         result: result.into(),
@@ -545,8 +544,7 @@ fn lesson_finish_steps(
         almost,
         total,
         grade: lessons::Grade::of(result, ace).key().into(),
-        // Spec: SUM-9
-        mastered_now: !current.mastered && lesson.mastered,
+        mastered_now,
         mastery: Some(entry),
         impact,
         session: finish_up(conn, &before, first)?,

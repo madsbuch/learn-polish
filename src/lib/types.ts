@@ -401,7 +401,6 @@ export const GameFinishedSchema = z.object({
   xpToday: z.number(),
   xpPerDay: z.number(),
   totalXp: z.number(),
-  level: z.number(),
 });
 export type GameFinished = z.infer<typeof GameFinishedSchema>;
 
@@ -718,7 +717,6 @@ export const AnswerResultSchema = z.object({
   xpGained: z.number(),
   totalXp: z.number(),
   dayXp: z.number(),
-  level: z.number(),
   /** A dictation (or a speaking card's best attempt), word by word; empty for every other kind. */
   diff: z.array(DiffWordSchema),
   /** A speaking card: the sounds to try; empty for every other kind. */
@@ -858,9 +856,6 @@ export const StatsSchema = z.object({
   dayXp: z.number(),
   /** Lessons a day: how many today's list holds. */
   dailyLessons: z.number(),
-  level: z.number(),
-  xpIntoLevel: z.number(),
-  xpForNextLevel: z.number(),
   currentStreak: z.number(),
   /** Freezes kept: each covers one missed day (at most two). */
   streakFreezes: z.number(),

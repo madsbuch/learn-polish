@@ -1,7 +1,7 @@
 /**
  * Haptics: answers felt as well as heard. A soft tap for a right answer, a
  * firmer double buzz for a wrong one, a light tick under a pressed tile, and
- * a little drum roll when a day is done or a level reached.
+ * a little drum roll when a lesson is aced or mastered.
  *
  * Phones only. The Tauri haptics plugin speaks to Android's vibrator and
  * iOS's feedback generators; where it isn't there (a computer, the browser
@@ -76,7 +76,7 @@ export function hapticTick() {
   buzz(() => selectionFeedback(), [8]);
 }
 
-/** A day done, a level reached, a record: a short rising roll. */
+/** An ace, a lesson mastered, a record: a short rising roll. */
 export function hapticCelebrate() {
   if (!enabled || !canBuzz) return;
   buzz(() => notificationFeedback("success"), [30, 50, 30, 50, 60]);

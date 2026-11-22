@@ -1390,6 +1390,78 @@ mod integration {
         assert_eq!(real.lesson.mastery, 10);
     }
 
+    // Spec: SUM-8
+    #[test]
+    fn the_fewest_more_right_answers_that_pass_a_drill() {
+        assert_eq!(lessons::more_right_to_pass(7, 0, 10), Some((2, 9, 0)), "14 of 20 half points: two misses turned right");
+        assert_eq!(lessons::more_right_to_pass(7, 2, 10), Some((1, 8, 2)), "the miss first, a whole point");
+        assert_eq!(lessons::more_right_to_pass(3, 0, 5), Some((1, 4, 0)), "a short drill passes with one miss");
+        assert_eq!(lessons::more_right_to_pass(8, 2, 10), Some((1, 9, 1)), "only almosts left: one turned right");
+        assert_eq!(lessons::more_right_to_pass(9, 0, 10), None, "passed already");
+        assert_eq!(lessons::more_right_to_pass(0, 0, 0), None, "nothing scored");
+    }
+
+    // Spec: SUM-8
+    #[test]
+    fn the_summary_says_what_the_misses_cost_by_the_same_rules() {
+        let mut conn = scratch_db("impact");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let drills: Vec<_> = lessons::for_course(&mut conn, basics).unwrap().into_iter().filter(|b| b.lesson_type == "words").collect();
+        let impact = |grade: &str, more_right: Option<i64>, delta: i64, after: i64, reason: &str| lessons::Impact {
+            grade: grade.into(),
+            more_right,
+            delta,
+            after,
+            reason: reason.into(),
+        };
+
+        // Pass → ace: one more right was the ace's quarter more.
+        let pass = practice::lesson_finish_in(&mut conn, drills[0].id, 9, 10).unwrap();
+        assert_eq!((pass.grade.as_str(), pass.mastery.as_ref().unwrap().delta), ("pass", 30));
+        assert_eq!(pass.impact, Some(impact("ace", Some(1), 38, 38, "first_pass")));
+        // An ace misses nothing.
+        let ace = practice::lesson_finish_in(&mut conn, drills[1].id, 10, 10).unwrap();
+        assert_eq!((ace.grade.as_str(), ace.impact.clone()), ("ace", None));
+
+        // Extra practice: a fail costs nothing, a pass would still have earned.
+        let extra = practice::lesson_finish_in(&mut conn, drills[0].id, 2, 10).unwrap();
+        assert!(extra.extra);
+        assert_eq!((extra.mastery.as_ref().unwrap().reason.as_str(), extra.mastery.as_ref().unwrap().delta), ("fail_extra", 0));
+        assert_eq!(extra.impact, Some(impact("pass", Some(7), 10, 40, "pass_same_day")));
+
+        // Partial → pass, on a lesson never passed: the first pass's 30 instead of 5.
+        let partial = practice::lesson_finish_in(&mut conn, drills[2].id, 7, 10).unwrap();
+        assert_eq!((partial.grade.as_str(), partial.mastery.as_ref().unwrap().delta), ("partial", 5));
+        assert_eq!(partial.impact, Some(impact("pass", Some(2), 30, 30, "first_pass")));
+
+        // Capped: crammed to 90 on the first day, a pass would have changed nothing either.
+        for _ in 0..8 {
+            practice::lesson_finish_in(&mut conn, drills[1].id, 10, 10).unwrap();
+        }
+        let capped = practice::lesson_finish_in(&mut conn, drills[1].id, 8, 10).unwrap();
+        assert_eq!(capped.mastery.as_ref().map(|m| (m.after, m.reason.as_str())), Some((90, "capped")));
+        assert_eq!(capped.impact, Some(impact("pass", Some(1), 0, 90, "capped")));
+
+        // Fail → pass, a day later: it cost 20 where a pass would have earned 16.
+        conn.batch_execute("UPDATE lessons SET last_day = last_day - 1; UPDATE mastery_log SET day = day - 1;").unwrap();
+        let fail = practice::lesson_finish_in(&mut conn, drills[0].id, 3, 10).unwrap();
+        assert!(!fail.extra);
+        assert_eq!((fail.grade.as_str(), fail.mastery.as_ref().unwrap().delta), ("fail", -20));
+        assert_eq!(fail.impact, Some(impact("pass", Some(6), 16, 46, "pass_spaced")));
+
+        // A conversation short of a pass: what a pass would have earned.
+        let study = starter_lesson(&mut conn);
+        let checkin = crate::examiner::start(&mut conn, study.id, None).unwrap();
+        let verdict = serde_json::from_value(serde_json::json!({ "result": "fail", "summary": "Not yet.", "to_review": ["z + instrumental"] })).unwrap();
+        let (assessment, _) = crate::examiner::record(&mut conn, checkin, verdict).unwrap();
+        assert_eq!(assessment.impact, Some(impact("pass", None, 30, 30, "first_pass")));
+        // Its summary shows the ledger's row for that go.
+        let summary = practice::checkin_summary_in(&mut conn, checkin, false).unwrap();
+        let row = summary.mastery.unwrap();
+        assert_eq!((row.via.as_str(), row.grade.as_str(), row.reason.as_str()), ("checkin", "fail", "fail"));
+        assert!(!summary.mastered_now);
+    }
+
     #[test]
     fn nearly_right_dictation_and_speech_count_as_almost() {
         let mut conn = scratch_db("almost-sentences");
@@ -1748,7 +1820,7 @@ mod integration {
             .execute(&mut conn)
             .unwrap();
         let summary = practice::checkin_summary_in(&mut conn, CheckinId::derived("test", "77"), false).unwrap();
-        let new: Vec<&str> = summary.newly_unlocked.iter().map(|a| a.code.as_str()).collect();
+        let new: Vec<&str> = summary.session.newly_unlocked.iter().map(|a| a.code.as_str()).collect();
         assert!(new.contains(&"streak_3") && !new.contains(&"first_day"), "{new:?}");
     }
 
@@ -2003,6 +2075,7 @@ mod integration {
         // to 90, where the points are held until another day.
         let first = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
         assert_eq!(first.lesson.mastery, 30);
+        assert!(!first.mastered_now);
         assert_eq!(first.lesson.passes_left.now, 7, "six more today to 90, then one another day");
         let due = first.lesson.due_day;
         let mut passes = 1;
@@ -2025,6 +2098,8 @@ mod integration {
         let next = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
         assert!(!next.extra);
         assert_eq!((next.lesson.mastery, next.lesson.mastered), (100, true), "90 + 16");
+        // Spec: SUM-9
+        assert!(next.mastered_now, "this go mastered it");
         let log = crate::masterylog::for_lesson(&mut conn, drill.id).unwrap();
         assert_eq!((log.entries[0].reason.as_str(), log.entries[1].reason.as_str()), ("mastered", "pass_spaced"));
         assert_eq!(log.entries[1].text, "Pass 9 of 10, a day after the last go: +10 (90 → 100)");
@@ -2032,6 +2107,7 @@ mod integration {
         // Mastery is for good: a fail afterwards takes nothing away.
         let failed = practice::lesson_finish_in(&mut conn, drill.id, 0, 10).unwrap();
         assert_eq!((failed.lesson.mastery, failed.lesson.mastered), (100, true));
+        assert!(!failed.mastered_now, "mastered before it, not by it");
         let failed = lessons::record(&mut conn, drill.id, "fail").unwrap();
         assert_eq!((failed.mastery, failed.mastered), (100, true), "not on a real check-in either");
     }

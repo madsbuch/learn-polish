@@ -118,12 +118,12 @@ Every screen is a `Screen`:
 | `Field` | A labelled input, select or textarea, with an optional hint. |
 | `Segmented` | Two to four views of the same thing. |
 | `ChoiceRow`, `Choice` | Filters and presets that scroll sideways. |
-| `Badge` | A small status: streak, level, "Failed". `outline` (with an `icon`) marks what a thing is, inline after its title: a challenge. |
+| `Badge` | A small status: streak, XP, "Failed". `outline` (with an `icon`) marks what a thing is, inline after its title: a challenge. |
 | `Banner` | A message: `info`, `ok` or `error`. |
 | `EmptyState` | What an empty list shows. |
 | `Progress`, `StatGrid`, `Stat`, `Spinner`, `Loading` | Feedback. `Progress` fills in as it appears; `memory` makes it move on from where it was last seen. |
 | `Typing` | The other side of a chat is writing (three dots). |
-| `CountUp`, `Confetti` | A number that counts to its new value (`memory`, `from`); confetti for a day done, a level, a course closed. |
+| `CountUp`, `Confetti` | A number that counts to its new value (`memory`, `from`); confetti for an ace, a pass, a lesson mastered, a course closed. |
 | `Text`, `Stack`, `Inline`, `Avatar` | Type on the scale; layout without margins. |
 
 Icons come from `src/components/icons.tsx` (stroke icons on a 24px grid).
@@ -152,8 +152,9 @@ counting and celebrating.
 - **Practice.** The next card slides in; a right answer swells and glows, a
   wrong one shakes, an almost (a typed answer one letter off, a sentence one
   word off) only pops in, warm rather than red, with a soft note and a light
-  tap instead of the wrong buzz; the XP badge bumps (`useBump`). A day done or a new
-  level gets `Confetti`. A sentence tile lifts when picked up and follows the
+  tap instead of the wrong buzz; the XP badge bumps (`useBump`). On the
+  summary, `Confetti` follows the grade: an ace and a pass get it, a lesson
+  mastered gets its own moment; a partial or a fail never does. A sentence tile lifts when picked up and follows the
   finger above the page; the line makes room, and the tile springs into its
   slot (FLIP: one-off, ending untransformed). Memory cards turn edge-on to
   their new face. A running clock writes its own digits (no re-render). A

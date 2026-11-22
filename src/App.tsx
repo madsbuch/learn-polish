@@ -738,7 +738,6 @@ export default function App() {
         return (
           <QuickGames
             playing={last.kind === "game" ? last.game : null}
-            level={stats.level}
             onBack={back}
             onPlay={(game) => open({ kind: "game", game })}
             onPlayed={() => void refresh()}

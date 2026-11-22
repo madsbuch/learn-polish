@@ -278,14 +278,13 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let none = || "  (none)".to_string();
     Ok(format!(
         "The learner right now:\n\
-         - Level {level}, {xp} XP, streak {streak} days{done}, {seen} of {total} words met.\n\
+         - {xp} XP, streak {streak} days{done}, {seen} of {total} words met.\n\
          - Due now ({due_count}):\n{due}\n\
          - Study lessons:\n{studies}\n\
          - Courses:\n{courses}\n\
          - Mastered and closed (finished; never add to these):\n{mastered}\n\
          - Songs and podcasts: {song_count} in the Music tab{song_note}{unsorted}.\n\
          - Playlists: {playlists}.",
-        level = stats.level,
         xp = stats.total_xp,
         streak = stats.current_streak,
         done = if stats.completed_today { " (practised today)" } else { "" },
@@ -2550,7 +2549,6 @@ fn progress(conn: &mut Conn) -> Result<Value> {
         })
         .collect();
     Ok(json!({
-        "level": s.level,
         "total_xp": s.total_xp,
         "xp_today": s.day_xp,
         "lessons_per_day": s.daily_lessons,

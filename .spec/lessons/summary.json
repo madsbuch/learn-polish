@@ -1,0 +1,172 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Summary",
+  "summary": "The screen after a drill or a conversation: the grade first, what it did to mastery, what was missed.",
+  "order": 6.5,
+  "description": "The summary is about the go just finished. It celebrates as much as the grade earned, shows what the misses cost, and keeps the longer term to one muted row.",
+  "stories": [
+    {
+      "id": "US-SUM-1",
+      "as": "a learner who just finished a drill or a conversation",
+      "want": "to see my grade and what it did to the lesson's mastery points first",
+      "soThat": "I know at once how it went",
+      "requirements": [
+        "#SUM-1",
+        "#SUM-2",
+        "#SUM-3",
+        "#SUM-4"
+      ]
+    },
+    {
+      "id": "US-SUM-2",
+      "as": "a learner who did not pass",
+      "want": "to see what I missed and what it cost, without being cheered",
+      "soThat": "I know what to fix and what happens next",
+      "requirements": [
+        "#SUM-5",
+        "#SUM-6",
+        "#SUM-7",
+        "#SUM-8"
+      ]
+    },
+    {
+      "id": "US-SUM-3",
+      "as": "a learner who just mastered a lesson",
+      "want": "a moment of its own",
+      "soThat": "the milestone feels earned",
+      "requirements": [
+        "#SUM-9"
+      ]
+    },
+    {
+      "id": "US-SUM-4",
+      "as": "a learner finishing a go",
+      "want": "the longer-term picture kept brief",
+      "soThat": "the go I just finished stays the point",
+      "requirements": [
+        "#SUM-10",
+        "#SUM-11"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "SUM-1",
+      "text": "After a drill or a conversation the summary shows, top to bottom: the grade, the lesson's mastery points, what was missed, a course completed or mastered and achievements just earned, the longer-term row, and Done."
+    },
+    {
+      "id": "SUM-2",
+      "text": "The grade comes first, as its term's shown word (Aced, Passed, Partly there, Not yet), with the lesson's title and a drill's score as right answers of the cards scored, each almost counting half; extra practice is named beside it, and a go with nothing scored says `summary.not-graded` instead."
+    },
+    {
+      "id": "SUM-3",
+      "text": "Under the grade, the lesson's mastery points are a bar from before the go to after it, with the change and out of `mastery.full`, exactly as the go's row in the mastery ledger has them, with `summary.capped`, `summary.fail-extra` or `summary.after-mastered` when that row's reason is one of those."
+    },
+    {
+      "id": "SUM-4",
+      "text": "One line under the mastery says when the lesson comes back: `summary.back-on` after a pass, `summary.partial-next` after a partial, `summary.fail-next` after a fail, and `summary.extra-next` on extra practice."
+    },
+    {
+      "id": "SUM-5",
+      "text": "An ace is celebrated most, with confetti and the points counting up; a pass is celebrated with confetti; a partial is encouraged without confetti."
+    },
+    {
+      "id": "SUM-6",
+      "text": "A fail, or a go that cost mastery points, is not celebrated: no confetti, no celebration sound or emoji."
+    },
+    {
+      "id": "SUM-7",
+      "text": "The cards answered wrong or almost right in a drill are listed with the prompt, the answer given struck through and the right answer, an almost marked as one; a word's or sentence's row opens its page, and with nothing missed there is no list. A conversation lists what the verdict says to go over."
+    },
+    {
+      "id": "SUM-8",
+      "text": "Above the misses, one line says what they cost, worked out by the rules that graded the go: how many more right answers would have passed it (from a pass, aced it) and the mastery change that would have made, as `summary.impact-drill` or, for a conversation, `summary.impact-conversation`; a drill adds `summary.missed-sooner`."
+    },
+    {
+      "id": "SUM-9",
+      "text": "A go that masters its lesson gets a celebration of its own in place of the pass's: the Mastered badge, the lesson's title and `summary.mastered-line`, with motion of its own; a course completed or mastered by the same go is told on the same screen without a second celebration."
+    },
+    {
+      "id": "SUM-10",
+      "text": "The longer term is one muted row at the bottom: the go's XP and today's, the streak, a streak freeze only when this go earned one, and `summary.day-done` only when this go finished today's lessons."
+    },
+    {
+      "id": "SUM-11",
+      "text": "The summary shows no all-time accuracy, no percentage for the go, and no XP as a headline number."
+    }
+  ],
+  "values": [
+    {
+      "id": "summary.not-graded",
+      "type": "text",
+      "value": "Nothing was scored, so it isn't graded: its mastery and schedule stay as they were."
+    },
+    {
+      "id": "summary.capped",
+      "type": "text",
+      "value": "Held at {held} until a pass on another day",
+      "description": "{held} is `mastery.held-at`."
+    },
+    {
+      "id": "summary.fail-extra",
+      "type": "text",
+      "value": "Extra practice never costs points"
+    },
+    {
+      "id": "summary.after-mastered",
+      "type": "text",
+      "value": "Mastered, for good"
+    },
+    {
+      "id": "summary.back-on",
+      "type": "text",
+      "value": "Back on {date}"
+    },
+    {
+      "id": "summary.partial-next",
+      "type": "text",
+      "value": "Nearly there. It comes back {when}, or try again now."
+    },
+    {
+      "id": "summary.fail-next",
+      "type": "text",
+      "value": "Misses are how it sticks. It comes back {when}."
+    },
+    {
+      "id": "summary.extra-next",
+      "type": "text",
+      "value": "Extra practice: its schedule stays as it was."
+    },
+    {
+      "id": "summary.impact-drill",
+      "type": "text",
+      "value": "{n} more right would have {passed or aced} it: {change} instead of {actual}.",
+      "description": "Without the mastery part when the change would have been the same."
+    },
+    {
+      "id": "summary.impact-conversation",
+      "type": "text",
+      "value": "A pass would have been {change} instead of {actual}."
+    },
+    {
+      "id": "summary.missed-sooner",
+      "type": "text",
+      "value": "What you missed comes back for review sooner."
+    },
+    {
+      "id": "summary.mastered-line",
+      "type": "text",
+      "value": "Mastered for good. It won't come due again."
+    },
+    {
+      "id": "summary.day-done",
+      "type": "text",
+      "value": "Today's lessons are done"
+    }
+  ],
+  "related": [
+    "lessons/mastery",
+    "terms",
+    "#SHELL-3"
+  ]
+}

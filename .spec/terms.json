@@ -119,7 +119,7 @@
       "id": "term.ace",
       "type": "text",
       "value": "ace",
-      "description": "A pass with every scored card fully right, or a conversation passed with nothing to go over again."
+      "description": "A pass with every scored card fully right, or a conversation passed with nothing to go over again; shown as Aced."
     },
     {
       "id": "term.almost",
@@ -185,7 +185,7 @@
       "id": "term.xp",
       "type": "text",
       "value": "XP",
-      "description": "Points paid for practice that was really done, counted by day."
+      "description": "Points paid for practice that was really done, counted by day and in all; XP has no levels."
     },
     {
       "id": "term.streak",

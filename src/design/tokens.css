@@ -65,7 +65,7 @@
   /* Motion: one language for the whole app (DESIGN.md → Motion).
      fast — a press, a colour change; base — a toggle, a small reveal;
      slow — a screen or sheet coming in, a list's rows rising, a bar filling;
-     celebrate — the few moments that deserve a party (day done, level up). */
+     celebrate — the few moments that deserve a party (an ace, a lesson mastered). */
   --duration-fast: 0.12s;
   --duration: 0.2s;
   --duration-slow: 0.32s;

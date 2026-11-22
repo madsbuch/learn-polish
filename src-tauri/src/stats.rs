@@ -1,4 +1,4 @@
-//! XP, levels, streaks and achievements — the parts that make the daily
+//! XP, streaks and achievements — the parts that make the daily
 //! check-in worth showing up for.
 
 use diesel::prelude::*;
@@ -22,18 +22,6 @@ pub const MAX_FREEZES: i64 = 2;
 const MASTERY_INTERVAL: i64 = 21;
 const HISTORY_DAYS: i64 = 120;
 
-/// Cumulative XP required to reach a level: 0, 100, 300, 600, 1000, …
-fn xp_for_level(level: i64) -> i64 {
-    50 * level * (level - 1)
-}
-
-pub fn level_from_xp(xp: i64) -> i64 {
-    let mut level = 1;
-    while xp_for_level(level + 1) <= xp {
-        level += 1;
-    }
-    level
-}
 
 /// XP for one answer. Harder exercise types pay more, and only correct answers
 /// score — otherwise the goal ring would fill by guessing.
@@ -77,7 +65,7 @@ pub fn xp_for_checkin(complexity: &str, result: &str, writing_goals: usize) -> i
 }
 
 /// XP that is not an answer (a check-in's verdict): it counts toward the day
-/// and the level, not toward accuracy.
+/// and the total, not toward accuracy.
 pub fn add_xp(conn: &mut Conn, day: i64, xp: i64) -> Result<()> {
     let device = crate::sync::device_id(conn)?;
     diesel::insert_into(day_log::table)
@@ -316,7 +304,6 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
     apply_freezes(conn, today)?;
     let c = counts(conn, today)?;
     let total = total_xp(conn)?;
-    let level = level_from_xp(total);
     let (current_streak, longest_streak) = streaks(conn, today)?;
 
     let days: Vec<(i64, i64, i64, i64, i64, i64)> = day_totals::table
@@ -356,9 +343,6 @@ pub fn collect(conn: &mut Conn) -> Result<Stats> {
         total_xp: total,
         day_xp,
         daily_lessons: crate::plan::daily_count(conn),
-        level,
-        xp_into_level: total - xp_for_level(level),
-        xp_for_next_level: xp_for_level(level + 1) - xp_for_level(level),
         current_streak,
         longest_streak,
         streak_freezes: db::get_setting_i64(conn, "streak_freezes", 0),
@@ -561,16 +545,6 @@ fn evaluate_achievements(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn levels_follow_the_curve() {
-        assert_eq!(level_from_xp(0), 1);
-        assert_eq!(level_from_xp(99), 1);
-        assert_eq!(level_from_xp(100), 2);
-        assert_eq!(level_from_xp(299), 2);
-        assert_eq!(level_from_xp(300), 3);
-        assert_eq!(level_from_xp(1000), 5);
-    }
 
     #[test]
     fn every_achievement_is_measured() {

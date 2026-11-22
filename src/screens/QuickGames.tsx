@@ -76,15 +76,12 @@ function bestLine(overview: Overview, kind: QuickGameKind) {
 
 export function QuickGames({
   playing,
-  level,
   onBack,
   onPlay,
   onPlayed,
 }: {
   /** The game open (the address's: `/games/match`), or null for the list. */
   playing: QuickGameKind | null;
-  /** The learner's level now: a game that takes them past it celebrates. */
-  level: number;
   onBack: () => void;
   onPlay: (kind: QuickGameKind) => void;
   onPlayed: () => void;
@@ -114,7 +111,6 @@ export function QuickGames({
     return (
       <GameScreen
         kind={playing}
-        level={level}
         onBack={onBack}
         onPlayed={onPlayed}
       />
@@ -184,17 +180,13 @@ export function QuickGames({
 /** One game: dealt, played against the clock, then its result. */
 function GameScreen({
   kind,
-  level,
   onBack,
   onPlayed,
 }: {
   kind: QuickGameKind;
-  level: number;
   onBack: () => void;
   onPlayed: () => void;
 }) {
-  // The level as the game began: the result says if it went up.
-  const [startLevel] = useState(level);
   const title = GAMES.find((g) => g.kind === kind)?.title ?? "Quick game";
   const [deal, setDeal] = useState<QuickGame | null>(null);
   const [round, setRound] = useState(0);
@@ -255,7 +247,6 @@ function GameScreen({
             moves={moves}
             total={total}
             result={result}
-            levelUp={result.level > startLevel}
             onAgain={() => setRound((n) => n + 1)}
             onBack={onBack}
           />
@@ -313,7 +304,6 @@ function GameScreen({
           ms={elapsed}
           moves={moves}
           result={result}
-          levelUp={result.level > startLevel}
           onAgain={() => setRound((n) => n + 1)}
           onBack={onBack}
         />
@@ -476,7 +466,6 @@ function GameResult({
   moves,
   total = 0,
   result,
-  levelUp,
   onAgain,
   onBack,
 }: {
@@ -486,7 +475,6 @@ function GameResult({
   /** Scored games: how many were played (`moves` is how many were missed). */
   total?: number;
   result: GameFinished;
-  levelUp: boolean;
   onAgain: () => void;
   onBack: () => void;
 }) {
@@ -495,7 +483,7 @@ function GameResult({
     const all = right === total;
     return (
       <>
-        {all || levelUp ? <Confetti fixed pieces={36} /> : null}
+        {all ? <Confetti fixed pieces={36} /> : null}
         <Card className="game-result pop">
           <Stack gap={2} align="center">
             <Text variant="display">{all ? "🎧" : "👂"}</Text>
@@ -503,7 +491,6 @@ function GameResult({
               {right} of {total}
             </Text>
             {all ? <Badge tone="gold">Every one!</Badge> : null}
-            {levelUp ? <Badge tone="brand">Level {result.level}!</Badge> : null}
             <Text variant="small" tone="dim" align="center" as="div">
               {kind === "dictation" ? "sentences written right" : kind === "say" ? "sentences said right" : "pairs told apart"} ·{" "}
               {clock(ms)}
@@ -549,7 +536,7 @@ function GameResult({
         : null;
   return (
     <>
-      {result.record || levelUp ? <Confetti fixed pieces={36} /> : null}
+      {result.record ? <Confetti fixed pieces={36} /> : null}
       <Card className="game-result pop">
         <Stack gap={2} align="center">
           <Text variant="display">{result.record ? "🏆" : "👏"}</Text>
@@ -557,7 +544,6 @@ function GameResult({
             {headline}
           </Text>
           {result.record ? <Badge tone="gold">A new best!</Badge> : null}
-          {levelUp ? <Badge tone="brand">Level {result.level}!</Badge> : null}
           <Text variant="small" tone="dim" align="center" as="div">
             {[best, kind === "flip" ? `in ${clock(ms)}` : null, before].filter(Boolean).join(" · ")}
           </Text>

@@ -273,8 +273,8 @@ export function Exercises({
                     title="Your progress"
                     subtitle={
                       <>
-                        <CountUp value={stats.wordsSeen} memory="words:seen" /> words · level{" "}
-                        <CountUp value={stats.level} memory="level" />
+                        <CountUp value={stats.wordsSeen} memory="words:seen" /> words ·{" "}
+                        <CountUp value={stats.totalXp} memory="xp:total" /> XP
                       </>
                     }
                     trailing={

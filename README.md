@@ -537,7 +537,7 @@ src-tauri/src/
   session.rs     the building blocks of a drill's exercises
   practice.rs    doing a lesson: checking answers, finishing a drill, the results
   srs.rs         the per-item scheduler inside drills
-  stats.rs       XP, levels, streaks, achievements, per-course progress
+  stats.rs       XP, streaks, achievements, per-course progress
   agent.rs       the one AI loop: streaming, tool rounds, memory tools, costs
   ai.rs          OpenRouter transport: chat (streamed, with tool calls) and speech
   tutor.rs       the tutor's prompt and tools (each declared with its status line)
@@ -605,7 +605,7 @@ order), **Words** and **Sentences** — every item with the drill it belongs to,
 one tap away — and *Rename* / *Delete course*. A conversation drill's
 dialogue is on that drill's page. Two screens open from it rather than taking a tab:
 
-- **Progress** — tap the streak or level chip, or *Your progress*: stats,
+- **Progress** — tap the streak chip, or *Your progress*: stats,
   the 18-week activity map, per-course progress and achievements.
 - **Search** — the 🔍 button: every word and sentence in the app, whether or
   not you have met it yet, filterable by course and searchable in Polish or

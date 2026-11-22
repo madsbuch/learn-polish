@@ -385,8 +385,8 @@ export function Progress({
               label="streak freezes"
             />
             <Stat
-              value={<CountUp value={stats.level} memory="level" />}
-              label={`level · ${stats.totalXp} XP`}
+              value={<CountUp value={stats.totalXp} memory="xp:total" />}
+              label="total XP"
             />
           </StatGrid>
         </div>

@@ -321,6 +321,10 @@ pub struct Assessment {
     pub next_due_day: i64,
     #[serde(default)]
     pub xp: i64,
+    /// What falling short of a pass cost (filled in when recorded): what a
+    /// pass would have done to the lesson's mastery points.
+    #[serde(default, skip_deserializing)]
+    pub impact: Option<lessons::Impact>,
 }
 
 /// A slip in the learner's Polish, as the examiner noted it.
@@ -491,6 +495,8 @@ fn record_steps(conn: &mut Conn, checkin_id: CheckinId, mut assessment: Assessme
     let ace = assessment.result == "pass" && assessment.aced;
     let run = checkin_id.to_string();
     let go = lessons::Go { via: "checkin", run: &run, score: None, extra };
+    // Spec: SUM-8
+    assessment.impact = lessons::impact(conn, &current, &assessment.result, ace, None, extra, today)?;
     let lesson = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
         lessons::credit_mastery(conn, &current, &assessment.result, ace, today, &go)?;

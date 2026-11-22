@@ -234,9 +234,6 @@ pub struct Stats {
     pub day_xp: i64,
     /// Lessons a day (see plan.rs).
     pub daily_lessons: i64,
-    pub level: i64,
-    pub xp_into_level: i64,
-    pub xp_for_next_level: i64,
     pub current_streak: i64,
     /// Freezes kept: each covers one missed day (at most two).
     pub streak_freezes: i64,

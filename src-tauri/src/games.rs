@@ -280,7 +280,6 @@ pub struct GameFinished {
     pub xp_today: i64,
     pub xp_per_day: i64,
     pub total_xp: i64,
-    pub level: i64,
 }
 
 /// "0:42" for 42 seconds.
@@ -372,7 +371,6 @@ pub fn finish(conn: &mut Conn, game: &str, pairs: i64, ms: i64, moves: i64) -> R
             xp_today: earned + xp,
             xp_per_day: GAME_XP_PER_DAY,
             total_xp,
-            level: crate::stats::level_from_xp(total_xp),
         })
     })
 }
