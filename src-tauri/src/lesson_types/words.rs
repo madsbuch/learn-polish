@@ -1,7 +1,7 @@
 //! Words: new-word cards, then cards that get harder as each word is known
 //! (up to what the lesson's level allows: difficulty.rs), a
-//! short round of sound pairs when the words have sounds an English ear
-//! mixes up, and a memory round to end.
+//! short round of sound pairs with the lesson's own words (sounds.rs), and a
+//! memory round to end.
 
 use rand::seq::SliceRandom;
 
@@ -14,7 +14,7 @@ pub const TYPE: LessonType = LessonType {
     id: "words",
     name: "Words",
     icon: "drill",
-    description: "Learn a handful of words: cards, then multiple choice, then — as far as the lesson's level allows — typing them from memory, writing them from hearing them and saying one aloud, a couple of sound pairs to tell apart by ear when the words have tricky sounds, and a memory round.",
+    description: "Learn a handful of words: cards, then multiple choice, then — as far as the lesson's level allows — typing them from memory, writing them from hearing them and saying one aloud, a sound pair or two with the words to tell apart by ear, and a memory round.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Words,
@@ -53,6 +53,7 @@ fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
     exercises.extend(known);
     let all: Vec<&WordRow> = drill.words.iter().map(|(w, _)| w).collect();
     let id = drill.lesson.id;
+    // Spec: SPK-9
     exercises.extend(crate::sounds::round(&all, id, rng));
     exercises.extend(session::memory_game(&all, format!("b{id}-memory"), id, rng));
     Ok(Built { exercises, ..Default::default() })

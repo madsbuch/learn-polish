@@ -1,6 +1,7 @@
 //! Sentences: build each from its words, write it down as it is said, or
 //! say it aloud — each by the card its familiarity and the lesson's level
-//! give (difficulty.rs); then fill gaps in them.
+//! give (difficulty.rs); then a short round of sound pairs with words of the
+//! sentences (sounds.rs), and fill gaps in them.
 
 use super::{LessonType, PathGroup, Run};
 use crate::db::Conn;
@@ -11,7 +12,7 @@ pub const TYPE: LessonType = LessonType {
     id: "sentences",
     name: "Sentences",
     icon: "drill",
-    description: "Build sentences from their words as tiles (picking the ending where a word changes form, from two or from every form as the level allows), write them down as they are said (from a word bank first), type a missing word, or say them aloud, then fill the gaps in them.",
+    description: "Build sentences from their words as tiles (picking the ending where a word changes form, from two or from every form as the level allows), write them down as they are said (from a word bank first), type a missing word, or say them aloud, tell a sound pair or two with their words apart by ear, then fill the gaps in them.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Sentences,
@@ -42,6 +43,10 @@ fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
         }
         exercises.push(card);
     }
+    // Spec: SPK-11
+    let rows: Vec<&SentenceRow> = drill.sentences.iter().map(|(s, _)| s).collect();
+    let near = session::course_words_with_near(conn, drill.lesson.id)?;
+    exercises.extend(crate::sounds::sentence_round(&rows, &near, drill.lesson.id, rng));
     exercises.extend(gaps(conn, drill, rng)?);
     Ok(Built { exercises, ..Default::default() })
 }

@@ -243,6 +243,33 @@ pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(
         .collect())
 }
 
+/// The words of the lesson's courses that have a near neighbour by sound:
+/// what a sentences lesson's sound pairs can draw on (sounds.rs).
+// Spec: SPK-11
+pub(crate) fn course_words_with_near(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<WordRow>> {
+    let courses = courses_of(conn, lesson_id)?;
+    let ids: Vec<WordId> = course_words::table.filter(course_words::course_id.eq_any(courses)).select(course_words::id).load(conn)?;
+    let rows: Vec<(WordId, String, String, String, String, String)> = words::table
+        .filter(words::id.eq_any(ids))
+        .filter(words::near_pl.ne(""))
+        .order((words::ord, words::id))
+        .select((words::id, words::pl, words::en, words::pos, words::near_pl, words::near_en))
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, pl, meaning, pos, near_pl, near_en)| WordRow {
+            id,
+            pl,
+            meaning,
+            pos,
+            reps: 0,
+            image: None,
+            near: Some(Near { pl: near_pl, en: near_en }),
+            familiarity: 0,
+        })
+        .collect())
+}
+
 pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(SentenceRow, bool)>> {
     let rows: Vec<(SentenceId, String, String, String)> = sentences::table
         .filter(sentences::lesson_id.eq(lesson_id))

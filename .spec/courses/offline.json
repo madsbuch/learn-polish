@@ -59,14 +59,20 @@
     },
     {
       "id": "OFF-3",
-      "text": "The audio counted for a course is everything its lessons say, each at normal speed and slowly: words, sentences, dialogue lines, a story's sentences in each speaker's voice, a scene's sentences, its words' example sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
-      "version": 2,
+      "text": "The audio counted for a course is everything its lessons say, each at normal speed and slowly: words, sentences, dialogue lines, a story's sentences in each speaker's voice, a scene's sentences, its words' example sentences, each word's near neighbour by sound, and the built-in sound pairs that have one of its words or a word of its sentences.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "The audio counted for a course is every word, sentence and dialogue line of its lessons, a story's sentences in each speaker's voice, a scene's sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
           "reason": "The owner decided a course kept offline has everything that is not a conversation, so example sentences and slow versions are downloaded too.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "The audio counted for a course is everything its lessons say, each at normal speed and slowly: words, sentences, dialogue lines, a story's sentences in each speaker's voice, a scene's sentences, its words' example sentences, each word's near neighbour by sound, and the built-in sound pairs for the sounds its words have.",
+          "reason": "Lessons now play only sound pairs with their own words, from words lessons and sentences lessons.",
+          "date": "2026-11-22"
         }
       ]
     },

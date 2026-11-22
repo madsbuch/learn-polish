@@ -407,8 +407,8 @@ pub fn course_audio_lines_in(conn: &mut Conn, course_id: CourseId) -> Result<Vec
 /// everything its lessons say. Words, sentences, then dialogue lines; then
 /// what the other lesson types add — a story's sentences (each in its
 /// speaker's voice), a scene's "Where is it?" sentences, and the words of
-/// the sound pairs its words lessons can play (each word's near neighbour,
-/// and the built-in pairs for the sounds its words have).
+/// the sound pairs its lessons can play (each word's near neighbour, and the
+/// built-in pairs with one of its words or a word of its sentences).
 fn course_audio_items(conn: &mut Conn, course_id: CourseId) -> Result<Vec<(&'static str, String, String)>> {
     use crate::schema::{course_lessons, scenes, words as word_rows};
     let lesson_ids: Vec<LessonId> =
@@ -435,7 +435,9 @@ fn course_audio_items(conn: &mut Conn, course_id: CourseId) -> Result<Vec<(&'sta
         extra.push(("sentence", example.pl, String::new()));
     }
     let own: Vec<String> = heard.into_iter().map(|(pl, _)| pl).collect();
-    extra.extend(crate::sounds::spoken_for(&own).into_iter().map(|word| ("word", word, String::new())));
+    let said: Vec<String> = course_sentences::table.filter(course_sentences::course_id.eq(course_id)).select(course_sentences::pl).load(conn)?;
+    // Spec: OFF-3
+    extra.extend(crate::sounds::spoken_for(&own, &said).into_iter().map(|word| ("word", word, String::new())));
 
     let words = course_words::table
         .filter(course_words::course_id.eq(course_id))

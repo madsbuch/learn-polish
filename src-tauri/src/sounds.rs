@@ -6,25 +6,29 @@
 //!
 //! Pairs come from two places:
 //! - a word's own near neighbour, which the tutor gives when it makes the
-//!   word (`words.near_pl`, `near_en`: schema 10) — the lesson's own sounds;
+//!   word (`words.near_pl`, `near_en`: schema 10);
 //! - the built-in list below, the core contrasts, which ships with the app
 //!   like the demo course. Its pairs have ids derived from their words
 //!   (DATA.md), the same on every device; nothing is written for them.
 //!
-//! A words lesson ends with a short round of them when its words have the
-//! sounds (see [`round`]); the quick game "Sound pairs" plays the built-in
-//! list. Older words have no neighbour and are not filled in: their lessons
-//! use the built-in pairs.
+//! A words lesson ends with a short round of them, and a sentences lesson
+//! has one before its gaps, but only of pairs with the lesson's own words
+//! (see [`for_words`], [`for_sentences`]): a pair that merely shares a sound
+//! with them is not played. The quick game "Sound pairs" plays the whole
+//! built-in list.
 
-use rand::seq::{IndexedRandom, SliceRandom};
+use std::collections::HashSet;
+
+use rand::seq::SliceRandom;
 use serde::Serialize;
 
 use crate::models::{Exercise, Pair};
-use crate::session::WordRow;
+use crate::session::{split_punctuation, SentenceRow, WordRow};
 #[allow(unused_imports)]
 use crate::ids::*;
 
-/// Sound pairs in a words lesson's round: a short one.
+/// Sound pairs in a lesson's round: a short one.
+// Spec: SPK-9, SPK-11
 pub const ROUND: usize = 2;
 
 /// One contrast: what to listen for, the letters that make it, and real word
@@ -58,7 +62,7 @@ const CONTRASTS: &[Contrast] = &[
     Contrast {
         label: "ą or o, a",
         letters: &["ą"],
-        pairs: &[("kąt", "corner", "kot", "cat"), ("wąs", "moustache", "was", "you (plural)")],
+        pairs: &[("kąt", "corner", "kot", "cat"), ("wąs", "moustache", "was", "you (plural)"), ("tą", "with this (one)", "ta", "this (one)")],
     },
     Contrast {
         label: "ę or e",
@@ -68,7 +72,7 @@ const CONTRASTS: &[Contrast] = &[
     Contrast {
         label: "y or i",
         letters: &["y"],
-        pairs: &[("być", "to be", "bić", "to beat"), ("my", "we", "mi", "to me")],
+        pairs: &[("być", "to be", "bić", "to beat"), ("my", "we", "mi", "to me"), ("było", "it was", "biło", "it beat")],
     },
     Contrast {
         label: "ł or l",
@@ -83,9 +87,11 @@ const CONTRASTS: &[Contrast] = &[
     Contrast {
         label: "sz or s",
         letters: &["sz"],
-        pairs: &[("kosz", "basket", "kos", "blackbird"), ("szum", "rustle", "sum", "catfish")],
+        pairs: &[("kosz", "basket", "kos", "blackbird"), ("szum", "rustle", "sum", "catfish"), ("nasz", "our", "nas", "us")],
     },
     Contrast { label: "c or cz", letters: &["cz"], pairs: &[("cysta", "cyst", "czysta", "clean")] },
+    Contrast { label: "cz or trz", letters: &["trz"], pairs: &[("czy", "whether", "trzy", "three")] },
+    Contrast { label: "z or ż", letters: &["ż"], pairs: &[("że", "that", "ze", "with")] },
 ];
 
 /// A pair of words to tell apart by ear.
@@ -134,55 +140,94 @@ pub fn label_for(a: &str, b: &str) -> String {
         .map_or_else(|| "Listen closely".into(), |c| c.label.into())
 }
 
-/// The built-in contrasts a lesson's words have: one pair of each, in a
-/// random order.
-fn heard_in(words: &[&WordRow], rng: &mut impl rand::Rng) -> Vec<SoundPair> {
-    let text: Vec<String> = words.iter().map(|w| w.pl.to_lowercase()).collect();
-    let mut found: Vec<SoundPair> = Vec::new();
-    for contrast in CONTRASTS {
-        if !contrast.letters.iter().any(|l| text.iter().any(|t| t.contains(l))) {
-            continue;
-        }
-        let pairs: Vec<SoundPair> = built_in().into_iter().filter(|p| p.label == contrast.label).collect();
-        if let Some(pair) = pairs.choose(rng) {
-            found.push(pair.clone());
-        }
-    }
-    found.shuffle(rng);
-    found
+/// A word as pairs are matched on: lower case, without punctuation, its
+/// Polish letters kept ("kąt" is not "kot", nor "kat").
+fn key(word: &str) -> String {
+    crate::tiles::fold(word)
 }
 
-/// Every built-in word a round of sound pairs could say for these words:
-/// both words of every pair of each contrast the words have. For keeping a
-/// course's audio ready (offline.rs): which pair a round picks is chance.
-pub fn spoken_for(words: &[String]) -> Vec<String> {
-    let text: Vec<String> = words.iter().map(|w| w.to_lowercase()).collect();
-    CONTRASTS
-        .iter()
-        .filter(|contrast| contrast.letters.iter().any(|l| text.iter().any(|t| t.contains(l))))
-        .flat_map(|contrast| contrast.pairs.iter().flat_map(|(a, _, b, _)| [(*a).to_string(), (*b).to_string()]))
-        .collect()
+/// The built-in pairs with one of these words (as [`key`]s).
+fn built_in_with(keys: &HashSet<String>) -> Vec<SoundPair> {
+    built_in().into_iter().filter(|p| keys.contains(&key(&p.a)) || keys.contains(&key(&p.b))).collect()
 }
 
-/// The pairs for a words lesson: its words' own neighbours first, then the
-/// built-in pairs for the sounds its words have; at most [`ROUND`].
-pub fn for_words(words: &[&WordRow], rng: &mut impl rand::Rng) -> Vec<SoundPair> {
-    let mut own: Vec<SoundPair> = words
-        .iter()
-        .filter_map(|w| {
-            let near = w.near.as_ref()?;
-            Some(SoundPair { id: None, label: label_for(&w.pl, &near.pl), a: w.pl.clone(), a_en: w.meaning.clone(), b: near.pl.clone(), b_en: near.en.clone() })
-        })
-        .collect();
+/// A word and its own near neighbour, as a pair; None without one.
+fn own_pair(w: &WordRow) -> Option<SoundPair> {
+    let near = w.near.as_ref()?;
+    Some(SoundPair { id: None, label: label_for(&w.pl, &near.pl), a: w.pl.clone(), a_en: w.meaning.clone(), b: near.pl.clone(), b_en: near.en.clone() })
+}
+
+/// A round from the pairs found: own neighbours first, then built-in pairs,
+/// each in a random order, the same two words once; at most [`ROUND`].
+fn pick(mut own: Vec<SoundPair>, mut built: Vec<SoundPair>, rng: &mut impl rand::Rng) -> Vec<SoundPair> {
     own.shuffle(rng);
-    let mut pairs = own;
-    for pair in heard_in(words, rng) {
-        if !pairs.iter().any(|p| p.label == pair.label || p.a == pair.a) {
+    built.shuffle(rng);
+    let mut pairs: Vec<SoundPair> = Vec::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    for pair in own.into_iter().chain(built) {
+        let (a, b) = (key(&pair.a), key(&pair.b));
+        if seen.insert(if a <= b { (a, b) } else { (b, a) }) {
             pairs.push(pair);
         }
     }
     pairs.truncate(ROUND);
     pairs
+}
+
+/// The whole words of some sentences, as [`key`]s.
+fn words_in(sentences: &[&str]) -> HashSet<String> {
+    sentences
+        .iter()
+        .flat_map(|s| s.split_whitespace())
+        .map(|token| key(split_punctuation(token).1))
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// Every built-in word a lesson's round could say, for words and sentences:
+/// both words of each built-in pair with one of the words, or with a word
+/// of one of the sentences. For keeping a course's audio ready (offline.rs).
+// Spec: OFF-3
+pub fn spoken_for(words: &[String], sentences: &[String]) -> Vec<String> {
+    let texts: Vec<&str> = sentences.iter().map(String::as_str).collect();
+    let mut keys = words_in(&texts);
+    keys.extend(words.iter().map(|w| key(w)));
+    built_in_with(&keys).into_iter().flat_map(|p| [p.a, p.b]).collect()
+}
+
+/// The pairs for a words lesson, each with one of its words: a word's own
+/// near neighbour, or a built-in pair that has the word itself; at most
+/// [`ROUND`], none when nothing matches.
+// Spec: SPK-9
+pub fn for_words(words: &[&WordRow], rng: &mut impl rand::Rng) -> Vec<SoundPair> {
+    let keys: HashSet<String> = words.iter().map(|w| key(&w.pl)).collect();
+    pick(words.iter().filter_map(|w| own_pair(w)).collect(), built_in_with(&keys), rng)
+}
+
+/// The pairs for a sentences lesson, each with a whole word of one of its
+/// sentences: a built-in pair that has the word, or the near neighbour of
+/// one of `words` (its course's) where that word stands in a sentence, as
+/// it is or in a form the sentence's endings give for it; at most
+/// [`ROUND`], none when nothing matches.
+// Spec: SPK-11
+pub fn for_sentences(sentences: &[&SentenceRow], words: &[WordRow], rng: &mut impl rand::Rng) -> Vec<SoundPair> {
+    let texts: Vec<&str> = sentences.iter().map(|s| s.pl.as_str()).collect();
+    let tokens = words_in(&texts);
+    // Each sentence as its words joined by one space, padded, so a word of
+    // several ("dzień dobry") is found whole.
+    let lines: Vec<String> = texts.iter().map(|t| format!(" {} ", key(t))).collect();
+    let bases: HashSet<String> = sentences
+        .iter()
+        .flat_map(|s| &s.endings)
+        .filter(|e| tokens.contains(&key(&e.form)))
+        .map(|e| key(&e.base))
+        .collect();
+    let stands = |w: &WordRow| {
+        let k = key(&w.pl);
+        !k.is_empty() && (bases.contains(&k) || lines.iter().any(|l| l.contains(&format!(" {k} "))))
+    };
+    let own = words.iter().filter(|w| stands(w)).filter_map(own_pair).collect();
+    pick(own, built_in_with(&tokens), rng)
 }
 
 /// One card: the app says one of the pair; which was it? The two words are
@@ -220,8 +265,15 @@ pub fn exercise(pair: &SoundPair, lesson_id: LessonId, rng: &mut impl rand::Rng)
 }
 
 /// A words lesson's round of sound pairs.
+// Spec: SPK-9
 pub fn round(words: &[&WordRow], lesson_id: LessonId, rng: &mut impl rand::Rng) -> Vec<Exercise> {
     for_words(words, rng).iter().map(|pair| exercise(pair, lesson_id, rng)).collect()
+}
+
+/// A sentences lesson's round of sound pairs.
+// Spec: SPK-11
+pub fn sentence_round(sentences: &[&SentenceRow], words: &[WordRow], lesson_id: LessonId, rng: &mut impl rand::Rng) -> Vec<Exercise> {
+    for_sentences(sentences, words, rng).iter().map(|pair| exercise(pair, lesson_id, rng)).collect()
 }
 
 /// What to do to make a sound: its spellings, and a word of advice for when
@@ -437,29 +489,86 @@ mod tests {
         assert_eq!(label_for("dom", "tom"), "Listen closely");
     }
 
+    fn sentence(pl: &str, endings: &[(&str, &str)]) -> SentenceRow {
+        SentenceRow {
+            id: SentenceId::new(),
+            pl: pl.into(),
+            meaning: String::new(),
+            endings: endings.iter().map(|(form, base)| crate::tiles::Ending { form: (*form).into(), base: (*base).into(), wrong: vec![] }).collect(),
+            familiarity: 0,
+        }
+    }
+
+    // Spec: SPK-9
     #[test]
-    fn a_lesson_hears_its_own_pairs_first_then_its_sounds() {
+    fn a_words_lesson_plays_only_pairs_with_its_own_words() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
-        let words = [row("kawa", None), row("proszę", Some(("prosię", "piglet"))), row("mleko", None)];
-        let refs: Vec<&WordRow> = words.iter().collect();
-        let pairs = for_words(&refs, &mut rng);
-        assert_eq!(pairs[0].a, "proszę");
-        assert_eq!(pairs[0].b, "prosię");
-        assert_eq!(pairs[0].id, None);
-        assert!(pairs.len() <= ROUND);
-        // Words without the sounds: no round at all.
-        let plain = [row("dom", None), row("kot", None)];
+        // "szkoła" shares sounds with built-in pairs but is in none, and has
+        // no neighbour: no round.
+        let plain = [row("szkoła", None), row("dom", None)];
         let refs: Vec<&WordRow> = plain.iter().collect();
+        assert!(for_words(&refs, &mut rng).is_empty());
         assert!(round(&refs, LessonId::new(), &mut rng).is_empty());
-        // Words with ł: a built-in ł/l pair.
-        let soft = [row("stół", None)];
-        let refs: Vec<&WordRow> = soft.iter().collect();
+        // A word that is itself in a built-in pair gets that pair.
+        let own = [row("szkoła", None), row("Kot", None)];
+        let refs: Vec<&WordRow> = own.iter().collect();
         let pairs = for_words(&refs, &mut rng);
         assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].label, "ł or l");
+        assert_eq!((pairs[0].a.as_str(), pairs[0].b.as_str()), ("kąt", "kot"));
+        assert!(pairs[0].id.is_some());
         let card = exercise(&pairs[0], LessonId::new(), &mut rng);
         assert!(card.options.contains(&card.answer));
         assert_eq!(card.options, [pairs[0].a.clone(), pairs[0].b.clone()]);
+        // A near neighbour is used, first, and not again as the built-in pair
+        // of the same two words.
+        let near = [row("kawa", None), row("proszę", Some(("prosię", "piglet"))), row("mleko", None)];
+        let refs: Vec<&WordRow> = near.iter().collect();
+        let pairs = for_words(&refs, &mut rng);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!((pairs[0].a.as_str(), pairs[0].b.as_str(), pairs[0].id), ("proszę", "prosię", None));
+    }
+
+    // Spec: SPK-9, SPK-11
+    #[test]
+    fn a_round_has_at_most_round_pairs() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
+        let many = [row("czy", None), row("kot", None), row("my", None), row("łata", Some(("lata", "years")))];
+        let refs: Vec<&WordRow> = many.iter().collect();
+        assert_eq!(for_words(&refs, &mut rng).len(), ROUND);
+        let s = [sentence("Czy my mamy kota? Nasz kot i trzy psy.", &[])];
+        let refs: Vec<&SentenceRow> = s.iter().collect();
+        assert_eq!(for_sentences(&refs, &[], &mut rng).len(), ROUND);
+    }
+
+    // Spec: SPK-11
+    #[test]
+    fn a_sentences_lesson_plays_pairs_with_words_of_its_sentences() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(11);
+        // "Czy" stands in a sentence: a built-in pair with "czy".
+        let s = [sentence("Czy to jest szkoła?", &[])];
+        let refs: Vec<&SentenceRow> = s.iter().collect();
+        let pairs = for_sentences(&refs, &[], &mut rng);
+        assert!(!pairs.is_empty() && pairs.len() <= ROUND);
+        assert!(pairs.iter().all(|p| p.a == "czy"), "{pairs:?}");
+        // Whole words only: "czysta" is not "czy", and shared sounds bring nothing.
+        let none = [sentence("Szkoła jest czysta, dobra.", &[])];
+        let refs: Vec<&SentenceRow> = none.iter().collect();
+        assert!(for_sentences(&refs, &[], &mut rng).is_empty());
+        let plain = [sentence("Mam dom.", &[])];
+        let refs: Vec<&SentenceRow> = plain.iter().collect();
+        assert!(sentence_round(&refs, &[], LessonId::new(), &mut rng).is_empty());
+        // A course word's near neighbour, where the word stands in a sentence,
+        // as it is or in a form its endings give; not where it doesn't.
+        let words = [row("proszę", Some(("prosię", "piglet"))), row("łata", Some(("lata", "years"))), row("kasza", Some(("Kasia", "Kasia")))];
+        let said = |pl: &str, endings: &[(&str, &str)], rng: &mut rand::rngs::StdRng| {
+            let s = [sentence(pl, endings)];
+            let refs: Vec<&SentenceRow> = s.iter().collect();
+            for_sentences(&refs, &words, rng).into_iter().map(|p| format!("{}/{}", p.a, p.b)).collect::<Vec<_>>()
+        };
+        assert_eq!(said("Proszę, mam łatę.", &[("łatę", "łata")], &mut rng).len(), 2);
+        assert_eq!(said("Mam łatę.", &[("łatę", "łata")], &mut rng), ["łata/lata"]);
+        assert!(said("Mam łatę.", &[], &mut rng).is_empty(), "no form given: no match");
+        assert_eq!(said("Proszę bardzo!", &[], &mut rng), ["proszę/prosię"]);
     }
 
     #[test]

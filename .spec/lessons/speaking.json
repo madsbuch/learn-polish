@@ -13,7 +13,8 @@
       "requirements": [
         "#SPK-1",
         "#SPK-4",
-        "#SPK-9"
+        "#SPK-9",
+        "#SPK-11"
       ]
     },
     {
@@ -61,16 +62,43 @@
     },
     {
       "id": "SPK-9",
-      "text": "A words lesson has a round of up to two sound pairs before its closing memory round, when its words have the sounds."
+      "text": "A words lesson has a round of up to `sound-pairs.round` sound pairs before its closing memory round, each with one of its own words: that word's near neighbour, or a built-in pair that has the word itself; with none, there is no round.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A words lesson has a round of up to two sound pairs before its closing memory round, when its words have the sounds.",
+          "reason": "Pairs that only shared a sound with the lesson's words felt unrelated to it, and still counted towards its grade.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SPK-10",
       "text": "The built-in sound pairs ship with the app; nothing is written to the database for them."
+    },
+    {
+      "id": "SPK-11",
+      "text": "A sentences lesson has a round of up to `sound-pairs.round` sound pairs before its fill-the-gaps cards, each with a whole word of one of its sentences: a built-in pair that has the word, or the near neighbour of a course word that stands in a sentence as it is or in a form the sentence's tiles give it; with none, there is no round."
+    },
+    {
+      "id": "SPK-12",
+      "text": "A round of sound pairs comes at every level and is scored like any card; it is not a step of a word's or sentence's ladder of cards."
     }
   ],
   "related": [
     "lessons/drills#DRILL-4",
     "progress/games",
-    "tutor/models#AI-6"
+    "tutor/models#AI-6",
+    "lessons/drills/sentences"
+  ],
+  "values": [
+    {
+      "id": "sound-pairs.round",
+      "type": "number",
+      "value": 2,
+      "unit": "pairs",
+      "description": "The most sound pairs in a lesson's round."
+    }
   ]
 }
