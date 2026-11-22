@@ -19,10 +19,8 @@ import type {
   CourseProgress,
   LessonId,
   LessonOverview,
-  LessonResult,
   PracticeContext,
   SessionPlan,
-  SessionResult,
   Settings,
   Stats,
 } from "./lib/types";
@@ -31,7 +29,7 @@ import { Progress } from "./screens/Progress";
 import { Insights } from "./screens/Insights";
 import { AchievementScreen } from "./screens/AchievementScreen";
 import { Session } from "./screens/Session";
-import { SessionSummary } from "./screens/SessionSummary";
+import { SessionSummary, type SummaryData } from "./screens/SessionSummary";
 import { openPage, SettingsPageView, SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { LessonPage } from "./screens/LessonPage";
@@ -42,7 +40,6 @@ import { setHapticsEnabled } from "./lib/haptics";
 import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary, SongScreen } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
-import { masteryChange } from "./lib/lessons";
 import { Player } from "./screens/Player";
 import { CourseDetail } from "./screens/CourseDetail";
 import { Tutor, TutorChat, tutorAsks } from "./screens/Tutor";
@@ -77,26 +74,7 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
 ];
 
 /** What a summary shows: handed to its page by the drill or conversation that ended. */
-interface Summary {
-  result: SessionResult;
-  xp: number;
-  /** The lesson took the learner up a level (the summary celebrates). */
-  levelUp?: boolean;
-  outcome?: {
-    title: string;
-    result: LessonResult;
-    nextDueDay: number | null;
-    extra?: boolean;
-    /** False when nothing was scored: not graded. */
-    graded?: boolean;
-    /** The mastery change, in words. */
-    mastery?: string;
-    /** A drill's score; a check-in has none. */
-    score?: { correct: number; almost: number; total: number };
-  };
-}
-
-const summaries = handoffSlot<Summary>();
+const summaries = handoffSlot<SummaryData>();
 
 /** The summary's address: in place of the drill or conversation, above its lesson. */
 function summaryAddress(here: Address): Address {
@@ -617,24 +595,24 @@ export default function App() {
               stopAudio();
               back();
             }}
-            onFinished={(result, sessionXp) => {
+            onFinished={(result, sessionXp, misses) => {
               setStats(result.stats);
-              const summary: Summary = {
+              const summary: SummaryData = {
                 result,
                 xp: sessionXp,
-                levelUp: result.stats.level > stats.level,
-                outcome: {
-                  title: result.lesson.title,
-                  result: result.result,
-                  nextDueDay: result.lesson.dueDay,
-                  extra: result.extra,
-                  graded: result.graded,
-                  mastery: result.mastery ? masteryChange(result.mastery) : undefined,
-                  score:
-                    result.total > 0
-                      ? { correct: result.correct, almost: result.almost, total: result.total }
-                      : undefined,
-                },
+                freezeEarned: result.stats.streakFreezes > stats.streakFreezes,
+                title: result.lesson.title,
+                graded: result.graded,
+                grade: result.grade,
+                extra: result.extra,
+                score:
+                  result.total > 0 ? { correct: result.correct, almost: result.almost, total: result.total } : undefined,
+                mastery: result.mastery,
+                masteredNow: result.masteredNow,
+                impact: result.impact,
+                nextDueDay: result.lesson.dueDay,
+                misses,
+                toReview: [],
               };
               go(summaryAddress(currentAddress()), { handoff: (entry) => summaries.set(entry, summary) });
             }}
@@ -656,11 +634,20 @@ export default function App() {
                 // earned and any achievement it unlocked.
                 const result = await api.checkinSummary(checkinId, first);
                 setStats(result.stats);
-                const summary: Summary = {
+                const summary: SummaryData = {
                   result,
                   xp: assessment.xp,
-                  levelUp: result.stats.level > stats.level,
-                  outcome: { title, result: assessment.result, nextDueDay: assessment.nextDueDay },
+                  freezeEarned: result.stats.streakFreezes > stats.streakFreezes,
+                  title,
+                  graded: true,
+                  grade: assessment.result === "pass" && assessment.aced ? "ace" : assessment.result,
+                  extra: result.mastery?.extra ?? false,
+                  mastery: result.mastery,
+                  masteredNow: result.masteredNow,
+                  impact: assessment.impact ?? null,
+                  nextDueDay: result.masteredNow ? null : assessment.nextDueDay,
+                  misses: [],
+                  toReview: assessment.toReview,
                 };
                 go(done, { handoff: (entry) => summaries.set(entry, summary) });
               } catch {
@@ -953,10 +940,8 @@ function SummaryPage({ onDone }: { onDone: () => void }) {
   if (!summary) return <Waiting />;
   return (
     <SessionSummary
-      result={summary.result}
-      sessionXp={summary.xp}
-      levelUp={summary.levelUp}
-      outcome={summary.outcome}
+      data={summary}
+      onOpenItem={(itemId) => open({ kind: "insight", page: { page: "item", itemId } })}
       onDone={onDone}
     />
   );

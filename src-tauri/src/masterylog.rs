@@ -174,7 +174,7 @@ pub fn write(conn: &mut Conn, e: &NewEntry) -> Result<MasteryEntry> {
 }
 
 /// A row's columns, in [`Row`]'s order.
-const COLUMNS: (
+type Columns = (
     mastery_log::id,
     mastery_log::at,
     mastery_log::day,
@@ -190,7 +190,8 @@ const COLUMNS: (
     mastery_log::via,
     mastery_log::reason,
     mastery_log::details,
-) = (
+);
+const COLUMNS: Columns = (
     mastery_log::id,
     mastery_log::at,
     mastery_log::day,

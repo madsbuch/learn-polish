@@ -189,6 +189,18 @@ describe("the history's shape", () => {
   });
 });
 
+describe("a summary's misses", () => {
+  // Spec: SUM-7, SHELL-3
+  test("a missed word opens above the summary, and back returns to it", () => {
+    const summary = at(`/${crs}/${ls}/done`);
+    const item = openFrom(summary, { kind: "insight", page: { page: "item", itemId: wd } });
+    expect(format(item)).toBe(`/${crs}/${ls}/done/item/${wd}`);
+    expect(parse(format(item))).toEqual(item);
+    expect(format(up(item) ?? HOME)).toBe(`/${crs}/${ls}/done`);
+    expect(format(forResume(item))).toBe(`/${crs}/${ls}`);
+  });
+});
+
 describe("reopening", () => {
   // Spec: SHELL-19
   test("a drill, a summary, a conversation, the player and a new tutor conversation are not reopened", () => {

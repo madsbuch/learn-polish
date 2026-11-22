@@ -2131,19 +2131,129 @@ html.scanning #root {
   line-height: 1;
   animation: trophy-rise var(--duration-celebrate) var(--ease-spring) both;
 }
-/* The summary's 🎉 on a day done or a new level: it rises like the trophy. */
+/* A celebration's emoji (an ace on the summary, a record in a game): it rises like the trophy. */
 .celebrate-rise {
   display: inline-block;
   animation: trophy-rise var(--duration-celebrate) var(--ease-spring) backwards;
 }
-/* A new level: its badge swells and glows gold, after the XP has counted. */
-.level-up {
+
+/* The summary after a go (SessionSummary). The grade is the headline; a
+   fail's is set calm, in the body colour. */
+.summary-grade {
+  margin: 0;
+  font-size: var(--font-headline);
+  line-height: var(--leading-headline);
+  font-weight: var(--weight-heavy);
+  text-align: center;
+}
+.summary-grade[data-tone="ace"],
+.summary-grade[data-tone="pass"] {
+  color: var(--ok);
+}
+.summary-grade[data-tone="partial"] {
+  color: var(--gold-ink);
+}
+.summary-mastery__delta {
+  font-size: var(--font-title);
+  line-height: var(--leading-title);
+  font-weight: var(--weight-bold);
+  color: var(--text-dim);
+}
+.summary-mastery__delta[data-sign="1"] {
+  color: var(--ok);
+}
+.summary-mastery__delta[data-sign="-1"] {
+  color: var(--bad);
+}
+/* The mastery points from before the go to after it: the fill slides from
+   --from to --pct (a transform); points lost stay as a faint tail. */
+.mastery-bar {
+  position: relative;
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--tint-strong);
+  overflow: hidden;
+}
+.mastery-bar > span {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  transform: translateX(calc((var(--pct, 0) - 100) * 1%));
+}
+.mastery-bar__fill {
+  background: linear-gradient(90deg, var(--brand-ink), var(--sky));
+  animation: mastery-bar-fill var(--duration-celebrate) var(--ease-out) var(--duration-slow) backwards;
+}
+.mastery-bar[data-tone="gold"] .mastery-bar__fill {
+  background: var(--gold-gradient);
+}
+.mastery-bar__lost {
+  background: var(--bad-line);
+}
+@keyframes mastery-bar-fill {
+  from {
+    transform: translateX(calc((var(--from, 0) - 100) * 1%));
+  }
+}
+.summary-miss {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.summary-miss__given {
+  color: var(--bad);
+  text-decoration-thickness: 1.5px;
+}
+.summary-miss__right {
+  color: var(--ok);
+  font-weight: var(--weight-medium);
+}
+.summary-longterm {
+  margin: 0;
+}
+/* A lesson mastered by this go: a trophy rises out of a gold burst, then
+   the Mastered badge glows. One-off; nothing under reduced motion. */
+.summary-mastered {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+}
+.summary-mastered__trophy {
+  position: relative;
+  font-size: calc(var(--space-8) * 2);
+  line-height: 1;
+  animation: trophy-rise var(--duration-celebrate) var(--ease-spring) backwards;
+}
+.summary-mastered__burst {
+  position: absolute;
+  top: 0;
+  width: calc(var(--space-8) * 4);
+  height: calc(var(--space-8) * 4);
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle, var(--glow-gold), transparent 65%);
+  opacity: 0.7;
+  animation: mastered-burst calc(var(--duration-celebrate) * 1.6) var(--ease-out) backwards;
+}
+.summary-mastered__badge {
   display: inline-flex;
   border-radius: var(--radius-full);
   --glow-colour: var(--glow-gold);
+  --bump-scale: 1.25;
   animation:
     bump 0.5s var(--ease-spring) var(--duration-celebrate),
-    glow 0.9s var(--ease-out) var(--duration-celebrate);
+    glow 1.1s var(--ease-out) var(--duration-celebrate);
+}
+@keyframes mastered-burst {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
 }
 .course-closed-stats {
   display: grid;

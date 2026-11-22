@@ -196,7 +196,9 @@ function settingsContext(tab: Tab, prev: Segment | null): boolean {
 }
 
 function insightContext(prev: Segment | null): boolean {
-  return prev?.kind === "progress" || prev?.kind === "insight";
+  // A summary opens a missed word's or sentence's page above it.
+  // Spec: SUM-7
+  return prev?.kind === "progress" || prev?.kind === "insight" || prev?.kind === "done";
 }
 
 /** The path parts of one segment, given the segment before it. */
