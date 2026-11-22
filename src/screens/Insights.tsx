@@ -1081,8 +1081,8 @@ function SoundsPage({ nav }: { nav: Nav }) {
         <Wait error={error} />
       ) : data.length === 0 ? (
         <EmptyState icon="👂" title="No sounds practised yet">
-          Words lessons end with a few sound pairs; the quick game Sound pairs
-          plays them all.
+          Words and sentences lessons bring sound pairs with their own words; the
+          quick game Sound pairs plays them all.
         </EmptyState>
       ) : (
         <div className="insight-board">

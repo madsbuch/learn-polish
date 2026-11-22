@@ -550,8 +550,8 @@ mod tests {
         let pairs = for_sentences(&refs, &[], &mut rng);
         assert!(!pairs.is_empty() && pairs.len() <= ROUND);
         assert!(pairs.iter().all(|p| p.a == "czy"), "{pairs:?}");
-        // Whole words only: "czysta" is not "czy", and shared sounds bring nothing.
-        let none = [sentence("Szkoła jest czysta, dobra.", &[])];
+        // Whole words only: "czyta" is not "czy", and shared sounds bring nothing.
+        let none = [sentence("Szkoła jest duża, Ola czyta.", &[])];
         let refs: Vec<&SentenceRow> = none.iter().collect();
         assert!(for_sentences(&refs, &[], &mut rng).is_empty());
         let plain = [sentence("Mam dom.", &[])];
