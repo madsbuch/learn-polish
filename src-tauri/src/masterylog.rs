@@ -173,6 +173,41 @@ pub fn write(conn: &mut Conn, e: &NewEntry) -> Result<MasteryEntry> {
     }))
 }
 
+/// A row's columns, in [`Row`]'s order.
+const COLUMNS: (
+    mastery_log::id,
+    mastery_log::at,
+    mastery_log::day,
+    mastery_log::delta,
+    mastery_log::points_before,
+    mastery_log::points_after,
+    mastery_log::grade,
+    mastery_log::correct,
+    mastery_log::almost,
+    mastery_log::total,
+    mastery_log::days_since,
+    mastery_log::extra,
+    mastery_log::via,
+    mastery_log::reason,
+    mastery_log::details,
+) = (
+    mastery_log::id,
+    mastery_log::at,
+    mastery_log::day,
+    mastery_log::delta,
+    mastery_log::points_before,
+    mastery_log::points_after,
+    mastery_log::grade,
+    mastery_log::correct,
+    mastery_log::almost,
+    mastery_log::total,
+    mastery_log::days_since,
+    mastery_log::extra,
+    mastery_log::via,
+    mastery_log::reason,
+    mastery_log::details,
+);
+
 #[derive(Queryable)]
 struct Row {
     id: MasteryEntryId,
@@ -304,23 +339,7 @@ pub fn for_lesson(conn: &mut Conn, lesson_id: LessonId) -> Result<MasteryLog> {
     let rows: Vec<Row> = mastery_log::table
         .filter(mastery_log::lesson_id.eq(lesson_id))
         .order(mastery_log::id.desc())
-        .select((
-            mastery_log::id,
-            mastery_log::at,
-            mastery_log::day,
-            mastery_log::delta,
-            mastery_log::points_before,
-            mastery_log::points_after,
-            mastery_log::grade,
-            mastery_log::correct,
-            mastery_log::almost,
-            mastery_log::total,
-            mastery_log::days_since,
-            mastery_log::extra,
-            mastery_log::via,
-            mastery_log::reason,
-            mastery_log::details,
-        ))
+        .select(COLUMNS)
         .load(conn)?;
     // What the first row started from (or the points now, with none): the
     // points earned before the log began.
@@ -332,6 +351,21 @@ pub fn for_lesson(conn: &mut Conn, lesson_id: LessonId) -> Result<MasteryLog> {
         before_log: (start > 0).then_some(start),
         entries: rows.into_iter().map(view).collect(),
     })
+}
+
+/// A go's row in the ledger, found by its run (a check-in's id), and whether
+/// the go also stamped the lesson mastered.
+pub fn for_run(conn: &mut Conn, run: &str) -> Result<(Option<MasteryEntry>, bool)> {
+    if run.is_empty() {
+        return Ok((None, false));
+    }
+    let rows: Vec<Row> = mastery_log::table
+        .filter(mastery_log::run.eq(run))
+        .order(mastery_log::id)
+        .select(COLUMNS)
+        .load(conn)?;
+    let mastered = rows.iter().any(|r| r.reason == "mastered");
+    Ok((rows.into_iter().find(|r| r.reason != "mastered").map(view), mastered))
 }
 
 /// Every change to a lesson's mastery points, and why, newest first.

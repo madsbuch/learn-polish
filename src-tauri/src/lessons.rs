@@ -511,6 +511,16 @@ pub enum Grade {
 }
 
 impl Grade {
+    /// Its word in the mastery ledger and on the summary.
+    pub fn key(self) -> &'static str {
+        match self {
+            Grade::Ace => "ace",
+            Grade::Pass => "pass",
+            Grade::Partial => "partial",
+            Grade::Fail => "fail",
+        }
+    }
+
     pub fn of(result: &str, ace: bool) -> Grade {
         match result {
             "pass" if ace => Grade::Ace,
@@ -657,44 +667,29 @@ pub fn stamp_mastered_for(conn: &mut Conn, lesson_id: LessonId, go: &Go) -> Resu
 
 pub use crate::masterylog::Go;
 
-/// Adds a go's mastery points to a lesson, as it stood before the go, and
-/// writes why in the mastery ledger (one row, every graded go: a go that
-/// changes nothing says so). Every go counts, extra practice too — but a
-/// fail on extra practice costs nothing: playing a passed lesson again for
-/// fun must not be a risk. Points stay within 0–100, and at
-/// [`MASTERY_HELD_AT`] until the lesson has passes on two different days.
-// Spec: MAST-6, MAST-10
-pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64, go: &Go) -> Result<crate::masterylog::MasteryEntry> {
-    let grade = Grade::of(result, ace);
-    let days_since = before.last_day.map(|last| (today - last).max(0));
-    let elapsed = days_since.unwrap_or(0);
-    let grade_key = match grade {
-        Grade::Ace => "ace",
-        Grade::Pass => "pass",
-        Grade::Partial => "partial",
-        Grade::Fail => "fail",
-    };
+/// What a go would do to a lesson's mastery points, by the rules, without
+/// writing anything: the points after it, the ledger's reason and the
+/// numbers behind it. [`credit_mastery`] writes what this decides, and the
+/// summary's [`impact`] asks it what a better go would have done.
+struct Planned {
+    after: i64,
+    reason: &'static str,
+    details: crate::masterylog::Details,
+}
+
+fn plan_mastery(conn: &mut Conn, before: &Lesson, grade: Grade, extra: bool, today: i64) -> Result<Planned> {
+    let elapsed = before.last_day.map_or(0, |last| (today - last).max(0));
     let mut details = crate::masterylog::Details { v: crate::masterylog::DETAILS_VERSION, ..Default::default() };
-    let passing = matches!(grade, Grade::Ace | Grade::Pass);
-    let entry = |details, after, reason| crate::masterylog::NewEntry {
-        lesson_id: before.id,
-        before: before.mastery,
-        after,
-        grade: grade_key,
-        days_since,
-        go,
-        reason,
-        details,
-    };
     if before.mastered {
-        return crate::masterylog::write(conn, &entry(details, before.mastery, "after_mastered"));
+        return Ok(Planned { after: before.mastery, reason: "after_mastered", details });
     }
+    let passing = matches!(grade, Grade::Ace | Grade::Pass);
     let first_pass = passing && !before.passed;
     if first_pass {
         details.first_pass_day = Some(today);
     }
     let (gain, mut reason) = match grade {
-        Grade::Fail if go.extra => (0, "fail_extra"),
+        Grade::Fail if extra => (0, "fail_extra"),
         Grade::Fail => (mastery_gain(grade, before.passed, elapsed), "fail"),
         Grade::Partial => (mastery_gain(grade, before.passed, elapsed), "partial"),
         _ if first_pass => (mastery_gain(grade, false, elapsed), "first_pass"),
@@ -721,10 +716,97 @@ pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool,
     if gain > 0 && before.mastery >= MASTERY_FULL {
         reason = "full";
     }
-    diesel::update(lessons::table.find(before.id)).set(lessons::mastery.eq(mastery)).execute(conn)?;
-    let written = crate::masterylog::write(conn, &entry(details, mastery, reason))?;
+    Ok(Planned { after: mastery, reason, details })
+}
+
+/// Adds a go's mastery points to a lesson, as it stood before the go, and
+/// writes why in the mastery ledger (one row, every graded go: a go that
+/// changes nothing says so). Every go counts, extra practice too — but a
+/// fail on extra practice costs nothing: playing a passed lesson again for
+/// fun must not be a risk. Points stay within 0–100, and at
+/// [`MASTERY_HELD_AT`] until the lesson has passes on two different days.
+// Spec: MAST-6, MAST-10
+pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64, go: &Go) -> Result<crate::masterylog::MasteryEntry> {
+    let grade = Grade::of(result, ace);
+    let planned = plan_mastery(conn, before, grade, go.extra, today)?;
+    let entry = crate::masterylog::NewEntry {
+        lesson_id: before.id,
+        before: before.mastery,
+        after: planned.after,
+        grade: grade.key(),
+        days_since: before.last_day.map(|last| (today - last).max(0)),
+        go,
+        reason: planned.reason,
+        details: planned.details,
+    };
+    if before.mastered {
+        return crate::masterylog::write(conn, &entry);
+    }
+    diesel::update(lessons::table.find(before.id)).set(lessons::mastery.eq(planned.after)).execute(conn)?;
+    let written = crate::masterylog::write(conn, &entry)?;
     stamp_mastered_for(conn, before.id, go)?;
     Ok(written)
+}
+
+/// What a go's misses cost, for the summary: the next grade up (a pass, or
+/// from a pass an ace), how many more right answers it would have taken,
+/// and what that go would have done to the mastery points — by the same
+/// rules, from the lesson as it stood before the go.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Impact {
+    /// "pass" | "ace"
+    pub grade: String,
+    /// A drill: how many more right answers it would have taken. None for
+    /// a conversation, which has no score.
+    pub more_right: Option<i64>,
+    /// The mastery change that go would have made, and its ledger reason.
+    pub delta: i64,
+    pub after: i64,
+    pub reason: String,
+}
+
+/// The fewest more right answers that would have passed a drill — misses
+/// turned right first (a whole point each), then almosts — and the score
+/// that makes; None when it passed already or nothing was scored.
+// Spec: SUM-8
+pub fn more_right_to_pass(correct: i64, almost: i64, total: i64) -> Option<(i64, i64, i64)> {
+    if total <= 0 || result_from_score(correct, almost, total) == "pass" {
+        return None;
+    }
+    let wrong = (total - correct - almost).max(0);
+    (1..=total - correct).map(|k| (k, correct + k, almost - (k - wrong).max(0))).find(|&(_, c, a)| result_from_score(c, a, total) == "pass")
+}
+
+/// The impact of a go's misses (see [`Impact`]): `score` is a drill's
+/// (right, almost, scored), None for a conversation. Call it before the go
+/// is recorded. None when there is no grade above it to miss: an ace, a
+/// conversation passed, nothing scored.
+// Spec: SUM-8
+pub fn impact(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, score: Option<(i64, i64, i64)>, extra: bool, today: i64) -> Result<Option<Impact>> {
+    let (grade, more_right) = match score {
+        Some((_, _, total)) if total <= 0 => return Ok(None),
+        Some((correct, _, total)) if result == "pass" => {
+            if ace {
+                return Ok(None);
+            }
+            (Grade::Ace, Some(total - correct))
+        }
+        Some((correct, almost, total)) => match more_right_to_pass(correct, almost, total) {
+            Some((k, c, a)) => (Grade::of("pass", a == 0 && c >= total), Some(k)),
+            None => return Ok(None),
+        },
+        None if result == "pass" => return Ok(None),
+        None => (Grade::Pass, None),
+    };
+    let planned = plan_mastery(conn, before, grade, extra, today)?;
+    Ok(Some(Impact {
+        grade: grade.key().into(),
+        more_right,
+        delta: planned.after - before.mastery,
+        after: planned.after,
+        reason: planned.reason.into(),
+    }))
 }
 
 /// Doing a lesson again on a day it was already passed is extra practice:
