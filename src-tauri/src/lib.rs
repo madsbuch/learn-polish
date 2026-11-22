@@ -1396,7 +1396,7 @@ mod integration {
         assert_eq!(lessons::more_right_to_pass(7, 0, 10), Some((2, 9, 0)), "14 of 20 half points: two misses turned right");
         assert_eq!(lessons::more_right_to_pass(7, 2, 10), Some((1, 8, 2)), "the miss first, a whole point");
         assert_eq!(lessons::more_right_to_pass(3, 0, 5), Some((1, 4, 0)), "a short drill passes with one miss");
-        assert_eq!(lessons::more_right_to_pass(8, 2, 10), Some((1, 9, 1)), "only almosts left: one turned right");
+        assert_eq!(lessons::more_right_to_pass(6, 4, 10), Some((1, 7, 3)), "only almosts left: one turned right");
         assert_eq!(lessons::more_right_to_pass(9, 0, 10), None, "passed already");
         assert_eq!(lessons::more_right_to_pass(0, 0, 0), None, "nothing scored");
     }
@@ -4111,6 +4111,15 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("Lesson.list", &all);
         write("LessonDetail", &lessons::detail(&mut conn, drill.id).unwrap());
         write("LessonFinished", &finished);
+        // A conversation short of a pass: its verdict, with what a pass would
+        // have earned, and its summary, with the ledger's row.
+        let study = starter_lesson(&mut conn);
+        let checkin = crate::examiner::start(&mut conn, study.id, None).unwrap();
+        let verdict = serde_json::from_value(serde_json::json!({ "result": "partial", "summary": "Close.", "to_review": ["z + instrumental"] })).unwrap();
+        let (assessment, first) = crate::examiner::record(&mut conn, checkin, verdict).unwrap();
+        assert!(assessment.impact.is_some());
+        write("Assessment", &assessment);
+        write("CheckinSummary", &practice::checkin_summary_in(&mut conn, checkin, first).unwrap());
         // The mastery ledger, with a check-in's row and the mastered stamp too.
         lessons::record(&mut conn, drill.id, "fail").unwrap();
         write("MasteryLog", &crate::masterylog::for_lesson(&mut conn, drill.id).unwrap());

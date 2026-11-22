@@ -634,6 +634,20 @@ export const LessonOverviewSchema = z.object({
 });
 export type LessonOverview = z.infer<typeof LessonOverviewSchema>;
 
+/**
+ * What a go's misses cost (lessons.rs `impact`): the next grade up, how many
+ * more right answers it took (a drill), and the mastery change it would have
+ * made, by the same rules.
+ */
+export const ImpactSchema = z.object({
+  grade: z.enum(["pass", "ace"]),
+  moreRight: z.number().nullable(),
+  delta: z.number(),
+  after: z.number(),
+  reason: z.string(),
+});
+export type Impact = z.infer<typeof ImpactSchema>;
+
 export const AssessmentSchema = z.object({
   result: LessonResultSchema,
   summary: z.string(),
@@ -641,6 +655,10 @@ export const AssessmentSchema = z.object({
   toReview: z.array(z.string()),
   nextDueDay: z.number(),
   xp: z.number(),
+  /** A pass with nothing to go over again. */
+  aced: z.boolean().optional(),
+  /** Short of a pass: what a pass would have done to its mastery points. */
+  impact: ImpactSchema.nullable().optional(),
 });
 export type Assessment = z.infer<typeof AssessmentSchema>;
 
@@ -1005,8 +1023,21 @@ export const LessonFinishedSchema = SessionResultSchema.extend({
   correct: z.number(),
   almost: z.number(),
   total: z.number(),
+  /** ace | pass | partial | fail; "" when not graded. */
+  grade: z.enum(["ace", "pass", "partial", "fail", ""]),
+  /** This go mastered the lesson. */
+  masteredNow: z.boolean(),
+  /** What the misses cost; null with nothing above it to miss. */
+  impact: ImpactSchema.nullable(),
 });
 export type LessonFinished = z.infer<typeof LessonFinishedSchema>;
+
+/** A conversation's summary: its row in the mastery ledger, and whether it mastered the lesson. */
+export const CheckinSummarySchema = SessionResultSchema.extend({
+  mastery: MasteryEntrySchema.nullable(),
+  masteredNow: z.boolean(),
+});
+export type CheckinSummary = z.infer<typeof CheckinSummarySchema>;
 
 export const TutorActionSchema = z.object({
   kind: z.enum([

@@ -99,7 +99,7 @@ import {
   PlaylistSchema,
   SentenceSchema,
   SessionPlanSchema,
-  SessionResultSchema,
+  CheckinSummarySchema,
   SettingsSchema,
   SongSchema,
   SongDraftSchema,
@@ -375,7 +375,7 @@ export const api = {
     call(LessonDetailSchema, "lesson_add_players", { lessonId }),
   /** The summary after a conversation lesson; new achievements are those since it began. */
   checkinSummary: (checkinId: CheckinId, firstCompletionToday: boolean) =>
-    call(SessionResultSchema, "checkin_summary", {
+    call(CheckinSummarySchema, "checkin_summary", {
       checkinId,
       firstCompletionToday,
     }),

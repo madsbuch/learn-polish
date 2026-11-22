@@ -1,5 +1,5 @@
 import { lessonType } from "./lessonTypes";
-import type { Lesson, Complexity, MasteryEntry } from "./types";
+import type { Lesson, Complexity } from "./types";
 
 /** About how many minutes a lesson takes: its type's, by complexity (lesson_types::minutes). */
 export function lessonMinutes(lesson: Pick<Lesson, "type" | "engine" | "complexity">): number {
@@ -122,14 +122,3 @@ export function roughDuration(minutes: number): string {
   return `about ${hours < 3 ? Math.round(hours * 2) / 2 : Math.round(hours)} h`;
 }
 
-/** A mastery ledger row's change, short: "+19 (30 → 49)", "no change", with why when it was held back. */
-export function masteryChange(entry: MasteryEntry): string {
-  const change =
-    entry.delta === 0
-      ? `no change (${entry.after} of ${MASTERY_FULL})`
-      : `${entry.delta > 0 ? "+" : "−"}${Math.abs(entry.delta)} (${entry.before} → ${entry.after})`;
-  if (entry.reason === "capped") return `${change} — held at ${MASTERY_HELD_AT} until a pass on another day`;
-  if (entry.reason === "fail_extra") return `${change} — extra practice never costs any`;
-  if (entry.reason === "after_mastered") return "mastered, for good";
-  return change;
-}

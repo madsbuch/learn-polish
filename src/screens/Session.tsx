@@ -10,6 +10,7 @@ import { useBackLayer } from "../lib/navigation";
 import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, setPracticeContext, takeSignals } from "../lib/learnLog";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
+import type { Miss } from "./SessionSummary";
 import { hapticAlmost, hapticRight, hapticWrong } from "../lib/haptics";
 import { playAlmost, playCorrect, playWrong } from "../lib/sounds";
 import { exerciseModule, type AnswerState, type ExerciseProps } from "../exercises";
@@ -40,7 +41,7 @@ export function Session({
   plan: SessionPlan;
   /** The lesson is a challenge: marked as one while it runs. */
   challenge?: boolean;
-  onFinished: (result: LessonFinished, sessionXp: number) => void;
+  onFinished: (result: LessonFinished, sessionXp: number, misses: Miss[]) => void;
   onQuit: () => void;
 }) {
   const [index, setIndex] = useState(0);
@@ -54,6 +55,9 @@ export function Session({
   const [almostCount, setAlmostCount] = useState(0);
   // Every answer of this go, right or not, by card.
   const [results, setResults] = useState<Record<string, boolean>>({});
+  // The cards missed or almost right, for the summary.
+  // Spec: SUM-7
+  const [misses, setMisses] = useState<Miss[]>([]);
 
   // Per-exercise answer state.
   const [picked, setPicked] = useState<string | null>(null);
@@ -210,6 +214,17 @@ export function Session({
       if (answer.correct && !reading) setCorrectCount((n) => n + 1);
       if (answer.almost && !reading) setAlmostCount((n) => n + 1);
       if (!reading) setResults((r) => ({ ...r, [exercise.key]: answer.correct }));
+      if (!reading && !answer.correct) {
+        const miss: Miss = {
+          key: exercise.key,
+          prompt: exercise.prompt,
+          given,
+          expected: answer.expected,
+          almost: answer.almost,
+          itemId: exercise.itemId,
+        };
+        setMisses((all) => [...all.filter((m) => m.key !== miss.key), miss]);
+      }
       setPhase("checked");
       if (!reading) {
         if (answer.correct) {
@@ -254,7 +269,12 @@ export function Session({
     flushLog();
     try {
       const scored = played.filter((e) => !exerciseModule(e.kind).reading).length;
-      onFinished(await api.lessonFinish(plan.lessonId, correctCount, almostCount, scored, plan.context, runKey.current), sessionXp);
+      const left = new Set(played.map((e) => e.key));
+      onFinished(
+        await api.lessonFinish(plan.lessonId, correctCount, almostCount, scored, plan.context, runKey.current),
+        sessionXp,
+        misses.filter((m) => left.has(m.key)),
+      );
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
