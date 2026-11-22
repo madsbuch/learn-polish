@@ -115,7 +115,7 @@ pub fn tools() -> Vec<Tool> {
             "get_activity",
             "Looking at your practice…",
             "How the learner practises over a period: days active, minutes, drills started, finished and \
-             left early (where), games, check-ins, answers by hour and weekday, time to answer, audio \
+             left early (where), games, conversations, answers by hour and weekday, time to answer, audio \
              replays, translations shown, lessons practised most, and other events by kind.",
             json!({ "type": "object", "properties": { "period": period_prop(), "course_id": course_prop() } }),
         ),
@@ -125,7 +125,7 @@ pub fn tools() -> Vec<Tool> {
             "One lesson's mastery ledger: its points now, whether it is mastered, the points it had \
              before the ledger began, and every change, newest first — when, the change and the points \
              before and after, the grade, a drill's score, days since the last go, extra practice, \
-             drill or check-in, and the reason (with the rules each reason stands for).",
+             drill or conversation, and the reason (with the rules each reason stands for).",
             json!({
                 "type": "object",
                 "properties": {
@@ -228,7 +228,7 @@ pub fn tools() -> Vec<Tool> {
             "The learner's answer and event log, newest first, a page at a time: each answer with its \
              date, exercise, direction, prompt as shown, options in order, given and expected, right or \
              wrong, mistake class, course, lesson, source, time to answer, tries, plays, translations \
-             shown, the words it involved (dictionary=form@role:result) and a check-in's verdict; each \
+             shown, the words it involved (dictionary=form@role:result) and a conversation's verdict; each \
              event with its kind and details. `next` continues the listing.",
             json!({
                 "type": "object",

@@ -258,7 +258,7 @@ export default function App() {
         // A speaker may still be playing from before a reload.
         resumeCast();
         const [nextOverview, nextStats, nextCourses] = await Promise.all([
-          track("Today's check-ins", "lessons_overview", () =>
+          track("Today's lessons", "lessons_overview", () =>
             api.lessonsOverview(),
           ),
           track("Your stats", "get_stats", () => api.getStats()),

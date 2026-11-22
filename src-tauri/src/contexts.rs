@@ -35,7 +35,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("form", "the form it had"),
     ("topic", "the topics of the sentence or lesson around it"),
     ("exercise", "the kind of exercise"),
-    ("source", "how the practice was reached (course page, daily five, game…)"),
+    ("source", "how the practice was reached (course page, today's lessons, game…)"),
 ];
 
 /// What the statistics are about: one word or sentence, one grammar

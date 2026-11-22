@@ -34,7 +34,7 @@
     },
     {
       "id": "SYNC-2",
-      "text": "Joining a vault replaces the joining device's synced data with the vault's; a device holding data of its own says what it holds and asks first, and a backup is taken before it is replaced."
+      "text": "Joining another device replaces the joining device's synced data with that device's; a device holding data of its own says what it holds and asks first, and a backup is taken before it is replaced."
     },
     {
       "id": "SYNC-3",
@@ -46,11 +46,11 @@
     },
     {
       "id": "SYNC-5",
-      "text": "Coming back to the front asks for a sync and reloads what is on screen; a drill or check-in in progress keeps its own data."
+      "text": "Coming back to the front asks for a sync and reloads what is on screen; a drill or conversation in progress keeps its own data."
     },
     {
       "id": "SYNC-6",
-      "text": "A device can be removed from the vault; its key is revoked and it is refused from then on."
+      "text": "A device can be removed from the learner's devices; its key is revoked and it is refused from then on."
     },
     {
       "id": "SYNC-7",
@@ -86,7 +86,7 @@
     },
     {
       "id": "SYNC-15",
-      "text": "Connections are encrypted with Noise, and a peer whose key is not in the vault, or is revoked, is refused."
+      "text": "Connections are encrypted with Noise, and a peer that is not one of the learner's devices, or whose key is revoked, is refused."
     },
     {
       "id": "SYNC-16",
@@ -94,7 +94,7 @@
     },
     {
       "id": "SYNC-17",
-      "text": "On a computer in a vault a snapshot of the database is kept daily: one a day for `snapshot.daily`, then one a week up to `snapshot.weekly-until`."
+      "text": "On a computer that syncs with another device a snapshot of the database is kept daily: one a day for `snapshot.daily`, then one a week up to `snapshot.weekly-until`."
     },
     {
       "id": "SYNC-18",

@@ -18,7 +18,7 @@
     {
       "id": "US-DRILL-2",
       "as": "a learner typing on a phone",
-      "want": "a slip of one letter treated as nearly right",
+      "want": "a slip of one letter treated as almost right",
       "soThat": "I am graded on my Polish, not my thumbs",
       "requirements": [
         "#DRILL-2",

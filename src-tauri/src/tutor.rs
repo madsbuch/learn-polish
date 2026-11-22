@@ -42,7 +42,7 @@ const MAX_ROUNDS: usize = 8;
 // Prompt
 // ---------------------------------------------------------------------------
 
-// Spec: TUTOR-6
+// Spec: TUTOR-6, TERM-2
 pub(crate) const RULES: &str = "\
 You are the tutor in Polski, an app for learning Polish. You explain Polish, suggest what to \
 practise, and — when asked — change the app with your tools.
@@ -623,7 +623,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             "create_study_lesson",
             "Writing the lesson…",
             "Write a study lesson: a short lesson (conjugation, grammar, culture) with objectives. \
-             The examiner interviews the learner on the objectives at each check-in.",
+             The examiner interviews the learner on the objectives in each conversation.",
             json!({
                 "type": "object",
                 "properties": {
@@ -833,7 +833,7 @@ pub fn tool_definitions() -> Vec<Tool> {
         tool(
             "get_lesson",
             "Looking at your lessons…",
-            "One lesson in full: lesson and objectives or its words and sentences, its schedule, and the last check-in's verdict.",
+            "One lesson in full: lesson and objectives or its words and sentences, its schedule, and the last conversation's verdict.",
             json!({
                 "type": "object",
                 "properties": { "lesson_id": { "type": "string", "pattern": "^ls_[0-7][0-9a-hjkmnp-tv-z]{25}$" } },

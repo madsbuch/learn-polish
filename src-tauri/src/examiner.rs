@@ -38,6 +38,7 @@ fn question_plan(complexity: &str) -> &'static str {
     }
 }
 
+// Spec: TERM-2
 pub(crate) fn system_prompt(conn: &mut Conn, lesson: &lessons::LessonDetail) -> Result<String> {
     let previous = previous_feedback(conn, lesson.lesson.id)?;
     // A lesson built on Wikipedia: its sources, to keep questions to what
@@ -49,7 +50,7 @@ pub(crate) fn system_prompt(conn: &mut Conn, lesson: &lessons::LessonDetail) -> 
         format!(
             "\nThe lesson is built on these sources. Ask only about what the lesson and they say. \
              Facts may be answered in English (or the learner's language); add one small Polish \
-             step to each check-in — a sentence with the place or word in it.\n{reading}\n"
+             step to each conversation — a sentence with the place or word in it.\n{reading}\n"
         )
     };
     let song = match lesson.lesson.song_id {
@@ -72,7 +73,7 @@ pub(crate) fn system_prompt(conn: &mut Conn, lesson: &lessons::LessonDetail) -> 
                 .collect();
             format!(
                 "\nThis is a LISTENING lesson. The learner has just listened to the song \"{}\" and can \
-                 replay it during the check-in. Ask about what they heard, not about the lesson \
+                 replay it during the conversation. Ask about what they heard, not about the lesson \
                  note: what the chorus means, which word fills a gap in a line you quote with one \
                  word blanked, what a line means, what happens in the song, and — for harder \
                  lessons — why a word has the form it has. Quote at most one short line per \
@@ -86,7 +87,7 @@ pub(crate) fn system_prompt(conn: &mut Conn, lesson: &lessons::LessonDetail) -> 
         "You are a friendly examiner in Polski, an app where an English speaker learns Polish. \
          You check whether the learner has understood one study lesson, by interviewing them.
 
-How to run the check-in:
+How to run the conversation:
 - Ask {plan}. One question per message — never several at once.
 - Write in English; ask for answers in Polish where the objective is about Polish.
 - After each answer, give one short line of feedback (right, or the correction and why), \
@@ -119,7 +120,7 @@ The lesson the learner studied:
         listening = listening,
         sources = sources,
         previous = previous
-            .map(|feedback| format!("\nLast check-in's verdict, to follow up on: {feedback}"))
+            .map(|feedback| format!("\nLast conversation's verdict, to follow up on: {feedback}"))
             .unwrap_or_default(),
         memory = memory_section(conn)?,
     ))
@@ -255,7 +256,7 @@ fn memory_section(conn: &mut Conn) -> Result<String> {
     Ok(format!(
         "{section}\n- As the examiner: use what you remember to aim questions at known weak spots \
          that touch this lesson. When you finish, save — in the same message as \
-         finish_assessment — at most two memories about lasting patterns this check-in showed \
+         finish_assessment — at most two memories about lasting patterns this conversation showed \
          (a recurring mistake, something now mastered), not this lesson's score. Update a \
          struggle that the learner has now clearly overcome."
     ))
@@ -265,7 +266,7 @@ fn tools() -> Vec<Tool> {
     vec![tool(
         "finish_assessment",
         "Weighing it up…",
-        "End the check-in with your verdict.",
+        "End the conversation with your verdict.",
         json!({
             "type": "object",
             "properties": {
@@ -277,7 +278,7 @@ fn tools() -> Vec<Tool> {
                 "to_review": { "type": "array", "items": { "type": "string" }, "description": "What to go over again, concretely (shown to the learner)." },
                 "mistakes": {
                     "type": "array",
-                    "description": "Each slip in the learner's Polish during this check-in, as said and corrected, for their learning log (not shown as a list). Leave out when there were none.",
+                    "description": "Each slip in the learner's Polish during this conversation, as said and corrected, for their learning log (not shown as a list). Leave out when there were none.",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -390,7 +391,7 @@ fn log_verdict(conn: &mut Conn, checkin_id: CheckinId, lesson_id: LessonId, asse
         summary: assessment.summary.clone(),
     };
     let title = crate::schema::lessons::table.find(lesson_id).select(crate::schema::lessons::title).first::<String>(conn).optional()?.unwrap_or_default();
-    let prompt = format!("Check-in: {title}");
+    let prompt = format!("Conversation: {title}");
     crate::learnlog::write_attempt(
         conn,
         &crate::learnlog::NewAttempt {
@@ -532,7 +533,7 @@ fn record_steps(conn: &mut Conn, checkin_id: CheckinId, mut assessment: Assessme
         today,
         &format!("checkin-{checkin_id}"),
         Some(lesson_id),
-        &format!("Check-in: {verdict}"),
+        &format!("Conversation: {verdict}"),
         assessment.xp,
         &note.join(", "),
     )?;
@@ -565,7 +566,7 @@ async fn turn(
         let (lesson_id, finished): (LessonId, Option<i64>) =
             checkins::table.find(checkin_id).select((checkins::lesson_id, checkins::finished_at)).first(conn)?;
         if finished.is_some() {
-            return Err(Error::msg("This check-in is already finished."));
+            return Err(Error::msg("This conversation is already finished."));
         }
         let detail = lessons::detail(conn, lesson_id)?;
         if let Some(text) = &user {
@@ -579,7 +580,7 @@ async fn turn(
         let (prompt, opening, model) = if writing {
             (writing_prompt(conn, &detail)?, OPENING, Some(crate::ai::partner_model(conn)?))
         } else {
-            (system_prompt(conn, &detail)?, "I'm ready for the check-in.", None)
+            (system_prompt(conn, &detail)?, "I'm ready for your questions.", None)
         };
         let mut wire = vec![Wire::system(crate::ai::with_say_player(prompt))];
         let past = history(conn, checkin_id)?;

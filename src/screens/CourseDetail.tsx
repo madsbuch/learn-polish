@@ -542,7 +542,7 @@ function CourseLessons({
     <>
       <p>
         Most important first: a lesson that slipped last time and is due again, then the ones whose time has come,
-        then the next new ones, then the rest. Every pass adds mastery points, up to 100 (a near miss, half as many); a
+        then the next new ones, then the rest. Every pass adds mastery points, up to 100 (a partial, half as many); a
         mastered lesson never comes back.
       </p>
       {explained}

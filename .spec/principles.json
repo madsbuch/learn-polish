@@ -72,11 +72,11 @@
     },
     {
       "id": "PRIN-9",
-      "text": "The day's list is a short way in, not a backlog: what is due never piles up on the home screen."
+      "text": "Today's lessons are a short way in, not a backlog: what is due never piles up on the home screen."
     },
     {
       "id": "PRIN-10",
-      "text": "A lesson that fits no course goes in the single folder `course.other-title`."
+      "text": "A lesson that fits no course goes in the single folder `term.other-lessons`."
     },
     {
       "id": "PRIN-11",

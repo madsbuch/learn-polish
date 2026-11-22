@@ -233,7 +233,7 @@ fn describe(r: &Row) -> String {
         "partial" => "Partial",
         _ => "Fail",
     };
-    let grade = if r.via == "checkin" { format!("Check-in: {}", grade.to_lowercase()) } else { grade.to_string() };
+    let grade = if r.via == "checkin" { format!("Conversation: {}", grade.to_lowercase()) } else { grade.to_string() };
     let score = match (r.correct, r.almost, r.total) {
         (Some(c), Some(a), Some(t)) if t > 0 => format!(" {}", score_text(c, a, t)),
         _ => String::new(),

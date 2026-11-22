@@ -3,7 +3,7 @@
   "title": "Memory",
   "summary": "Short facts about the learner that the tutor and the examiner share across conversations.",
   "order": 1,
-  "description": "What the examiner notices in a check-in should reach the tutor, and the other way round.",
+  "description": "What the examiner notices in a conversation lesson should reach the tutor, and the other way round.",
   "stories": [
     {
       "id": "US-MEM-1",

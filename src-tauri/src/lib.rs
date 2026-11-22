@@ -823,7 +823,7 @@ mod integration {
         assert_eq!(labels[0], ("Met “cześć”", 0, "read: no XP"));
         assert!(labels[1].0 == "Typed “cześć”" && labels[1].1 > 0);
         assert_eq!((labels[2].1, labels[2].2), (0, "a mistake: no XP"));
-        assert!(day.runs[1].entries[0].label.starts_with("Check-in: passed"));
+        assert!(day.runs[1].entries[0].label.starts_with("Conversation: passed"));
 
         // A day from before the log has its total only.
         stats::add_xp(&mut conn, today - 3, 40).unwrap();
@@ -5209,7 +5209,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
             assert_eq!((course.is_some(), source.as_str(), *id), (true, "daily", Some(checkin)));
             let v = crate::learnlog::read_details(details).verdict.unwrap();
             assert_eq!(v.result, "pass");
-            assert!(v.xp > 0 && prompt.starts_with("Check-in"));
+            assert!(v.xp > 0 && prompt.starts_with("Conversation"));
         }
         // The slip's words are linked: mleko, as written correctly.
         let slip: AttemptId = t::attempts::table.filter(t::attempts::exercise.eq("checkinMistake")).select(t::attempts::id).first(&mut conn).unwrap();

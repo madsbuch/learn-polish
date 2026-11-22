@@ -43,7 +43,7 @@
     },
     {
       "id": "CRS-3",
-      "text": "Dialogue lines given to a course join its conversation lesson, or start one if it has none."
+      "text": "Dialogue lines given to a course join its dialogue lesson, or start one if it has none."
     },
     {
       "id": "CRS-4",
@@ -87,7 +87,7 @@
     },
     {
       "id": "CRS-8",
-      "text": "`course.other-title` is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
+      "text": "`term.other-lessons` is a single folder at the bottom of the course list for lessons that fit no course; it can never be completed or closed."
     },
     {
       "id": "CRS-9",
@@ -128,7 +128,7 @@
     },
     {
       "id": "CRS-18",
-      "text": "Every lesson is in exactly one course; `course.other-title` counts as one."
+      "text": "Every lesson is in exactly one course; `term.other-lessons` counts as one."
     },
     {
       "id": "CRS-19",
@@ -156,7 +156,14 @@
       "id": "course.other-title",
       "type": "text",
       "value": "Other lessons",
-      "description": "The folder for lessons that fit no course."
+      "description": "The folder for lessons that fit no course.",
+      "deprecation": {
+        "reason": "Words for concepts are terms now, kept in one place; this one is `term.other-lessons`.",
+        "replacedBy": [
+          "#term.other-lessons"
+        ],
+        "date": "2026-11-22"
+      }
     },
     {
       "id": "lesson.challenge-explained",

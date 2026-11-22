@@ -19,7 +19,7 @@
     },
     {
       "id": "LIS-4",
-      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in `course.other-title`."
+      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in `term.other-lessons`."
     },
     {
       "id": "LIS-5",

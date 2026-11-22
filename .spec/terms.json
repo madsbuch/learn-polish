@@ -1,0 +1,227 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Terms",
+  "summary": "One word for each concept, in the interface, the agents' instructions and the spec.",
+  "order": 1.5,
+  "description": "The words the app and the spec use for its concepts: each term's value is the word, its description the definition.\n\nA description's last sentence, \"Not: a, b.\", lists the words that term rules out, which the spec check looks for.",
+  "stories": [
+    {
+      "id": "US-TERM-1",
+      "as": "a learner reading the app and its guide",
+      "want": "each thing called by one name everywhere",
+      "soThat": "I never wonder whether two words mean two things",
+      "requirements": [
+        "#TERM-1",
+        "#TERM-2"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "TERM-1",
+      "text": "The interface calls each concept by its term, and never by a word the term rules out."
+    },
+    {
+      "id": "TERM-2",
+      "text": "The instructions and tool descriptions given to the tutor, the examiner and the writing partner use the same terms."
+    },
+    {
+      "id": "TERM-3",
+      "text": "The build fails when a requirement, story, summary or description of the spec uses a word a term rules out."
+    }
+  ],
+  "values": [
+    {
+      "id": "term.course",
+      "type": "text",
+      "value": "course",
+      "description": "A folder on one theme that lists lessons in order, and can be completed, mastered and closed."
+    },
+    {
+      "id": "term.lesson",
+      "type": "text",
+      "value": "lesson",
+      "description": "The unit of learning: one job, of one lesson type, in exactly one course, with its own schedule and mastery points. Not: block."
+    },
+    {
+      "id": "term.lesson-type",
+      "type": "text",
+      "value": "lesson type",
+      "description": "Which of `lesson.types` a lesson is, which decides how it is practised and what its page shows."
+    },
+    {
+      "id": "term.drill",
+      "type": "text",
+      "value": "drill",
+      "description": "A lesson tapped through as cards over the few words, sentences or dialogue it owns, graded by the share answered right."
+    },
+    {
+      "id": "term.card",
+      "type": "text",
+      "value": "card",
+      "description": "One step of a drill: something to read, answer, say or play."
+    },
+    {
+      "id": "term.dialogue",
+      "type": "text",
+      "value": "dialogue",
+      "description": "A course's short everyday exchange in Polish, and the drill that practises it. Not: today's conversation."
+    },
+    {
+      "id": "term.conversation-lesson",
+      "type": "text",
+      "value": "conversation lesson",
+      "description": "A study, listening or writing lesson, practised as an exchange with an AI that ends in a verdict; one go at it is a conversation."
+    },
+    {
+      "id": "term.examiner",
+      "type": "text",
+      "value": "examiner",
+      "description": "The AI that questions the learner in a study or listening lesson and gives the verdict."
+    },
+    {
+      "id": "term.writing-partner",
+      "type": "text",
+      "value": "writing partner",
+      "description": "The AI that plays a writing lesson's situation with the learner, writing only Polish, and gives the verdict."
+    },
+    {
+      "id": "term.check-in",
+      "type": "text",
+      "value": "check-in",
+      "description": "A lesson's return on its schedule, whatever its type; a go at a conversation lesson is a conversation, not a check-in."
+    },
+    {
+      "id": "term.extra-practice",
+      "type": "text",
+      "value": "extra practice",
+      "description": "A go at a lesson already passed today: it pays half XP and leaves the schedule as it was."
+    },
+    {
+      "id": "term.pass",
+      "type": "text",
+      "value": "pass",
+      "description": "A graded go that is good enough, by a drill's score or a conversation's verdict; shown as Passed."
+    },
+    {
+      "id": "term.partial",
+      "type": "text",
+      "value": "partial",
+      "description": "A graded go short of a pass that is not a fail; shown as Partly there. Not: near miss."
+    },
+    {
+      "id": "term.fail",
+      "type": "text",
+      "value": "fail",
+      "description": "A graded go below a partial; shown as Not yet."
+    },
+    {
+      "id": "term.ace",
+      "type": "text",
+      "value": "ace",
+      "description": "A pass with every scored card fully right, or a conversation passed with nothing to go over again."
+    },
+    {
+      "id": "term.almost",
+      "type": "text",
+      "value": "almost",
+      "description": "An answer one slip off, a typed word one letter off or a sentence with one word wrong, which counts as half right. Not: nearly right."
+    },
+    {
+      "id": "term.mastery-points",
+      "type": "text",
+      "value": "mastery points",
+      "description": "A lesson's points from 0 to `mastery.full`, earned by passing, each change kept with its reason."
+    },
+    {
+      "id": "term.mastered",
+      "type": "text",
+      "value": "mastered",
+      "description": "Of a lesson, passed and at `mastery.full` mastery points, for good; of a course, completed with every lesson mastered."
+    },
+    {
+      "id": "term.completed",
+      "type": "text",
+      "value": "completed",
+      "description": "Of a course, every core lesson passed once."
+    },
+    {
+      "id": "term.core-lesson",
+      "type": "text",
+      "value": "core lesson",
+      "description": "A lesson of a course that is not a challenge; in a course of challenges only, every lesson."
+    },
+    {
+      "id": "term.challenge",
+      "type": "text",
+      "value": "challenge",
+      "description": "A lesson marked as beyond its course's level, explained as `lesson.challenge-explained`."
+    },
+    {
+      "id": "term.closed",
+      "type": "text",
+      "value": "closed",
+      "description": "Of a mastered course, closed by the learner as a trophy: listed under Mastered, never due, and never changed again."
+    },
+    {
+      "id": "term.todays-lessons",
+      "type": "text",
+      "value": "today's lessons",
+      "description": "The few lessons chosen each day as the ones that matter most, at the top of Exercises. Not: daily list, daily five, day's list."
+    },
+    {
+      "id": "term.other-lessons",
+      "type": "text",
+      "value": "Other lessons",
+      "description": "The one folder, at the bottom of the course list, for lessons that fit no course; it is never completed or closed."
+    },
+    {
+      "id": "term.light-review",
+      "type": "text",
+      "value": "light review",
+      "description": "A mastered lesson whose words are due, given a spare place in today's lessons without risk to its mastery."
+    },
+    {
+      "id": "term.xp",
+      "type": "text",
+      "value": "XP",
+      "description": "Points paid for practice that was really done, counted by day."
+    },
+    {
+      "id": "term.streak",
+      "type": "text",
+      "value": "streak",
+      "description": "The number of done days in a row."
+    },
+    {
+      "id": "term.streak-freeze",
+      "type": "text",
+      "value": "streak freeze",
+      "description": "Earned every seventh day of a streak, it covers a missed day by itself."
+    },
+    {
+      "id": "term.quick-game",
+      "type": "text",
+      "value": "quick game",
+      "description": "A minute's play over words already met, outside today's lessons, that moves no schedule."
+    },
+    {
+      "id": "term.tutor",
+      "type": "text",
+      "value": "tutor",
+      "description": "The AI in the Tutor tab that explains Polish and makes and changes courses, lessons and songs with its tools."
+    },
+    {
+      "id": "term.device",
+      "type": "text",
+      "value": "device",
+      "description": "A phone or computer with the app and the learner's data."
+    },
+    {
+      "id": "term.your-devices",
+      "type": "text",
+      "value": "your devices",
+      "description": "The devices that sync one learner's data with each other. Not: vault."
+    }
+  ]
+}

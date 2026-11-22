@@ -87,7 +87,7 @@ pub struct Signals {
 /// How the learner reached what they practised, and what each means.
 pub const SOURCES: &[(&str, &str)] = &[
     ("course", "a lesson opened from its course's page"),
-    ("daily", "today's lessons (the daily five)"),
+    ("daily", "today's lessons"),
     ("other", "a lesson in Other lessons"),
     ("game", "a quick game"),
     ("tutor", "a lesson opened from the tutor's conversation"),
@@ -340,7 +340,7 @@ pub const EVENT_KINDS: &[(&str, &str)] = &[
     ("card_skipped", "a card left out (reason: speaking_off, mic_refused, no_mic)"),
     ("game_started", "a quick game started (game)"),
     ("game_finished", "a quick game finished (game, ms, answered)"),
-    ("checkin_started", "a check-in started"),
+    ("checkin_started", "a conversation started"),
     ("report_asked", "the learning report asked for"),
 ];
 

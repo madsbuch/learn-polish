@@ -58,7 +58,7 @@
     },
     {
       "id": "MAST-8",
-      "text": "A lesson is mastered when it has been passed and has `mastery.full` points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in the day's list."
+      "text": "A lesson is mastered when it has been passed and has `mastery.full` points; once mastered it is never due again and nothing takes mastery or points away. Its words can still come back as a light review in today's lessons."
     },
     {
       "id": "MAST-9",

@@ -20,7 +20,7 @@
   "requirements": [
     {
       "id": "TODAY-1",
-      "text": "The day's list is chosen once a day and kept for that day; it is chosen again only when the learner changes how many lessons a day they want, or when the kept list names no lesson this device has."
+      "text": "Today's lessons are chosen once a day and kept for that day; they are chosen again only when the learner changes how many lessons a day they want, or when the kept choice names no lesson this device has."
     },
     {
       "id": "TODAY-2",
@@ -69,7 +69,7 @@
     },
     {
       "id": "TODAY-11",
-      "text": "The day's list is the same on every device in a vault; if two devices chose a list while apart, the later one wins."
+      "text": "Today's lessons are the same on all of the learner's devices; if two devices chose them while apart, the later choice wins."
     }
   ],
   "values": [
@@ -77,13 +77,13 @@
       "id": "daily.default",
       "type": "number",
       "value": 5,
-      "description": "Lessons in the day's list unless the learner sets another number."
+      "description": "How many of today's lessons there are unless the learner sets another number."
     },
     {
       "id": "daily.max-new",
       "type": "number",
       "value": 2,
-      "description": "The most new lessons in a day's list."
+      "description": "The most new lessons among today's lessons."
     },
     {
       "id": "daily.max-reviews",

@@ -11,7 +11,7 @@ export const dialogueRead = defineExercise({
   render: ({ exercise, plan, revealAll, onToggleReveal }) => (
     <>
       <Stack gap={1}>
-        <Text variant="eyebrow">Today's conversation</Text>
+        <Text variant="eyebrow">The dialogue</Text>
         <h1>{exercise.pl}</h1>
         <Text variant="small" tone="dim" as="p">
           {exercise.hint}

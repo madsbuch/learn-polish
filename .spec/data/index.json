@@ -72,7 +72,7 @@
     },
     {
       "id": "DATA-12",
-      "text": "Writes that belong together (a lesson's grade and its schedule, a check-in's verdict, each tutor tool call) are made in one transaction."
+      "text": "Writes that belong together (a lesson's grade and its schedule, a conversation's verdict, each tutor tool call) are made in one transaction."
     }
   ],
   "values": [

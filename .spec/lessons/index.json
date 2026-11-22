@@ -70,7 +70,7 @@
     },
     {
       "id": "LSN-8",
-      "text": "A lesson can be marked a challenge: it does not count toward completing its course, and the daily list offers it only once the course's other lessons are passed."
+      "text": "A lesson can be marked a challenge: it does not count toward completing its course, and today's lessons offer it only once the course's other lessons are passed."
     },
     {
       "id": "LSN-9",
@@ -86,11 +86,11 @@
     },
     {
       "id": "LSN-12",
-      "text": "A challenge is marked as one wherever a lesson is listed or shown: the day's list and its next lesson, a course's lessons, the lesson's page, and a drill or conversation while it runs."
+      "text": "A challenge is marked as one wherever a lesson is listed or shown: today's lessons and their next lesson, a course's lessons, the lesson's page, and a drill or conversation while it runs."
     },
     {
       "id": "LSN-13",
-      "text": "The mark is the word `lesson.challenge-label` with an icon, in `color.challenge`, so it never rests on colour alone."
+      "text": "The mark is the word `term.challenge` with an icon, in `color.challenge`, so it never rests on colour alone."
     }
   ],
   "values": [
@@ -117,7 +117,14 @@
       "id": "lesson.challenge-label",
       "type": "text",
       "value": "Challenge",
-      "description": "The mark on a challenge."
+      "description": "The mark on a challenge.",
+      "deprecation": {
+        "reason": "Words for concepts are terms now, kept in one place; this one is `term.challenge`.",
+        "replacedBy": [
+          "#term.challenge"
+        ],
+        "date": "2026-11-22"
+      }
     },
     {
       "id": "color.challenge",

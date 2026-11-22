@@ -133,7 +133,7 @@ const HELD_WORDS: [string, Words][] = [
   ["playlists", { one: "playlist", many: "playlists" }],
   ["tutor_conversations", { one: "tutor conversation", many: "tutor conversations" }],
   ["memories", { one: "memory", many: "memories" }],
-  ["checkins", { one: "check-in", many: "check-ins" }],
+  ["checkins", { one: "conversation in a lesson", many: "conversations in lessons" }],
   ["achievements", { one: "achievement", many: "achievements" }],
   ["reviews", { phrase: "your review history" }],
   ["xp_log", { phrase: "your XP history" }],

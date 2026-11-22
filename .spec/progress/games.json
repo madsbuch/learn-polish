@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Quick games",
-  "summary": "A minute's play over words already met, outside the daily list, that never moves a schedule.",
+  "summary": "A minute's play over words already met, outside today's lessons, that never moves a schedule.",
   "order": 1,
   "description": "Play for a spare minute, over what the lessons taught. Matching visible cards is recognition, not recall, so games never count as reviews.",
   "stories": [

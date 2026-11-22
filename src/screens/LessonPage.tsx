@@ -164,7 +164,7 @@ export function LessonPage({
     );
   }
   if (ai && type.engine === "conversation" && (!ai.key || !ai.model)) {
-    needs.push("Its check-in is a conversation with an AI model: set an OpenRouter key and pick a model in Settings → AI.");
+    needs.push("It is practised as a conversation with an AI model: set an OpenRouter key and pick a model in Settings → AI.");
   }
 
   /** One part of the page, by the name a type lists it under. */

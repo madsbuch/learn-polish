@@ -1806,7 +1806,7 @@ function ActivityBody({ data, nav }: { data: Activity; nav: Nav }) {
               trailing={<Text tone="dim">{data.games}</Text>}
             />
             <ListItem
-              title="Check-ins"
+              title="Conversations"
               trailing={<Text tone="dim">{data.checkins}</Text>}
             />
           </List>
@@ -2797,7 +2797,7 @@ function RawLogPage({
           card as it was shown (the prompt, every option in its order, its place
           in the run), what you gave and what was expected, how long it took,
           changes, plays and translations shown, the words it involved with
-          their roles and forms, and a check-in's verdict — and every event,
+          their roles and forms, and a conversation's verdict — and every event,
           like a lesson opened or a word looked up. Tap a row for all of it.
         </p>
       }

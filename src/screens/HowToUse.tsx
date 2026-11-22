@@ -75,7 +75,7 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           graded at all.
         </P>
         <P>
-          Got a minute? <strong>Quick games</strong> on Home — match pairs against the clock, flip memory cards,
+          Got a minute? <strong>Quick games</strong> on Exercises — match pairs against the clock, flip memory cards,
           write down sentences you hear, tell near sounds apart (proszę or prosię?), or say sentences out loud — play
           with what you have already met. They earn a little XP (up to 30 a day), count toward your day, and don&apos;t
           change when a word comes back: that stays the lessons&apos; job. A word counts once a day: answering it right
@@ -130,7 +130,7 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
         </P>
         <P>
           Every pass earns mastery points — 30 for the first, 10 for another the same day, 16 to 35 for one a day to two
-          weeks later — and a near miss (60–84% right) half what a pass would; a fail costs 20, except on extra
+          weeks later — and a partial (60–84% right) half what a pass would; a fail costs 20, except on extra
           practice, which never costs anything. You don&apos;t have to wait for a check-in: practise a lesson as often as
           you like and you get most of the way today — up to 90 points. The last stretch takes a pass on another day,
           any day: mastering is remembering, not cramming. Passes spread out over days are better evidence, so they

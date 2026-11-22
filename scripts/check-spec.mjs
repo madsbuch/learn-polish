@@ -19,13 +19,18 @@
 //   item everything is dropped with it;
 // - every figure is there;
 // - every `Spec: ID` comment in the code cites a requirement the spec has and
-//   has not deprecated.
+//   has not deprecated;
+// - no requirement, story, summary or description says a word a term rules
+//   out: the "Not: a, b." that ends a `term.*` value's description; nor does
+//   a string or JSX text in the screens (src/**/*.tsx).
 //
 // Runs in `bun run build`. An id never changes and is never reused.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import ts from "typescript";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const root = join(repo, ".spec");
@@ -242,6 +247,69 @@ for (const [id, item] of items) {
   for (const figure of list(item, "figures")) {
     unknownKeys(`${here} figure`, figure, FIGURE_KEYS);
     if (!isText(figure.src) || figure.src.startsWith("/") || !existsSync(join(root, figure.src))) problems.push(`${here}: figure "${figure.src}" is not in .spec`);
+  }
+}
+
+// Spec: TERM-3
+// The words the terms rule out, and every text the spec says them in: what
+// is current, not a history or a deprecation's record. Backticked names and
+// each term's own "Not:" sentence are not prose.
+const NOT = /(?:^|\s)Not: ([^.]+)\.\s*$/;
+const ruledOut = [];
+for (const item of items.values()) {
+  if (!isObject(item) || item.deprecation !== undefined) continue;
+  for (const value of list(item, "values")) {
+    if (value.deprecation !== undefined || !String(value.id).startsWith("term.") || typeof value.description !== "string") continue;
+    const not = value.description.match(NOT);
+    for (const word of not ? not[1].split(",") : []) {
+      const escaped = word.trim().replaceAll("'", "’").replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll("’", "['’]");
+      ruledOut.push({ term: value.id, word: word.trim(), pattern: new RegExp(`(?<![\\p{L}\\p{N}])${escaped}s?(?![\\p{L}\\p{N}])`, "iu") });
+    }
+  }
+}
+function checkWords(where, text) {
+  if (typeof text !== "string") return;
+  const prose = text.replace(/`[^`]*`/g, " ").replace(NOT, "");
+  for (const { term, word, pattern } of ruledOut) {
+    if (pattern.test(prose)) problems.push(`${where}: says "${word}", which \`${term}\` rules out`);
+  }
+}
+for (const [id, item] of items) {
+  if (!isObject(item) || item.deprecation !== undefined) continue;
+  const here = name(id);
+  checkWords(here, item.summary);
+  checkWords(here, item.description);
+  for (const story of list(item, "stories")) {
+    if (story.deprecation === undefined) for (const key of ["as", "want", "soThat"]) checkWords(`${here}#${story.id}`, story[key]);
+  }
+  for (const requirement of list(item, "requirements")) {
+    if (requirement.deprecation === undefined) checkWords(`${here}#${requirement.id}`, requirement.text);
+  }
+  for (const value of list(item, "values")) {
+    if (value.deprecation === undefined) checkWords(`${here}#${value.id}`, value.description);
+  }
+}
+
+// Spec: TERM-1
+// The interface's own words: every string and JSX text in the screens.
+function interfaceTexts(source) {
+  const texts = [];
+  const visit = (node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateLiteralToken(node) || ts.isJsxText(node)) {
+      texts.push({ text: node.text, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1 });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return texts;
+}
+for (const path of existsSync(join(repo, "src")) ? files(join(repo, "src"), (file) => file.endsWith(".tsx")) : []) {
+  const source = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  for (const { text, line } of interfaceTexts(source)) {
+    const words = text.replaceAll("&apos;", "'");
+    for (const { term, word, pattern } of ruledOut) {
+      if (pattern.test(words)) problems.push(`${relative(repo, path).replaceAll("\\", "/")}:${line}: says "${word}", which \`${term}\` rules out`);
+    }
   }
 }
 
