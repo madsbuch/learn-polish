@@ -90,7 +90,10 @@ The app:
   To grow a course, add to it rather than making a new one.
 - Courses are made to be finished: the learner completes one by passing each lesson once, and \
   masters it when every lesson has full mastery points, earned by passing it again — spaced \
-  passes earn more, and the last stretch needs a pass on a second day (writing done without help). Keep the core at \
+  passes earn more, a go short of a pass earns a share by its score, nothing takes points away (a miss \
+  brings the lesson back sooner), and the last stretch needs a pass on a second day (writing done without help). \
+  A drill's cards follow its level: an A1 lesson asks words by choice and builds sentences from tiles already \
+  in their form; typing, endings to pick and dictation come from A2 up, each item harder as it is known. Keep the core at \
   the course's level; a lesson clearly beyond it (free writing in a beginner course, a grammar \
   point a level up) is a challenge — set challenge with update_lesson, and give it its level. Challenges count for mastering, \
   not completing. Writing lessons start guided (word bank, hints) and step up as they pass.

@@ -26,7 +26,6 @@ export const GRADE_WORD: Record<Grade, string> = {
 export const SUMMARY_TEXT = {
   notGraded: "Nothing was scored, so it isn't graded: its mastery and schedule stay as they were.",
   capped: `Held at ${MASTERY_HELD_AT} until a pass on another day`,
-  failExtra: "Extra practice never costs points",
   afterMastered: "Mastered, for good",
   backOn: (date: string) => `Back on ${date}`,
   partialNext: (when: string) => `Nearly there. It comes back ${when}, or try again now.`,
@@ -41,14 +40,15 @@ export const SUMMARY_TEXT = {
 } as const;
 
 /**
- * The tone: a lesson mastered by this go has its own moment; a fail, or a
- * go that cost points, is met calmly; a go not graded is plain.
+ * The tone: a lesson mastered by this go has its own moment; a fail is met
+ * calmly; a go not graded is plain. No go loses points, so the grade alone
+ * decides.
  */
 // Spec: SUM-5, SUM-6, SUM-9
-export function toneOf(grade: Grade | "", graded: boolean, delta: number, masteredNow: boolean): Tone {
+export function toneOf(grade: Grade | "", graded: boolean, masteredNow: boolean): Tone {
   if (masteredNow) return "mastered";
   if (!graded || grade === "") return "plain";
-  if (grade === "fail" || delta < 0) return "calm";
+  if (grade === "fail") return "calm";
   return grade;
 }
 
@@ -58,10 +58,15 @@ export function celebrates(tone: Tone): boolean {
   return tone === "mastered" || tone === "ace" || tone === "pass";
 }
 
-/** A change in points: "+38", "−20", "no change". */
+/** A change in points: "+38", or "no change" (points only grow: MAST-6). */
 export function signed(delta: number): string {
-  if (delta === 0) return "no change";
-  return `${delta > 0 ? "+" : "−"}${Math.abs(delta)}`;
+  if (delta <= 0) return "no change";
+  return `+${delta}`;
+}
+
+/** The go's own change beside a better one: "+5", or "0" when it earned none. */
+function earned(delta: number): string {
+  return delta > 0 ? `+${delta}` : "0";
 }
 
 /** A drill's score: "11 of 11 right", "7½ of 10 right" (an almost counts half). */
@@ -77,8 +82,6 @@ export function masteryReason(entry: MasteryEntry): string | null {
   switch (entry.reason) {
     case "capped":
       return SUMMARY_TEXT.capped;
-    case "fail_extra":
-      return SUMMARY_TEXT.failExtra;
     case "after_mastered":
       return SUMMARY_TEXT.afterMastered;
     default:
@@ -110,19 +113,20 @@ export function nextLine(grade: Grade, extra: boolean, nextDueDay: number | null
 }
 
 /**
- * What the misses cost, in one line, from what the core worked out by the
- * rules that graded the go (`impact`): the more right answers a better grade
- * took, and the mastery change it would have made instead of the go's.
+ * What the misses kept from the go, in one line, from what the core worked
+ * out by the rules that graded it (`impact`): the more right answers a
+ * better grade took, and the mastery change it would have made instead of
+ * the go's own ("0" when it earned none — no go loses points).
  */
 // Spec: SUM-8
 export function impactLine(impact: Impact | null, actualDelta: number | null): string | null {
   if (!impact) return null;
-  const actual = actualDelta ?? 0;
+  const actual = Math.max(0, actualDelta ?? 0);
   const change = impact.delta === actual ? null : signed(impact.delta);
   if (impact.moreRight === null) {
-    return change === null ? null : SUMMARY_TEXT.impactConversation(change, signed(actual));
+    return change === null ? null : SUMMARY_TEXT.impactConversation(change, earned(actual));
   }
-  return SUMMARY_TEXT.impactDrill(impact.moreRight, impact.grade === "ace" ? "aced" : "passed", change, signed(actual));
+  return SUMMARY_TEXT.impactDrill(impact.moreRight, impact.grade === "ace" ? "aced" : "passed", change, earned(actual));
 }
 
 /** The bar's ends, 0–`mastery.full`. */

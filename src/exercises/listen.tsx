@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 
 import { DictationDiff, ListenButtons, useSayOnce } from "../components/Listen";
+import { SentenceTiles } from "../components/SentenceTiles";
 import { SpeakButton } from "../components/ui";
 import { Stack, Text } from "../design";
 import { speakQuietly } from "../lib/speech";
 import { pickedAnswer, TypedField, typedAnswer } from "./shared";
 import { defineExercise, type ExerciseProps } from "./types";
+import { builtSentence } from "./wordOrder";
 
 /*
  * The ear: write down a sentence as it is said (dictation), and tell two
@@ -13,15 +15,15 @@ import { defineExercise, type ExerciseProps } from "./types";
  */
 
 /** Dictation: heard, not seen, until it is checked; then word by word. */
-function Dictation(props: ExerciseProps) {
-  const { exercise, isChecked, diff } = props;
+function Dictation(props: ExerciseProps & { eyebrow?: string }) {
+  const { exercise, isChecked, diff, eyebrow = "Write what you hear" } = props;
   // A dialogue line is said in its speaker's voice.
   const line = exercise.context[0];
   const gender = line?.gender ?? "";
   useSayOnce(exercise.pl, gender, exercise.key);
   return (
     <>
-      <Text variant="eyebrow">Write what you hear</Text>
+      <Text variant="eyebrow">{eyebrow}</Text>
       <div className="prompt-card listen-card">
         {line ? (
           <Text variant="caption" tone="faint">
@@ -42,6 +44,61 @@ export const dictation = defineExercise({
   revealOnRight: true,
   ...typedAnswer,
   render: (props) => <Dictation {...props} />,
+});
+
+/** A word, heard and not seen, typed: checked like a typed word (one letter off is almost). */
+export const wordDictation = defineExercise({
+  kinds: ["wordDictation"],
+  typed: true,
+  revealOnRight: true,
+  ...typedAnswer,
+  render: (props) => <Dictation {...props} eyebrow="Write the word you hear" />,
+});
+
+/**
+ * Dictation from a word bank: the sentence is heard, and written by putting
+ * its words in order from a bank that also holds a few that do not belong.
+ * Checked like a dictation, word by word.
+ */
+function BankDictation(props: ExerciseProps) {
+  const { exercise, isChecked, diff, built, setBuilt, forms, setForms } = props;
+  const line = exercise.context[0];
+  const gender = line?.gender ?? "";
+  useSayOnce(exercise.pl, gender, exercise.key);
+  return (
+    <>
+      <Text variant="eyebrow">Write what you hear, from the words</Text>
+      <div className="prompt-card listen-card">
+        {line ? (
+          <Text variant="caption" tone="faint">
+            {line.speaker} says
+          </Text>
+        ) : null}
+        <ListenButtons text={exercise.pl} gender={gender} />
+      </div>
+      {isChecked && diff.length > 0 ? (
+        <DictationDiff words={diff} />
+      ) : (
+        <SentenceTiles
+          exercise={exercise}
+          built={built}
+          forms={forms}
+          checked={isChecked}
+          onBuilt={setBuilt}
+          onForms={setForms}
+        />
+      )}
+    </>
+  );
+}
+
+// Spec: DRILL-14
+export const bankDictation = defineExercise({
+  kinds: ["bankDictation"],
+  revealOnRight: true,
+  given: builtSentence,
+  canSubmit: (exercise, state) => builtSentence(exercise, state).trim().length > 0,
+  render: (props) => <BankDictation {...props} />,
 });
 
 /** How long after the verdict's chime the other word of the pair is said. */

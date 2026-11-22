@@ -22,10 +22,6 @@ pub(crate) const MEMORY_PAIRS: usize = 6;
 pub(crate) const MEMORY_PAIRS_MIN: usize = 4;
 /// Sentences in a fill-the-gaps exercise.
 pub(crate) const GAP_SENTENCES: usize = 4;
-/// Once an item has survived this many correct reps we stop showing multiple
-/// choice and make the learner produce it from memory.
-// Spec: DRILL-1
-const TYPING_THRESHOLD: i64 = 3;
 
 pub struct WordRow {
     pub id: WordId,
@@ -37,6 +33,10 @@ pub struct WordRow {
     pub image: Option<FileId>,
     /// A real word it is easily heard as (sounds.rs), when the tutor gave one.
     pub near: Option<Near>,
+    /// How well it is known: a step up its ladder of cards for each day it
+    /// was answered with no miss, a step down for each day with one
+    /// (difficulty.rs).
+    pub familiarity: usize,
 }
 
 /// A word's near neighbour by sound: "prosię" for "proszę".
@@ -51,8 +51,8 @@ pub struct SentenceRow {
     pub meaning: String,
     /// Its words in another form than their dictionary one (tiles.rs).
     pub endings: Vec<crate::tiles::Ending>,
-    /// Times answered right in a row (its review), 0 when new.
-    pub reps: i64,
+    /// How well it is known (difficulty.rs).
+    pub familiarity: usize,
 }
 
 pub fn load_course(conn: &mut Conn, course_id: CourseId) -> Result<Course> {
@@ -183,14 +183,42 @@ pub(crate) fn sentence_intro(s: &SentenceRow) -> Exercise {
 }
 
 /// The practice step for a word the learner has met: harder the better they
-/// know it — recognise it, then pick it, then type it from memory.
-pub(crate) fn practise_word(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
-    if w.reps >= TYPING_THRESHOLD {
-        typing(w)
-    } else if w.reps >= 1 {
-        produce(w, pool, rng)
-    } else {
-        recognise(w, pool, rng)
+/// know it, up to what the lesson's level allows (difficulty.rs) — never
+/// said aloud here (a words lesson decides that itself).
+pub(crate) fn practise_word(w: &WordRow, drill: &Drill, rng: &mut impl rand::Rng) -> Exercise {
+    let card = crate::difficulty::pick(crate::difficulty::WORD_CARDS, drill.level, w.familiarity, false, |k| k != "say-word");
+    word_card(w, card, &drill.pool, rng)
+}
+
+/// A word's card of the given kind (a name of `drill.word-cards`).
+// Spec: DRILL-15
+pub(crate) fn word_card(w: &WordRow, card: &str, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
+    match card {
+        "pick-word" => produce(w, pool, rng),
+        "type-word" => typing(w),
+        "hear-word" => word_dictation(w),
+        "say-word" => say_word(w),
+        _ => recognise(w, pool, rng),
+    }
+}
+
+/// The practice step for a sentence: the kind its familiarity and the
+/// lesson's level give (difficulty.rs), among those `can` allows here (a
+/// typed gap needs a word to take out). A new one gets the easiest.
+// Spec: DRILL-1, DRILL-15
+pub(crate) fn practise_sentence(s: &SentenceRow, is_new: bool, drill: &Drill, can: impl Fn(&str) -> bool, rng: &mut impl rand::Rng) -> Exercise {
+    let gap = gap_typed(s, drill);
+    let card = crate::difficulty::pick(crate::difficulty::SENTENCE_CARDS, drill.level, s.familiarity, is_new, |k| {
+        can(k) && (k != "gap-typed" || gap.is_some())
+    });
+    match card {
+        "tiles-two" => word_order_two(s),
+        "bank-dictation" => bank_dictation(s, &drill.pool, rng),
+        "tiles-all" => word_order(s),
+        "gap-typed" => gap.unwrap_or_else(|| word_order(s)),
+        "dictation" => dictation(s),
+        "say-sentence" => say_sentence(s),
+        _ => word_order_set(s),
     }
 }
 
@@ -201,13 +229,16 @@ pub(crate) fn lesson_words(conn: &mut Conn, lesson_id: LessonId) -> Result<Vec<(
         .order((words::ord, words::id))
         .select((words::id, words::pl, words::en, words::pos, words::image_file_id, words::near_pl, words::near_en))
         .load(conn)?;
-    let reps = met(conn, "word", &rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>())?;
+    let ids: Vec<String> = rows.iter().map(|r| r.0.to_string()).collect();
+    let reps = met(conn, "word", &ids)?;
+    let known = crate::difficulty::familiarities(conn, "word", &ids)?;
     Ok(rows
         .into_iter()
         .map(|(id, pl, meaning, pos, image, near_pl, near_en)| {
             let seen = reps.get(&id.to_string()).copied();
             let near = (!near_pl.is_empty()).then_some(Near { pl: near_pl, en: near_en });
-            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image, near }, seen.is_none())
+            let familiarity = known.get(&id.to_string()).copied().unwrap_or(0);
+            (WordRow { id, pl, meaning, pos, reps: seen.unwrap_or(0), image, near, familiarity }, seen.is_none())
         })
         .collect())
 }
@@ -218,12 +249,15 @@ pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: LessonId) -> Result<V
         .order((sentences::ord, sentences::id))
         .select((sentences::id, sentences::pl, sentences::en, sentences::endings))
         .load(conn)?;
-    let seen = met(conn, "sentence", &rows.iter().map(|r| r.0.to_string()).collect::<Vec<_>>())?;
+    let ids: Vec<String> = rows.iter().map(|r| r.0.to_string()).collect();
+    let seen = met(conn, "sentence", &ids)?;
+    let known = crate::difficulty::familiarities(conn, "sentence", &ids)?;
     Ok(rows
         .into_iter()
         .map(|(id, pl, meaning, endings)| {
             let reps = seen.get(&id.to_string()).copied();
-            (SentenceRow { id, pl, meaning, endings: crate::tiles::parse(&endings), reps: reps.unwrap_or(0) }, reps.is_none())
+            let familiarity = known.get(&id.to_string()).copied().unwrap_or(0);
+            (SentenceRow { id, pl, meaning, endings: crate::tiles::parse(&endings), familiarity }, reps.is_none())
         })
         .collect())
 }
@@ -236,6 +270,8 @@ pub(crate) fn lesson_sentences(conn: &mut Conn, lesson_id: LessonId) -> Result<V
 pub struct Drill<'a> {
     pub lesson: &'a crate::lessons::Lesson,
     pub course: &'a Course,
+    /// The level its cards follow: the lesson's, else its course's, else A1.
+    pub level: &'static str,
     pub words: Vec<(WordRow, bool)>,
     pub sentences: Vec<(SentenceRow, bool)>,
     pub pool: Distractors,
@@ -261,9 +297,12 @@ pub fn build_lesson(conn: &mut Conn, lesson_id: LessonId) -> Result<SessionPlan>
         .ok_or_else(|| crate::error::Error::msg("This drill has no words to practise."))?;
     let course = load_course(conn, course_id)?;
     let today = db::today(conn);
+    // Spec: DRILL-16
+    let level = crate::difficulty::level_of(lesson.level.as_deref(), course.level.as_deref());
     let drill = Drill {
         lesson: &lesson,
         course: &course,
+        level,
         words: lesson_words(conn, lesson_id)?,
         sentences: lesson_sentences(conn, lesson_id)?,
         pool: distractor_pool(conn, lesson_id)?,
@@ -517,15 +556,39 @@ pub(crate) fn produce(w: &WordRow, pool: &Distractors, rng: &mut impl rand::Rng)
 /// Build the sentence from its shuffled words. Words that stand in another
 /// form than their dictionary one (when the sentence has them: tiles.rs) are
 /// laid out in their dictionary form, with the endings to pick from.
+// Spec: DRILL-10
 pub(crate) fn word_order(s: &SentenceRow) -> Exercise {
+    tiles(s, "wordOrder", Some(crate::tiles::MAX_CHOICES))
+}
+
+/// Tiles with each ending picked from two: the right form and one other
+/// form of the word the sentence keeps.
+// Spec: DRILL-10
+pub(crate) fn word_order_two(s: &SentenceRow) -> Exercise {
+    tiles(s, "wordOrderTwo", Some(2))
+}
+
+/// Tiles with the endings already right: the words only to be put in order.
+// Spec: DRILL-10
+pub(crate) fn word_order_set(s: &SentenceRow) -> Exercise {
+    tiles(s, "wordOrderSet", None)
+}
+
+/// A sentence's tiles, shuffled, with up to `choices` forms on each tile
+/// whose ending is to be picked (None: none to pick).
+fn tiles(s: &SentenceRow, kind: &str, choices: Option<usize>) -> Exercise {
     let rng = &mut rand::rng();
     let mut tokens: Vec<String> = s.pl.split_whitespace().map(str::to_string).collect();
     tokens.shuffle(rng);
-    let endings = crate::tiles::tile_endings(&tokens, &s.endings, rng);
+    let endings = choices.map(|n| crate::tiles::tile_endings(&tokens, &s.endings, n, rng)).unwrap_or_default();
+    let key = match kind {
+        "wordOrder" => format!("s{}-order", s.id),
+        other => format!("s{}-{other}", s.id),
+    };
     Exercise {
         endings,
-        key: format!("s{}-order", s.id),
-        kind: "wordOrder".into(),
+        key,
+        kind: kind.into(),
         item_kind: "sentence".into(),
         item_id: s.id.to_string(),
         is_new: false,
@@ -578,6 +641,83 @@ pub(crate) fn dictation(s: &SentenceRow) -> Exercise {
     }
 }
 
+/// Write it from hearing it, with a word bank: the sentence's words as
+/// tiles, plus a few that do not belong — other forms of its own words
+/// first, then the course's. Checked like a dictation.
+pub(crate) fn bank_dictation(s: &SentenceRow, pool: &Distractors, rng: &mut impl rand::Rng) -> Exercise {
+    let forms: Vec<String> = s.endings.iter().flat_map(|e| e.wrong.iter().cloned().chain(std::iter::once(e.base.clone()))).collect();
+    let bank = word_bank(&s.pl, forms, pool, rng);
+    Exercise {
+        key: format!("s{}-bankDictation", s.id),
+        kind: "bankDictation".into(),
+        item_kind: "sentence".into(),
+        item_id: s.id.to_string(),
+        answer: s.pl.clone(),
+        tokens: bank,
+        pl: s.pl.clone(),
+        meaning: s.meaning.clone(),
+        ..Exercise::default()
+    }
+}
+
+/// The bank of a dictation: the words of `pl` (without their punctuation)
+/// and [`BANK_DECOYS`] that do not belong — `first` (other forms of its own
+/// words), then the course's — shuffled.
+fn word_bank(pl: &str, first: Vec<String>, pool: &Distractors, rng: &mut impl rand::Rng) -> Vec<String> {
+    let words: Vec<String> = pl.split_whitespace().map(|t| split_punctuation(t).1.to_string()).filter(|w| !w.is_empty()).collect();
+    let fold = |w: &str| crate::tiles::fold(w);
+    let mut others: Vec<String> = pool.polish.iter().filter(|w| !w.contains(' ')).cloned().collect();
+    others.shuffle(rng);
+    let mut bank = words.clone();
+    for decoy in first.into_iter().chain(others) {
+        if bank.len() >= words.len() + BANK_DECOYS {
+            break;
+        }
+        if !fold(&decoy).is_empty() && !bank.iter().any(|b| fold(b) == fold(&decoy)) {
+            bank.push(decoy);
+        }
+    }
+    bank.shuffle(rng);
+    bank
+}
+
+/// Words in a dictation's bank that are not in the sentence.
+pub(crate) const BANK_DECOYS: usize = 3;
+
+/// A word written from hearing it.
+pub(crate) fn word_dictation(w: &WordRow) -> Exercise {
+    Exercise {
+        key: format!("w{}-wordDictation", w.id),
+        kind: "wordDictation".into(),
+        item_kind: "word".into(),
+        item_id: w.id.to_string(),
+        hint: pretty_pos(&w.pos),
+        answer: w.pl.clone(),
+        pl: w.pl.clone(),
+        meaning: w.meaning.clone(),
+        ..Exercise::default()
+    }
+}
+
+/// One sentence with its most useful word taken out, to be typed: the
+/// English above it. None for a sentence too short to have a gap.
+pub(crate) fn gap_typed(s: &SentenceRow, drill: &Drill) -> Option<Exercise> {
+    let words: HashSet<String> = drill.pool.polish.iter().filter(|w| !w.contains(' ')).map(|w| w.to_lowercase()).collect();
+    let gap = make_gap(&s.pl, &s.meaning, &words)?;
+    Some(Exercise {
+        key: format!("s{}-gapType", s.id),
+        kind: "gapType".into(),
+        item_kind: "sentence".into(),
+        item_id: s.id.to_string(),
+        prompt: s.meaning.clone(),
+        answer: gap.answer.clone(),
+        gaps: vec![gap],
+        pl: s.pl.clone(),
+        meaning: s.meaning.clone(),
+        ..Exercise::default()
+    })
+}
+
 /// Say it: a sentence already met, shown and heard, said aloud by the
 /// learner and compared with what was heard (speaking.rs).
 pub(crate) fn say_sentence(s: &SentenceRow) -> Exercise {
@@ -625,16 +765,28 @@ pub(crate) fn spoken_turn(gap: Exercise, dialogue: &[DialogueLine]) -> Exercise 
 /// voice: the line itself is the card's `context`, for the voice and the
 /// name. Lines the gaps ask for are left out, and a line of a few words is
 /// preferred (not "Tak." and not a speech).
-pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], lesson_id: LessonId, skip: &[String], rng: &mut impl rand::Rng) -> Option<Exercise> {
+// Spec: DRILL-14
+pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], drill: &Drill, skip: &[String], rng: &mut impl rand::Rng) -> Option<Exercise> {
+    let lesson_id = drill.lesson.id;
     let words = |l: &DialogueLine| l.pl.split_whitespace().count();
     let mut lines: Vec<(usize, &DialogueLine)> =
         dialogue.iter().enumerate().filter(|(_, l)| !skip.contains(&l.pl) && words(l) >= 2).collect();
     lines.shuffle(rng);
     lines.sort_by_key(|(_, l)| !(3..=10).contains(&words(l)));
     let (i, line) = lines.first()?;
+    // Below the level that writes a whole sentence from hearing it, the
+    // line's words are given in a bank, with a few from other lines.
+    let full = crate::difficulty::allows(drill.level, "dictation");
+    let (kind, tokens) = if full {
+        ("dictation", vec![])
+    } else {
+        let others: Vec<String> =
+            dialogue.iter().filter(|l| l.pl != line.pl).flat_map(|l| l.pl.split_whitespace().map(|t| split_punctuation(t).1.to_string()).collect::<Vec<_>>()).collect();
+        ("bankDictation", word_bank(&line.pl, others, &drill.pool, rng))
+    };
     Some(Exercise {
-        key: format!("d{lesson_id}-dictation{i}"),
-        kind: "dictation".into(),
+        key: format!("d{lesson_id}-{kind}{i}"),
+        kind: kind.into(),
         item_kind: "dialogue".into(),
         item_id: lesson_id.to_string(),
         is_new: false,
@@ -642,7 +794,7 @@ pub(crate) fn dialogue_dictation(dialogue: &[DialogueLine], lesson_id: LessonId,
         hint: line.speaker.clone(),
         answer: line.pl.clone(),
         options: vec![],
-        tokens: vec![],
+        tokens,
         pl: line.pl.clone(),
         meaning: line.meaning.clone(),
         gaps: vec![],

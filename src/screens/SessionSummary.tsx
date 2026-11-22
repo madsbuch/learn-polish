@@ -89,8 +89,7 @@ export function SessionSummary({
   onDone: () => void;
 }) {
   const { result, mastery, score } = data;
-  const delta = mastery?.delta ?? 0;
-  const tone = toneOf(data.grade, data.graded, delta, data.masteredNow);
+  const tone = toneOf(data.grade, data.graded, data.masteredNow);
   const party = celebrates(tone);
   useEffect(() => {
     // Spec: SUM-6
@@ -308,7 +307,6 @@ function MasteryCard({ entry, tone, next }: { entry: MasteryEntry; tone: Tone; n
           aria-valuemax={MASTERY_FULL}
           aria-label="Mastery points"
         >
-          {from > to ? <span className="mastery-bar__lost" style={{ "--pct": from }} /> : null}
           <span className="mastery-bar__fill" style={{ "--pct": to, "--from": from }} />
         </div>
         <Text variant="small" tone="dim">

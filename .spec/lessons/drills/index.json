@@ -3,16 +3,18 @@
   "title": "Drills",
   "summary": "Runs of exercises over a lesson's own items, graded by the share answered right.",
   "order": 1,
-  "description": "A drill practises a handful of words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, which decides how hard each one is.",
+  "description": "A drill practises a handful of words, sentences or a dialogue. Its cards are built fresh each time: the lesson's level sets the hardest kinds it may use, and each item's familiarity picks among them.",
   "stories": [
     {
       "id": "US-DRILL-1",
       "as": "a learner meeting new words",
-      "want": "each word to get harder to answer as I get better at it",
+      "want": "each word and sentence to get harder to answer as I get better at it, within what my level is ready for",
       "soThat": "practice stays just hard enough",
       "requirements": [
         "#DRILL-1",
-        "#DRILL-13"
+        "#DRILL-13",
+        "#DRILL-14",
+        "#DRILL-15"
       ]
     },
     {
@@ -25,12 +27,31 @@
         "#DRILL-3",
         "#DRILL-5"
       ]
+    },
+    {
+      "id": "US-DRILL-3",
+      "as": "a beginner in an A1 course",
+      "want": "cards I can answer with what I know so far",
+      "soThat": "a drill teaches instead of overwhelming",
+      "requirements": [
+        "#DRILL-14",
+        "#DRILL-16"
+      ]
     }
   ],
   "requirements": [
     {
       "id": "DRILL-1",
-      "text": "A word never answered is shown on a card that is only read and then asked by multiple choice; one answered before is asked by multiple choice; one answered right on three different days in a row has to be typed."
+      "text": "A word or sentence never answered is shown on a card that is only read, then asked by the easiest kind of card its level allows.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A word never answered is shown on a card that is only read and then asked by multiple choice; one answered before is asked by multiple choice; one answered right on three different days in a row has to be typed.",
+          "reason": "Card difficulty now follows the lesson's level as well as the learner's history, for sentences as well as words.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "DRILL-2",
@@ -75,7 +96,16 @@
     },
     {
       "id": "DRILL-10",
-      "text": "A sentence whose words change their ending is built from tiles in dictionary form, and the learner picks the ending on each tile; a sentence without stored endings is built by plain ordering."
+      "text": "On tiles with every form (`tiles-all`) a word that changes its ending is shown in its dictionary form and the learner picks its form from all those stored; on tiles with two (`tiles-two`), from the right one and one other stored form; on tiles with the endings set (`tiles-set`) every word stands as it should. A sentence without stored endings is built by plain ordering.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A sentence whose words change their ending is built from tiles in dictionary form, and the learner picks the ending on each tile; a sentence without stored endings is built by plain ordering.",
+          "reason": "Picking each ending from every form is too hard for a beginner; easier tile cards come first, by level and familiarity.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "DRILL-11",
@@ -88,6 +118,26 @@
     {
       "id": "DRILL-13",
       "text": "Each word's and sentence's review interval grows with right answers on different days, to at most `review.max-interval`; an item counts once a day."
+    },
+    {
+      "id": "DRILL-14",
+      "text": "A word's or sentence's card is only of a kind its level allows: `drill.cards-a1` at A1; A2, B1 and B2 add `drill.cards-a2`, `drill.cards-b1` and `drill.cards-b2` in turn, each keeping those below it; C1 and C2 allow every kind."
+    },
+    {
+      "id": "DRILL-15",
+      "text": "A known word's or sentence's card is the kind at its familiarity's step in `drill.word-cards` or `drill.sentence-cards`, counting only the kinds its level allows and stopping at the hardest. Familiarity rises by one for each day the item was answered with no miss and falls by one for each day with a miss, never below 0."
+    },
+    {
+      "id": "DRILL-16",
+      "text": "The level a drill's cards follow is the lesson's own, else its course's; a lesson and course without one count as A1."
+    },
+    {
+      "id": "DRILL-17",
+      "text": "At C1 and C2 a known item starts `drill.c-head-start` steps up its ladder."
+    },
+    {
+      "id": "DRILL-18",
+      "text": "Where a card's kind cannot be given (saying aloud with speaking cards off, or beyond a lesson's own cap on them), the next easier kind its level allows is."
     },
     {
       "id": "PIC-7",
@@ -118,12 +168,88 @@
       "type": "duration",
       "value": "365d",
       "description": "The longest a word or sentence waits for its next review."
+    },
+    {
+      "id": "drill.word-cards",
+      "type": "list",
+      "value": [
+        "pick-meaning",
+        "pick-word",
+        "type-word",
+        "hear-word",
+        "say-word"
+      ],
+      "description": "A word's kinds of card, easiest first: pick its meaning, pick the word, type it from its meaning, write it from hearing it, say it."
+    },
+    {
+      "id": "drill.sentence-cards",
+      "type": "list",
+      "value": [
+        "tiles-set",
+        "tiles-two",
+        "bank-dictation",
+        "tiles-all",
+        "gap-typed",
+        "dictation",
+        "say-sentence"
+      ],
+      "description": "A sentence's kinds of card, easiest first: tiles with the endings set, tiles with each ending from two, write it from hearing it with a word bank, tiles with each ending from every form, type its missing word, write it from hearing it, say it."
+    },
+    {
+      "id": "drill.cards-a1",
+      "type": "list",
+      "value": [
+        "pick-meaning",
+        "pick-picture",
+        "pick-word",
+        "tiles-set",
+        "gaps-from-bank"
+      ],
+      "description": "The kinds of card A1 allows; `gaps-from-bank` fills a few sentences' gaps from a word bank, `pick-picture` links a word and its picture."
+    },
+    {
+      "id": "drill.cards-a2",
+      "type": "list",
+      "value": [
+        "type-word",
+        "tiles-two",
+        "bank-dictation"
+      ],
+      "description": "What A2 adds."
+    },
+    {
+      "id": "drill.cards-b1",
+      "type": "list",
+      "value": [
+        "hear-word",
+        "say-word",
+        "tiles-all",
+        "gap-typed"
+      ],
+      "description": "What B1 adds."
+    },
+    {
+      "id": "drill.cards-b2",
+      "type": "list",
+      "value": [
+        "dictation",
+        "say-sentence"
+      ],
+      "description": "What B2 adds."
+    },
+    {
+      "id": "drill.c-head-start",
+      "type": "number",
+      "value": 2,
+      "unit": "steps",
+      "description": "How far up its ladder a known item starts at C1 and C2."
     }
   ],
   "related": [
     "lessons",
     "lessons/schedule",
     "lessons/speaking",
-    "progress#PROG-1"
+    "progress#PROG-1",
+    "principles#PRIN-14"
   ]
 }

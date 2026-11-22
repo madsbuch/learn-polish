@@ -104,7 +104,7 @@ fn met_words(conn: &mut Conn) -> Result<Vec<WordRow>> {
     Ok(rows
         .into_iter()
         .filter(|(_, pl, ..)| seen.insert(pl.to_lowercase()))
-        .map(|(id, pl, meaning, pos, image)| WordRow { id, pl, meaning, pos, reps: 0, image, near: None })
+        .map(|(id, pl, meaning, pos, image)| WordRow { id, pl, meaning, pos, reps: 0, image, near: None, familiarity: 0 })
         .collect())
 }
 

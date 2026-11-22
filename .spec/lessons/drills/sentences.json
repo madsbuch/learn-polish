@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Sentences",
-  "summary": "Sentences built from their words, written down as they are said, then their gaps filled.",
+  "summary": "Sentences built from tiles, written down as they are heard and said, harder as they are known, then their gaps filled.",
   "order": 7,
   "description": "Words in use: whole sentences, recalled by building them and by ear.",
   "requirements": [
@@ -11,7 +11,16 @@
     },
     {
       "id": "SNT-2",
-      "text": "A sentence met before is either built from its words or written down as it is said, taking turns as it comes back."
+      "text": "A sentence met before is asked by the card its familiarity and level give.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A sentence met before is either built from its words or written down as it is said, taking turns as it comes back.",
+          "reason": "Building and dictation no longer take turns: the sentence's familiarity and the lesson's level choose among easier and harder sentence cards.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SNT-3",
@@ -30,6 +39,7 @@
     "lessons/drills#DRILL-4",
     "lessons/drills#DRILL-10",
     "lessons/drills/gaps",
-    "lessons/speaking"
+    "lessons/speaking",
+    "lessons/drills#DRILL-15"
   ]
 }

@@ -496,7 +496,7 @@ fn record_steps(conn: &mut Conn, checkin_id: CheckinId, mut assessment: Assessme
     let run = checkin_id.to_string();
     let go = lessons::Go { via: "checkin", run: &run, score: None, extra };
     // Spec: SUM-8
-    assessment.impact = lessons::impact(conn, &current, &assessment.result, ace, None, extra, today)?;
+    assessment.impact = lessons::impact(conn, &current, &assessment.result, ace, None, today)?;
     let lesson = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
         lessons::credit_mastery(conn, &current, &assessment.result, ace, today, &go)?;

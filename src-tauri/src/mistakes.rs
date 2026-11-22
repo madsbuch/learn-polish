@@ -176,7 +176,7 @@ pub fn classify(g: &Graded) -> Mistake {
     if normalize(given).is_empty() {
         return Mistake::of("unknown_word", "no answer");
     }
-    if g.exercise == "wordOrder" {
+    if crate::practice::TILE_KINDS.contains(&g.exercise) {
         return tiles_order(g);
     }
     one_answer(g.exercise, g.expected, given)

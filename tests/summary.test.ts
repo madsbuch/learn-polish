@@ -18,14 +18,13 @@ const row = (reason: string, delta = 0): MasteryEntry =>
 
 describe("tone", () => {
   // Spec: SUM-5, SUM-6, SUM-9
-  test("celebrates as much as the grade earned, and never a fail or a loss", () => {
-    expect(toneOf("ace", true, 38, false)).toBe("ace");
-    expect(toneOf("pass", true, 10, false)).toBe("pass");
-    expect(toneOf("partial", true, 5, false)).toBe("partial");
-    expect(toneOf("fail", true, -20, false)).toBe("calm");
-    expect(toneOf("fail", true, 0, false)).toBe("calm");
-    expect(toneOf("pass", true, 10, true)).toBe("mastered");
-    expect(toneOf("", false, 0, false)).toBe("plain");
+  test("celebrates as much as the grade earned, and never a fail", () => {
+    expect(toneOf("ace", true, false)).toBe("ace");
+    expect(toneOf("pass", true, false)).toBe("pass");
+    expect(toneOf("partial", true, false)).toBe("partial");
+    expect(toneOf("fail", true, false)).toBe("calm");
+    expect(toneOf("pass", true, true)).toBe("mastered");
+    expect(toneOf("", false, false)).toBe("plain");
     expect([celebrates("ace"), celebrates("pass"), celebrates("mastered")]).toEqual([true, true, true]);
     expect([celebrates("partial"), celebrates("calm"), celebrates("plain")]).toEqual([false, false, false]);
   });
@@ -42,7 +41,8 @@ describe("the grade and the mastery", () => {
   // Spec: SUM-3
   test("the ledger's reason is said when it held the points back", () => {
     expect(masteryReason(row("capped"))).toBe("Held at 90 until a pass on another day");
-    expect(masteryReason(row("fail_extra"))).toBe("Extra practice never costs points");
+    expect(masteryReason(row("after_mastered"))).toBe("Mastered, for good");
+    expect(masteryReason(row("fail"))).toBeNull();
     expect(masteryReason(row("pass_spaced", 16))).toBeNull();
   });
 
@@ -56,16 +56,17 @@ describe("the grade and the mastery", () => {
   });
 });
 
-describe("what the misses cost", () => {
+describe("what the misses kept from the go", () => {
   // Spec: SUM-8
   test("the more right answers a better grade took, and its mastery change", () => {
-    expect(impactLine(impact("pass", 2, 10), 5)).toBe("2 more right would have passed it: +10 instead of +5.");
+    expect(impactLine(impact("pass", 2, 30, "first_pass"), 17)).toBe("2 more right would have passed it: +30 instead of +17.");
     expect(impactLine(impact("ace", 1, 38, "first_pass"), 30)).toBe("1 more right would have aced it: +38 instead of +30.");
-    expect(impactLine(impact("pass", 6, 16, "pass_spaced"), -20)).toBe("6 more right would have passed it: +16 instead of −20.");
-    expect(impactLine(impact("pass", 7, 10), 0)).toBe("7 more right would have passed it: +10 instead of no change.");
+    // A fail earns nothing below half right, and never loses: "0", not a minus.
+    expect(impactLine(impact("pass", 6, 16, "pass_spaced"), 0)).toBe("6 more right would have passed it: +16 instead of 0.");
+    expect(impactLine(impact("pass", 7, 10), 0)).toBe("7 more right would have passed it: +10 instead of 0.");
     // Capped: the points would have been the same.
     expect(impactLine(impact("pass", 1, 0, "capped"), 0)).toBe("1 more right would have passed it.");
-    expect(impactLine(impact("pass", null, 30, "first_pass"), 0)).toBe("A pass would have been +30 instead of no change.");
+    expect(impactLine(impact("pass", null, 30, "first_pass"), 0)).toBe("A pass would have been +30 instead of 0.");
     expect(impactLine(null, 10)).toBeNull();
   });
 });

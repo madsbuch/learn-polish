@@ -44,40 +44,48 @@ app's owner; change them only on their word.
    place of the day's lessons, so they don't fade; nothing there can cost it
    its mastery.
 
-7. **Closed is closed.** Closing a mastered course is a celebration the
+7. **Rewards follow learning.** Points measure recall that builds memory:
+   XP and mastery points grow with what was answered right, and harder cards
+   and harder material pay more. A drill's difficulty is matched to its
+   material's level — the course's level is the ceiling, familiarity orders
+   the cards within it. Nothing takes progress away for a mistake; a miss
+   is answered by the schedule (the lesson comes back sooner), not by a
+   penalty.
+
+8. **Closed is closed.** Closing a mastered course is a celebration the
    learner chooses ("Close as mastered", with an animation), and it is final.
    A closed course is a trophy: nothing is added to it, changed in it, or
    brought back from it.
 
-8. **Revisiting a subject is the tutor's job, not the course's.** Forgetting
+9. **Revisiting a subject is the tutor's job, not the course's.** Forgetting
    happens. When a mastered subject needs another round, the tutor offers a
    new course on it — a level up — rather than reopening the old one.
 
-9. **The daily five is a way in, not the whole day.** It gives a structured
+10. **The daily five is a way in, not the whole day.** It gives a structured
    start: the few lessons that matter most today, then a celebration and
    nothing else. Normally the learner browses courses and takes what they
    find interesting; a course lists its lessons by what matters most.
 
 ## Content
 
-10. **One-off lessons live in one place.** A lesson belongs in the course whose
+11. **One-off lessons live in one place.** A lesson belongs in the course whose
    material it uses — grammar and culture included. One that fits no course
    goes in *Other lessons*, a single folder at the bottom of the course list.
    A lesson is in exactly one course and is never moved: the same practice
    elsewhere is a new lesson there.
 
-11. **Everything made is recreatable.** For each song or podcast, enough is
+12. **Everything made is recreatable.** For each song or podcast, enough is
     kept to rebuild the exact prompt that made it.
 
 ## The code
 
-12. **Lesson types are modular.** A lesson type is declared in one place, and
+13. **Lesson types are modular.** A lesson type is declared in one place, and
     nothing else branches on it (see `ADDING_A_LESSON_TYPE.md`).
 
-13. **Polski and Dansk are separate codebases.** They share features, not
+14. **Polski and Dansk are separate codebases.** They share features, not
     code, and may diverge.
 
-14. **Ids are tagged, and shown as titles.** Every row has a TypeID that says
+15. **Ids are tagged, and shown as titles.** Every row has a TypeID that says
     what it is (`ls_…` a lesson), made on the device that wrote it, so the
     database can sync and an agent's wrong or made-up id fails instead of
     touching the wrong thing. People never read or type them: screens show the

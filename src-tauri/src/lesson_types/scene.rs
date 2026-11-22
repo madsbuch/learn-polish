@@ -52,7 +52,9 @@ fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
     if spotted.iter().any(|(_, is_new)| *is_new) {
         exercises.push(explore(drill, &card));
     }
-    let typed = drill.lesson.complexity != "low";
+    // A name is typed only where the level allows typing a word.
+    // Spec: DRILL-14
+    let typed = drill.lesson.complexity != "low" && crate::difficulty::allows(drill.level, "type-word");
     let mut finds = Vec::new();
     let mut names = Vec::new();
     for (w, is_new) in &spotted {
@@ -88,7 +90,7 @@ fn plain(words: Vec<&Word>, drill: &Drill, rng: &mut impl rand::Rng) -> Vec<Exer
             exercises.push(session::word_intro(w));
             exercises.push(session::recognise(w, &drill.pool, rng));
         } else {
-            exercises.push(session::practise_word(w, &drill.pool, rng));
+            exercises.push(session::practise_word(w, drill, rng));
         }
     }
     exercises

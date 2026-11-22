@@ -11,6 +11,7 @@ mod sync;
 mod wire;
 mod lessons;
 mod levels;
+mod difficulty;
 mod lesson_types;
 mod cast;
 mod commands;
@@ -443,6 +444,13 @@ mod integration {
         out
     }
 
+    /// Makes an item known: answered right on `days` days in a row (its
+    /// review's run), so its familiarity is at least that.
+    fn familiar(conn: &mut Conn, kind: &str, id: &str, days: i64) {
+        let today = db::today(conn);
+        srs::save(conn, kind, id, &srs::ReviewState { reps: days, ..srs::ReviewState::fresh(today) }).unwrap();
+    }
+
     fn scratch_db(name: &str) -> Conn {
         let path = std::env::temp_dir()
             .join("learn-polish-tests")
@@ -507,7 +515,7 @@ mod integration {
         let sentences = list.iter().find(|b| b.lesson_type == "sentences").unwrap();
         assert_eq!(sentences.complexity, "medium");
         let plan = session::build_lesson(&mut conn, sentences.id).unwrap();
-        assert!(plan.exercises.iter().any(|e| e.kind == "wordOrder"));
+        assert!(plan.exercises.iter().any(|e| e.kind == "wordOrderSet"), "new sentences: the easiest tiles");
         let gaps = plan.exercises.iter().find(|e| e.kind == "gapFill").expect("fill the gaps");
         for gap in &gaps.gaps {
             assert!(gaps.options.contains(&gap.answer), "the bank holds every answer");
@@ -1371,23 +1379,87 @@ mod integration {
         assert_eq!(capped.mastery.unwrap().text, "Ace 10 of 10, first go: +38 (0 → 38)");
     }
 
+    // Spec: DRILL-14, DRILL-15, DRILL-16, PROG-2
     #[test]
-    fn a_fail_on_extra_practice_costs_no_mastery() {
+    fn cards_and_xp_follow_the_lesson_s_level() {
+        let mut conn = scratch_db("levels-cards");
+        let basics = db::require_course_id(&mut conn, 1).unwrap();
+        let lesson = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
+        let word_cards = |conn: &mut Conn| -> Vec<String> {
+            session::build_lesson(conn, lesson.id).unwrap().exercises.into_iter().filter(|e| e.item_kind == "word").map(|e| e.kind).collect()
+        };
+        // New words: read, then their meaning picked, at any level.
+        conn.batch_execute(&format!("UPDATE courses SET level = 'C2' WHERE id = '{basics}'")).unwrap();
+        let new = word_cards(&mut conn);
+        assert!(new.iter().all(|k| k == "intro" || k == "recognise"), "{new:?}");
+        let ids: Vec<WordId> = t::words::table.filter(t::words::lesson_id.eq(lesson.id)).select(t::words::id).load(&mut conn).unwrap();
+        for id in &ids {
+            familiar(&mut conn, "word", &id.to_string(), 5);
+        }
+        // A course without a level counts as A1: a known word is picked, never typed.
+        conn.batch_execute(&format!("UPDATE courses SET level = NULL WHERE id = '{basics}'")).unwrap();
+        let a1 = word_cards(&mut conn);
+        assert!(!a1.is_empty() && a1.iter().all(|k| k == "produce"), "{a1:?}");
+        // At A2 the same words are typed.
+        crate::levels::set_course_level(&mut conn, basics, "A2").unwrap();
+        let a2 = word_cards(&mut conn);
+        assert!(a2.iter().all(|k| k == "type"), "{a2:?}");
+        // The lesson's own level wins over its course's: B1 writes them from hearing.
+        crate::levels::set_lesson_level(&mut conn, lesson.id, Some("B1")).unwrap();
+        let b1 = word_cards(&mut conn);
+        assert!(b1.iter().all(|k| k == "wordDictation"), "{b1:?}");
+
+        // XP: the kind's amount times the level's factor (B1: ×1.5).
+        let answer = |conn: &mut Conn, kind: &str, lesson_id: Option<LessonId>| {
+            practice::submit_answer_in(conn, practice::SubmitAnswer {
+                kind: kind.into(), item_kind: "word".into(), item_id: ids[0].to_string(), expected: "x".into(), given: "x".into(), lesson_id, ..Default::default()
+            }).unwrap().xp_gained
+        };
+        assert_eq!(answer(&mut conn, "type", Some(lesson.id)), 21);
+        assert_eq!(answer(&mut conn, "recognise", Some(lesson.id)), 9);
+        assert_eq!(answer(&mut conn, "wordOrderSet", Some(lesson.id)), 12);
+        assert_eq!(answer(&mut conn, "type", None), 14, "no lesson: A1");
+        let today = db::today(&mut conn);
+        let day = crate::xplog::day(&mut conn, today).unwrap();
+        assert!(day.runs.iter().flat_map(|r| r.entries.iter()).any(|e| e.xp == 21 && e.note.contains("B1: ×1.5")));
+        // Harder kinds pay more at every level, easier sentence cards less.
+        for level in crate::levels::LEVELS {
+            let xp = |kind: &str| crate::difficulty::with_level(stats::xp_for_answer(kind, true, false), level);
+            assert!(xp("recognise") < xp("produce") && xp("produce") < xp("type"), "{level}");
+            assert!(xp("wordOrderSet") < xp("wordOrderTwo") && xp("wordOrderTwo") < xp("wordOrder") && xp("wordOrder") < xp("dictation"), "{level}");
+            assert!(xp("bankDictation") < xp("dictation") && xp("wordDictation") < xp("gapFill"), "{level}");
+        }
+    }
+
+    // Spec: MAST-5, MAST-6, MAST-10
+    #[test]
+    fn no_go_takes_mastery_points_away() {
         let mut conn = scratch_db("extra-fail");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
         practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
+        // A fail on extra practice: nothing earned, nothing lost.
         let failed = practice::lesson_finish_in(&mut conn, drill.id, 2, 10).unwrap();
         assert!(failed.extra);
         assert_eq!((failed.result.as_str(), failed.lesson.mastery), ("fail", 30), "no change");
         let row = failed.mastery.unwrap();
-        assert_eq!((row.reason.as_str(), row.delta), ("fail_extra", 0));
+        assert_eq!((row.reason.as_str(), row.delta), ("fail", 0));
         assert_eq!(row.text, "Fail 2 of 10, same day on extra practice: no change");
-        // A real check-in's fail still costs: the next day it is not extra.
+        // A real check-in's fail, the next day, takes nothing either…
         conn.batch_execute("UPDATE lessons SET last_day = last_day - 1; UPDATE mastery_log SET day = day - 1;").unwrap();
         let real = practice::lesson_finish_in(&mut conn, drill.id, 2, 10).unwrap();
         assert!(!real.extra);
-        assert_eq!(real.lesson.mastery, 10);
+        assert_eq!((real.result.as_str(), real.lesson.mastery), ("fail", 30));
+        // …and the schedule answers it: back tomorrow.
+        let today = db::today(&mut conn);
+        assert_eq!(real.lesson.due_day, Some(today + 1));
+        // A fail above half right earns a little: 11 of 20 the next day is
+        // 5 of the 35 points from half to 85% of the 16 a pass would earn.
+        conn.batch_execute("UPDATE lessons SET last_day = last_day - 1; UPDATE mastery_log SET day = day - 1;").unwrap();
+        let some = practice::lesson_finish_in(&mut conn, drill.id, 11, 20).unwrap();
+        assert_eq!((some.result.as_str(), some.mastery.as_ref().unwrap().delta), ("fail", 2));
+        let log = crate::masterylog::for_lesson(&mut conn, drill.id).unwrap();
+        assert!(log.entries.iter().all(|e| e.delta >= 0), "no row takes points away");
     }
 
     // Spec: SUM-8
@@ -1423,15 +1495,17 @@ mod integration {
         let ace = practice::lesson_finish_in(&mut conn, drills[1].id, 10, 10).unwrap();
         assert_eq!((ace.grade.as_str(), ace.impact.clone()), ("ace", None));
 
-        // Extra practice: a fail costs nothing, a pass would still have earned.
+        // Extra practice: a fail at 20% earns nothing and costs nothing; a
+        // pass would still have earned.
         let extra = practice::lesson_finish_in(&mut conn, drills[0].id, 2, 10).unwrap();
         assert!(extra.extra);
-        assert_eq!((extra.mastery.as_ref().unwrap().reason.as_str(), extra.mastery.as_ref().unwrap().delta), ("fail_extra", 0));
+        assert_eq!((extra.mastery.as_ref().unwrap().reason.as_str(), extra.mastery.as_ref().unwrap().delta), ("fail", 0));
         assert_eq!(extra.impact, Some(impact("pass", Some(7), 10, 40, "pass_same_day")));
 
-        // Partial → pass, on a lesson never passed: the first pass's 30 instead of 5.
+        // Partial → pass, on a lesson never passed: the first pass's 30
+        // instead of 17 (70% right: 20 of the 35 points from half to 85%).
         let partial = practice::lesson_finish_in(&mut conn, drills[2].id, 7, 10).unwrap();
-        assert_eq!((partial.grade.as_str(), partial.mastery.as_ref().unwrap().delta), ("partial", 5));
+        assert_eq!((partial.grade.as_str(), partial.mastery.as_ref().unwrap().delta), ("partial", 17));
         assert_eq!(partial.impact, Some(impact("pass", Some(2), 30, 30, "first_pass")));
 
         // Capped: crammed to 90 on the first day, a pass would have changed nothing either.
@@ -1442,11 +1516,12 @@ mod integration {
         assert_eq!(capped.mastery.as_ref().map(|m| (m.after, m.reason.as_str())), Some((90, "capped")));
         assert_eq!(capped.impact, Some(impact("pass", Some(1), 0, 90, "capped")));
 
-        // Fail → pass, a day later: it cost 20 where a pass would have earned 16.
+        // Fail → pass, a day later: nothing earned, nothing lost, where a
+        // pass would have earned 16.
         conn.batch_execute("UPDATE lessons SET last_day = last_day - 1; UPDATE mastery_log SET day = day - 1;").unwrap();
         let fail = practice::lesson_finish_in(&mut conn, drills[0].id, 3, 10).unwrap();
         assert!(!fail.extra);
-        assert_eq!((fail.grade.as_str(), fail.mastery.as_ref().unwrap().delta), ("fail", -20));
+        assert_eq!((fail.grade.as_str(), fail.mastery.as_ref().unwrap().delta), ("fail", 0));
         assert_eq!(fail.impact, Some(impact("pass", Some(6), 16, 46, "pass_spaced")));
 
         // A conversation short of a pass: what a pass would have earned.
@@ -1717,22 +1792,25 @@ mod integration {
         assert!(backups, "backed up before upgrading");
     }
 
+    // Spec: MAST-5, MAST-7
     #[test]
-    fn a_partial_earns_half_a_pass_of_mastery() {
+    fn a_partial_earns_by_its_score_without_passing() {
         let mut conn = scratch_db("partial-mastery");
         let basics = db::require_course_id(&mut conn, 1).unwrap();
         let drill = lessons::for_course(&mut conn, basics).unwrap().into_iter().find(|b| b.lesson_type == "words").unwrap();
-        // A partial moves mastery, without passing the lesson.
+        // A partial moves mastery, without passing the lesson: 70% right is
+        // 20 of the 35 points from half to 85% of a first pass's 30.
         let first = practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
         assert_eq!(first.result, "partial");
         assert!(!first.lesson.passed, "a partial does not pass the lesson");
-        assert_eq!(first.lesson.mastery, 5, "half a repeat pass the same day (10), never more than a pass");
+        assert_eq!(first.lesson.mastery, 17, "never more than a pass would");
         let again = practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
-        assert_eq!(again.lesson.mastery, 10, "partials in a row don't race ahead");
+        assert_eq!(again.lesson.mastery, 34);
         let pass = practice::lesson_finish_in(&mut conn, drill.id, 9, 10).unwrap();
         assert!(pass.lesson.passed);
-        assert_eq!(pass.lesson.mastery, 40);
-        // Five partials and a pass no longer master a lesson (they once made 105).
+        assert_eq!(pass.lesson.mastery, 64);
+        // Partials after it, the same day, earn by the same day's 10, and
+        // stop at the hold: never mastered in one sitting.
         for _ in 0..5 {
             practice::lesson_finish_in(&mut conn, drill.id, 7, 10).unwrap();
         }
@@ -2607,6 +2685,7 @@ mod integration {
         assert!(tutor::learner_state(&mut conn).unwrap().contains(", B1, "));
     }
 
+    // Spec: DRILL-10
     #[test]
     fn sentence_tiles_ask_for_the_endings_the_tutor_gave() {
         let mut conn = scratch_db("sentence-tiles");
@@ -2635,9 +2714,20 @@ mod integration {
             }),
         );
         let lesson_id = serde_json::from_value(made["_action"]["lessonId"].clone()).unwrap();
+        // New: the easiest tiles, every word already in its form.
         let plan = session::build_lesson(&mut conn, lesson_id).unwrap();
-        let orders: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "wordOrder").collect();
+        let set: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "wordOrderSet").collect();
+        assert_eq!(set.len(), 2);
+        assert!(set.iter().all(|e| e.endings.is_empty()));
+        // Tiles with every form (and with two), as a sentence's familiarity
+        // and level reach them.
+        let rows = session::lesson_sentences(&mut conn, lesson_id).unwrap();
+        let built: Vec<models::Exercise> = rows.iter().map(|(s, _)| session::word_order(s)).collect();
+        let orders: Vec<&models::Exercise> = built.iter().collect();
         assert_eq!(orders.len(), 2);
+        let two = session::word_order_two(&rows[0].0);
+        assert_eq!(two.endings.len(), 2);
+        assert!(two.endings.iter().all(|e| e.choices.len() == 2 && e.choices.contains(&two.tokens[e.token])));
         let coffee = orders.iter().find(|e| e.answer.starts_with("Poproszę")).unwrap();
         // Only the endings that fit the sentence are kept.
         assert_eq!(coffee.endings.len(), 2);
@@ -2678,23 +2768,30 @@ mod integration {
         let list = lessons::for_course(&mut conn, basics).unwrap();
 
         // A dialogue lesson: two gaps and a line to write down, in its
-        // speaker's voice — as long as before.
+        // speaker's voice — as long as before. Below B2 its words are
+        // given in a bank, with a few from other lines.
+        crate::levels::set_course_level(&mut conn, basics, "A1").unwrap();
         let dialogue = list.iter().find(|b| b.lesson_type == "dialogue").unwrap();
         let plan = session::build_lesson(&mut conn, dialogue.id).unwrap();
         let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
         assert_eq!(kinds.iter().filter(|k| **k == "dialogueGap").count(), session::DIALOGUE_GAPS, "{kinds:?}");
+        let banked = plan.exercises.iter().find(|e| e.kind == "bankDictation").expect("a line to write down from a bank");
+        assert!(banked.tokens.len() > banked.answer.split_whitespace().count(), "words that do not belong too");
+        crate::levels::set_course_level(&mut conn, basics, "B2").unwrap();
+        let plan = session::build_lesson(&mut conn, dialogue.id).unwrap();
         let dictation = plan.exercises.iter().find(|e| e.kind == "dictation").expect("a line to write down");
         assert_eq!(dictation.context.len(), 1, "the line, for its voice");
         assert!(plan.exercises.iter().filter(|e| e.kind == "dialogueGap").all(|g| g.answer != dictation.answer));
 
-        // Sentences: new ones are built; once met, some are written from hearing.
+        // Sentences: new ones are built; once known, at B2, some are
+        // written from hearing and some built from every form.
         let lesson = list.iter().find(|b| b.lesson_type == "sentences").unwrap();
         let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
         assert!(plan.exercises.iter().all(|e| e.kind != "dictation"), "new sentences are built first");
         let count = plan.exercises.len();
-        for e in plan.exercises.iter().filter(|e| e.item_kind == "sentence" && e.kind == "wordOrder") {
-            let answer = practice::SubmitAnswer { kind: e.kind.clone(), item_kind: e.item_kind.clone(), item_id: e.item_id.clone(), expected: e.answer.clone(), given: e.answer.clone(), ..Default::default() };
-            practice::submit_answer_in(&mut conn, answer).unwrap();
+        let ids: Vec<String> = plan.exercises.iter().filter(|e| e.item_kind == "sentence" && e.kind == "wordOrderSet").map(|e| e.item_id.clone()).collect();
+        for (n, id) in ids.iter().enumerate() {
+            familiar(&mut conn, "sentence", id, if n % 2 == 0 { 3 } else { 5 });
         }
         let plan = session::build_lesson(&mut conn, lesson.id).unwrap();
         let written: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "dictation").collect();
@@ -2806,13 +2903,13 @@ mod integration {
         let at = lines.iter().position(|l| l.pl == turn.answer).unwrap();
         assert_eq!(turn.reply.as_ref().map(|r| r.pl.clone()), lines.get(at + 1).map(|l| l.pl.clone()));
 
-        // Sentences: new ones are never said; once met, a couple are, and
-        // the lesson is no longer.
+        // Sentences: new ones are never said; once well known at a level
+        // that says them (B2), a couple are, and the lesson is no longer.
+        crate::levels::set_course_level(&mut conn, basics, "B2").unwrap();
         let first = session::build_lesson(&mut conn, sentences.id).unwrap();
         assert_eq!(said(&first), 0, "new sentences are built first");
-        for e in first.exercises.iter().filter(|e| e.item_kind == "sentence" && e.kind == "wordOrder") {
-            let answer = practice::SubmitAnswer { kind: e.kind.clone(), item_kind: e.item_kind.clone(), item_id: e.item_id.clone(), expected: e.answer.clone(), given: e.answer.clone(), ..Default::default() };
-            practice::submit_answer_in(&mut conn, answer).unwrap();
+        for e in first.exercises.iter().filter(|e| e.item_kind == "sentence" && e.kind == "wordOrderSet") {
+            familiar(&mut conn, "sentence", &e.item_id, 9);
         }
         let plan = session::build_lesson(&mut conn, sentences.id).unwrap();
         let say: Vec<&models::Exercise> = plan.exercises.iter().filter(|e| e.kind == "sayIt").collect();
@@ -2841,12 +2938,11 @@ mod integration {
         assert_eq!(after.lapses, before.lapses, "a miss heard is not a lapse");
         assert!(after.reps > 0);
 
-        // Words: once three are met, one is said instead of practised.
+        // Words: once known well enough, one is said instead of practised.
         let first = session::build_lesson(&mut conn, words.id).unwrap();
         assert_eq!(said(&first), 0);
         for e in first.exercises.iter().filter(|e| e.item_kind == "word") {
-            let answer = practice::SubmitAnswer { kind: "recognise".into(), item_kind: "word".into(), item_id: e.item_id.clone(), expected: e.answer.clone(), given: e.answer.clone(), ..Default::default() };
-            practice::submit_answer_in(&mut conn, answer).unwrap();
+            familiar(&mut conn, "word", &e.item_id, 9);
         }
         let plan = session::build_lesson(&mut conn, words.id).unwrap();
         assert_eq!(said(&plan), crate::speaking::WORD_CARDS, "{:?}", kinds(&plan));
@@ -3321,6 +3417,12 @@ mod integration {
             }
             conn.batch_execute("UPDATE reviews SET last_day = last_day - 1, due_day = due_day - 1").unwrap();
         }
+        // Typed only where the level allows typing a word: not at A1.
+        let course_id = lessons::load(conn, lesson_id).unwrap().course_id.unwrap();
+        crate::levels::set_course_level(conn, course_id, "A1").unwrap();
+        let a1 = session::build_lesson(conn, lesson_id).unwrap();
+        assert!(a1.exercises.iter().all(|e| e.kind != "sceneType"));
+        crate::levels::set_course_level(conn, course_id, "A2").unwrap();
         let again = session::build_lesson(conn, lesson_id).unwrap();
         let kinds: Vec<&str> = again.exercises.iter().map(|e| e.kind.as_str()).collect();
         assert!(!kinds.contains(&"sceneExplore"), "nothing new to explore: {kinds:?}");
@@ -3491,7 +3593,7 @@ mod integration {
         assert_eq!(&kinds[..11], ["storyPanel", "storyQuestion", "storyPanel", "storyQuestion", "storyPanel", "storyQuestion",
             "storyPanel", "storyQuestion", "storyPanel", "storyQuestion", "storyEnd"], "{kinds:?}");
         assert_eq!(kinds.iter().filter(|k| **k == "recognise").count(), 6, "the new words, recognised: {kinds:?}");
-        assert!(kinds.contains(&"wordOrder"), "the kept sentence is built: {kinds:?}");
+        assert!(kinds.contains(&"wordOrderSet"), "the kept sentence is built: {kinds:?}");
         for exercise in &plan.exercises {
             assert!(screens.contains(&format!("\"{}\"", exercise.kind)), "the screens know {}", exercise.kind);
         }
@@ -4165,10 +4267,34 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         );
         let tiles = serde_json::from_value(tiles["_action"]["lessonId"].clone()).unwrap();
         let tile_plan = session::build_lesson(&mut conn, tiles).unwrap();
-        assert!(tile_plan.exercises.iter().any(|e| !e.endings.is_empty()));
+        // New: the easiest tiles. Known, by level: every card a sentence
+        // and a word can have.
+        assert!(tile_plan.exercises.iter().any(|e| e.kind == "wordOrderSet"));
+        let mut exercises = tile_plan.exercises.clone();
+        let tile_sentence = session::lesson_sentences(&mut conn, tiles).unwrap().remove(0).0;
+        let tile_lesson = lessons::load(&mut conn, tiles).unwrap();
+        let tile_course = session::load_course(&mut conn, basics).unwrap();
+        let known = session::Drill {
+            lesson: &tile_lesson,
+            course: &tile_course,
+            level: "C1",
+            words: vec![],
+            sentences: vec![],
+            pool: session::distractor_pool(&mut conn, tiles).unwrap(),
+        };
+        let rng = &mut rand::rng();
+        exercises.push(session::word_order(&tile_sentence));
+        exercises.push(session::word_order_two(&tile_sentence));
+        exercises.push(session::bank_dictation(&tile_sentence, &known.pool, rng));
+        exercises.push(session::dictation(&tile_sentence));
+        let sentence_lesson = all.iter().find(|l| l.lesson_type == "sentences").unwrap().id;
+        let long = session::lesson_sentences(&mut conn, sentence_lesson).unwrap();
+        exercises.extend(long.iter().find_map(|(s, _)| session::gap_typed(s, &known)));
+        let word_row = session::lesson_words(&mut conn, drill.id).unwrap().remove(0).0;
+        exercises.push(session::word_dictation(&word_row));
+        assert!(exercises.iter().any(|e| !e.endings.is_empty()));
         // And the ear's: a dialogue line to write down, a sound pair; and
         // the voice's, with a key to hear with: a line said, a sentence said.
-        let mut exercises = tile_plan.exercises.clone();
         let dialogue = all.iter().find(|l| l.lesson_type == "dialogue").unwrap();
         db::set_setting(&mut conn, "openrouter_api_key", "sk-shapes").unwrap();
         exercises.extend(session::build_lesson(&mut conn, dialogue.id).unwrap().exercises);
@@ -4210,7 +4336,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("StoryInfo", &crate::stories::info(&mut conn, story).unwrap().unwrap());
         write("LessonDetail.list", &[lessons::detail(&mut conn, scene).unwrap(), lessons::detail(&mut conn, story).unwrap()]);
         exercises.extend(session::build_lesson(&mut conn, story).unwrap().exercises);
-        for kind in ["dictation", "soundPair", "sayIt", "dialogueSay", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere", "storyPanel", "storyQuestion", "storyEnd"] {
+        for kind in ["dictation", "soundPair", "sayIt", "dialogueSay", "wordOrder", "sceneExplore", "sceneFind", "sceneName", "sceneWhere", "storyPanel", "storyQuestion", "storyEnd", "wordOrderSet", "wordOrderTwo", "bankDictation", "gapType", "wordDictation"] {
             assert!(exercises.iter().any(|e| e.kind == kind), "a {kind} card");
         }
         write("Exercise.list", &exercises);
@@ -4247,7 +4373,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         }
         assert_eq!(t::attempts::table.count().get_result::<i64>(&mut conn).unwrap() - attempts_before, graded);
         assert!(t::learning_events::table.count().get_result::<i64>(&mut conn).unwrap() - events_before >= read);
-        for kind in ["dictation", "soundPair", "sayIt", "dialogueSay", "wordOrder", "sceneFind", "sceneName", "sceneWhere", "storyQuestion"] {
+        for kind in ["dictation", "soundPair", "sayIt", "dialogueSay", "wordOrder", "sceneFind", "sceneName", "sceneWhere", "storyQuestion", "wordOrderSet", "wordOrderTwo", "bankDictation", "gapType", "wordDictation"] {
             assert!(kinds_logged.contains(kind), "{kind} logged");
         }
         let dictated = exercises.iter().find(|e| e.kind == "dictation").unwrap();

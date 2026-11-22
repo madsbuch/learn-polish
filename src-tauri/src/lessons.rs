@@ -469,6 +469,12 @@ pub const PASS_SHARE: f64 = 0.85;
 /// The share that is partly there.
 // Spec: DRILL-7
 const PARTIAL_SHARE: f64 = 0.6;
+/// [`PASS_SHARE`] in percent, for the mastery credit's whole-number sums.
+// Spec: MAST-5
+const PASS_PERCENT: i64 = 85;
+/// At or below this share right (percent), a drill earns no mastery points.
+// Spec: MAST-5
+pub const CREDIT_FROM_PERCENT: i64 = 50;
 /// A drill this small (or smaller) passes with one miss: 85% of six cards
 /// is more than five, so otherwise a single slip would cost the pass.
 pub const SMALL_DRILL: i64 = 6;
@@ -580,7 +586,9 @@ pub const MASTERY_FULL: i64 = 100;
 /// The gap, in days, at which a pass earns its most mastery points.
 const MASTERY_SPACED_DAYS: i64 = 14;
 
-/// The mastery points a check-in earns (or, for a fail, costs).
+/// The mastery points a go earns, by its grade alone (a conversation; a
+/// drill's partial and fail earn by their score: [`credit`]). Never fewer
+/// than none: mastery only grows.
 ///
 /// Mastery is earned by passing, not by waiting: practising now gets there,
 /// it only takes more passes than letting the check-ins space them out.
@@ -588,27 +596,47 @@ const MASTERY_SPACED_DAYS: i64 = 14;
 /// attempt earns 10; one a day or more later earns 15, plus up to 20 more
 /// as the gap grows to two weeks — remembering it after a while is better
 /// evidence than getting it right twice in a row. An ace earns a quarter
-/// more; a partial (nearly there) earns half what a repeat pass would at the
-/// same gap, rounded down (5 the same day, 17 at two weeks) — it never
-/// out-earns a pass, and does not mark the lesson passed; a fail costs 20
-/// (nothing on extra practice: see [`credit_mastery`]).
+/// more; a partial half what a pass would in the same situation, rounded
+/// down; a fail nothing — the schedule answers it, bringing the lesson
+/// back tomorrow.
 ///
 /// The last stretch takes two days: see [`MASTERY_HELD_AT`].
 // Spec: MAST-1, MAST-2, MAST-3, MAST-4, MAST-5, MAST-6
 pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
-    let base = match grade {
-        // Half a repeat pass at the same gap, passed before or not: a
-        // partial never earns more than a pass would.
-        Grade::Partial => return mastery_gain(Grade::Pass, true, elapsed) / 2,
-        Grade::Fail => return -20,
-        Grade::Ace | Grade::Pass if !passed_before => 30,
-        Grade::Ace | Grade::Pass if elapsed <= 0 => 10,
-        Grade::Ace | Grade::Pass => 15 + 20 * elapsed.min(MASTERY_SPACED_DAYS) / MASTERY_SPACED_DAYS,
-    };
-    if grade == Grade::Ace {
-        (base * 5 + 2) / 4
+    let base = if !passed_before {
+        30
+    } else if elapsed <= 0 {
+        10
     } else {
-        base
+        15 + 20 * elapsed.min(MASTERY_SPACED_DAYS) / MASTERY_SPACED_DAYS
+    };
+    match grade {
+        Grade::Ace => (base * 5 + 2) / 4,
+        Grade::Pass => base,
+        Grade::Partial => base / 2,
+        Grade::Fail => 0,
+    }
+}
+
+/// The mastery points a go short of a pass earns: a share of what a pass
+/// would in the same situation (`pass`). A drill (`score`: right, almost,
+/// scored) earns none at or below [`CREDIT_FROM_PERCENT`] right and all of
+/// it at [`PASS_SHARE`], rising linearly between (an almost counts half),
+/// rounded down — every right answer counts, with no cliff at the partial's
+/// line. A conversation, without a score, earns by its grade.
+// Spec: MAST-5, MAST-6
+pub fn credit(pass: i64, grade: Grade, score: Option<(i64, i64, i64)>) -> i64 {
+    match (grade, score) {
+        (Grade::Ace | Grade::Pass, _) => pass,
+        (_, Some((correct, almost, total))) if total > 0 => {
+            // In half points and percent, to stay in whole numbers.
+            let (points, out_of) = (correct.clamp(0, total) * 2 + almost.max(0), total * 2);
+            let above = points * 100 - CREDIT_FROM_PERCENT * out_of;
+            let span = (PASS_PERCENT - CREDIT_FROM_PERCENT) * out_of;
+            (pass * above.max(0) / span).clamp(0, pass)
+        }
+        (Grade::Partial, _) => pass / 2,
+        (Grade::Fail, _) => 0,
     }
 }
 
@@ -677,7 +705,7 @@ struct Planned {
     details: crate::masterylog::Details,
 }
 
-fn plan_mastery(conn: &mut Conn, before: &Lesson, grade: Grade, extra: bool, today: i64) -> Result<Planned> {
+fn plan_mastery(conn: &mut Conn, before: &Lesson, grade: Grade, score: Option<(i64, i64, i64)>, today: i64) -> Result<Planned> {
     let elapsed = before.last_day.map_or(0, |last| (today - last).max(0));
     let mut details = crate::masterylog::Details { v: crate::masterylog::DETAILS_VERSION, ..Default::default() };
     if before.mastered {
@@ -688,10 +716,13 @@ fn plan_mastery(conn: &mut Conn, before: &Lesson, grade: Grade, extra: bool, tod
     if first_pass {
         details.first_pass_day = Some(today);
     }
+    // A go short of a pass earns a share of what a pass would here (the
+    // first pass's 30 for a lesson never passed); none takes points away.
+    // Spec: MAST-5, MAST-6
+    let pass = mastery_gain(Grade::Pass, before.passed, elapsed);
     let (gain, mut reason) = match grade {
-        Grade::Fail if extra => (0, "fail_extra"),
-        Grade::Fail => (mastery_gain(grade, before.passed, elapsed), "fail"),
-        Grade::Partial => (mastery_gain(grade, before.passed, elapsed), "partial"),
+        Grade::Fail => (credit(pass, grade, score), "fail"),
+        Grade::Partial => (credit(pass, grade, score), "partial"),
         _ if first_pass => (mastery_gain(grade, false, elapsed), "first_pass"),
         _ if elapsed <= 0 => (mastery_gain(grade, true, elapsed), "pass_same_day"),
         _ => (mastery_gain(grade, true, elapsed), "pass_spaced"),
@@ -721,14 +752,13 @@ fn plan_mastery(conn: &mut Conn, before: &Lesson, grade: Grade, extra: bool, tod
 
 /// Adds a go's mastery points to a lesson, as it stood before the go, and
 /// writes why in the mastery ledger (one row, every graded go: a go that
-/// changes nothing says so). Every go counts, extra practice too — but a
-/// fail on extra practice costs nothing: playing a passed lesson again for
-/// fun must not be a risk. Points stay within 0–100, and at
+/// changes nothing says so). Every go counts, extra practice too, and none
+/// takes points away. Points stay within 0–100, and at
 /// [`MASTERY_HELD_AT`] until the lesson has passes on two different days.
 // Spec: MAST-6, MAST-10
 pub fn credit_mastery(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, today: i64, go: &Go) -> Result<crate::masterylog::MasteryEntry> {
     let grade = Grade::of(result, ace);
-    let planned = plan_mastery(conn, before, grade, go.extra, today)?;
+    let planned = plan_mastery(conn, before, grade, go.score, today)?;
     let entry = crate::masterylog::NewEntry {
         lesson_id: before.id,
         before: before.mastery,
@@ -783,7 +813,7 @@ pub fn more_right_to_pass(correct: i64, almost: i64, total: i64) -> Option<(i64,
 /// is recorded. None when there is no grade above it to miss: an ace, a
 /// conversation passed, nothing scored.
 // Spec: SUM-8
-pub fn impact(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, score: Option<(i64, i64, i64)>, extra: bool, today: i64) -> Result<Option<Impact>> {
+pub fn impact(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, score: Option<(i64, i64, i64)>, today: i64) -> Result<Option<Impact>> {
     let (grade, more_right) = match score {
         Some((_, _, total)) if total <= 0 => return Ok(None),
         Some((correct, _, total)) if result == "pass" => {
@@ -799,7 +829,8 @@ pub fn impact(conn: &mut Conn, before: &Lesson, result: &str, ace: bool, score: 
         None if result == "pass" => return Ok(None),
         None => (Grade::Pass, None),
     };
-    let planned = plan_mastery(conn, before, grade, extra, today)?;
+    // The better grade passes: its score earns what a pass does.
+    let planned = plan_mastery(conn, before, grade, None, today)?;
     Ok(Some(Impact {
         grade: grade.key().into(),
         more_right,
@@ -1353,18 +1384,18 @@ mod tests {
         assert_eq!(mastery_gain(Pass, true, 14), 35);
         assert_eq!(mastery_gain(Pass, true, 60), 35);
         assert_eq!(mastery_gain(Ace, true, 14), 44);
-        // A partial: half a repeat pass's points, rounded down — passed
-        // before or not, so it never out-earns a pass in the same spot.
+        // A conversation's partial: half a pass in the same situation,
+        // rounded down; a fail nothing, never less.
         assert_eq!(mastery_gain(Partial, true, 14), 17);
         assert_eq!(mastery_gain(Partial, true, 0), 5);
         assert_eq!(mastery_gain(Partial, true, 1), 8);
-        assert_eq!(mastery_gain(Partial, false, 0), 5);
+        assert_eq!(mastery_gain(Partial, false, 0), 15);
         for gap in 0..30 {
             for passed in [false, true] {
                 assert!(mastery_gain(Partial, passed, gap) < mastery_gain(Pass, passed, gap), "gap {gap}, passed {passed}");
+                assert_eq!(mastery_gain(Fail, passed, gap), 0);
             }
         }
-        assert_eq!(mastery_gain(Fail, true, 14), -20);
         let passes = |gap: i64| {
             let (mut points, mut n) = (mastery_gain(Pass, false, 0), 1);
             while points < MASTERY_FULL {
@@ -1377,6 +1408,34 @@ mod tests {
         assert!(is_mastered(true, 100, "words", 0));
         assert!(!is_mastered(true, 100, "writing", 1), "writing also needs doing without help");
         assert!(!is_mastered(false, 100, "words", 0));
+    }
+
+    // Spec: MAST-5, MAST-6
+    #[test]
+    fn a_drill_short_of_a_pass_earns_in_proportion_to_its_score() {
+        use Grade::*;
+        // Out of 20 cards, a pass two weeks on would earn 35.
+        let earn = |right: i64, almost: i64| credit(35, Grade::of(result_from_score(right, almost, 20), false), Some((right, almost, 20)));
+        // Nothing at or below half right, and never less than nothing.
+        assert_eq!(earn(0, 0), 0);
+        assert_eq!(earn(6, 0), 0);
+        assert_eq!(earn(10, 0), 0);
+        // Rising linearly from half to the pass share (85%): 60% earns 10/35
+        // of a pass, 75% earns 25/35; an almost counts half.
+        assert_eq!(earn(12, 0), 10);
+        assert_eq!(earn(15, 0), 25);
+        assert_eq!(earn(14, 2), 25);
+        // At the pass share it is a pass: the whole of it.
+        assert_eq!(earn(17, 0), 35);
+        // Every right answer counts: no cliff at the partial's line.
+        let curve: Vec<i64> = (0..=17).map(|right| earn(right, 0)).collect();
+        assert!(curve.windows(2).all(|w| w[0] <= w[1]), "{curve:?}");
+        assert!(curve.windows(2).all(|w| w[1] - w[0] <= 5), "{curve:?}");
+        // A conversation has no score: a partial earns half, a fail nothing.
+        assert_eq!(credit(35, Partial, None), 17);
+        assert_eq!(credit(35, Fail, None), 0);
+        assert_eq!(credit(35, Fail, Some((0, 0, 0))), 0);
+        assert_eq!(credit(30, Pass, Some((5, 0, 6))), 30, "a small drill passed with one miss");
     }
 
     #[test]

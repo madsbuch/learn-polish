@@ -7,7 +7,16 @@
   "requirements": [
     {
       "id": "TYP-1",
-      "text": "A typing lesson asks every word by typing it from its meaning, whatever the word's history."
+      "text": "A typing lesson asks every word by typing it from its meaning, whatever the word's history; where its level does not allow typing, by picking the word.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A typing lesson asks every word by typing it from its meaning, whatever the word's history.",
+          "reason": "Typing is beyond A1, so an A1 typing lesson asks the hardest card A1 allows instead.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "TYP-2",

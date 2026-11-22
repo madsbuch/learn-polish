@@ -2,7 +2,8 @@ import type { ExerciseKind } from "../lib/types";
 import { recogniseProduce, dialogueGap } from "./choice";
 import { dialogueRead } from "./dialogueRead";
 import { intro, sentenceIntro } from "./intro";
-import { dictation, soundPair } from "./listen";
+import { gapType } from "./gapType";
+import { bankDictation, dictation, soundPair, wordDictation } from "./listen";
 import { pictureIntro, picturePick, wordPick } from "./pictures";
 import { dialogueSay, sayIt } from "./speak";
 import { sceneExplore, sceneFind, sceneName, sceneType, sceneWhere } from "./scene";
@@ -10,7 +11,7 @@ import { gapFill, memory } from "./sets";
 import { storyEnd, storyPanel, storyQuestion } from "./story";
 import { typeWord } from "./type";
 import type { ExerciseModule } from "./types";
-import { wordOrder } from "./wordOrder";
+import { wordOrder, wordOrderSet, wordOrderTwo } from "./wordOrder";
 
 export type { AnswerState, ExerciseModule, ExerciseProps } from "./types";
 
@@ -23,6 +24,11 @@ const MODULES = [
   dialogueGap,
   typeWord,
   wordOrder,
+  wordOrderSet,
+  wordOrderTwo,
+  bankDictation,
+  wordDictation,
+  gapType,
   gapFill,
   memory,
   pictureIntro,

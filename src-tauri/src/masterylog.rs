@@ -23,14 +23,16 @@ use crate::schema::mastery_log;
 /// The version of the details kept with each row.
 pub const DETAILS_VERSION: u32 = 1;
 
-/// Every reason a row can give, and what it means.
+/// Every reason a row can give, and what it means. No reason takes points
+/// away (rows from before that rule keep the reason they were written with).
+// Spec: MAST-6, MAST-10
 pub const REASONS: &[(&str, &str)] = &[
     ("first_pass", "the first pass: 30 points (an ace a quarter more)"),
     ("pass_same_day", "a pass on the same day as the last go: 10"),
     ("pass_spaced", "a pass a day or more after the last go: 15, growing to 35 at two weeks apart"),
-    ("partial", "partly there: half what a repeat pass would earn at that gap"),
-    ("fail", "a fail: minus 20"),
-    ("fail_extra", "a fail on extra practice: no change"),
+    ("partial", "partly there: a share of what a pass would earn in the same situation, by the score (a conversation: half)"),
+    ("fail", "a fail: a share of what a pass would earn by the score, nothing at or below half right; never a loss"),
+    ("fail_extra", "a fail on extra practice, from before fails stopped costing points: no change"),
     ("capped", "held at 90 until passes on two different days"),
     ("full", "already at 100: mastering it waits on something else (writing without help)"),
     ("mastered", "mastered: for good"),

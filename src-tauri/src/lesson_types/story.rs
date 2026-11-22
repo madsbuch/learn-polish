@@ -173,7 +173,7 @@ fn which_first(drill: &Drill, panel: &StoryPanel, shown: &[(StoryPanel, Question
 /// The story's words and kept sentences, practised like any drill's: a new
 /// word recognised (it was met in the story, and on its last page), a known
 /// one practised harder as it comes back; a new sentence built from its
-/// words, a known one built or written from hearing it, in turn. Without a
+/// words, a known one by the card its familiarity and level give. Without a
 /// story (`intro`), new words and sentences are introduced first.
 fn practise(drill: &Drill, intro: bool, rng: &mut impl rand::Rng) -> Vec<Exercise> {
     let mut exercises = Vec::new();
@@ -185,22 +185,17 @@ fn practise(drill: &Drill, intro: bool, rng: &mut impl rand::Rng) -> Vec<Exercis
             }
             exercises.push(session::recognise(w, &drill.pool, rng));
         } else {
-            known.push(session::practise_word(w, &drill.pool, rng));
+            known.push(session::practise_word(w, drill, rng));
         }
     }
     known.shuffle(rng);
     exercises.extend(known);
-    for (n, (s, is_new)) in drill.sentences.iter().enumerate() {
-        if *is_new {
-            if intro {
-                exercises.push(session::sentence_intro(s));
-            }
-            exercises.push(session::word_order(s));
-        } else if (s.reps + crate::convert::count(n)) % 2 == 1 {
-            exercises.push(session::dictation(s));
-        } else {
-            exercises.push(session::word_order(s));
+    for (s, is_new) in &drill.sentences {
+        if *is_new && intro {
+            exercises.push(session::sentence_intro(s));
         }
+        // Spec: DRILL-15
+        exercises.push(session::practise_sentence(s, *is_new, drill, |k| k != "say-sentence", rng));
     }
     exercises
 }

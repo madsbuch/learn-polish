@@ -29,7 +29,7 @@ pub struct Ending {
 
 /// The most choices a tile offers: the right form, the dictionary form, and
 /// two others.
-const MAX_CHOICES: usize = 4;
+pub const MAX_CHOICES: usize = 4;
 
 /// Lower case, without punctuation, with Polish letters kept: how tile words
 /// are told apart ("kawa" and "kawą" are different answers here, unlike in a
@@ -105,8 +105,12 @@ fn same_case(like: &str, word: &str) -> String {
 }
 
 /// The tiles among a card's (already shuffled) tokens whose ending is to be
-/// picked: each ending to the first token that is its form.
-pub fn tile_endings(tokens: &[String], endings: &[Ending], rng: &mut impl rand::Rng) -> Vec<TileEnding> {
+/// picked: each ending to the first token that is its form, with at most
+/// `choices` forms to pick from — the right one first, then the word's other
+/// stored forms, then its dictionary form (two: the right one and the
+/// likeliest other).
+// Spec: DRILL-10
+pub fn tile_endings(tokens: &[String], endings: &[Ending], choices: usize, rng: &mut impl rand::Rng) -> Vec<TileEnding> {
     use rand::seq::SliceRandom;
     let mut out: Vec<TileEnding> = Vec::new();
     for ending in endings {
@@ -118,14 +122,20 @@ pub fn tile_endings(tokens: &[String], endings: &[Ending], rng: &mut impl rand::
         let Some((index, token)) = found else { continue };
         let (before, word, after) = split_punctuation(token);
         let dress = |w: &str| format!("{before}{}{after}", same_case(word, w));
-        let mut choices: Vec<String> = std::iter::once(word.to_string())
-            .chain(std::iter::once(ending.base.clone()))
-            .chain(ending.wrong.iter().cloned())
-            .take(MAX_CHOICES)
+        // Four: the right form, the dictionary form and two others, as
+        // before; fewer: the others first, the likelier slip.
+        let others: Vec<String> = if choices >= MAX_CHOICES {
+            std::iter::once(ending.base.clone()).chain(ending.wrong.iter().cloned()).collect()
+        } else {
+            ending.wrong.iter().cloned().chain(std::iter::once(ending.base.clone())).collect()
+        };
+        let mut picks: Vec<String> = std::iter::once(word.to_string())
+            .chain(others)
+            .take(choices.clamp(2, MAX_CHOICES))
             .map(|w| dress(&w))
             .collect();
-        choices.shuffle(rng);
-        out.push(TileEnding { token: index, shown: dress(&ending.base), choices });
+        picks.shuffle(rng);
+        out.push(TileEnding { token: index, shown: dress(&ending.base), choices: picks });
     }
     out.sort_by_key(|e| e.token);
     out
@@ -173,7 +183,7 @@ mod tests {
         let tokens: Vec<String> = ["mlekiem.", "Kawę", "z", "piję"].iter().map(|t| t.to_string()).collect();
         let endings = vec![ending("kawę", "kawa", &["kawy", "kawą"]), ending("mlekiem", "mleko", &["mleka"])];
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
-        let tiles = tile_endings(&tokens, &endings, &mut rng);
+        let tiles = tile_endings(&tokens, &endings, MAX_CHOICES, &mut rng);
         assert_eq!(tiles.len(), 2);
         assert_eq!(tiles[0].token, 0);
         assert_eq!(tiles[0].shown, "mleko.");
@@ -183,6 +193,13 @@ mod tests {
         let mut choices = tiles[1].choices.clone();
         choices.sort();
         assert_eq!(choices, vec!["Kawa", "Kawy", "Kawą", "Kawę"]);
+
+        // Two to choose from: the right form and the word's likeliest other.
+        let two = tile_endings(&tokens, &endings, 2, &mut rng);
+        let mut choices = two[1].choices.clone();
+        choices.sort();
+        assert_eq!(choices, vec!["Kawy", "Kawę"]);
+        assert_eq!(two[0].choices.len(), 2);
     }
 
     #[test]

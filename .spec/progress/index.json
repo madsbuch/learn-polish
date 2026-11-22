@@ -35,7 +35,16 @@
     },
     {
       "id": "PROG-2",
-      "text": "XP per right answer depends on the kind of exercise: recognising among choices pays 6, typing or dictation 14, filling a gap 16; an item answered for the first time pays 2 more."
+      "text": "XP per right answer is its kind of card's amount, 2 more for an item answered the first time, times its level's factor (`xp.level-factor-a1` to `xp.level-factor-c`), rounded: picking a meaning or a picture pays 6, picking the word or tiles with the endings set 8, tiles with two endings to choose or a dictation from a word bank 10, tiles with every form or a word written from hearing 12, typing, a dictation, a typed gap or saying it aloud 14, and filling gaps from a bank 16.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "XP per right answer depends on the kind of exercise: recognising among choices pays 6, typing or dictation 14, filling a gap 16; an item answered for the first time pays 2 more.",
+          "reason": "Harder kinds of card and harder material are worth more; the new, easier sentence cards pay less than the ones they lead to.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "PROG-3",
@@ -114,12 +123,48 @@
       "type": "duration",
       "value": "21d",
       "description": "The review interval at which a word sticks."
+    },
+    {
+      "id": "xp.level-factor-a1",
+      "type": "number",
+      "value": 1,
+      "unit": "×",
+      "description": "XP factor of an A1 lesson."
+    },
+    {
+      "id": "xp.level-factor-a2",
+      "type": "number",
+      "value": 1.25,
+      "unit": "×",
+      "description": "XP factor of an A2 lesson."
+    },
+    {
+      "id": "xp.level-factor-b1",
+      "type": "number",
+      "value": 1.5,
+      "unit": "×",
+      "description": "XP factor of a B1 lesson."
+    },
+    {
+      "id": "xp.level-factor-b2",
+      "type": "number",
+      "value": 1.75,
+      "unit": "×",
+      "description": "XP factor of a B2 lesson."
+    },
+    {
+      "id": "xp.level-factor-c",
+      "type": "number",
+      "value": 2,
+      "unit": "×",
+      "description": "XP factor of a C1 or C2 lesson."
     }
   ],
   "related": [
     "today#TODAY-10",
     "lessons/drills",
     "progress/games",
-    "progress/insights"
+    "progress/insights",
+    "lessons/drills#DRILL-16"
   ]
 }

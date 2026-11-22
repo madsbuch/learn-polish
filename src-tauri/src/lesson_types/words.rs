@@ -1,8 +1,9 @@
-//! Words: new-word cards, multiple choice, typing once a word is known, a
+//! Words: new-word cards, then cards that get harder as each word is known
+//! (up to what the lesson's level allows: difficulty.rs), a
 //! short round of sound pairs when the words have sounds an English ear
 //! mixes up, and a memory round to end.
 
-use rand::seq::{IndexedRandom, SliceRandom};
+use rand::seq::SliceRandom;
 
 use super::{LessonType, PathGroup, Run};
 use crate::db::Conn;
@@ -13,7 +14,7 @@ pub const TYPE: LessonType = LessonType {
     id: "words",
     name: "Words",
     icon: "drill",
-    description: "Learn a handful of words: cards, then multiple choice, then typing them from memory (now and then saying one aloud), a couple of sound pairs to tell apart by ear when the words have tricky sounds, and a memory round.",
+    description: "Learn a handful of words: cards, then multiple choice, then — as far as the lesson's level allows — typing them from memory, writing them from hearing them and saying one aloud, a couple of sound pairs to tell apart by ear when the words have tricky sounds, and a memory round.",
     tutor_hint: "",
     run: Run::Exercises(build),
     path: PathGroup::Words,
@@ -27,25 +28,26 @@ pub const TYPE: LessonType = LessonType {
 fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
     let rng = &mut rand::rng();
     let mut exercises = Vec::new();
-    // Where the device can hear the learner, a word met before (one with a
-    // few known around it) is said aloud instead of practised (speaking.rs).
-    let known_words: Vec<&WordRow> = drill.words.iter().filter(|(w, n)| !n && w.reps >= 1).map(|(w, _)| w).collect();
-    let mut said: Vec<crate::ids::WordId> = Vec::new();
-    if known_words.len() >= 3 && crate::speaking::available(conn) {
-        said = known_words.choose_multiple(rng, crate::speaking::WORD_CARDS).map(|w| w.id).collect();
-    }
+    // Where the device can hear the learner, a known word whose familiarity
+    // and level reach it is said aloud (speaking.rs), a few a lesson at
+    // most; the rest step down to the card below.
+    let mut say = if crate::speaking::available(conn) { crate::speaking::WORD_CARDS } else { 0 };
     // New words are introduced first, in order; known ones are practised in
     // a shuffled order.
     let mut known = Vec::new();
     for (w, is_new) in &drill.words {
         if *is_new {
+            // Spec: DRILL-1, WRD-1
             exercises.push(session::word_intro(w));
             exercises.push(session::recognise(w, &drill.pool, rng));
-        } else if said.contains(&w.id) {
-            known.push(session::say_word(w));
-        } else {
-            known.push(session::practise_word(w, &drill.pool, rng));
+            continue;
         }
+        // Spec: DRILL-15, DRILL-18, WRD-2
+        let card = crate::difficulty::pick(crate::difficulty::WORD_CARDS, drill.level, w.familiarity, false, |k| k != "say-word" || say > 0);
+        if card == "say-word" {
+            say -= 1;
+        }
+        known.push(session::word_card(w, card, &drill.pool, rng));
     }
     known.shuffle(rng);
     exercises.extend(known);

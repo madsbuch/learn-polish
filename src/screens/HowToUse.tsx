@@ -68,8 +68,11 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
           done. That's it, nothing piles up. Today's
           lessons are a way in, not the whole day: browse your courses and take what you find interesting — each lists
           its lessons by what matters most. Done days build your streak; every seven days in a row earns a streak freeze
-          that covers a missed day by itself. XP is only paid for real work: harder exercises pay more, wrong answers
-          and cards you only read pay nothing. A typed answer one letter off, or a sentence written or said with one word
+          that covers a missed day by itself. XP is only paid for real work: harder exercises and harder levels pay
+          more (up to twice as much at C1 and C2), wrong answers and cards you only read pay nothing. A drill's cards
+          fit its level — an A1 lesson asks words by choice and builds sentences from tiles already in their right
+          form; typing, endings to pick and dictation come at A2 and up — and within that, each word and sentence
+          gets harder the more days you know it, and a step easier after a miss. A typed answer one letter off, or a sentence written or said with one word
           off (of three or more), is <strong>almost</strong>: half the XP, and it counts as half right. 85% right
           passes a lesson — or, in a short one of up to six cards, all but one. A drill with nothing to score is not
           graded at all.
@@ -130,8 +133,9 @@ export function HowToUse({ onBack }: { onBack?: () => void }) {
         </P>
         <P>
           Every pass earns mastery points — 30 for the first, 10 for another the same day, 16 to 35 for one a day to two
-          weeks later — and a partial (60–84% right) half what a pass would; a fail costs 20, except on extra
-          practice, which never costs anything. You don&apos;t have to wait for a check-in: practise a lesson as often as
+          weeks later. A drill short of a pass earns a share of that by its score: nothing at half right or less,
+          rising with every right answer to the full amount at 85%. Nothing ever takes points away: a miss brings the
+          lesson back sooner instead. You don&apos;t have to wait for a check-in: practise a lesson as often as
           you like and you get most of the way today — up to 90 points. The last stretch takes a pass on another day,
           any day: mastering is remembering, not cramming. Passes spread out over days are better evidence, so they
           earn more — letting check-ins bring lessons back gets there in fewer passes. Tap a lesson&apos;s mastery on

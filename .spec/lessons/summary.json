@@ -3,7 +3,7 @@
   "title": "Summary",
   "summary": "The screen after a drill or a conversation: the grade first, what it did to mastery, what was missed.",
   "order": 6.5,
-  "description": "The summary is about the go just finished. It celebrates as much as the grade earned, shows what the misses cost, and keeps the longer term to one muted row.",
+  "description": "The summary is about the go just finished. It celebrates as much as the grade earned, shows what the misses kept from it, and keeps the longer term to one muted row.",
   "stories": [
     {
       "id": "US-SUM-1",
@@ -20,7 +20,7 @@
     {
       "id": "US-SUM-2",
       "as": "a learner who did not pass",
-      "want": "to see what I missed and what it cost, without being cheered",
+      "want": "to see what I missed and what more it would have earned, without being cheered",
       "soThat": "I know what to fix and what happens next",
       "requirements": [
         "#SUM-5",
@@ -60,7 +60,16 @@
     },
     {
       "id": "SUM-3",
-      "text": "Under the grade, the lesson's mastery points are a bar from before the go to after it, with the change and out of `mastery.full`, exactly as the go's row in the mastery ledger has them, with `summary.capped`, `summary.fail-extra` or `summary.after-mastered` when that row's reason is one of those."
+      "text": "Under the grade, the lesson's mastery points are a bar from before the go to after it, with the change and out of `mastery.full`, exactly as the go's row in the mastery ledger has them, with `summary.capped` or `summary.after-mastered` when that row's reason is one of those.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Under the grade, the lesson's mastery points are a bar from before the go to after it, with the change and out of `mastery.full`, exactly as the go's row in the mastery ledger has them, with `summary.capped`, `summary.fail-extra` or `summary.after-mastered` when that row's reason is one of those.",
+          "reason": "No go takes points away any more, so extra practice needs no reassurance that it cannot.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SUM-4",
@@ -72,7 +81,16 @@
     },
     {
       "id": "SUM-6",
-      "text": "A fail, or a go that cost mastery points, is not celebrated: no confetti, no celebration sound or emoji."
+      "text": "A fail is not celebrated: no confetti, no celebration sound or emoji.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A fail, or a go that cost mastery points, is not celebrated: no confetti, no celebration sound or emoji.",
+          "reason": "No go loses mastery points any more, so only the grade decides whether a go is celebrated.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SUM-7",
@@ -80,7 +98,16 @@
     },
     {
       "id": "SUM-8",
-      "text": "Above the misses, one line says what they cost, worked out by the rules that graded the go: how many more right answers would have passed it (from a pass, aced it) and the mastery change that would have made, as `summary.impact-drill` or, for a conversation, `summary.impact-conversation`; a drill adds `summary.missed-sooner`."
+      "text": "Above the misses, one line says what they kept from the go, worked out by the rules that graded it: how many more right answers would have passed it (from a pass, aced it) and the mastery change that would have made instead of the go's own (shown as 0 when it earned none), as `summary.impact-drill` or, for a conversation, `summary.impact-conversation`; a drill adds `summary.missed-sooner`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Above the misses, one line says what they cost, worked out by the rules that graded the go: how many more right answers would have passed it (from a pass, aced it) and the mastery change that would have made, as `summary.impact-drill` or, for a conversation, `summary.impact-conversation`; a drill adds `summary.missed-sooner`.",
+          "reason": "Misses no longer cost points, only points not earned, so the go's own change can be nothing but never a loss.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SUM-9",
@@ -110,7 +137,14 @@
     {
       "id": "summary.fail-extra",
       "type": "text",
-      "value": "Extra practice never costs points"
+      "value": "Extra practice never costs points",
+      "deprecation": {
+        "reason": "No go costs points any more, extra practice or not.",
+        "replacedBy": [
+          "lessons/mastery#MAST-6"
+        ],
+        "date": "2026-11-22"
+      }
     },
     {
       "id": "summary.after-mastered",

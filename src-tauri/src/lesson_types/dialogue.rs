@@ -42,6 +42,6 @@ fn build(conn: &mut Conn, drill: &Drill) -> Result<Built> {
         }
     }
     exercises.extend(gaps);
-    exercises.extend(session::dialogue_dictation(&dialogue, id, &asked, rng));
+    exercises.extend(session::dialogue_dictation(&dialogue, drill, &asked, rng));
     Ok(Built { exercises, dialogue })
 }

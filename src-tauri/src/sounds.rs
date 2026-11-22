@@ -412,6 +412,7 @@ mod tests {
             reps: 0,
             image: None,
             near: near.map(|(pl, en)| crate::session::Near { pl: pl.into(), en: en.into() }),
+            familiarity: 0,
         }
     }
 

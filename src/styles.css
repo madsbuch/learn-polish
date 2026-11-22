@@ -2162,11 +2162,8 @@ html.scanning #root {
 .summary-mastery__delta[data-sign="1"] {
   color: var(--ok);
 }
-.summary-mastery__delta[data-sign="-1"] {
-  color: var(--bad);
-}
 /* The mastery points from before the go to after it: the fill slides from
-   --from to --pct (a transform); points lost stay as a faint tail. */
+   --from to --pct (a transform). Points only grow (MAST-6). */
 .mastery-bar {
   position: relative;
   height: var(--space-2);
@@ -2186,9 +2183,6 @@ html.scanning #root {
 }
 .mastery-bar[data-tone="gold"] .mastery-bar__fill {
   background: var(--gold-gradient);
-}
-.mastery-bar__lost {
-  background: var(--bad-line);
 }
 @keyframes mastery-bar-fill {
   from {

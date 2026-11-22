@@ -14,8 +14,9 @@ export function MasteryRules() {
         weeks apart. An ace — every answer fully right — earns a quarter more.
       </p>
       <p>
-        Partly there (60–84% right) earns half what a repeat pass would at that gap. A fail costs 20 — but never on extra
-        practice (a lesson already passed today).
+        Short of a pass, a drill earns a share of what a pass would: nothing at half right or less, rising with every
+        right answer to the full amount at 85%. A conversation partly there earns half. Nothing ever takes points
+        away — a miss brings the lesson back sooner instead.
       </p>
       <p>
         The day a lesson is first passed it can reach {MASTERY_HELD_AT}; the last stretch takes a pass on another day.
@@ -29,6 +30,7 @@ export function MasteryRules() {
 function tone(entry: MasteryEntry): "gold" | "mint" | "crimson" | undefined {
   if (entry.reason === "mastered") return "gold";
   if (entry.delta > 0) return "mint";
+  // Rows from before points only grew can still show a loss.
   if (entry.delta < 0) return "crimson";
   return undefined;
 }

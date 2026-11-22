@@ -1,9 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Mastery",
-  "summary": "Points earned by passing, up to mastery, with a ledger of every change.",
+  "summary": "Points earned by good goes, never taken away, up to mastery, with a ledger of every change.",
   "order": 6,
-  "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting, and passes further apart are better evidence.",
+  "description": "Mastery says a lesson is known for good. It is earned by practising well, never by waiting, and only ever grows; passes further apart are better evidence.",
   "stories": [
     {
       "id": "US-MAST-1",
@@ -46,11 +46,29 @@
     },
     {
       "id": "MAST-5",
-      "text": "A partial earns half of what a repeat pass would at the same gap, rounded down, and does not mark the lesson passed."
+      "text": "A go short of a pass earns a share of what a pass would in the same situation: a drill none at or below `mastery.credit-from` of its score right and all of it at `drill.pass-share`, rising linearly between and rounded down; a conversation half for a partial and none for a fail. It does not mark the lesson passed.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A partial earns half of what a repeat pass would at the same gap, rounded down, and does not mark the lesson passed.",
+          "reason": "Credit jumped at the pass and partial cut-offs, so one answer could halve a go's points; credit in proportion to the score rewards every right answer without a cliff.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "MAST-6",
-      "text": "A fail costs `mastery.fail-cost` points; a fail on extra practice costs none."
+      "text": "No go takes mastery points away, a fail included.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A fail costs `mastery.fail-cost` points; a fail on extra practice costs none.",
+          "reason": "A fail took points for the moment of learning and discouraged the learner; the schedule already answers a fail by bringing the lesson back tomorrow.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "MAST-7",
@@ -114,13 +132,28 @@
       "description": "What a later pass on the same day earns."
     },
     {
+      "id": "mastery.credit-from",
+      "type": "number",
+      "value": 50,
+      "unit": "%",
+      "description": "The share of a drill right at or below which it earns no mastery points."
+    },
+    {
       "id": "mastery.fail-cost",
       "type": "number",
       "value": 20,
-      "description": "What a fail costs."
+      "description": "What a fail costs.",
+      "deprecation": {
+        "reason": "Mastery points only grow: a fail earns what its score earns and costs nothing.",
+        "replacedBy": [
+          "#MAST-6"
+        ],
+        "date": "2026-11-22"
+      }
     }
   ],
   "related": [
+    "principles#PRIN-14",
     "principles#PRIN-6",
     "principles#PRIN-5",
     "lessons/schedule",

@@ -132,6 +132,10 @@ pub struct SubmitAnswer {
     pub card: Option<crate::learnlog::CardShown>,
 }
 
+/// Sentence tiles, put in order (and their endings picked): checked with
+/// Polish letters kept (tiles.rs).
+pub const TILE_KINDS: &[&str] = &["wordOrder", "wordOrderTwo", "wordOrderSet"];
+
 /// Cards that are only read (a new word, a new sentence, a dialogue to read
 /// through): nothing is answered, so nothing is scored.
 // Spec: DRILL-9
@@ -218,8 +222,9 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
     let mut tips = vec![];
     let mut almost = false;
     let correct = match answer.kind.as_str() {
-        "wordOrder" => crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given),
-        "dictation" => {
+        k if TILE_KINDS.contains(&k) => crate::tiles::fold(&answer.expected) == crate::tiles::fold(&answer.given),
+        // Spec: DRILL-4
+        "dictation" | "bankDictation" => {
             let checked = crate::dictation::check(&answer.expected, &answer.given);
             almost = !checked.correct && crate::dictation::nearly(&checked.words);
             diff = checked.words;
@@ -262,7 +267,13 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         srs::save(conn, &answer.item_kind, &answer.item_id, &next)?;
     }
 
-    let mut xp = stats::xp_for_answer(&answer.kind, correct || almost, answer.is_new);
+    // Harder material pays more: the lesson's level's factor.
+    // Spec: PROG-2
+    let level = match answer.lesson_id {
+        Some(id) => crate::difficulty::level_of_lesson(conn, id)?,
+        None => "A1",
+    };
+    let mut xp = crate::difficulty::with_level(stats::xp_for_answer(&answer.kind, correct || almost, answer.is_new), level);
     if almost {
         // Nearly right is worth something: half, rounded up.
         xp = (xp + 1) / 2;
@@ -279,10 +290,15 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         (true, false, true) => "new: +2",
         _ => "",
     };
-    crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, xp, note)?;
+    let note = match (xp > 0, level) {
+        (true, "A1") | (false, _) => note.to_string(),
+        (true, level) if note.is_empty() => format!("{level}: ×{}", factor_text(level)),
+        (true, level) => format!("{note}, {level}: ×{}", factor_text(level)),
+    };
+    crate::xplog::write(conn, today, &answer.run, answer.lesson_id, &label, xp, &note)?;
 
     // The learning log: what kind of mistake it was, and how it was answered.
-    let endings = if answer.kind == "wordOrder" && answer.item_kind == "sentence" {
+    let endings = if TILE_KINDS.contains(&answer.kind.as_str()) && answer.item_kind == "sentence" {
         SentenceId::parse(&answer.item_id)
             .ok()
             .and_then(|id| crate::schema::sentences::table.find(id).select(crate::schema::sentences::endings).first::<String>(conn).ok())
@@ -341,6 +357,17 @@ fn submit_steps(conn: &mut Conn, answer: SubmitAnswer) -> Result<AnswerResult> {
         diff,
         tips,
     })
+}
+
+/// A level's XP factor in words: "1.25", "2".
+fn factor_text(level: &str) -> String {
+    let quarters = crate::difficulty::xp_factor_quarters(level);
+    match quarters % 4 {
+        0 => format!("{}", quarters / 4),
+        1 => format!("{}.25", quarters / 4),
+        2 => format!("{}.5", quarters / 4),
+        _ => format!("{}.75", quarters / 4),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -524,7 +551,7 @@ fn lesson_finish_steps(
     let go = lessons::Go { via: "drill", run, score: Some((correct, almost, total)), extra };
     // What the misses cost, by the rules about to grade it.
     // Spec: SUM-8
-    let impact = lessons::impact(conn, &current, result, ace, go.score, extra, today)?;
+    let impact = lessons::impact(conn, &current, result, ace, go.score, today)?;
     let (lesson, entry) = if extra {
         // Extra practice leaves the schedule alone, but still earns mastery.
         let entry = lessons::credit_mastery(conn, &current, result, ace, today, &go)?;

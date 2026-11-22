@@ -26,12 +26,15 @@ fn build(_conn: &mut Conn, drill: &Drill) -> Result<Built> {
     let rng = &mut rand::rng();
     let mut exercises = Vec::new();
     let mut known = Vec::new();
+    // Typed, where the level allows it; at A1, the word picked instead.
+    // Spec: TYP-1, DRILL-14
+    let card = crate::difficulty::at_most(crate::difficulty::WORD_CARDS, drill.level, "type-word");
     for (w, is_new) in &drill.words {
         if *is_new {
             exercises.push(session::word_intro(w));
-            exercises.push(session::typing(w));
+            exercises.push(session::word_card(w, card, &drill.pool, rng));
         } else {
-            known.push(session::typing(w));
+            known.push(session::word_card(w, card, &drill.pool, rng));
         }
     }
     known.shuffle(rng);

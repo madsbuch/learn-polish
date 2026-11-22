@@ -24,7 +24,8 @@
       "requirements": [
         "#PRIN-3",
         "#PRIN-6",
-        "#PRIN-7"
+        "#PRIN-7",
+        "#PRIN-14"
       ]
     }
   ],
@@ -89,6 +90,10 @@
     {
       "id": "PRIN-13",
       "text": "Every row that names a thing (a course, a lesson, a word, a song, a memory) has a tagged id that says what it is; screens show the title of the thing instead of the id."
+    },
+    {
+      "id": "PRIN-14",
+      "text": "Rewards follow learning: points measure recall that builds memory, a drill's difficulty is matched to its material's level, and no mistake takes progress away; the schedule, not a penalty, answers a miss."
     }
   ],
   "related": [

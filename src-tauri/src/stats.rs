@@ -23,8 +23,9 @@ const MASTERY_INTERVAL: i64 = 21;
 const HISTORY_DAYS: i64 = 120;
 
 
-/// XP for one answer. Harder exercise types pay more, and only correct answers
-/// score — otherwise the goal ring would fill by guessing.
+/// XP for one answer, before its level's factor (difficulty::with_level).
+/// Harder kinds of card pay more, and only correct answers score —
+/// otherwise the goal ring would fill by guessing.
 // Spec: PROG-1, PROG-2
 pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
     if !correct {
@@ -33,12 +34,12 @@ pub fn xp_for_answer(kind: &str, correct: bool, is_new: bool) -> i64 {
     let base = match kind {
         "intro" | "sentenceIntro" | "pictureIntro" | "sceneExplore" | "storyPanel" | "storyEnd" => 2,
         "recognise" | "wordPick" | "picturePick" | "sceneFind" => 6,
-        "produce" | "sceneName" | "sceneWhere" | "storyQuestion" => 8,
-        "dialogueGap" => 10,
+        "produce" | "sceneName" | "sceneWhere" | "storyQuestion" | "wordOrderSet" => 8,
+        "dialogueGap" | "wordOrderTwo" | "bankDictation" => 10,
         // Saying it aloud is the hardest step: producing the sounds too.
         "sayIt" | "dialogueSay" => 14,
-        "wordOrder" => 12,
-        "type" | "dictation" | "sceneType" => 14,
+        "wordOrder" | "wordDictation" => 12,
+        "type" | "dictation" | "sceneType" | "gapType" => 14,
         "soundPair" => 6,
         "memory" => 12,
         "gapFill" => 16,
