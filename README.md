@@ -143,7 +143,9 @@ waiting for a check-in: the first pass earns 30, another the same day 10, one
 a day to two weeks later 16 to 35, an ace a quarter more. A go short of a pass
 earns a share of what a pass would by its score — nothing at half right or
 less, the full amount at 85% — without passing it; nothing ever takes points
-away. One sitting gets a lesson to 90;
+away. A drill's cards follow its level (A1 never types or writes a whole
+sentence from hearing it) and each item's familiarity; XP grows with the
+card's difficulty and the level. One sitting gets a lesson to 90;
 the last stretch needs a pass on a second day (any later day), so a lesson is
 never mastered by cramming. Every change is written in the lesson's **mastery
 ledger** (`mastery_log`, `masterylog.rs`), shown on its page as "Mastery
