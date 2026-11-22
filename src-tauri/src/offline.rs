@@ -462,7 +462,9 @@ pub fn download_in_background(app: &AppHandle, course_id: CourseId, everything: 
     if !claim(course_id) {
         return;
     }
-    let busy = crate::work::begin_counted(app, &title);
+    // Its notification, tapped, opens the course (the app's address for it).
+    // Spec: SHELL-20
+    let busy = crate::work::begin_counted(app, &title, Some(format!("/{course_id}")));
     keep_going_without_the_app(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {

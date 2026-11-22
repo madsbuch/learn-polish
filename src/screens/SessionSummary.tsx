@@ -18,7 +18,6 @@ import {
 } from "../design";
 import { useEffect } from "react";
 
-import { useBackHandler } from "../lib/back";
 import { playComplete } from "../lib/sounds";
 import { dayToDate } from "../lib/lessons";
 import type { LessonResult, SessionResult } from "../lib/types";
@@ -60,7 +59,6 @@ export function SessionSummary({
   };
   onDone: () => void;
 }) {
-  useBackHandler(true, onDone);
   const graded = outcome?.graded !== false;
   const passed = !outcome || (graded && outcome.result === "pass");
   useEffect(() => {

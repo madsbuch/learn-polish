@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { createPortal } from "react-dom";
 
 import { BackIcon, ChevronIcon, CloseIcon, DownIcon } from "../components/icons";
-import { useBackHandler } from "../lib/back";
+import { recallScroll, rememberScroll, useBackLayer, useEntryKey } from "../lib/navigation";
 import { hapticTick } from "../lib/haptics";
 import { current as currentToasts, dismiss as dismissToast, subscribe as subscribeToasts } from "../lib/toast";
 import {
@@ -191,8 +191,11 @@ export function Screen({
   // (Only a screen that asks for it starts the stagger's clock.)
   const bodyStagger = useStagger(Boolean(stagger));
   const bodyClass = cx("screen-body", stagger && bodyStagger);
-  // The system back button does what the screen's own ← or ⌄ does.
-  useBackHandler(pushed, back ?? close);
+  // Back itself is the history's (lib/navigation.ts): the system's back
+  // button lands where this screen's ← or ⌄ goes. Coming back to the page,
+  // it is scrolled where it was left.
+  // Spec: SHELL-18
+  const scrollRef = useRestoredScroll(typeof title === "string" ? title : "");
   const head = header ?? (
     <header className="screen-header" data-pushed={pushed}>
       {back ? <IconButton icon={<BackIcon />} label="Back" onClick={back} /> : null}
@@ -216,7 +219,7 @@ export function Screen({
   if (!footer) {
     return (
       <ScreenEnterProvider value={enter}>
-        <div className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)} data-enter={enter}>
+        <div ref={scrollRef} className="screen" data-width={width} data-nav={nav} data-backdrop={Boolean(backdrop)} data-enter={enter}>
           {backdrop ? <Backdrop src={backdrop} /> : null}
           {head}
           <div className={bodyClass}>{children}</div>
@@ -231,7 +234,7 @@ export function Screen({
       <div className="screen-top" data-width={width} data-enter={enter}>
         {head}
       </div>
-      <div className="screen" data-width={width} data-nav={nav} data-footer="true" data-enter={enter}>
+      <div ref={scrollRef} className="screen" data-width={width} data-nav={nav} data-footer="true" data-enter={enter}>
         <div className={bodyClass}>{children}</div>
       </div>
       <div className="screen-footer" data-width={width} data-nav={nav} data-enter={enter}>
@@ -239,6 +242,52 @@ export function Screen({
       </div>
     </ScreenEnterProvider>
   );
+}
+
+/** How long a page returned to keeps trying to get back to where it was scrolled, while its content loads. */
+const SCROLL_RESTORE_MS = 1500;
+
+/**
+ * Keeps where a screen is scrolled under its page's history entry (and its
+ * title, as two screens share an entry side by side), and scrolls back there
+ * when the page is returned to — trying again as its content loads in, until
+ * the learner scrolls.
+ */
+function useRestoredScroll(name: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const entry = useEntryKey();
+  const key = `${entry}:${name}`;
+  useEffect(() => {
+    const box = ref.current;
+    if (!box || !entry) return;
+    const saved = recallScroll(key);
+    let frame = 0;
+    let settled = saved === undefined || saved === 0;
+    const startedAt = performance.now();
+    const restore = () => {
+      if (settled || saved === undefined) return;
+      box.scrollTop = saved;
+      if (Math.abs(box.scrollTop - saved) < 2 || performance.now() - startedAt > SCROLL_RESTORE_MS) settled = true;
+      else frame = requestAnimationFrame(restore);
+    };
+    restore();
+    const stop = () => {
+      settled = true;
+    };
+    const onScroll = () => {
+      if (settled) rememberScroll(key, box.scrollTop);
+    };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    box.addEventListener("wheel", stop, { passive: true });
+    box.addEventListener("touchstart", stop, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      box.removeEventListener("scroll", onScroll);
+      box.removeEventListener("wheel", stop);
+      box.removeEventListener("touchstart", stop);
+    };
+  }, [key, entry]);
+  return ref;
 }
 
 /** The window width from which list screens show what is open beside them. */
@@ -943,7 +992,8 @@ export function Sheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [dismiss]);
   // Back closes the sheet, not the page under it.
-  useBackHandler(true, dismiss);
+  // Spec: SHELL-3
+  useBackLayer(!closing, dismiss);
   // Rendered at the top of the page, so it never takes on the look of where
   // it was opened from (an ⓘ inside a bold, single-line title, say).
   return createPortal(

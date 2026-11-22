@@ -33,6 +33,8 @@ import { ensurePermission } from "../lib/notifications";
 import type { ChatMessage, Conversation, ConversationId, CourseId, LessonId, SongId, TutorAction } from "../lib/types";
 import { onEvent } from "../lib/events";
 import { TutorDoneSchema } from "../lib/types";
+import { useSyncReload } from "../lib/sync";
+import { currentAddress, go, goUp, handoffSlot, swapLast, useEntryKey } from "../lib/navigation";
 
 /** A message as shown: stored, or the learner's just sent (not stored yet). */
 type Shown = Omit<ChatMessage, "id" | "conversationId"> & {
@@ -72,87 +74,160 @@ type Shared = {
 };
 
 /**
- * The list as last loaded, and the conversation last open, kept while the
- * app runs: leaving the tab and coming back shows them at once (the list
- * then refreshes), never a spinner behind a slow database.
+ * The list as last loaded, kept while the app runs: leaving the tab and
+ * coming back shows it at once (the list then refreshes), never a spinner
+ * behind a slow database.
  */
 let cachedConversations: Conversation[] | null = null;
-let lastOpen: ConversationId | null = null;
 
-/**
- * The Tutor tab: your conversations, newest first, with a box at the bottom
- * — writing in it starts a new conversation.
- */
-export function Tutor({
-  hasApiKey,
-  hasModel,
-  onOpenSettings,
-  ask = null,
-  onAsked,
-  ...shared
-}: Shared & {
-  /** A message to start a new conversation with (a button elsewhere asked the tutor). */
-  ask?: string | null;
-  onAsked?: () => void;
-  hasApiKey: boolean;
-  /** A key alone is not enough — a model has to be chosen too. */
-  hasModel: boolean;
-  onOpenSettings: () => void;
-}) {
-  // null: the list; "new": a blank conversation; a number: that conversation.
-  const [open, setOpenState] = useState<ConversationId | "new" | null>(lastOpen);
+/** The message a new conversation opens with, handed to its page (never in its address). */
+export const tutorAsks = handoffSlot<string>();
+
+/** The conversations, loaded and kept fresh: a reply finishing in the background changes the list. */
+function useConversations(): {
+  conversations: Conversation[] | null;
+  error: string | null;
+  refresh: () => void;
+  /** Which refresh the list shown came from, counting up. */
+  loaded: number;
+  /** Which refresh started last. */
+  started: () => number;
+} {
   const [conversations, setConversations] = useState<Conversation[] | null>(cachedConversations);
-  // A started conversation is remembered for coming back to the tab; a new
-  // one is not (its first message would be sent again).
-  const setOpen = useCallback((next: ConversationId | "new" | null) => {
-    lastOpen = next === "new" ? null : next;
-    setOpenState(next);
-  }, []);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useDraft("list");
-  // The message a new conversation opens with, sent as soon as it shows.
-  const [opening, setOpening] = useState<string | null>(null);
-  // All conversations, or only the ones about a word ("Talk about it").
-  const [filter, setFilter] = useState<"all" | "word">("all");
-  const wide = useWideLayout();
-
-  // Asked from elsewhere: a new conversation that starts with the request.
-  useEffect(() => {
-    if (!ask) return;
-    setOpening(ask);
-    setOpen("new");
-    onAsked?.();
-  }, [ask, onAsked, setOpen]);
-
-  function start(text: string) {
-    const message = text.trim();
-    if (!message) return;
-    setDraft("");
-    setOpening(message);
-    setOpen("new");
-  }
-
+  const [loaded, setLoaded] = useState(0);
+  const startedRef = useRef(0);
   const refresh = useCallback(() => {
+    const round = ++startedRef.current;
     api
       .tutorConversations()
       .then((list) => {
         cachedConversations = list;
         setConversations(list);
+        setLoaded(round);
         setError(null);
-        // One deleted elsewhere (another device) is no longer remembered.
-        if (lastOpen !== null && !list.some((entry) => entry.id === lastOpen)) lastOpen = null;
       })
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
-
+  const started = useCallback(() => startedRef.current, []);
   useEffect(refresh, [refresh]);
-  // A reply finished in the background: the list's "writing…" changes.
+  // Conversations from another device (sync).
+  useSyncReload(refresh);
   useEffect(() => {
     const off = onEvent(TutorDoneSchema, "tutor://done", () => refresh());
     return () => {
       void off.then((stop) => stop());
     };
   }, [refresh]);
+  return { conversations, error, refresh, loaded, started };
+}
+
+/**
+ * A conversation on a page of its own: in the Tutor tab, or opened from
+ * another page ("ask the tutor" in Insights), above it. `new` is a blank one
+ * that opens with the message handed to its page, if any, and takes its id
+ * (in place, in the address) once the first reply names it.
+ */
+function ChatPage({
+  target,
+  inSplit,
+  list,
+  ...shared
+}: Shared & {
+  target: ConversationId | "new";
+  /** Beside the list: no way back, the list stays in view. */
+  inSplit: boolean;
+  list: ReturnType<typeof useConversations>;
+}) {
+  const { conversations, refresh } = list;
+  const entry = useEntryKey();
+  const conversation = target === "new" ? null : (conversations?.find((c) => c.id === target) ?? null);
+  // One deleted elsewhere (another device): the page gives way — judged by a
+  // list asked for after the conversation was opened, never an older one.
+  // Spec: SHELL-26
+  const [since, setSince] = useState(list.started);
+  const [shownTarget, setShownTarget] = useState(target);
+  if (shownTarget !== target) {
+    setShownTarget(target);
+    setSince(list.started());
+  }
+  const gone = target !== "new" && list.loaded > since && conversation === null;
+  useEffect(() => {
+    if (gone) goUp();
+  }, [gone]);
+  return (
+    <Chat
+      key={target}
+      conversationId={target === "new" ? null : target}
+      title={conversation?.title ?? "New conversation"}
+      firstMessage={target === "new" ? (tutorAsks.get(entry) ?? null) : null}
+      onFirstSent={() => tutorAsks.drop(entry)}
+      onStarted={(id) => {
+        // The new conversation's page takes its id, in place.
+        // Spec: SHELL-16
+        const here = currentAddress();
+        const last = here.trail[here.trail.length - 1];
+        if (last?.kind === "chat" && last.id === "new") go(swapLast(here, { kind: "chat", id }));
+        else if (here.tab === "tutor" && here.trail.length === 0) go({ tab: "tutor", trail: [{ kind: "chat", id }] });
+        refresh();
+      }}
+      onBack={inSplit ? undefined : goUp}
+      onRenamed={refresh}
+      onDeleted={() => {
+        goUp();
+        refresh();
+      }}
+      {...shared}
+    />
+  );
+}
+
+/** A conversation opened from a page outside the Tutor tab. */
+export function TutorChat({ target, ...shared }: Shared & { target: ConversationId | "new" }) {
+  const list = useConversations();
+  return <ChatPage target={target} inSplit={false} list={list} {...shared} />;
+}
+
+/** Shows a conversation in the Tutor tab ("new", or none for the list). */
+function openInTab(target: ConversationId | "new" | null, ask?: string): void {
+  go(
+    { tab: "tutor", trail: target === null ? [] : [{ kind: "chat", id: target }] },
+    ask === undefined ? {} : { handoff: (entry) => tutorAsks.set(entry, ask) },
+  );
+}
+
+/**
+ * The Tutor tab: your conversations, newest first, with a box at the bottom
+ * — writing in it starts a new conversation. The conversation open is the
+ * address's (`/tutor/cv_…`).
+ */
+export function Tutor({
+  open,
+  hasApiKey,
+  hasModel,
+  onOpenSettings,
+  ...shared
+}: Shared & {
+  /** The conversation open: null for the list. */
+  open: ConversationId | "new" | null;
+  hasApiKey: boolean;
+  /** A key alone is not enough — a model has to be chosen too. */
+  hasModel: boolean;
+  onOpenSettings: () => void;
+}) {
+  const conversationList = useConversations();
+  const { conversations, error } = conversationList;
+  const [draft, setDraft] = useDraft("list");
+  // All conversations, or only the ones about a word ("Talk about it").
+  const [filter, setFilter] = useState<"all" | "word">("all");
+  const wide = useWideLayout();
+
+  function start(text: string) {
+    const message = text.trim();
+    if (!message) return;
+    setDraft("");
+    openInTab("new", message);
+  }
 
   if (!hasApiKey || !hasModel) {
     return (
@@ -173,42 +248,13 @@ export function Tutor({
     );
   }
 
-  // A conversation: on its own screen, or beside the list (`inSplit`), where
-  // it has no way back because the list stays in view.
-  const chat = (target: ConversationId | "new", inSplit: boolean) => {
-    const conversation = target === "new" ? null : (conversations?.find((entry) => entry.id === target) ?? null);
-    return (
-      <Chat
-        key={target}
-        conversationId={target === "new" ? null : target}
-        title={conversation?.title ?? "New conversation"}
-        firstMessage={target === "new" ? opening : null}
-        onStarted={(id) => {
-          setOpening(null);
-          setOpen(id);
-          refresh();
-        }}
-        onBack={
-          inSplit
-            ? undefined
-            : () => {
-                setOpening(null);
-                setOpen(null);
-                refresh();
-              }
-        }
-        onRenamed={refresh}
-        onDeleted={() => {
-          setOpen(null);
-          refresh();
-        }}
-        {...shared}
-      />
-    );
-  };
+  const chat = (target: ConversationId | "new", inSplit: boolean) => (
+    <ChatPage target={target} inSplit={inSplit} list={conversationList} {...shared} />
+  );
 
   // A tablet in landscape: the list, and the open conversation beside it —
-  // a new one when none is open.
+  // a new one when none is open. The address is the same at every width.
+  // Spec: SHELL-24
   if (wide) {
     const current = open ?? "new";
     return <SplitView list={list(current)} detail={chat(current, true)} />;
@@ -234,10 +280,7 @@ export function Tutor({
               variant={current === "new" ? "primary" : undefined}
               icon={<PlusIcon />}
               label="New conversation"
-              onClick={() => {
-                setOpening(null);
-                setOpen("new");
-              }}
+              onClick={() => openInTab(null)}
             />
           ) : null
         }
@@ -289,7 +332,7 @@ export function Tutor({
                             .join(" · ")
                     }
                     selected={current === conversation.id}
-                    onClick={() => setOpen(conversation.id)}
+                    onClick={() => openInTab(conversation.id)}
                   />
                 ))}
             </List>
@@ -304,6 +347,7 @@ function Chat({
   conversationId,
   title,
   firstMessage,
+  onFirstSent,
   onStarted,
   onBack,
   onRenamed,
@@ -318,6 +362,8 @@ function Chat({
   title: string;
   /** Sent once when the conversation opens (typed on the list). */
   firstMessage: string | null;
+  /** The first message is on its way: it is not to be sent again. */
+  onFirstSent: () => void;
   /** The first reply arrived; the conversation now exists with this id. */
   onStarted: (id: ConversationId) => void;
   /** Back to the list; left out beside it, where the list stays in view. */
@@ -366,6 +412,7 @@ function Chat({
   useEffect(() => {
     if (firstMessage && !sentFirst.current) {
       sentFirst.current = true;
+      onFirstSent();
       void send(firstMessage);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,7 +476,7 @@ function Chat({
         {action.kind === "songStarted" && songId !== null ? (
           <Inline gap={2} wrap>
             <Button size="sm" icon={<NavIcon.songs />} onClick={() => onOpenSong(songId)}>
-              Open in Music
+              Open the song
             </Button>
           </Inline>
         ) : null}

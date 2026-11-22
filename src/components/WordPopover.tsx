@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Button, Text } from "../design";
+import { useBackLayer } from "../lib/navigation";
 import type { GlossWord } from "../lib/types";
 
 /*
@@ -38,10 +39,12 @@ export function placeUnder(word: Element, box: HTMLElement): Pick<Tapped, "top" 
   };
 }
 
-/** Closes an open popover on a tap anywhere but a word (`words`, a selector) or the popover, or on Escape. */
+/** Closes an open popover on a tap anywhere but a word (`words`, a selector) or the popover, on Escape, or on back. */
 export function useDismiss(open: boolean, close: () => void, words: string) {
   const closeRef = useRef(close);
   closeRef.current = close;
+  // Spec: SHELL-3
+  useBackLayer(open, close);
   useEffect(() => {
     if (!open) return undefined;
     const outside = (event: PointerEvent) => {

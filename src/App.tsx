@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { Logo, NavIcon } from "./components/icons";
-import { Banner, markBack, Stack, useWideLayout } from "./design";
+import { Banner, EmptyState, Screen, Spinner, Stack, useWideLayout } from "./design";
 import { Startup, type BootStep } from "./components/Startup";
-import { useBackHandler } from "./lib/back";
+import { SourceReader } from "./components/Sources";
 import { api, errorMessage } from "./lib/api";
-import { askForNotificationsWhenWorking, syncReminder } from "./lib/notifications";
+import { askForNotificationsWhenWorking, onNotificationOpened, syncReminder } from "./lib/notifications";
 import { toast } from "./lib/toast";
 import {
   keepScreenAwake,
@@ -24,17 +24,15 @@ import type {
   SessionPlan,
   SessionResult,
   Settings,
-  SongId,
   Stats,
 } from "./lib/types";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
-import { Insights, type InsightPage } from "./screens/Insights";
+import { Insights } from "./screens/Insights";
 import { AchievementScreen } from "./screens/AchievementScreen";
 import { Session } from "./screens/Session";
 import { SessionSummary } from "./screens/SessionSummary";
-import { Memories } from "./screens/Memories";
-import { SettingsPageView, SettingsScreen, type SettingsPage } from "./screens/SettingsScreen";
+import { openPage, SettingsPageView, SettingsScreen } from "./screens/SettingsScreen";
 import { Search } from "./screens/Search";
 import { LessonPage } from "./screens/LessonPage";
 import { AudioScreen } from "./screens/AudioScreen";
@@ -42,18 +40,34 @@ import { XpDayScreen } from "./screens/XpDayScreen";
 import { QuickGames } from "./screens/QuickGames";
 import { setHapticsEnabled } from "./lib/haptics";
 import { CheckIn, type Writing } from "./screens/CheckIn";
-import { Music, preloadLibrary } from "./screens/Music";
+import { Music, preloadLibrary, SongScreen } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
 import { masteryChange } from "./lib/lessons";
 import { Player } from "./screens/Player";
-import { CourseDetail, type CourseSection } from "./screens/CourseDetail";
-import { Tutor } from "./screens/Tutor";
+import { CourseDetail } from "./screens/CourseDetail";
+import { Tutor, TutorChat, tutorAsks } from "./screens/Tutor";
 import { onEvent, onSignal } from "./lib/events";
 import { FactCheckSchema, TutorDoneSchema } from "./lib/types";
 import { setIdOpeners } from "./lib/ids";
 import { useSyncReload } from "./lib/sync";
-
-type Tab = "exercises" | "tutor" | "music" | "settings";
+import {
+  currentAddress,
+  go,
+  goPath,
+  goTab,
+  goUp,
+  handoffSlot,
+  open,
+  startNavigation,
+  swapLast,
+  up,
+  useAddress,
+  useEntryKey,
+  type Address,
+  type Segment,
+  type SettingsPage,
+  type Tab,
+} from "./lib/navigation";
 
 const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
   { id: "exercises", label: "Exercises", icon: "library" },
@@ -62,74 +76,88 @@ const TABS: { id: Tab; label: string; icon: keyof typeof NavIcon }[] = [
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
-/** A full-screen view without the tab bar: practice, or a screen opened from Exercises. */
-type Overlay =
-  | { kind: "none" }
-  | {
-      kind: "lesson";
-      lessonId: LessonId;
-      /** Where it was opened from: the learning log keeps it with everything practised. */
-      from: PracticeContext;
-      back: Overlay;
-    }
-  | { kind: "session"; plan: SessionPlan; challenge: boolean; back: Overlay }
-  | {
-      kind: "checkin";
-      lessonId: LessonId;
-      from: PracticeContext;
-      title: string;
-      challenge: boolean;
-      songId: SongId | null;
-      /** A writing lesson's situation and goals, shown above the conversation. */
-      writing: Writing | null;
-      back: Overlay;
-    }
-  | {
-      kind: "summary";
-      result: SessionResult;
-      xp: number;
-      /** The lesson took the learner up a level (the summary celebrates). */
-      levelUp?: boolean;
-      outcome?: {
-        title: string;
-        result: LessonResult;
-        nextDueDay: number | null;
-        extra?: boolean;
-        /** False when nothing was scored: not graded. */
-        graded?: boolean;
-        /** The mastery change, in words. */
-        mastery?: string;
-        /** A drill's score; a check-in has none. */
-        score?: { correct: number; almost: number; total: number };
-      };
-      /** Where Done goes: wherever the lesson was started from. */
-      back: Overlay;
-    }
-  | { kind: "progress" }
-  | { kind: "insights"; start: InsightPage }
-  /** Quick games, from Home (screens/QuickGames.tsx). */
-  | { kind: "games" }
-  | { kind: "achievement"; code: string }
-  | { kind: "xpDay"; day: number; back: Overlay }
-  | { kind: "memories"; back: Overlay }
-  | { kind: "audio" }
-  | { kind: "search" }
-  | { kind: "player"; back?: Overlay }
-  | {
-      kind: "course";
-      progress: CourseProgress;
-      section?: CourseSection;
-      /** Where the back button goes. */
-      back: Overlay;
-    };
+/** What a summary shows: handed to its page by the drill or conversation that ended. */
+interface Summary {
+  result: SessionResult;
+  xp: number;
+  /** The lesson took the learner up a level (the summary celebrates). */
+  levelUp?: boolean;
+  outcome?: {
+    title: string;
+    result: LessonResult;
+    nextDueDay: number | null;
+    extra?: boolean;
+    /** False when nothing was scored: not graded. */
+    graded?: boolean;
+    /** The mastery change, in words. */
+    mastery?: string;
+    /** A drill's score; a check-in has none. */
+    score?: { correct: number; almost: number; total: number };
+  };
+}
+
+const summaries = handoffSlot<Summary>();
+
+/** The summary's address: in place of the drill or conversation, above its lesson. */
+function summaryAddress(here: Address): Address {
+  return swapLast(here, { kind: "done" });
+}
 
 /**
- * Where to return once a lesson is done: the screen its page was opened from
- * (a course, or home), not the lesson page itself.
+ * Where a lesson's practice is logged as reached from (the learning log):
+ * the page it was opened from, by its address.
  */
-function startedFrom(back: Overlay): Overlay {
-  return back.kind === "lesson" ? back.back : back;
+function practiceContext(
+  address: Address,
+  lessonAt: number,
+  lessonId: LessonId,
+  courses: CourseProgress[],
+  overview: LessonOverview,
+): PracticeContext {
+  const parent: Segment | undefined = address.trail[lessonAt - 1];
+  if (!parent) {
+    switch (address.tab) {
+      case "exercises":
+        // Home lists today's lessons: the daily five.
+        return { source: "daily", courseId: overview.due.find((l) => l.id === lessonId)?.courseId ?? null };
+      case "tutor":
+        return { source: "tutor", courseId: null };
+      case "music":
+        return { source: "music", courseId: null };
+      default:
+        return { source: "link", courseId: null };
+    }
+  }
+  switch (parent.kind) {
+    case "course": {
+      // The course page it was opened from (Other lessons is a course of its own).
+      const kind = courses.find((c) => c.course.id === parent.id)?.course.kind;
+      return { source: kind === "other" ? "other" : "course", courseId: parent.id };
+    }
+    case "chat":
+      return { source: "tutor", courseId: null };
+    case "song":
+      return { source: "music", courseId: null };
+    case "insight":
+    case "progress":
+      return { source: "insights", courseId: null };
+    default:
+      return { source: "link", courseId: null };
+  }
 }
+
+/** Opens a new tutor conversation, above the page shown, that starts with `ask`. */
+function askTutor(ask: string): void {
+  open({ kind: "chat", id: "new" }, { handoff: (entry) => tutorAsks.set(entry, ask) });
+}
+
+/** What the tutor's buttons and the id chips open, above the page shown. */
+const opens = {
+  onOpenCourse: (id: CourseId) => open({ kind: "course", id, section: "lessons" }),
+  onOpenLesson: (id: LessonId) => open({ kind: "lesson", id }),
+  onOpenSong: (id: Parameters<typeof SongScreen>[0]["songId"]) => open({ kind: "song", id }),
+  onOpenMemories: () => open({ kind: "settings", page: "memories" }),
+};
 
 /**
  * `init_app`, asked again if the first call has not answered in a few
@@ -163,41 +191,19 @@ export default function App() {
   const [overview, setOverview] = useState<LessonOverview | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [courses, setCourses] = useState<CourseProgress[]>([]);
-  const [tab, setTab] = useState<Tab>("exercises");
-  /** A request for the tutor from a button elsewhere ("Add levels"): starts a new conversation. */
-  const [tutorAsk, setTutorAsk] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
-  /**
-   * The Settings sub-screen open (How to use, AI, …). It stays while a
-   * screen opened from it (Downloaded audio) is on top, so back returns to it.
-   */
-  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
+  // What's on screen is the address's to say (lib/navigation.ts).
+  const address = useAddress();
   /** A wide window shows a Settings sub-screen beside the menu instead of over it. */
   const wide = useWideLayout();
-  /** Opens Settings at one of its sub-screens (a "set your key" button elsewhere). */
-  const openSettings = useCallback((page: SettingsPage) => {
-    setOverlay({ kind: "none" });
-    setTab("settings");
-    setSettingsPage(page);
-  }, []);
+  const last: Segment | undefined = address.trail[address.trail.length - 1];
 
   // Studying a lesson — its page, its drill, its check-in — often means pen
   // and paper, not touching the phone: keep the screen on meanwhile.
-  const studying =
-    overlay.kind === "lesson" ||
-    overlay.kind === "session" ||
-    overlay.kind === "checkin";
+  const studying = last?.kind === "lesson" || last?.kind === "drill" || last?.kind === "talk";
   useEffect(() => {
     keepScreenAwake(studying, "study");
   }, [studying]);
   const [error, setError] = useState<string | null>(null);
-  /** A song the player asked the music tab to show. */
-  const [musicSong, setMusicSong] = useState<SongId | null>(null);
-  const clearMusicSong = useCallback(() => setMusicSong(null), []);
-  // Back on another tab goes to Exercises; back on Exercises leaves the app.
-  useBackHandler(overlay.kind === "none" && tab !== "exercises", () =>
-    setTab("exercises"),
-  );
 
   const refresh = useCallback(async () => {
     const [nextOverview, nextStats, nextCourses] = await Promise.all([
@@ -336,52 +342,13 @@ export default function App() {
     [settings?.ttsPrefetch, settings?.hasApiKey],
   );
 
-  /** Starts a drill lesson's exercises. */
-  const startDrill = useCallback(
-    async (lessonId: LessonId, challenge: boolean, back: Overlay, from: PracticeContext) => {
-      stopAudio();
-      try {
-        const session = await api.lessonSession(lessonId, from);
-        setOverlay({ kind: "session", plan: session, challenge, back });
-        prefetchAudio(session);
-      } catch (cause) {
-        setError(errorMessage(cause));
-      }
-    },
-    [prefetchAudio],
-  );
 
-  /** Opens a course by id (the tutor's buttons). */
-  const openCourseById = useCallback(async (courseId: CourseId) => {
-    try {
-      const fresh = await api.getCourseProgress();
-      setCourses(fresh);
-      const progress = fresh.find((entry) => entry.course.id === courseId);
-      if (progress)
-        setOverlay({ kind: "course", progress, back: { kind: "none" } });
-    } catch (cause) {
-      setError(errorMessage(cause));
-    }
-  }, []);
-
-  // What an id chip (a title shown in place of an id) opens.
+  // What an id chip (a title shown in place of an id) opens: above the page
+  // it is on, so back comes back to it.
+  // Spec: SHELL-17
   useEffect(() => {
-    setIdOpeners({
-      course: (courseId) => void openCourseById(courseId),
-      lesson: (lessonId) =>
-        setOverlay({
-          kind: "lesson",
-          lessonId,
-          from: { source: "link", courseId: null },
-          back: { kind: "none" },
-        }),
-      song: (songId) => {
-        setOverlay({ kind: "none" });
-        setTab("music");
-        setMusicSong(songId);
-      },
-    });
-  }, [openCourseById]);
+    setIdOpeners({ course: opens.onOpenCourse, lesson: opens.onOpenLesson, song: opens.onOpenSong });
+  }, []);
 
   /** Something changed behind the screens' backs (the tutor acted). */
   const reloadAll = useCallback(async () => {
@@ -393,23 +360,14 @@ export default function App() {
     }
   }, [refresh]);
 
+
   // Another device's data arrived (sync, debounced): the screens' data and
   // the settings that came with it (the day's five, the models) are read
   // again. The theme and the other device settings stay this device's own.
   // A drill or check-in that is open carries on with the plan it started
-  // with; an open course page takes its fresh progress.
-  useSyncReload(() => {
-    void (async () => {
-      await reloadAll();
-      const fresh = await api.getCourseProgress().catch(() => null);
-      if (!fresh) return;
-      setOverlay((current) => {
-        if (current.kind !== "course") return current;
-        const progress = fresh.find((entry) => entry.course.id === current.progress.course.id);
-        return progress ? { ...current, progress } : current;
-      });
-    })();
-  });
+  // with; an open course page takes its fresh progress from the list. The
+  // address stays.
+  useSyncReload(() => void reloadAll());
 
   // Reminders follow the day: re-armed on every launch (the OS drops them
   // after a reboot or an update), and whenever the day is done or what is
@@ -497,6 +455,52 @@ export default function App() {
     };
   }, [reloadAll]);
 
+
+  // The address is followed from the moment the app has loaded: a reload
+  // shows the page it was on, a fresh start the page left within
+  // `nav.resume-within`.
+  useEffect(() => {
+    if (ready) startNavigation();
+  }, [ready]);
+
+  // A notification tapped: what it is about.
+  // Spec: SHELL-20
+  useEffect(() => {
+    if (!ready) return;
+    const off = onNotificationOpened(goPath);
+    return () => {
+      void off.then((stop) => stop());
+    };
+  }, [ready]);
+
+  // A course the address names that isn't in the list: maybe just made (the
+  // tutor), so the list is read again; if it is really gone, the page gives
+  // way to the one it was opened from.
+  // Spec: SHELL-26
+  const missingCourse =
+    address.trail.find(
+      (seg): seg is Extract<Segment, { kind: "course" }> =>
+        seg.kind === "course" && !courses.some((c) => c.course.id === seg.id),
+    )?.id ?? null;
+  useEffect(() => {
+    if (!ready || missingCourse === null) return;
+    let live = true;
+    api
+      .getCourseProgress()
+      .then((fresh) => {
+        if (!live) return;
+        setCourses(fresh);
+        if (fresh.some((c) => c.course.id === missingCourse)) return;
+        const here = currentAddress();
+        const at = here.trail.findIndex((seg) => seg.kind === "course" && seg.id === missingCourse);
+        if (at !== -1) go({ tab: here.tab, trail: here.trail.slice(0, at) });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [ready, missingCourse]);
+
   if (error && !settings) {
     return (
       <div className="center-screen">
@@ -520,414 +524,291 @@ export default function App() {
     );
   }
 
-  if (overlay.kind === "session") {
-    return (
-      <div className="app">
-        <Session
-          plan={overlay.plan}
-          challenge={overlay.challenge}
-          onQuit={() => {
-            stopAudio();
-            markBack();
-            setOverlay(overlay.back);
-            void refresh();
-          }}
-          onFinished={(result, sessionXp) => {
-            setStats(result.stats);
-            setOverlay({
-              kind: "summary",
-              result,
-              xp: sessionXp,
-              levelUp: result.stats.level > stats.level,
-              outcome: {
-                title: result.lesson.title,
-                result: result.result,
-                nextDueDay: result.lesson.dueDay,
-                extra: result.extra,
-                graded: result.graded,
-                mastery: result.mastery ? masteryChange(result.mastery) : undefined,
-                score:
-                  result.total > 0
-                    ? { correct: result.correct, almost: result.almost, total: result.total }
-                    : undefined,
-              },
-              back: startedFrom(overlay.back),
-            });
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "summary") {
-    return (
-      <div className="app">
-        <SessionSummary
-          result={overlay.result}
-          sessionXp={overlay.xp}
-          levelUp={overlay.levelUp}
-          outcome={overlay.outcome}
-          onDone={() => {
-            // Back to where the lesson was started: a return, not a new screen.
-            markBack();
-            setOverlay(overlay.back);
-            if (overlay.back.kind === "none") setTab("exercises");
-            void refresh();
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "course") {
-    return (
-      <div className="app">
-        <CourseDetail
-          progress={overlay.progress}
-          initialSection={overlay.section}
-          today={overview.today}
-          onBack={() => setOverlay(overlay.back)}
-          onOpenLesson={(lessonId) =>
-            setOverlay({
-              kind: "lesson",
-              lessonId,
-              // The course page it was opened from (Other lessons is a course of its own).
-              from: {
-                source:
-                  overlay.progress.course.kind === "other" ? "other" : "course",
-                courseId: overlay.progress.course.id,
-              },
-              back: overlay,
-            })
-          }
-          onDeleted={() => {
-            setOverlay(overlay.back);
-            void reloadAll();
-          }}
-          onChanged={() => void reloadAll()}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "lesson") {
-    return (
-      <div className="app">
-        <LessonPage
-          lessonId={overlay.lessonId}
-          from={overlay.from}
-          today={overview.today}
-          onBack={() => {
-            setOverlay(overlay.back);
-            void refresh();
-          }}
-          onStartDrill={(lessonId, challenge) =>
-            void startDrill(lessonId, challenge, overlay, overlay.from)
-          }
-          onCheckIn={async (lessonId) => {
-            const detail = await api.lessonDetail(lessonId).catch(() => null);
-            setOverlay({
-              kind: "checkin",
-              lessonId,
-              from: overlay.from,
-              title: detail?.title ?? "Conversation",
-              challenge: detail?.challenge ?? false,
-              songId: detail?.songId ?? null,
-              writing:
-                // A type with a writing section is played out with a partner.
-                detail && lessonType(detail).sections.includes("writing")
-                  ? {
-                      situation: detail.content,
-                      goals: detail.objectives,
-                      supportLevel: detail.supportLevel,
-                    }
-                  : null,
-              back: overlay,
-            });
-          }}
-          onDeleted={() => {
-            setOverlay(overlay.back);
-            void refresh();
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "checkin") {
-    return (
-      <div className="app">
-        <CheckIn
-          lessonId={overlay.lessonId}
-          from={overlay.from}
-          songId={overlay.songId}
-          writing={overlay.writing}
-          title={overlay.title}
-          challenge={overlay.challenge}
-          onClose={() => {
-            setOverlay(overlay.back);
-            void refresh();
-          }}
-          onFinished={async (first, checkinId, assessment) => {
-            const back = startedFrom(overlay.back);
-            try {
-              // A check-in ends like a drill: on the summary, with what it
-              // earned and any achievement it unlocked.
-              const result = await api.checkinSummary(checkinId, first);
-              setStats(result.stats);
-              setOverlay({
-                kind: "summary",
-                result,
-                xp: assessment.xp,
-                levelUp: result.stats.level > stats.level,
-                outcome: {
-                  title: overlay.title,
-                  result: assessment.result,
-                  nextDueDay: assessment.nextDueDay,
-                },
-                back,
-              });
-            } catch {
-              setOverlay(back);
-              if (back.kind === "none") setTab("exercises");
-            }
-            void refresh();
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "audio") {
-    return (
-      <div className="app">
-        <AudioScreen onBack={() => setOverlay({ kind: "none" })} />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "memories") {
-    return (
-      <div className="app">
-        <Memories onBack={() => setOverlay(overlay.back)} />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "xpDay") {
-    return (
-      <div className="app">
-        <XpDayScreen
-          day={overlay.day}
-          onBack={() => setOverlay(overlay.back)}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "games") {
-    return (
-      <div className="app">
-        <QuickGames
-          level={stats.level}
-          onBack={() => {
-            setOverlay({ kind: "none" });
-            void refresh();
-          }}
-          onPlayed={() => void refresh()}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "progress") {
-    return (
-      <div className="app">
-        <Progress
-          stats={stats}
-          onBack={() => setOverlay({ kind: "none" })}
-          onOpenAchievement={(code) => setOverlay({ kind: "achievement", code })}
-          onOpenDay={(day) =>
-            setOverlay({ kind: "xpDay", day, back: { kind: "progress" } })
-          }
-          onOpenInsights={(start) => setOverlay({ kind: "insights", start })}
-          onAskTutor={(ask) => {
-            setOverlay({ kind: "none" });
-            setTutorAsk(ask);
-            setTab("tutor");
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "insights") {
-    return (
-      <div className="app">
-        <Insights
-          start={overlay.start}
-          today={stats.day}
-          courses={courses}
-          onDone={() => setOverlay({ kind: "progress" })}
-          onAskTutor={(ask) => {
-            setOverlay({ kind: "none" });
-            setTutorAsk(ask);
-            setTab("tutor");
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "achievement") {
-    const achievement = stats.achievements.find((a) => a.code === overlay.code);
-    if (achievement) {
-      return (
-        <div className="app">
-          <AchievementScreen achievement={achievement} onBack={() => setOverlay({ kind: "progress" })} />
-        </div>
-      );
-    }
-  }
-
-  if (overlay.kind === "player") {
-    return (
-      <div className="app">
-        <Player
-          onClose={() => setOverlay(overlay.back ?? { kind: "none" })}
-          onOpenSong={(songId) => {
-            setOverlay({ kind: "none" });
-            setTab("music");
-            setMusicSong(songId);
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (overlay.kind === "search") {
-    return (
-      <div className="app">
-        <Search courses={courses} onBack={() => setOverlay({ kind: "none" })} />
-      </div>
-    );
-  }
-
   const settingsShared = {
     settings,
     onSettings: applySettings,
-    onOpenAudio: () => setOverlay({ kind: "audio" }),
+    onOpenAudio: () => open({ kind: "audio" }),
+  };
+  const tutorShared = { ...opens, onChanged: () => void reloadAll() };
+  const back = () => {
+    goUp();
+    void refresh();
+  };
+  const contextAt = (at: number, lessonId: LessonId) =>
+    practiceContext(address, at, lessonId, courses, overview);
+
+  /** The page the address names, full screen; null for a tab's own layout. */
+  const page = (): ReactNode => {
+    const { tab, trail } = address;
+    if (!last) return null;
+    const first = trail[0];
+    // Pages a tab shows in its own layout, with the tab bar.
+    if (tab === "tutor" && trail.length === 1 && first.kind === "chat") return null;
+    if (tab === "music" && trail.length === 1 && ["song", "playlist", "compose"].includes(first.kind)) return null;
+    if (tab === "music" && trail.length === 2 && first.kind === "song" && last.kind === "source") return null;
+    if (tab === "settings" && wide && trail.every((seg) => seg.kind === "settings")) return null;
+
+    const at = trail.length - 1;
+    const parent: Segment | undefined = trail[at - 1];
+    switch (last.kind) {
+      case "course": {
+        const progress = courses.find((c) => c.course.id === last.id);
+        if (!progress) return <Waiting />;
+        return (
+          <CourseDetail
+            key={last.id}
+            progress={progress}
+            section={last.section}
+            onSection={(section) => go(swapLast(address, { ...last, section }))}
+            today={overview.today}
+            onBack={goUp}
+            onOpenLesson={opens.onOpenLesson}
+            onDeleted={() => {
+              goUp();
+              void reloadAll();
+            }}
+            onChanged={() => void reloadAll()}
+          />
+        );
+      }
+      case "lesson":
+        return (
+          <LessonPage
+            key={last.id}
+            lessonId={last.id}
+            from={contextAt(at, last.id)}
+            today={overview.today}
+            onBack={back}
+            onStartDrill={(_, challenge) => open({ kind: "drill", challenge })}
+            onCheckIn={() => open({ kind: "talk" })}
+            onDeleted={back}
+            onRead={(source) => open({ kind: "source", id: source.id })}
+            onGone={back}
+          />
+        );
+      case "source":
+        if (parent?.kind === "lesson") {
+          const lessonId = parent.id;
+          return (
+            <SourceReader
+              key={last.id}
+              sourceId={last.id}
+              load={() => api.lessonSources(lessonId)}
+              onBack={goUp}
+              onRemoved={goUp}
+            />
+          );
+        }
+        if (parent?.kind === "song") {
+          const songId = parent.id;
+          return <SourceReader key={last.id} sourceId={last.id} load={() => api.songSources(songId)} onBack={goUp} />;
+        }
+        return null;
+      case "drill":
+        if (parent?.kind !== "lesson") return null;
+        return (
+          <DrillPage
+            key={parent.id}
+            lessonId={parent.id}
+            challenge={last.challenge}
+            context={contextAt(at - 1, parent.id)}
+            prefetchAudio={prefetchAudio}
+            onQuit={() => {
+              stopAudio();
+              back();
+            }}
+            onFinished={(result, sessionXp) => {
+              setStats(result.stats);
+              const summary: Summary = {
+                result,
+                xp: sessionXp,
+                levelUp: result.stats.level > stats.level,
+                outcome: {
+                  title: result.lesson.title,
+                  result: result.result,
+                  nextDueDay: result.lesson.dueDay,
+                  extra: result.extra,
+                  graded: result.graded,
+                  mastery: result.mastery ? masteryChange(result.mastery) : undefined,
+                  score:
+                    result.total > 0
+                      ? { correct: result.correct, almost: result.almost, total: result.total }
+                      : undefined,
+                },
+              };
+              go(summaryAddress(currentAddress()), { handoff: (entry) => summaries.set(entry, summary) });
+            }}
+            onError={setError}
+          />
+        );
+      case "talk":
+        if (parent?.kind !== "lesson") return null;
+        return (
+          <CheckInPage
+            key={parent.id}
+            lessonId={parent.id}
+            context={contextAt(at - 1, parent.id)}
+            onClose={back}
+            onFinished={async (first, checkinId, assessment, title) => {
+              const done = summaryAddress(currentAddress());
+              try {
+                // A check-in ends like a drill: on the summary, with what it
+                // earned and any achievement it unlocked.
+                const result = await api.checkinSummary(checkinId, first);
+                setStats(result.stats);
+                const summary: Summary = {
+                  result,
+                  xp: assessment.xp,
+                  levelUp: result.stats.level > stats.level,
+                  outcome: { title, result: assessment.result, nextDueDay: assessment.nextDueDay },
+                };
+                go(done, { handoff: (entry) => summaries.set(entry, summary) });
+              } catch {
+                // Back to where the lesson was started from, as Done would.
+                go(up(done) ?? done);
+              }
+              void refresh();
+            }}
+          />
+        );
+      case "done":
+        return <SummaryPage onDone={back} />;
+      case "song":
+        return <SongScreen key={last.id} songId={last.id} />;
+      case "playing":
+        return (
+          <Player
+            onClose={goUp}
+            onOpenSong={(songId) => go({ tab: "music", trail: [{ kind: "song", id: songId }] })}
+          />
+        );
+      case "chat":
+        return <TutorChat key={last.id} target={last.id} {...tutorShared} />;
+      case "settings":
+        return (
+          <SettingsPageView key={last.page} page={last.page} onBack={goUp} onOpenPage={openPage} {...settingsShared} />
+        );
+      case "audio":
+      case "audioCourse":
+        return (
+          <AudioScreen
+            courseId={last.kind === "audioCourse" ? last.id : null}
+            onBack={goUp}
+            onOpenCourse={(id) => open({ kind: "audioCourse", id })}
+          />
+        );
+      case "search":
+        return <Search courses={courses} onBack={goUp} />;
+      case "progress":
+        return (
+          <Progress
+            stats={stats}
+            onBack={goUp}
+            onOpenAchievement={(code) => open({ kind: "achievement", code })}
+            onOpenDay={(day) => open({ kind: "day", day })}
+            onOpenInsights={(start) => open({ kind: "insight", page: start })}
+            onAskTutor={askTutor}
+          />
+        );
+      case "insight":
+        return (
+          <Insights
+            page={last.page}
+            today={stats.day}
+            courses={courses}
+            onOpen={(next) => open({ kind: "insight", page: next })}
+            onBack={goUp}
+            onAskTutor={askTutor}
+          />
+        );
+      case "achievement": {
+        const achievement = stats.achievements.find((a) => a.code === last.code);
+        return achievement ? (
+          <AchievementScreen achievement={achievement} onBack={goUp} />
+        ) : (
+          <Screen title="Achievement" onBack={goUp} nav={false}>
+            <EmptyState title="No such achievement" />
+          </Screen>
+        );
+      }
+      case "day":
+        return <XpDayScreen day={last.day} onBack={goUp} />;
+      case "games":
+      case "game":
+        return (
+          <QuickGames
+            playing={last.kind === "game" ? last.game : null}
+            level={stats.level}
+            onBack={back}
+            onPlay={(game) => open({ kind: "game", game })}
+            onPlayed={() => void refresh()}
+          />
+        );
+      case "playlist":
+      case "compose":
+        return null;
+    }
   };
 
-  // A Settings sub-screen on a phone: pushed over the tabs, back to the menu.
-  if (tab === "settings" && settingsPage !== null && !wide) {
+  const toastLine = error ? (
+    <button className="toast" onClick={() => setError(null)}>
+      {error} · tap to dismiss
+    </button>
+  ) : null;
+
+  const full = page();
+  if (full !== null) {
     return (
       <div className="app">
-        <SettingsPageView
-          key={settingsPage}
-          page={settingsPage}
-          onBack={() => setSettingsPage(null)}
-          onOpenPage={setSettingsPage}
-          {...settingsShared}
-        />
+        {full}
+        {toastLine}
       </div>
     );
   }
 
+  const tutorOpen = address.tab === "tutor" && address.trail[0]?.kind === "chat" ? address.trail[0].id : null;
+  const settingsPages = address.trail.flatMap((seg) => (seg.kind === "settings" ? [seg.page] : []));
+  const keyPage: SettingsPage = settings.hasKieKey ? "ai" : "songs";
+
   return (
     <div className="app app-tabs">
-      {tab === "exercises" ? (
+      {address.tab === "exercises" ? (
         <Exercises
           overview={overview}
           stats={stats}
           courses={courses}
-          onOpenLesson={(lesson) =>
-            setOverlay({
-              kind: "lesson",
-              lessonId: lesson.id,
-              // Home lists today's lessons: the daily five.
-              from: { source: "daily", courseId: lesson.courseId },
-              back: { kind: "none" },
-            })
-          }
-          onOpenCourse={(progress) =>
-            setOverlay({ kind: "course", progress, back: { kind: "none" } })
-          }
-          onOpenTutor={(ask) => {
-            setTutorAsk(ask ?? null);
-            setTab("tutor");
-          }}
-          onOpenProgress={() => setOverlay({ kind: "progress" })}
-          onOpenGames={() => setOverlay({ kind: "games" })}
-          onOpenXpDay={(day) =>
-            setOverlay({ kind: "xpDay", day, back: { kind: "none" } })
-          }
-          onOpenSearch={() => setOverlay({ kind: "search" })}
+          onOpenLesson={(lesson) => opens.onOpenLesson(lesson.id)}
+          onOpenCourse={(progress) => opens.onOpenCourse(progress.course.id)}
+          onOpenTutor={(ask) => (ask ? askTutor(ask) : goTab("tutor"))}
+          onOpenProgress={() => open({ kind: "progress" })}
+          onOpenGames={() => open({ kind: "games" })}
+          onOpenXpDay={(day) => open({ kind: "day", day })}
+          onOpenSearch={() => open({ kind: "search" })}
         />
       ) : null}
 
-      {tab === "music" ? (
+      {address.tab === "music" ? (
         <Music
           settings={settings}
-          openSongId={musicSong}
-          onSongOpened={clearMusicSong}
-          onOpenLesson={(lessonId) =>
-            setOverlay({
-              kind: "lesson",
-              lessonId,
-              from: { source: "music", courseId: null },
-              back: { kind: "none" },
-            })
-          }
           // Songs need the kie.ai key (Settings → Songs); with it, what is
           // missing is the OpenRouter key (Settings → AI).
-          onOpenSettings={() => openSettings(settings.hasKieKey ? "ai" : "songs")}
-          onOpenPlayer={() =>
-            setOverlay({ kind: "player", back: { kind: "none" } })
-          }
+          onOpenSettings={() => open({ kind: "settings", page: keyPage })}
         />
       ) : null}
 
-      {tab === "tutor" ? (
+      {address.tab === "tutor" ? (
         <Tutor
+          open={tutorOpen}
           hasApiKey={settings.hasApiKey}
           hasModel={settings.aiModel.length > 0}
-          onOpenSettings={() => openSettings("ai")}
-          onOpenCourse={(courseId) => void openCourseById(courseId)}
-          onOpenLesson={(lessonId) =>
-            setOverlay({
-              kind: "lesson",
-              lessonId,
-              from: { source: "tutor", courseId: null },
-              back: { kind: "none" },
-            })
-          }
-          onOpenSong={(songId) => {
-            setTab("music");
-            setMusicSong(songId);
-          }}
-          onChanged={() => void reloadAll()}
-          onOpenMemories={() =>
-            setOverlay({ kind: "memories", back: { kind: "none" } })
-          }
-          ask={tutorAsk}
-          onAsked={() => setTutorAsk(null)}
+          onOpenSettings={() => open({ kind: "settings", page: "ai" })}
+          {...tutorShared}
         />
       ) : null}
 
-      {tab === "settings" ? (
-        <SettingsScreen
-          page={settingsPage}
-          onPage={setSettingsPage}
-          {...settingsShared}
-        />
-      ) : null}
+      {address.tab === "settings" ? <SettingsScreen pages={settingsPages} {...settingsShared} /> : null}
 
-      {error ? (
-        <button className="toast" onClick={() => setError(null)}>
-          {error} · tap to dismiss
-        </button>
-      ) : null}
+      {toastLine}
 
       <nav className="nav" aria-label="Main navigation">
         <div className="nav-brand" aria-hidden="true">
@@ -939,8 +820,9 @@ export default function App() {
           return (
             <button
               key={entry.id}
-              aria-current={tab === entry.id ? "page" : undefined}
-              onClick={() => setTab(entry.id)}
+              aria-current={address.tab === entry.id ? "page" : undefined}
+              // Spec: SHELL-22
+              onClick={() => goTab(entry.id)}
             >
               <span className="nav-glyph">
                 <Icon />
@@ -951,5 +833,132 @@ export default function App() {
         })}
       </nav>
     </div>
+  );
+}
+
+/** A page whose data is on its way. */
+function Waiting() {
+  return (
+    <Screen onBack={goUp} nav={false}>
+      <Spinner />
+    </Screen>
+  );
+}
+
+/**
+ * A drill, at its lesson's address (`…/ls_…/drill`): the plan is asked for
+ * as it opens, so the page needs nothing handed to it.
+ */
+function DrillPage({
+  lessonId,
+  challenge,
+  context,
+  prefetchAudio,
+  onQuit,
+  onFinished,
+  onError,
+}: {
+  lessonId: LessonId;
+  challenge: boolean;
+  context: PracticeContext;
+  prefetchAudio: (plan: SessionPlan) => void;
+  onQuit: () => void;
+  onFinished: Parameters<typeof Session>[0]["onFinished"];
+  onError: (message: string) => void;
+}) {
+  const [plan, setPlan] = useState<SessionPlan | null>(null);
+  useEffect(() => {
+    let live = true;
+    stopAudio();
+    api
+      .lessonSession(lessonId, context)
+      .then((session) => {
+        if (!live) return;
+        setPlan(session);
+        prefetchAudio(session);
+      })
+      .catch((cause) => {
+        if (!live) return;
+        onError(errorMessage(cause));
+        goUp();
+      });
+    return () => {
+      live = false;
+    };
+    // Once, for the lesson the page is at.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonId]);
+  if (!plan) return <Waiting />;
+  return <Session plan={plan} challenge={challenge} onQuit={onQuit} onFinished={onFinished} />;
+}
+
+/** A conversation lesson's conversation, at its lesson's address (`…/ls_…/talk`). */
+function CheckInPage({
+  lessonId,
+  context,
+  onClose,
+  onFinished,
+}: {
+  lessonId: LessonId;
+  context: PracticeContext;
+  onClose: () => void;
+  onFinished: (
+    first: boolean,
+    checkinId: Parameters<Parameters<typeof CheckIn>[0]["onFinished"]>[1],
+    assessment: Parameters<Parameters<typeof CheckIn>[0]["onFinished"]>[2],
+    title: string,
+  ) => Promise<void>;
+}) {
+  const [detail, setDetail] = useState<Awaited<ReturnType<typeof api.lessonDetail>> | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    api
+      .lessonDetail(lessonId)
+      .then((found) => live && setDetail(found))
+      .catch(() => live && setDetail(null));
+    return () => {
+      live = false;
+    };
+  }, [lessonId]);
+  if (detail === undefined) return <Waiting />;
+  const title = detail?.title ?? "Conversation";
+  // A type with a writing section is played out with a partner.
+  const writing: Writing | null =
+    detail && lessonType(detail).sections.includes("writing")
+      ? { situation: detail.content, goals: detail.objectives, supportLevel: detail.supportLevel }
+      : null;
+  return (
+    <CheckIn
+      lessonId={lessonId}
+      from={context}
+      songId={detail?.songId ?? null}
+      writing={writing}
+      title={title}
+      challenge={detail?.challenge ?? false}
+      onClose={onClose}
+      onFinished={(first, checkinId, assessment) => onFinished(first, checkinId, assessment, title)}
+    />
+  );
+}
+
+/**
+ * The summary, at `…/ls_…/done`: what the drill or conversation handed it.
+ * Reopened without that (a reload), it gives way to where the lesson was
+ * started from — where its Done goes.
+ */
+function SummaryPage({ onDone }: { onDone: () => void }) {
+  const summary = summaries.get(useEntryKey());
+  useEffect(() => {
+    if (!summary) goUp();
+  }, [summary]);
+  if (!summary) return <Waiting />;
+  return (
+    <SessionSummary
+      result={summary.result}
+      sessionXp={summary.xp}
+      levelUp={summary.levelUp}
+      outcome={summary.outcome}
+      onDone={onDone}
+    />
   );
 }

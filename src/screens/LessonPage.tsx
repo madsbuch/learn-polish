@@ -4,7 +4,7 @@ import { ChallengeMark, LessonIcon } from "../components/LessonRow";
 import { PlayerIcon } from "../components/icons";
 import { DialogueToolbar, DialogueView } from "../components/DialogueView";
 import { Markdown } from "../components/Markdown";
-import { ArticleReader, Sources } from "../components/Sources";
+import { Sources } from "../components/Sources";
 import { SongToListen } from "../components/SongToListen";
 import { WordPictures } from "../components/WordPictures";
 import { SceneHeader } from "../components/SceneHeader";
@@ -61,6 +61,8 @@ export function LessonPage({
   onStartDrill,
   onCheckIn,
   onDeleted,
+  onRead,
+  onGone,
 }: {
   lessonId: LessonId;
   /** Where it was opened from (a course page, the daily five…), for the learning log. */
@@ -70,18 +72,18 @@ export function LessonPage({
   onStartDrill: (lessonId: LessonId, challenge: boolean) => void;
   onCheckIn: (lessonId: LessonId) => void;
   onDeleted: () => void;
+  /** Opens one of its Wikipedia sources in the reader. */
+  onRead: (source: WikiSource) => void;
+  /** It was deleted elsewhere (another device, the tutor). */
+  onGone: () => void;
 }) {
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revealAll, setRevealAll] = useState(false);
   /** The level's explanation, open. */
   const [levelInfo, setLevelInfo] = useState(false);
-  /** A source being read, in the app's reader. */
-  const [reading, setReading] = useState<WikiSource | null>(null);
   /** Adding audio players to the lesson's Polish. */
   const [addingPlayers, setAddingPlayers] = useState(false);
-  /** Bumped when a source goes, so the list reloads. */
-  const [sourcesVersion, setSourcesVersion] = useState(0);
   /** Whether a key and a chat model are set, for what this lesson needs. */
   const [ai, setAi] = useState<{ key: boolean; model: boolean } | null>(null);
 
@@ -103,8 +105,14 @@ export function LessonPage({
     logEvent({ kind: "lesson_opened", lessonId, itemKind: "lesson", itemId: lessonId, ...from });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
-  // The lesson as another device changed it (sync).
-  useSyncReload(() => void reload());
+  // The lesson as another device changed it (sync); gone, the page gives way.
+  // Spec: SHELL-26
+  useSyncReload(() =>
+    void api
+      .lessonDetail(lessonId)
+      .then(setLesson)
+      .catch(() => onGone()),
+  );
 
   // Opening a lesson downloads its audio at normal speed in the background
   // (conversation first, in each speaker's voice), so every 🔊 here plays at
@@ -126,19 +134,6 @@ export function LessonPage({
       <Screen title="Lesson" onBack={onBack} nav={false}>
         {error ? <Banner tone="error">{error}</Banner> : <Spinner />}
       </Screen>
-    );
-  }
-
-  if (reading) {
-    return (
-      <ArticleReader
-        source={reading}
-        onBack={() => setReading(null)}
-        onRemoved={() => {
-          setReading(null);
-          setSourcesVersion((n) => n + 1);
-        }}
-      />
     );
   }
 
@@ -233,11 +228,10 @@ export function LessonPage({
       case "sources":
         return (
           <Sources
-            key={sourcesVersion}
             lessonId={lesson.id}
             factNote={lesson.factNote}
             factCheckedAt={lesson.factCheckedAt}
-            onRead={setReading}
+            onRead={onRead}
             onChecked={() => void reload()}
           />
         );

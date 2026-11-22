@@ -6,16 +6,8 @@ import { toast } from "../../lib/toast";
 import type { Settings, SettingsPatch } from "../../lib/types";
 
 /** The Settings sub-screens, each opened from a row of the Settings menu. */
-export type SettingsPage =
-  | "howTo"
-  | "practice"
-  | "memories"
-  | "ai"
-  | "sound"
-  | "songs"
-  | "appearance"
-  | "devices"
-  | "data";
+export type { SettingsPage } from "../../lib/navigation";
+import type { SettingsPage } from "../../lib/navigation";
 
 /** What every Settings sub-screen is given. */
 export interface SettingsPageProps {

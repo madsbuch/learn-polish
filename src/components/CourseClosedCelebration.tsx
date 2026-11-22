@@ -1,4 +1,5 @@
 import { Button, Confetti, CountUp, Stack, Text } from "../design";
+import { useBackLayer } from "../lib/navigation";
 import type { CourseClosed } from "../lib/types";
 
 /**
@@ -7,6 +8,9 @@ import type { CourseClosed } from "../lib/types";
  * motion) when the system asks for reduced motion.
  */
 export function CourseClosedCelebration({ closed, onDone }: { closed: CourseClosed; onDone: () => void }) {
+  // Back closes it, as a sheet's.
+  // Spec: SHELL-3
+  useBackLayer(true, onDone);
   const stats: [number, string][] = [
     [closed.lessons, closed.lessons === 1 ? "lesson" : "lessons"],
     [closed.words, closed.words === 1 ? "word" : "words"],

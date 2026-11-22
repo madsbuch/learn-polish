@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button, List, ListItem, Loading, Section, Sheet, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
-import { useBackHandler } from "../lib/back";
+import { useBackLayer } from "../lib/navigation";
 import { cameraAllowed, canScan, cancelScan, openAppSettings, scanQr } from "../lib/keyshare";
 import { toast } from "../lib/toast";
 import type { Settings } from "../lib/types";
@@ -110,7 +110,7 @@ function ShowQr({ onClose }: { onClose: () => void }) {
 
 /** Shown over the camera while it scans: a frame to aim with and a way out. */
 export function ScanOverlay() {
-  useBackHandler(true, () => void cancelScan());
+  useBackLayer(true, () => void cancelScan());
   return createPortal(
     <div className="scan-overlay">
       <div className="scan-overlay__frame" />

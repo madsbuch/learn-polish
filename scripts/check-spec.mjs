@@ -58,7 +58,7 @@ const VALUE_TYPES = {
   list: { form: (value) => Array.isArray(value) && value.every((name) => typeof name === "string" && name !== ""), keys: [] },
 };
 /** Where the code is, and the folders in it that are not ours. */
-const CODE = ["src", "src-tauri/src", "src-tauri/plugins", "src-tauri/android", "scripts"];
+const CODE = ["src", "src-tauri/src", "src-tauri/plugins", "src-tauri/android", "scripts", "tests"];
 const SKIPPED = new Set(["node_modules", "target", "build", "dist", "gen", ".gradle"]);
 const SOURCE = new Set([".rs", ".ts", ".tsx", ".mjs", ".js", ".css", ".kt", ".kts", ".sql"]);
 

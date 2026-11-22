@@ -45,6 +45,8 @@ const REDRAW: Duration = Duration::from_secs(1);
 struct Counted {
     id: u64,
     title: String,
+    /// The page a tap on the notification opens (the app's address).
+    address: Option<String>,
     done: i64,
     total: i64,
 }
@@ -74,6 +76,15 @@ fn notice(label: &str, counted: &[Counted]) -> (String, i64, i64) {
     }
 }
 
+/// The page a tap on the notification opens: the one piece of counted
+/// work's, if there is only one.
+fn opens(counted: &[Counted]) -> Option<String> {
+    match counted {
+        [one] => one.address.clone(),
+        _ => None,
+    }
+}
+
 /// Whether the notification may be drawn again: not more often than [`REDRAW`].
 fn due(drawn_at: Option<Instant>, now: Instant) -> bool {
     drawn_at.map_or(true, |at| now.duration_since(at) >= REDRAW)
@@ -85,6 +96,8 @@ pub struct Busy {
     counted: Option<u64>,
     /// Said once it ends, in a notification of its own.
     result: Option<String>,
+    /// The page a tap on that notification opens.
+    address: Option<String>,
 }
 
 /// Starts a piece of work. `label` is shown in the notification if this is
@@ -102,28 +115,30 @@ pub fn busy(label: &str) -> Busy {
             // The screens: the first time, notifications are asked for, so
             // the work's notification can show (Android 13 and later).
             let _ = app.emit("work://began", ());
-            report(tauri_plugin_songplayer::keep_working(app, true, label, None, None));
+            report(tauri_plugin_songplayer::keep_working(app, true, label, None, None, None));
         }
     }
-    Busy { counted: None, result: None }
+    Busy { counted: None, result: None, address: None }
 }
 
 /// Starts a piece of work that says how far it has come, under `title` (a
-/// course's): the notification shows it with a progress bar.
-pub fn begin_counted(app: &AppHandle, title: &str) -> Busy {
+/// course's): the notification shows it with a progress bar, and a tap on it
+/// opens `address` (the app's address for the course).
+pub fn begin_counted(app: &AppHandle, title: &str, address: Option<String>) -> Busy {
     set_app(app);
-    busy_counted(title)
+    busy_counted(title, address)
 }
 
-fn busy_counted(title: &str) -> Busy {
+fn busy_counted(title: &str, address: Option<String>) -> Busy {
     let mut busy = busy(title);
     let mut shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner());
     shown.next_id += 1;
     let id = shown.next_id;
-    shown.counted.push(Counted { id, title: title.to_string(), done: 0, total: 0 });
+    shown.counted.push(Counted { id, title: title.to_string(), address: address.clone(), done: 0, total: 0 });
     // Drawn with the first count, which follows at once.
     shown.drawn_at = None;
     busy.counted = Some(id);
+    busy.address = address;
     busy
 }
 
@@ -143,11 +158,12 @@ impl Busy {
                 return;
             }
             shown.drawn_at = Some(now);
-            notice(&shown.label, &shown.counted)
+            (notice(&shown.label, &shown.counted), opens(&shown.counted))
         };
         if let Some(app) = APP.get() {
-            let (text, done, total) = drawn;
-            report(tauri_plugin_songplayer::keep_working(app, true, &text, Some((done, total)), None));
+            let ((text, done, total), address) = drawn;
+            let work = tauri_plugin_songplayer::Work { address: address.as_deref(), result_address: None };
+            report(tauri_plugin_songplayer::keep_working(app, true, &text, Some((done, total)), None, Some(work)));
         }
     }
 
@@ -165,19 +181,23 @@ impl Drop for Busy {
             if let Some(id) = self.counted {
                 shown.counted.retain(|c| c.id != id);
             }
-            notice(&shown.label, &shown.counted)
+            (notice(&shown.label, &shown.counted), opens(&shown.counted))
         };
         let result = self.result.as_deref();
+        let ((text, done, total), address) = next;
+        let work = tauri_plugin_songplayer::Work {
+            address: address.as_deref(),
+            result_address: self.address.as_deref(),
+        };
         if RUNNING.fetch_sub(1, Ordering::SeqCst) == 1 {
             if let Some(app) = APP.get() {
-                report(tauri_plugin_songplayer::keep_working(app, false, "", None, result));
+                report(tauri_plugin_songplayer::keep_working(app, false, "", None, result, Some(work)));
             }
         } else if self.counted.is_some() {
             // Other work goes on: the notification says what is left.
             if let Some(app) = APP.get() {
-                let (text, done, total) = next;
                 let progress = (total > 0).then_some((done, total));
-                report(tauri_plugin_songplayer::keep_working(app, true, &text, progress, result));
+                report(tauri_plugin_songplayer::keep_working(app, true, &text, progress, result, Some(work)));
             }
         }
     }
@@ -231,7 +251,7 @@ mod tests {
 
     #[test]
     fn counted_work_is_shown_by_its_title_then_added_up() {
-        let course = |id, title: &str, done, total| Counted { id, title: title.into(), done, total };
+        let course = |id, title: &str, done, total| Counted { id, title: title.into(), address: None, done, total };
         assert_eq!(notice("Working…", &[]), ("Working…".into(), 0, 0));
         assert_eq!(
             notice("Working…", &[course(1, "Pierwsze kroki", 34, 120)]),
@@ -241,6 +261,21 @@ mod tests {
             notice("Working…", &[course(1, "Pierwsze kroki", 34, 120), course(2, "W kawiarni", 16, 80)]),
             ("2 downloads · 50 of 200".into(), 50, 200)
         );
+    }
+
+    // Spec: SHELL-20
+    #[test]
+    fn a_tap_on_one_download_opens_its_course() {
+        let course = |id, address: Option<&str>| Counted {
+            id,
+            title: "Pierwsze kroki".into(),
+            address: address.map(String::from),
+            done: 0,
+            total: 10,
+        };
+        assert_eq!(opens(&[]), None);
+        assert_eq!(opens(&[course(1, Some("/crs_1"))]), Some("/crs_1".into()));
+        assert_eq!(opens(&[course(1, Some("/crs_1")), course(2, Some("/crs_2"))]), None);
     }
 
     #[test]
@@ -253,7 +288,7 @@ mod tests {
 
     #[test]
     fn counted_work_leaves_the_notification_when_it_ends() {
-        let download = busy_counted("Pierwsze kroki");
+        let download = busy_counted("Pierwsze kroki", None);
         let id = download.counted.unwrap();
         download.progress(3, 10);
         let entry = |id| SHOWN.lock().unwrap().counted.iter().find(|c| c.id == id).cloned();

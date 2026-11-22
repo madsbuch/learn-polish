@@ -74,11 +74,13 @@ class PlaybackService : MediaSessionService() {
             .setCallback(SessionCallback())
             .setCustomLayout(ImmutableList.of(close))
         packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
-            // Tapping the notification opens the app.
+            // Tapping the notification opens the app on the player.
+            // Spec: SHELL-20
+            launch.putExtra(WorkService.OPEN_ADDRESS, "/music/playing")
             builder.setSessionActivity(
                 PendingIntent.getActivity(
                     this,
-                    0,
+                    WorkService.OPEN_PLAYER,
                     launch,
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 ),

@@ -17,10 +17,12 @@ import {
   ListItem,
   Screen,
   Section,
+  Sheet,
   Typing,
   Stack,
   Text,
 } from "../design";
+import { useBackLayer } from "../lib/navigation";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import { WordBank } from "../components/WordBank";
@@ -40,6 +42,12 @@ export interface Writing {
 }
 
 const SUPPORT = ["Guided", "Supported", "Free"] as const;
+
+/** What leaving a conversation the learner has answered in asks (`nav.leave-conversation`). */
+const LEAVE_CONVERSATION = {
+  title: "Leave this conversation?",
+  body: "It is graded only when it ends with a verdict.",
+};
 
 const VERDICT = {
   pass: { title: "Passed", tone: "mint", line: "You know this." },
@@ -81,8 +89,8 @@ export function CheckIn({
   /** The lesson is a challenge: marked as one while it runs. */
   challenge?: boolean;
   onClose: () => void;
-  /** The verdict is in; `first` is true when it earned today's streak. */
-  onFinished: (first: boolean, checkinId: CheckinId, assessment: Assessment) => void;
+  /** The verdict is in; `first` is true when it earned today's streak. Resolves once its summary shows. */
+  onFinished: (first: boolean, checkinId: CheckinId, assessment: Assessment) => Promise<void>;
 }) {
   const [checkinId, setCheckinId] = useState<CheckinId | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -165,6 +173,29 @@ export function CheckIn({
     await exchange((streamId) => api.checkinEnd(checkinId, streamId));
   }
 
+  // Asking before leaving a conversation the learner has answered in, and
+  // holding still while its summary is made, so back can't leave it half done.
+  const answered = !assessment && lines.some((line) => line.role === "user");
+  const [asking, setAsking] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  // Spec: SHELL-21
+  useBackLayer(answered && !asking && !finishing, () => setAsking(true), "guard");
+  useBackLayer(finishing, () => undefined, "guard");
+  function leave() {
+    if (finishing) return;
+    if (answered) setAsking(true);
+    else onClose();
+  }
+  async function finish() {
+    if (checkinId === null || !assessment || finishing) return;
+    setFinishing(true);
+    try {
+      await onFinished(first, checkinId, assessment);
+    } finally {
+      setFinishing(false);
+    }
+  }
+
   const verdict = assessment ? VERDICT[assessment.result] : null;
   const kind = writing ? `Writing · ${SUPPORT[Math.min(2, writing.supportLevel)]}` : "Conversation";
   // Spec: LSN-12
@@ -180,7 +211,7 @@ export function CheckIn({
     <Screen
       title={title}
       subtitle={subtitle}
-      onClose={onClose}
+      onClose={leave}
       nav={false}
       actions={
         writing ? (
@@ -211,7 +242,8 @@ export function CheckIn({
             variant="primary"
             size="lg"
             wide
-            onClick={() => checkinId !== null && assessment && onFinished(first, checkinId, assessment)}
+            loading={finishing}
+            onClick={() => void finish()}
           >
             Done
           </Button>
@@ -351,6 +383,20 @@ export function CheckIn({
             <ListItem title="Next check-in" subtitle={dayToDate(assessment.nextDueDay)} />
           </List>
         </Section>
+      ) : null}
+
+      {asking ? (
+        <Sheet title={LEAVE_CONVERSATION.title} onClose={() => setAsking(false)}>
+          <Stack gap={3}>
+            <Text tone="dim">{LEAVE_CONVERSATION.body}</Text>
+            <Button variant="primary" wide onClick={() => setAsking(false)}>
+              Keep going
+            </Button>
+            <Button variant="danger" wide onClick={onClose}>
+              Leave
+            </Button>
+          </Stack>
+        </Sheet>
       ) : null}
     </Screen>
   );

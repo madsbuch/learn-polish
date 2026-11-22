@@ -3281,7 +3281,15 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
         (None, Some(error)) => format!("The tutor could not answer: {error}"),
         (None, None) => "The tutor answered.".into(),
     };
-    let _ = app.notification().builder().title(format!("Tutor: {title}")).body(body).show();
+    // Tapped, it opens the conversation (the app's address for it).
+    // Spec: SHELL-20
+    let _ = app
+        .notification()
+        .builder()
+        .title(format!("Tutor: {title}"))
+        .body(body)
+        .extra("address", format!("/tutor/{}", done.conversation_id))
+        .show();
 }
 
 /// Runs one reply to the conversation's last message and stores it.

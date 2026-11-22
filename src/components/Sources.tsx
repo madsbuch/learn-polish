@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Avatar,
   Button,
+  EmptyState,
   IconButton,
   Inline,
   List,
@@ -18,7 +19,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
-import type { ArticleView, LessonId, WikiSource } from "../lib/types";
+import type { ArticleView, LessonId, SourceId, WikiSource } from "../lib/types";
 import { ExternalIcon } from "./icons";
 import { Markdown } from "./Markdown";
 import { WikiArticle } from "./WikiArticle";
@@ -212,6 +213,41 @@ export function ArticleReader({
           ) : null}
         </Stack>
       ) : null}
+    </Screen>
+  );
+}
+
+/**
+ * A source read from its address (`…/src_…`): found among its lesson's or
+ * song's sources, so the reader opens on a reload or coming back to it.
+ */
+export function SourceReader({
+  sourceId,
+  load,
+  onBack,
+  onRemoved,
+}: {
+  sourceId: SourceId;
+  /** The sources it is among. */
+  load: () => Promise<WikiSource[]>;
+  onBack: () => void;
+  onRemoved?: () => void;
+}) {
+  const [source, setSource] = useState<WikiSource | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    load()
+      .then((sources) => live && setSource(sources.find((entry) => entry.id === sourceId) ?? null))
+      .catch(() => live && setSource(null));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceId]);
+  if (source) return <ArticleReader source={source} onBack={onBack} onRemoved={onRemoved} />;
+  return (
+    <Screen title="Wikipedia" onBack={onBack} nav={false}>
+      {source === null ? <EmptyState title="This source is no longer there" /> : <Spinner />}
     </Screen>
   );
 }

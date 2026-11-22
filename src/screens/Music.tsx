@@ -45,9 +45,10 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { LessonId, Playlist, PlaylistId, Settings, Song, SongId, TrackId, WikiSource } from "../lib/types";
+import type { Playlist, PlaylistId, Settings, Song, SongId, SourceId, TrackId, WikiSource } from "../lib/types";
 import { EpisodeSources, PodcastSound } from "../components/Podcast";
-import { ArticleReader } from "../components/Sources";
+import { SourceReader } from "../components/Sources";
+import { go, goUp, open, useAddress, type Address, type Segment } from "../lib/navigation";
 import { PodcastComposer } from "./PodcastComposer";
 import { SongComposer } from "./SongComposer";
 import { useSyncReload } from "../lib/sync";
@@ -57,12 +58,40 @@ import { useSyncReload } from "../lib/sync";
  * (the bar above the tabs, and the full screen it opens); this screen only
  * chooses what to play and manages the collection.
  */
+/** What the Music tab shows beside (or instead of) its library: the address's to say. */
 type View =
   | { kind: "library" }
   | { kind: "song"; songId: SongId }
   | { kind: "playlist"; playlistId: PlaylistId }
   | { kind: "compose"; what: "song" | "podcast" }
-  | { kind: "article"; songId: SongId; source: WikiSource };
+  | { kind: "article"; songId: SongId; sourceId: SourceId };
+
+/** The Music tab's view at an address. */
+function viewOf(address: Address): View {
+  if (address.tab !== "music") return { kind: "library" };
+  const [first, second] = address.trail;
+  if (first?.kind === "song" && second?.kind === "source")
+    return { kind: "article", songId: first.id, sourceId: second.id };
+  if (first?.kind === "song") return { kind: "song", songId: first.id };
+  if (first?.kind === "playlist") return { kind: "playlist", playlistId: first.id };
+  if (first?.kind === "compose") return { kind: "compose", what: first.what };
+  return { kind: "library" };
+}
+
+/** Shows a view of the Music tab: beside the library, another one replaces it. */
+function showView(view: View): void {
+  const trail: Segment[] =
+    view.kind === "song"
+      ? [{ kind: "song", id: view.songId }]
+      : view.kind === "playlist"
+        ? [{ kind: "playlist", id: view.playlistId }]
+        : view.kind === "compose"
+          ? [{ kind: "compose", what: view.what }]
+          : view.kind === "article"
+            ? [{ kind: "song", id: view.songId }, { kind: "source", id: view.sourceId }]
+            : [];
+  go({ tab: "music", trail });
+}
 
 /** Every downloaded take, in library order. */
 function allTakes(songs: Song[]): QueueItem[] {
@@ -148,67 +177,19 @@ export function preloadLibrary(): void {
 
 export function Music({
   settings,
-  openSongId,
   onOpenSettings,
-  onSongOpened,
-  onOpenLesson,
-  onOpenPlayer,
 }: {
   settings: Settings;
-  /** Set when the player asks to show a song's page. */
-  openSongId: SongId | null;
   onOpenSettings: () => void;
-  onSongOpened: () => void;
-  /** Opens a lesson's page (a song's listening lesson). */
-  onOpenLesson: (lessonId: LessonId) => void;
-  /** Opens the full player (lyrics that follow the music). */
-  onOpenPlayer: () => void;
 }) {
-  // The last library seen shows at once; a fresh one replaces it when it
-  // arrives, so opening the tab never waits.
-  const [songs, setSongs] = useState<Song[] | null>(cachedSongs);
-  const [playlists, setPlaylists] = useState<Playlist[] | null>(cachedPlaylists);
+  const library = useLibrary();
+  const { songs, playlists, setPlaylists, refresh, fresh } = library;
   const [tab, setTab] = useState<"songs" | "playlists">("songs");
-  const [view, setView] = useState<View>({ kind: "library" });
+  const view = viewOf(useAddress());
   const [selecting, setSelecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(() => {
-    api
-      .songsList()
-      .then((list) => {
-        cachedSongs = list;
-        setSongs(list);
-        syncLibrary(list);
-      })
-      .catch((cause) => setError(errorMessage(cause)));
-    api
-      .playlistsList()
-      .then((list) => {
-        cachedPlaylists = list;
-        setPlaylists(list);
-      })
-      .catch((cause) => setError(errorMessage(cause)));
-  }, []);
-
-  useEffect(refresh, [refresh]);
-  // Songs and playlists from another device (sync).
-  useSyncReload(refresh);
-
-  // Songs finish in the background; the backend says when.
-  useEffect(() => {
-    const unlisten = onSignal("songs://changed", refresh);
-    return () => {
-      void unlisten.then((off) => off());
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    if (openSongId !== null) {
-      setView({ kind: "song", songId: openSongId });
-      onSongOpened();
-    }
-  }, [openSongId, onSongOpened]);
+  // A playlist open: its list shows beside it.
+  const shownTab = view.kind === "playlist" ? "playlists" : tab;
 
   const tracks = useMemo(() => {
     const map = new Map<TrackId, QueueItem>();
@@ -216,17 +197,25 @@ export function Music({
     return map;
   }, [songs]);
 
-  // Confirmations and failed actions float over the screen, seen wherever
-  // the page is scrolled.
-  const message = (text: string, isError = false) => toast(text, isError ? "error" : "ok");
-
   const back = () => {
-    setView({ kind: "library" });
     setError(null);
+    goUp();
   };
 
+  // A song or playlist deleted elsewhere (another device): the page gives way.
+  // Spec: SHELL-26
+  const gone =
+    fresh &&
+    ((view.kind === "song" && !songs?.some((entry) => entry.id === view.songId)) ||
+      (view.kind === "playlist" && !playlists?.some((entry) => entry.id === view.playlistId)));
+  useEffect(() => {
+    if (gone) goUp();
+  }, [gone]);
+
   // On a wide window the library stays on the left and what is open in it
-  // shows beside it, without a way back (the library is in view).
+  // shows beside it, without a way back (the library is in view); the
+  // address is the same at every width.
+  // Spec: SHELL-24
   const wide = useWideLayout();
   const onBack = wide ? undefined : back;
 
@@ -242,14 +231,14 @@ export function Music({
           settings={settings}
           onCancel={back}
           onCreated={created}
-          onSwitch={() => setView({ kind: "compose", what: "song" })}
+          onSwitch={() => showView({ kind: "compose", what: "song" })}
         />
       ) : (
         <SongComposer
           settings={settings}
           onCancel={back}
           onCreated={created}
-          onSwitch={() => setView({ kind: "compose", what: "podcast" })}
+          onSwitch={() => showView({ kind: "compose", what: "podcast" })}
         />
       );
   }
@@ -257,41 +246,12 @@ export function Music({
   const feedback = <>{error ? <Banner tone="error">{error}</Banner> : null}</>;
 
   if (view.kind === "song") {
-    const song = songs?.find((entry) => entry.id === view.songId);
-    detail = (
-      <Screen title={song?.kind === "podcast" ? "Podcast" : "Song"} onBack={onBack}>
-        {feedback}
-        {song ? (
-          <SongPage
-            song={song}
-            library={songs ?? []}
-            onChanged={refresh}
-            onDeleted={() => {
-              back();
-              refresh();
-            }}
-            onMessage={message}
-            onPractise={async () => {
-              try {
-                onOpenLesson((await api.lessonForSong(song.id)).id);
-              } catch (cause) {
-                toast(errorMessage(cause), "error");
-              }
-            }}
-            onRead={(source) => setView({ kind: "article", songId: song.id, source })}
-          />
-        ) : songs === null ? (
-          <Spinner />
-        ) : (
-          <EmptyState title="This song no longer exists" />
-        )}
-      </Screen>
-    );
+    detail = <SongDetail songId={view.songId} library={library} onBack={onBack} feedback={feedback} />;
   }
 
   if (view.kind === "article") {
     const songId = view.songId;
-    detail = <ArticleReader source={view.source} onBack={() => setView({ kind: "song", songId })} />;
+    detail = <SourceReader sourceId={view.sourceId} load={() => api.songSources(songId)} onBack={goUp} />;
   }
 
   if (view.kind === "playlist") {
@@ -325,7 +285,7 @@ export function Music({
   const ready = settings.hasApiKey;
   if (detail !== null && !wide) return detail;
 
-  const library = (
+  const libraryScreen = (
     <Screen
       title="Music"
       info={
@@ -350,13 +310,13 @@ export function Music({
           icon={<PlusIcon />}
           label="New song or podcast"
           disabled={!ready}
-          onClick={() => setView({ kind: "compose", what: "song" })}
+          onClick={() => showView({ kind: "compose", what: "song" })}
         />
       }
     >
       {feedback}
 
-      <NowPlaying onOpen={onOpenPlayer} />
+      <NowPlaying onOpen={() => go({ tab: "music", trail: [{ kind: "playing" }] })} />
 
       {!ready || !settings.hasKieKey ? (
         <Banner tone="info">
@@ -372,10 +332,11 @@ export function Music({
       ) : null}
 
       <Segmented
-        value={tab}
+        value={shownTab}
         onChange={(next) => {
           setTab(next);
           setSelecting(false);
+          if (view.kind === "playlist" && next === "songs") showView({ kind: "library" });
         }}
         options={[
           { value: "songs", label: "Songs" },
@@ -388,8 +349,8 @@ export function Music({
           songs={songs}
           selecting={selecting}
           onSelecting={setSelecting}
-          onOpen={(songId) => setView({ kind: "song", songId })}
-          onCompose={ready ? () => setView({ kind: "compose", what: "song" }) : undefined}
+          onOpen={(songId) => showView({ kind: "song", songId })}
+          onCompose={ready ? () => showView({ kind: "compose", what: "song" }) : undefined}
           onDeleted={refresh}
           onError={(text) => toast(text, "error")}
         />
@@ -398,20 +359,20 @@ export function Music({
           playlists={playlists}
           tracks={tracks}
           current={wide && view.kind === "playlist" ? view.playlistId : undefined}
-          onOpen={(playlistId) => setView({ kind: "playlist", playlistId })}
+          onOpen={(playlistId) => showView({ kind: "playlist", playlistId })}
           onCreated={(playlist) => {
             setPlaylists((current) => [playlist, ...(current ?? [])]);
-            setView({ kind: "playlist", playlistId: playlist.id });
+            showView({ kind: "playlist", playlistId: playlist.id });
           }}
           onError={(text) => toast(text, "error")}
         />
       )}
     </Screen>
   );
-  if (!wide) return library;
+  if (!wide) return libraryScreen;
   return (
     <SplitView
-      list={library}
+      list={libraryScreen}
       detail={
         detail ?? (
           <Screen>
@@ -423,6 +384,103 @@ export function Music({
       }
     />
   );
+}
+
+/** The library, loaded and kept fresh (sync, songs finishing in the background). */
+function useLibrary() {
+  // The last library seen shows at once; a fresh one replaces it when it
+  // arrives, so opening the tab never waits.
+  const [songs, setSongs] = useState<Song[] | null>(cachedSongs);
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(cachedPlaylists);
+  /** Both lists are as loaded since this screen opened, not remembered from before. */
+  const [fresh, setFresh] = useState(false);
+  const refresh = useCallback(() => {
+    void Promise.all([
+      api.songsList().then((list) => {
+        cachedSongs = list;
+        setSongs(list);
+        syncLibrary(list);
+      }),
+      api.playlistsList().then((list) => {
+        cachedPlaylists = list;
+        setPlaylists(list);
+      }),
+    ])
+      .then(() => setFresh(true))
+      .catch((cause) => toast(errorMessage(cause), "error"));
+  }, []);
+
+  useEffect(refresh, [refresh]);
+  // Songs and playlists from another device (sync).
+  useSyncReload(refresh);
+
+  // Songs finish in the background; the backend says when.
+  useEffect(() => {
+    const unlisten = onSignal("songs://changed", refresh);
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, [refresh]);
+  return { songs, playlists, setPlaylists, refresh, fresh };
+}
+
+/** A song's page: in the Music tab, or opened from another page (an id chip, a tutor's action). */
+function SongDetail({
+  songId,
+  library,
+  onBack,
+  feedback,
+}: {
+  songId: SongId;
+  library: ReturnType<typeof useLibrary>;
+  onBack?: () => void;
+  feedback?: ReactNode;
+}) {
+  const { songs, refresh } = library;
+  const song = songs?.find((entry) => entry.id === songId);
+  return (
+    <Screen title={song?.kind === "podcast" ? "Podcast" : "Song"} onBack={onBack}>
+      {feedback}
+      {song ? (
+        <SongPage
+          song={song}
+          library={songs ?? []}
+          onChanged={refresh}
+          onDeleted={() => {
+            goUp();
+            refresh();
+          }}
+          // Confirmations and failed actions float over the screen, seen
+          // wherever the page is scrolled.
+          onMessage={(text, isError = false) => toast(text, isError ? "error" : "ok")}
+          onPractise={async () => {
+            try {
+              open({ kind: "lesson", id: (await api.lessonForSong(song.id)).id });
+            } catch (cause) {
+              toast(errorMessage(cause), "error");
+            }
+          }}
+          onRead={(source) => open({ kind: "source", id: source.id })}
+        />
+      ) : songs === null ? (
+        <Spinner />
+      ) : (
+        <EmptyState title="This song no longer exists" />
+      )}
+    </Screen>
+  );
+}
+
+/** A song opened from a page outside the Music tab, above that page. */
+export function SongScreen({ songId }: { songId: SongId }) {
+  const library = useLibrary();
+  const { songs, fresh } = library;
+  // Spec: SHELL-26
+  const gone = fresh && !songs?.some((entry) => entry.id === songId);
+  useEffect(() => {
+    if (gone) goUp();
+  }, [gone]);
+  return <SongDetail songId={songId} library={library} onBack={goUp} />;
 }
 
 /** Play and Shuffle for a list of takes. */

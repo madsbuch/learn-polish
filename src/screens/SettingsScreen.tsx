@@ -18,6 +18,7 @@ import { Devices } from "./Devices";
 import { HowToUse } from "./HowToUse";
 import { Memories } from "./Memories";
 import { modelName, sunoLabel, type SettingsPage, type SettingsPageProps } from "./settings/actions";
+import { go, goUp, open } from "../lib/navigation";
 import { AiSettings } from "./settings/AiSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { DataSettings } from "./settings/DataSettings";
@@ -41,25 +42,44 @@ interface Shared {
  * The Settings tab: a short menu, each row opening a sub-screen with that
  * topic's settings. On a phone the sub-screen is pushed over the tabs (App
  * shows it, see SettingsPageView); on a wide window it sits beside the menu.
+ * Which one is the address's (`/settings/ai`), the same at every width.
  */
+// Spec: SHELL-5, SHELL-24
 export function SettingsScreen({
-  page,
-  onPage,
+  pages,
   ...shared
 }: Shared & {
-  /** The sub-screen open, if any. */
-  page: SettingsPage | null;
-  onPage: (page: SettingsPage) => void;
+  /** The sub-screens open, the one picked in the menu first. */
+  pages: SettingsPage[];
 }) {
   const wide = useWideLayout();
-  if (!wide) return <SettingsMenu settings={shared.settings} current={null} onPage={onPage} />;
-  const current = page ?? FIRST_PAGE;
+  if (!wide) return <SettingsMenu settings={shared.settings} current={null} onPage={pick} />;
+  const current = pages[0] ?? FIRST_PAGE;
+  const shown = pages[pages.length - 1] ?? FIRST_PAGE;
   return (
     <SplitView
-      list={<SettingsMenu settings={shared.settings} current={current} onPage={onPage} />}
-      detail={<SettingsPageView key={current} page={current} onOpenPage={onPage} {...shared} />}
+      list={<SettingsMenu settings={shared.settings} current={current} onPage={pick} />}
+      detail={
+        <SettingsPageView
+          key={shown}
+          page={shown}
+          onBack={pages.length > 1 ? goUp : undefined}
+          onOpenPage={openPage}
+          {...shared}
+        />
+      }
     />
   );
+}
+
+/** A row of the menu: that page, in place of the one beside it. */
+function pick(page: SettingsPage): void {
+  go({ tab: "settings", trail: [{ kind: "settings", page }] });
+}
+
+/** A hint that points to another Settings page: opened above this one. */
+export function openPage(page: SettingsPage): void {
+  open({ kind: "settings", page });
 }
 
 /**

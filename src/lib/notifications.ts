@@ -1,6 +1,8 @@
+import { addPluginListener } from "@tauri-apps/api/core";
 import {
   Schedule,
   cancel,
+  onAction,
   isPermissionGranted,
   pending,
   requestPermission,
@@ -87,6 +89,9 @@ export async function syncReminder(options: {
         title: nudge.title,
         body: nudge.body,
         schedule: Schedule.at(at, false, true),
+        // Tapped, it opens Exercises.
+        // Spec: SHELL-20
+        extra: { address: "/" },
       });
     }
     return true;
@@ -167,4 +172,45 @@ export async function askForNotificationsToFollowDownloads(): Promise<void> {
   }
   toast("Allow notifications to follow the download, even with Polski closed.", "info");
   await ensurePermission();
+}
+
+/** The address a tapped notification carries (`extra.address`), wherever the plugin put it. */
+const TappedSchema = z.union([
+  z.object({ notification: z.object({ extra: z.object({ address: z.string() }) }) }).transform((n) => n.notification.extra.address),
+  z.object({ extra: z.object({ address: z.string() }) }).transform((n) => n.extra.address),
+]);
+const OpenSchema = z.object({ address: z.string() });
+
+/**
+ * Calls `open` with the address of a notification the learner taps: a
+ * reminder's (Exercises), a tutor reply's (its conversation), and on
+ * Android the work notification's (a course downloading) and the player's.
+ * The app's own notifications come through the notification plugin; the
+ * background work's and the player's through the song player's ("open"),
+ * which keeps one tapped while the app was closed until this listens.
+ */
+// Spec: SHELL-20
+export async function onNotificationOpened(open: (address: string) => void): Promise<() => void> {
+  const stops: (() => void)[] = [];
+  try {
+    const listener = await onAction((tapped: unknown) => {
+      const parsed = TappedSchema.safeParse(tapped);
+      if (parsed.success) open(parsed.data);
+    });
+    stops.push(() => void listener.unregister());
+  } catch {
+    // No notification plugin here (a computer without one).
+  }
+  try {
+    if (platform() === "android") {
+      const listener = await addPluginListener("songplayer", "open", (payload: unknown) => {
+        const parsed = OpenSchema.safeParse(payload);
+        if (parsed.success) open(parsed.data.address);
+      });
+      stops.push(() => void listener.unregister());
+    }
+  } catch {
+    // Not on Android: nothing else to listen to.
+  }
+  return () => stops.forEach((stop) => stop());
 }

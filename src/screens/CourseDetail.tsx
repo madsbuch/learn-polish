@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ChallengeMark, LessonRow } from "../components/LessonRow";
+import type { CourseSection } from "../lib/navigation";
 import { CourseClosedCelebration } from "../components/CourseClosedCelebration";
 import { CourseOffline } from "../components/CourseOffline";
 import { LevelInfo } from "../components/LevelInfo";
@@ -34,7 +35,7 @@ import { useSyncReload } from "../lib/sync";
 import { z } from "zod";
 import { CourseIdSchema, CoursePictureStatusSchema, FileIdSchema } from "../lib/types";
 
-export type CourseSection = "lessons" | "words" | "sentences";
+export type { CourseSection } from "../lib/navigation";
 
 /**
  * A course: the lessons it lists, in its order. Words and sentences belong to
@@ -42,7 +43,8 @@ export type CourseSection = "lessons" | "words" | "sentences";
  */
 export function CourseDetail({
   progress,
-  initialSection,
+  section,
+  onSection,
   today,
   onBack,
   onOpenLesson,
@@ -50,8 +52,9 @@ export function CourseDetail({
   onChanged,
 }: {
   progress: CourseProgress;
-  /** Which tab to land on. */
-  initialSection?: CourseSection;
+  /** The section shown: the address's to say, so coming back keeps it. */
+  section: CourseSection;
+  onSection: (section: CourseSection) => void;
   today: number;
   onBack: () => void;
   onOpenLesson: (lessonId: LessonId) => void;
@@ -60,7 +63,6 @@ export function CourseDetail({
   onChanged: () => void;
 }) {
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
-  const [tab, setTab] = useState<CourseSection>(initialSection ?? "lessons");
   const [words, setWords] = useState<Word[] | null>(null);
   const [sentences, setSentences] = useState<Sentence[] | null>(null);
   const [query, setQuery] = useState("");
@@ -169,7 +171,8 @@ export function CourseDetail({
       ? [{ value: "sentences" as const, label: `Sentences ${sentences.length}` }]
       : []),
   ];
-  const shown = tabs.some((t) => t.value === tab) ? tab : "lessons";
+  // Spec: SHELL-18
+  const shown = tabs.some((t) => t.value === section) ? section : "lessons";
 
   return (
     <Screen
@@ -238,7 +241,7 @@ export function CourseDetail({
                 })
               }
               onShowLeft={() => {
-                setTab("lessons");
+                onSection("lessons");
                 window.requestAnimationFrame(() =>
                   document.getElementById("to-pass")?.scrollIntoView({ behavior: "smooth", block: "start" }),
                 );
@@ -248,7 +251,7 @@ export function CourseDetail({
         </div>
 
         <div className="page-split__main">
-          {tabs.length > 1 ? <Segmented value={shown} onChange={setTab} options={tabs} /> : null}
+          {tabs.length > 1 ? <Segmented value={shown} onChange={onSection} options={tabs} /> : null}
 
           {shown === "lessons" ? (
             lessons ? (

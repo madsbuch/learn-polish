@@ -86,6 +86,10 @@ class KeepWorkingArgs {
     var total: Long = 0
     /** How the work went, said in a notification of its own. */
     var result: String? = null
+    /** The page a tap on the work's notification opens (an address of the app's). */
+    var address: String? = null
+    /** The page a tap on the result's notification opens. */
+    var resultAddress: String? = null
 }
 
 @InvokeArg
@@ -117,9 +121,42 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /** A page a tapped notification asked for before the app listened ("open"). */
+    private var pendingOpen: String? = null
+
     override fun load(webView: WebView) {
         super.load(webView)
         main.post { connect() }
+        // Started by tapping a notification: its page, once the app listens.
+        takeAddress(activity.intent)?.let { pendingOpen = it }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeAddress(intent)?.let { open(it) }
+    }
+
+    /** The app starts listening: a page asked for before then is opened now. */
+    @Command
+    override fun registerListener(invoke: Invoke) {
+        super.registerListener(invoke)
+        val address = pendingOpen ?: return
+        if (hasListener("open")) {
+            pendingOpen = null
+            open(address)
+        }
+    }
+
+    private fun takeAddress(intent: Intent?): String? {
+        val address = intent?.getStringExtra(WorkService.OPEN_ADDRESS) ?: return null
+        intent.removeExtra(WorkService.OPEN_ADDRESS)
+        return address
+    }
+
+    /** Asks the app to show the page at `address` (lib/navigation.ts). */
+    private fun open(address: String) {
+        if (hasListener("open")) trigger("open", JSObject().apply { put("address", address) })
+        else pendingOpen = address
     }
 
     private fun connect() {
@@ -361,13 +398,14 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
             .putExtra(WorkService.EXTRA_LABEL, args.label)
             .putExtra(WorkService.EXTRA_DONE, args.done)
             .putExtra(WorkService.EXTRA_TOTAL, args.total)
-        args.result?.let { WorkService.showResult(context, it) }
+            .putExtra(WorkService.EXTRA_ADDRESS, args.address)
+        args.result?.let { WorkService.showResult(context, it, args.resultAddress) }
         try {
             if (args.on && WorkService.running) {
                 // Running already: only its notification changes (a course's
                 // download counting up). Starting it again from the
                 // background would be refused.
-                WorkService.redraw(context, args.label, args.done, args.total)
+                WorkService.redraw(context, args.label, args.done, args.total, args.address)
             } else if (args.on) {
                 WorkService.stopRequested = false
                 ContextCompat.startForegroundService(context, intent)

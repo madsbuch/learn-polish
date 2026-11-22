@@ -90,22 +90,8 @@ import type {
  * by every page (lib/insights.ts).
  */
 
-export type InsightPage =
-  | { page: "words" }
-  | { page: "word"; wordId: WordId }
-  | { page: "structures" }
-  | { page: "structure"; key: string }
-  | { page: "sounds" }
-  | { page: "overview" }
-  | { page: "hard"; kind: HardKind }
-  | { page: "mistakes"; cls: string | null }
-  | { page: "compare" }
-  | { page: "activity" }
-  | { page: "item"; itemId: string }
-  /** Every answer and event, filtered: a drill-down presets some filters. */
-  | { page: "rawlog"; preset?: RawFilter; title?: string }
-  | { page: "topics" }
-  | { page: "topic"; key: string };
+import type { InsightPage } from "../lib/navigation";
+export type { InsightPage };
 
 interface Nav {
   today: number;
@@ -115,31 +101,28 @@ interface Nav {
   onAskTutor: (ask: string) => void;
 }
 
-/** The insights pages as a stack of their own over Progress: back pops. */
+/**
+ * One insights page. Each drill-down is a page of its own in the address
+ * (`/progress/words/wd_…/item/…`), so back walks out of them one at a time.
+ */
 export function Insights({
-  start,
+  page,
   today,
   courses,
-  onDone,
+  onOpen,
+  onBack,
   onAskTutor,
 }: {
-  start: InsightPage;
+  page: InsightPage;
   today: number;
   courses: CourseProgress[];
-  onDone: () => void;
+  onOpen: (page: InsightPage) => void;
+  onBack: () => void;
   onAskTutor: (ask: string) => void;
 }) {
-  const [stack, setStack] = useState<InsightPage[]>([start]);
-  const top = stack[stack.length - 1];
-  const nav: Nav = {
-    today,
-    courses,
-    onAskTutor,
-    open: (page) => setStack((s) => [...s, page]),
-    back: () => (stack.length > 1 ? setStack((s) => s.slice(0, -1)) : onDone()),
-  };
-  // Keyed by depth, so a page returned to is a fresh screen coming back.
-  return <PageFor key={`${stack.length}-${top.page}`} page={top} nav={nav} />;
+  const nav: Nav = { today, courses, onAskTutor, open: onOpen, back: onBack };
+  // Keyed by the page, so another page is a fresh screen.
+  return <PageFor key={JSON.stringify(page)} page={page} nav={nav} />;
 }
 
 function PageFor({ page, nav }: { page: InsightPage; nav: Nav }) {

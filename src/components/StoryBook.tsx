@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button, IconButton, Text } from "../design";
-import { useBackHandler } from "../lib/back";
+import { useBackLayer } from "../lib/navigation";
 import { hapticTick } from "../lib/haptics";
 import {
   conversationKey,
@@ -97,7 +97,7 @@ export function StoryBook({
     stopConversation();
     onClose();
   }
-  useBackHandler(true, close);
+  useBackLayer(true, close);
 
   function turn(to: number) {
     if (to < 0 || to >= total || to === page) return;

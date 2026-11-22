@@ -6,6 +6,7 @@ import {
   Banner,
   Button,
   ConfirmButton,
+  EmptyState,
   List,
   ListEmpty,
   ListItem,
@@ -22,7 +23,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import { playClip, speak } from "../lib/speech";
-import type { AudioItem, AudioOverview, CacheProgress, CourseAudio } from "../lib/types";
+import type { AudioItem, AudioOverview, CacheProgress, CourseAudio, CourseId } from "../lib/types";
 import { onEvent } from "../lib/events";
 import { CacheProgressSchema } from "../lib/types";
 
@@ -69,9 +70,17 @@ function Downloading({ progress }: { progress: CacheProgress | null }) {
  * the first time a line is played and kept, so most of it arrives on
  * demand; here it can be seen, filled in ahead of time, or cleared.
  */
-export function AudioScreen({ onBack }: { onBack: () => void }) {
+export function AudioScreen({
+  courseId,
+  onBack,
+  onOpenCourse,
+}: {
+  /** The course open (the address's: `…/audio/crs_…`), or null for every course. */
+  courseId: CourseId | null;
+  onBack: () => void;
+  onOpenCourse: (courseId: CourseId) => void;
+}) {
   const [overview, setOverview] = useState<AudioOverview | null>(null);
-  const [open, setOpen] = useState<CourseAudio | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,8 +89,6 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
       .audioOverview()
       .then((next) => {
         setOverview(next);
-        // Keep an open course's numbers current.
-        setOpen((current) => (current ? (next.courses.find((c) => c.courseId === current.courseId) ?? current) : null));
       })
       .catch((cause) => setError(errorMessage(cause)));
   }, []);
@@ -102,17 +109,15 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
-  if (open) {
-    return (
-      <CourseAudioPage
-        course={open}
-        progress={progress}
-        onBack={() => {
-          setOpen(null);
-          refresh();
-        }}
-        onChanged={refresh}
-      />
+  // An open course's numbers stay current with the overview.
+  const open = courseId === null ? null : (overview?.courses.find((c) => c.courseId === courseId) ?? null);
+  if (courseId !== null) {
+    return open ? (
+      <CourseAudioPage course={open} progress={progress} onBack={onBack} onChanged={refresh} />
+    ) : (
+      <Screen title="Downloaded audio" onBack={onBack} nav={false}>
+        {overview ? <EmptyState title="This course has no audio here" /> : <Spinner />}
+      </Screen>
     );
   }
 
@@ -171,7 +176,7 @@ export function AudioScreen({ onBack }: { onBack: () => void }) {
                   subtitle={`${course.stored === course.total ? "All" : `${course.stored} of`} ${course.total}${
                     course.bytes ? ` · ${megabytes(course.bytes)}` : ""
                   }`}
-                  onClick={() => setOpen(course)}
+                  onClick={() => onOpenCourse(course.courseId)}
                 />
               ))}
               {overview.courses.length === 0 ? <ListEmpty>No courses with anything to read out.</ListEmpty> : null}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The app shell",
-  "summary": "Four tabs, a back button that walks back through the app, and a layout that follows the window.",
+  "summary": "Four tabs, a back button that goes up to where each page was opened from, an address for every page, and a layout that follows the window.",
   "order": 10,
   "description": "One interface for a phone, a tablet and a computer, built from a small design system.",
   "stories": [
@@ -18,11 +18,22 @@
     },
     {
       "id": "US-SHELL-2",
-      "as": "an Android user",
-      "want": "the back button to walk back through the app",
-      "soThat": "it behaves like every other app on my phone",
+      "as": "a learner moving around the app",
+      "want": "back to take me to where I came from, and every page to keep its place",
+      "soThat": "I always know where back goes, on Android and everywhere else",
       "requirements": [
-        "#SHELL-3"
+        "#SHELL-3",
+        "#SHELL-16",
+        "#SHELL-17",
+        "#SHELL-18",
+        "#SHELL-19",
+        "#SHELL-20",
+        "#SHELL-21",
+        "#SHELL-22",
+        "#SHELL-23",
+        "#SHELL-24",
+        "#SHELL-25",
+        "#SHELL-26"
       ]
     }
   ],
@@ -37,7 +48,16 @@
     },
     {
       "id": "SHELL-3",
-      "text": "Android's back button closes a sheet first, then the page, then goes from another tab to Exercises, and leaves the app only from Exercises."
+      "text": "Back — Android's button, a page's ← and a summary's Done alike — goes up: it closes a sheet first, then goes to the page the open page was opened from, then from another tab to Exercises, and leaves the app only from Exercises.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Android's back button closes a sheet first, then the page, then goes from another tab to Exercises, and leaves the app only from Exercises.",
+          "reason": "Back went to different places depending on how a page was reached and which control was used; one rule now holds for every way back.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SHELL-4",
@@ -86,6 +106,50 @@
     {
       "id": "SHELL-15",
       "text": "All text is set in `font.family`."
+    },
+    {
+      "id": "SHELL-16",
+      "text": "Every page has an address: its tab, then each page it was opened through, things named by their id; opening an address shows that page with the same way back, and a sheet belongs to the page under it."
+    },
+    {
+      "id": "SHELL-17",
+      "text": "A course, lesson, song or tutor conversation opened from another page opens in the tab that page is in, above it, and back returns to that page."
+    },
+    {
+      "id": "SHELL-18",
+      "text": "Going back to a page shows it as it was left: the same section, scrolled where it was."
+    },
+    {
+      "id": "SHELL-19",
+      "text": "Reopened within `nav.resume-within` of leaving it, the app shows the page that was open; a drill, a conversation, a summary or the player is not reopened, the page under it is."
+    },
+    {
+      "id": "SHELL-20",
+      "text": "Tapping a notification opens what it is about: a tutor reply its conversation, a reminder Exercises, a download its course, playback the player."
+    },
+    {
+      "id": "SHELL-21",
+      "text": "Leaving a drill or a conversation after answering asks first, with `nav.leave-drill` or `nav.leave-conversation`; back while it is being graded does nothing."
+    },
+    {
+      "id": "SHELL-22",
+      "text": "Tapping a tab shows it where it was last left; tapping the tab already shown goes to its top."
+    },
+    {
+      "id": "SHELL-23",
+      "text": "On a computer, Cmd+[ and the mouse's back button go back."
+    },
+    {
+      "id": "SHELL-24",
+      "text": "A page's address is the same at every window width; picking another item in a two-column list replaces the one open, so back leaves the list in one step."
+    },
+    {
+      "id": "SHELL-25",
+      "text": "Opening a page already among those the open page was opened through goes back to it, and an address holds at most `nav.max-depth` pages."
+    },
+    {
+      "id": "SHELL-26",
+      "text": "When what a page shows is deleted, on this device or another, the page gives way to the nearest page above it that still exists."
     }
   ],
   "values": [
@@ -164,6 +228,31 @@
       "type": "font",
       "value": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", system-ui, sans-serif",
       "description": "The typeface of all text."
+    },
+    {
+      "id": "nav.resume-within",
+      "type": "duration",
+      "value": "30min",
+      "description": "How long after leaving the app it reopens on the page that was open."
+    },
+    {
+      "id": "nav.max-depth",
+      "type": "number",
+      "value": 8,
+      "unit": "pages",
+      "description": "The most pages an address holds; the oldest give way."
+    },
+    {
+      "id": "nav.leave-drill",
+      "type": "text",
+      "value": "Leave this drill? It is graded only when it is finished; the XP your answers earned stays.",
+      "description": "What leaving a drill with answers in it asks."
+    },
+    {
+      "id": "nav.leave-conversation",
+      "type": "text",
+      "value": "Leave this conversation? It is graded only when it ends with a verdict.",
+      "description": "What leaving a conversation the learner has answered in asks."
     }
   ],
   "related": [

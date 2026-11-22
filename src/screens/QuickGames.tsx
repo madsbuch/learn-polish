@@ -16,7 +16,6 @@ import {
   Section,
   Stack,
   Text,
-  markBack,
 } from "../design";
 import { logEvent, setPracticeContext } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
@@ -76,13 +75,18 @@ function bestLine(overview: Overview, kind: QuickGameKind) {
 }
 
 export function QuickGames({
+  playing,
   level,
   onBack,
+  onPlay,
   onPlayed,
 }: {
+  /** The game open (the address's: `/games/match`), or null for the list. */
+  playing: QuickGameKind | null;
   /** The learner's level now: a game that takes them past it celebrates. */
   level: number;
   onBack: () => void;
+  onPlay: (kind: QuickGameKind) => void;
   onPlayed: () => void;
 }) {
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -92,7 +96,6 @@ export function QuickGames({
     return () => setPracticeContext(null);
   }, []);
   const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<QuickGameKind | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
 
   useEffect(() => {
@@ -112,10 +115,7 @@ export function QuickGames({
       <GameScreen
         kind={playing}
         level={level}
-        onBack={() => {
-          markBack();
-          setPlaying(null);
-        }}
+        onBack={onBack}
         onPlayed={onPlayed}
       />
     );
@@ -162,7 +162,7 @@ export function QuickGames({
                         ? undefined
                         : () => {
                             hapticTick();
-                            setPlaying(game.kind);
+                            onPlay(game.kind);
                           }
                     }
                   />

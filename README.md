@@ -558,7 +558,7 @@ src/
   design/                  the design system: tokens, components (see DESIGN.md)
   lib/api.ts               typed wrappers over the Tauri commands
   lib/useAiStream.ts       any streamed AI answer: text, tool status, errors, stale streams
-  lib/back.ts              Android's back button over in-app pages
+  lib/navigation.ts        every page's address, `go`, and the history kept as its up-chain
   lib/player.ts            the app-wide music player and queue
   screens/                 one file per screen (Exercises, LessonPage, Session, CheckIn, Tutor, Music…)
   exercises/               one module per exercise kind, and their registry (Session draws them)
@@ -584,17 +584,21 @@ A few conventions keep it that way:
   through the `course_words`, `course_sentences` and `course_lines` views.
 - **"Course" in the code is "course" in the app.** The table and ids kept the
   old name (`courses`, `course_id`); everything the learner sees says course.
-- **Pages with a way back use `Screen`'s `onBack`/`onClose` or a `Sheet`**, so
-  the system back button works without extra code.
+- **Every page has an address, and is shown with `go`** (`src/lib/navigation.ts`):
+  a page's ← is `goUp`, a link to another page `open(segment)`. Sheets (and
+  anything else back should close first) hold a history entry with
+  `useBackLayer`; nothing else pushes or pops the history.
 
 ## Navigation
 
 Four tabs: **Exercises**, **Tutor**, **Music** and **Settings**.
 
-Android's back button walks back through the app — closing a sheet first,
-then the page you are on, then from another tab to Exercises — and only
-leaves the app from Exercises (`src/lib/back.ts`: every page with a ← or ⌄,
-and every sheet, adds a history entry that back pops).
+Every page has an address: its tab, then each page it was opened through
+(`/tutor/cv_…/ls_…` is a lesson opened from a tutor conversation). The
+history always holds that chain, so back — Android's button, a page's ←, a
+summary's Done — goes up: a sheet first, then to the page the open one was
+opened from, then from another tab to Exercises, and leaves the app only
+from Exercises (`src/lib/navigation.ts`).
 
 Exercises is the home screen: today on top, what is due, then your courses. A course page has tabs: **Lessons** (in the course's
 order), **Words** and **Sentences** — every item with the drill it belongs to,

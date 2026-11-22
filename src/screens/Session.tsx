@@ -4,9 +4,9 @@ import { ChallengeMark } from "../components/LessonRow";
 import { WordChat } from "../components/WordChat";
 import { WrongAnswerReview } from "../components/WrongAnswerReview";
 import { CloseIcon } from "../components/icons";
-import { Badge, Banner, Button, CountUp, EmptyState, IconButton, Progress, Text, useBump } from "../design";
+import { Badge, Banner, Button, CountUp, EmptyState, IconButton, Progress, Sheet, Stack, Text, useBump } from "../design";
 import { api, errorMessage } from "../lib/api";
-import { useBackHandler } from "../lib/back";
+import { useBackLayer } from "../lib/navigation";
 import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, setPracticeContext, takeSignals } from "../lib/learnLog";
 import { speakQuietly } from "../lib/speech";
 import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
@@ -24,6 +24,12 @@ import { WordIdSchema } from "../lib/types";
  */
 
 type Phase = "answering" | "checked";
+
+/** What leaving a drill with answers in it asks (`nav.leave-drill`). */
+const LEAVE_DRILL = {
+  title: "Leave this drill?",
+  body: "It is graded only when it is finished; the XP your answers earned stays.",
+};
 
 export function Session({
   plan,
@@ -89,6 +95,20 @@ export function Session({
     [card, speakingOff],
   );
   const total = exercises.length;
+  // Asking before leaving a drill with answers in it, and holding still
+  // while it is being scored, so back can't leave it half done.
+  const answered = Object.keys(results).length;
+  const [asking, setAsking] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  // Spec: SHELL-21
+  useBackLayer(answered > 0 && !asking && !finishing, () => setAsking(true), "guard");
+  useBackLayer(finishing, () => undefined, "guard");
+  /** The ✕: leaves at once with nothing answered, else asks first. */
+  function leave() {
+    if (finishing) return;
+    if (answered > 0) setAsking(true);
+    else quit();
+  }
   /** Leaving before the end: where, for the learning log. */
   function quit() {
     logEvent({
@@ -101,7 +121,6 @@ export function Session({
     flushLog();
     onQuit();
   }
-  useBackHandler(true, quit);
   // The module that draws and scores this kind of exercise.
   const module = exercise ? exerciseModule(exercise.kind) : undefined;
 
@@ -230,6 +249,7 @@ export function Session({
 
   async function finish(played: Exercise[]) {
     setBusy(true);
+    setFinishing(true);
     endCard();
     flushLog();
     try {
@@ -238,6 +258,7 @@ export function Session({
     } catch (cause) {
       setError(errorMessage(cause));
       setBusy(false);
+      setFinishing(false);
     }
   }
 
@@ -344,7 +365,7 @@ export function Session({
   return (
     <div className={module.wide ? "session session--wide" : "session"}>
       <div className="session-top">
-        <IconButton icon={<CloseIcon />} label="Leave practice" onClick={quit} />
+        <IconButton icon={<CloseIcon />} label="Leave practice" disabled={finishing} onClick={leave} />
         <div className="grow">
           <Progress value={index} max={total} />
         </div>
@@ -429,6 +450,20 @@ export function Session({
           {index + 1} of {total} · {correctCount} correct{almostCount > 0 ? ` · ${almostCount} almost` : ""}
         </Text>
       </div>
+
+      {asking ? (
+        <Sheet title={LEAVE_DRILL.title} onClose={() => setAsking(false)}>
+          <Stack gap={3}>
+            <Text tone="dim">{LEAVE_DRILL.body}</Text>
+            <Button variant="primary" wide onClick={() => setAsking(false)}>
+              Keep practising
+            </Button>
+            <Button variant="danger" wide onClick={quit}>
+              Leave
+            </Button>
+          </Stack>
+        </Sheet>
+      ) : null}
     </div>
   );
 }

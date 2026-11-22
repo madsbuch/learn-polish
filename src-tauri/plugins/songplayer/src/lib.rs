@@ -28,6 +28,16 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
+/// Where taps on the work's notifications lead: addresses of the app's pages
+/// (a course downloading), opened through the "open" event.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Work<'a> {
+    /// The notification while the work goes on.
+    pub address: Option<&'a str>,
+    /// The notification that says how it went.
+    pub result_address: Option<&'a str>,
+}
+
 /// What Android said to [`keep_working`].
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -45,7 +55,8 @@ pub struct WorkReport {
 /// notification with `label` meanwhile, with a progress bar when there is
 /// `progress` (done, total); asked again while on, it redraws it. A
 /// `result` is said in a notification of its own that stays until seen (a
-/// course ready offline). Does nothing off Android. An error is Android
+/// course ready offline); `work` says what a tap on either opens. Does
+/// nothing off Android. An error is Android
 /// refusing (a foreground service started while the app is in the
 /// background, say), with its reason.
 pub fn keep_working<R: Runtime>(
@@ -54,6 +65,7 @@ pub fn keep_working<R: Runtime>(
     label: &str,
     progress: Option<(i64, i64)>,
     result: Option<&str>,
+    work: Option<Work<'_>>,
 ) -> Result<WorkReport, String> {
     #[cfg(target_os = "android")]
     {
@@ -66,15 +78,24 @@ pub fn keep_working<R: Runtime>(
             done: i64,
             total: i64,
             result: Option<&'a str>,
+            /// Where a tap on each notification leads (the app's addresses).
+            #[serde(rename = "address")]
+            address: Option<&'a str>,
+            #[serde(rename = "resultAddress")]
+            result_address: Option<&'a str>,
         }
         let (done, total) = progress.unwrap_or((0, 0));
+        let work = work.unwrap_or_default();
         if let Some(native) = app.try_state::<Native<R>>() {
             return native
                 .0
-                .run_mobile_plugin::<WorkReport>("keepWorking", Args { on, label, done, total, result })
+                .run_mobile_plugin::<WorkReport>(
+                    "keepWorking",
+                    Args { on, label, done, total, result, address: work.address, result_address: work.result_address },
+                )
                 .map_err(|e| e.to_string());
         }
     }
-    let _ = (app, on, label, progress, result);
+    let _ = (app, on, label, progress, result, work);
     Ok(WorkReport { refused: None, notifications_allowed: true })
 }
