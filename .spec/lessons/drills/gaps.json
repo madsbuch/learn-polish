@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Fill the gaps",
   "summary": "Sentences with a word missing, filled from a word bank.",
-  "status": "accepted",
   "order": 8,
   "description": "Sentences recalled one word at a time, in their context.",
   "requirements": [

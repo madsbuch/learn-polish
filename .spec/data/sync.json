@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Sync between devices",
   "summary": "A learner's phone and computer keep one set of data in step, directly over the local network.",
-  "status": "accepted",
   "order": 2,
   "description": "One learner, several devices, no server and no account. Whole rows sync, and every device reaches the same result whatever order changes arrive in.",
   "stories": [

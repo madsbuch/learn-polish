@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Sentences",
   "summary": "Sentences built from their words, written down as they are said, then their gaps filled.",
-  "status": "accepted",
   "order": 7,
   "description": "Words in use: whole sentences, recalled by building them and by ear.",
   "requirements": [
@@ -24,7 +23,7 @@
     },
     {
       "id": "SNT-5",
-      "text": "A course's new sentences are cut into sentences lessons of five."
+      "text": "A course's new sentences are cut into sentences lessons of `drill.sentences-max`."
     }
   ],
   "related": [

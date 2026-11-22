@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Story",
   "summary": "A short illustrated story read panel by panel, then its words practised.",
-  "status": "accepted",
   "order": 4,
   "description": "Reading and listening in context: a story at the lesson's level, built from the course's words.",
   "requirements": [
@@ -41,12 +40,13 @@
     {
       "id": "STO-9",
       "text": "A story lesson's page shows the story as a picture book."
+    },
+    {
+      "id": "PIC-6",
+      "text": "A story lesson has 4 to 8 panels, 1 to 3 sentences under each picture and 1 to 4 characters."
     }
   ],
   "related": [
-    "lessons/pictures#PIC-6",
-    "lessons/pictures#PIC-7",
-    "lessons/pictures#PIC-8",
     "tutor/models#AI-6",
     "speech"
   ]

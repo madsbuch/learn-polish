@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Your data",
   "summary": "Everything is in one SQLite database on the device: progress, courses, conversations, settings and every file.",
-  "status": "accepted",
   "order": 9,
   "description": "The learner's data lives on the learner's devices, in one database that is its own complete backup. Ids are built so the data can sync and an agent cannot quietly use the wrong row.",
   "stories": [

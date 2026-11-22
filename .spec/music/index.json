@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Songs",
   "summary": "Learning songs written to order from the learner's words and sung by Suno, kept for good.",
-  "status": "accepted",
   "order": 7,
   "description": "Songs get Polish stuck in the head. Each verse pairs an English line with the same line in Polish, and the chorus is one Polish sentence.",
   "stories": [
@@ -104,7 +103,7 @@
     "music/player",
     "music/podcasts",
     "music/sonos",
-    "lessons/conversations#CONV-4",
+    "lessons/conversations/listening#CONV-4",
     "data#DATA-3"
   ]
 }

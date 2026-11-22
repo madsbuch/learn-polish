@@ -1,8 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Today's lessons",
-  "summary": "Each day the app picks the five lessons that matter most and keeps them for the day.",
-  "status": "accepted",
+  "summary": "Each day the app picks the lessons that matter most and keeps them for the day.",
   "order": 4,
   "description": "The home screen answers one question: what should I do today. The answer is a short list, not a backlog.",
   "stories": [

@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Speaking, dictation and sounds",
   "summary": "Cards where the learner speaks or writes what was said, and pairs of sounds an English ear runs together.",
-  "status": "accepted",
   "order": 4,
   "description": "Training for the ear and the mouth, which reading and tapping do not give. Sound pairs are real words that differ in one sound (sz and ś, y and i, ł and l).",
   "stories": [

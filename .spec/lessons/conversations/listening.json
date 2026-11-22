@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Listening",
   "summary": "A song to understand by ear, then the examiner asks what was heard.",
-  "status": "accepted",
   "order": 2,
   "description": "Understanding real Polish sung at speed, which reading does not train.",
   "requirements": [
@@ -20,16 +19,22 @@
     },
     {
       "id": "LIS-4",
-      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in Other lessons."
+      "text": "A listening lesson is filed in the course it is given, else in the song's course, else in `course.other-title`."
     },
     {
       "id": "LIS-5",
       "text": "The examiner is given the song's lyrics and asks about what was heard, quoting at most one short line per question."
+    },
+    {
+      "id": "CONV-4",
+      "text": "A listening lesson plays a song with the lyrics hidden unless asked for, then the examiner asks about what was heard; the song can be replayed during the conversation."
+    },
+    {
+      "id": "CONV-5",
+      "text": "A song the tutor makes gets a listening lesson unless the tutor opts out, and any song's page can start one."
     }
   ],
   "related": [
-    "lessons/conversations#CONV-4",
-    "lessons/conversations#CONV-5",
     "music"
   ]
 }

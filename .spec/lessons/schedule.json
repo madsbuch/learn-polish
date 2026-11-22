@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Check-in schedule",
   "summary": "Each lesson comes back on its own period; passing spreads it out, failing brings it back tomorrow.",
-  "status": "accepted",
   "order": 5,
   "description": "Every lesson comes back on its own schedule. The gap grows from the time that actually passed, so that remembering after longer is worth more.",
   "stories": [
@@ -69,7 +68,16 @@
     },
     {
       "id": "SCHED-13",
-      "text": "Extra practice on a lesson already passed today pays half XP and does not move its schedule."
+      "text": "Extra practice on a lesson already passed today does not move its schedule.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Extra practice on a lesson already passed today pays half XP and does not move its schedule.",
+          "reason": "What extra practice pays is said once, in PROG-3; the schedule keeps only what it decides.",
+          "date": "2026-11-21"
+        }
+      ]
     }
   ],
   "values": [

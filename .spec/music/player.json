@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Player and playlists",
   "summary": "One player for the whole app, with lyrics that follow the music, playlists of takes and the phone's own controls.",
-  "status": "accepted",
   "order": 1,
   "description": "The Music tab is the library; playing is the player's job, and the music keeps going while the learner practises.",
   "stories": [

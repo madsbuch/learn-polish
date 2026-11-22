@@ -1,24 +1,27 @@
 // Checks the spec (.spec/) against the rules of its format:
 // https://raw.githubusercontent.com/madsbuch/better-github/refs/heads/main/spec-llms.txt
 //
-// - every file is valid JSON with only the keys the schema knows;
-// - every story's, requirement's and named value's id is unique in the
-//   whole spec, and a requirement prefix belongs to one item ("MAST-7" and
-//   "US-MAST-1" are in Mastery and nowhere else);
-// - a named value has its type's form, and a requirement that names
-//   something dotted in backticks names a value that exists;
-// - every reference (`related`, `replacedBy`) points at an item, a story or
-//   a requirement that exists, and a story's `requirements` at requirements;
-// - a deprecated story, requirement or item says why (`deprecation`), and
-//   only a deprecated one has a `deprecation`;
-// - a requirement above version 1 has the history of all its earlier versions;
+// - every file is valid JSON that fits the format's schema: only the keys it
+//   knows (there is no `status`), the right types, levels and date forms;
+// - every story's, requirement's and named value's id is unique in the whole
+//   spec. Ids follow a requirement when it moves, so a prefix may appear in
+//   any item;
+// - a named value has its type's form, its history says what it was and
+//   why, and a requirement that names something dotted in backticks names a
+//   value that exists;
+// - every reference (`related`, `replacedBy`, a story's `requirements`)
+//   points at an item, story, requirement or value that exists, a story's
+//   `requirements` at requirements, and a reference to a version ("#ID@2")
+//   at a version the requirement has had;
+// - a requirement above version 1 has the history of all its earlier
+//   versions, each with its text and the reason it was replaced;
+// - what is dropped carries a `deprecation` that says why; in a deprecated
+//   item everything is dropped with it;
 // - every figure is there;
-// - every `Spec: ID` comment in the code cites a requirement the spec has
-//   and has not deprecated.
+// - every `Spec: ID` comment in the code cites a requirement the spec has and
+//   has not deprecated.
 //
-// Runs in `bun run build`. An id never changes and is never reused: a new
-// requirement takes its item's next number, and one no longer wanted is
-// deprecated, not deleted. The spec never says whether something is built.
+// Runs in `bun run build`. An id never changes and is never reused.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
@@ -27,26 +30,32 @@ import { fileURLToPath } from "node:url";
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const root = join(repo, ".spec");
 
-const ITEM_KEYS = ["$schema", "title", "summary", "status", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related"];
-const VALUE_KEYS = ["id", "type", "value", "dark", "unit", "description", "status", "deprecation", "history"];
-/** Whether a value has the form its type asks for. */
-const VALUE_FORMS = {
-  color: (value) => /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value),
-  dimension: (value) => /^-?\d+(?:\.\d+)?(?:px|rem|em|%|pt|dp|vw|vh)$/.test(value),
-  duration: (value) => /^\d+(?:\.\d+)?(?:ms|s|min|h|d)$/.test(value),
-  number: (value) => typeof value === "number",
-  text: (value) => typeof value === "string",
-  font: (value) => typeof value === "string" && value !== "",
-  list: (value) => Array.isArray(value) && value.every((name) => typeof name === "string" && name !== ""),
+const ITEM_KEYS = ["$schema", "title", "summary", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related"];
+const STORY_KEYS = ["id", "as", "want", "soThat", "requirements", "deprecation"];
+const REQUIREMENT_KEYS = ["id", "text", "level", "version", "history", "deprecation"];
+const HISTORY_KEYS = ["version", "text", "level", "reason", "date"];
+const VALUE_KEYS = ["id", "type", "value", "description", "deprecation", "history"];
+const VALUE_HISTORY_KEYS = ["value", "dark", "reason", "date"];
+const DEPRECATION_KEYS = ["reason", "replacedBy", "date"];
+const FIGURE_KEYS = ["src", "alt", "caption"];
+const LEVELS = ["must", "should", "may"];
+const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const COLOR = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+/** Whether a value has the form its type asks for, and the keys only that type has. */
+const VALUE_TYPES = {
+  color: { form: (value) => typeof value === "string" && COLOR.test(value), keys: ["dark"] },
+  dimension: { form: (value) => typeof value === "string" && /^-?\d+(?:\.\d+)?(?:px|rem|em|%|pt|dp|vw|vh)$/.test(value), keys: [] },
+  duration: { form: (value) => typeof value === "string" && /^\d+(?:\.\d+)?(?:ms|s|min|h|d)$/.test(value), keys: [] },
+  number: { form: (value) => typeof value === "number", keys: ["unit"] },
+  text: { form: (value) => typeof value === "string", keys: [] },
+  font: { form: (value) => typeof value === "string" && value !== "", keys: [] },
+  list: { form: (value) => Array.isArray(value) && value.every((name) => typeof name === "string" && name !== ""), keys: [] },
 };
 /** Where the code is, and the folders in it that are not ours. */
 const CODE = ["src", "src-tauri/src", "src-tauri/plugins", "src-tauri/android", "scripts"];
 const SKIPPED = new Set(["node_modules", "target", "build", "dist", "gen", ".gradle"]);
 const SOURCE = new Set([".rs", ".ts", ".tsx", ".mjs", ".js", ".css", ".kt", ".kts", ".sql"]);
-const STORY_KEYS = ["id", "as", "want", "soThat", "requirements", "status", "deprecation"];
-const REQUIREMENT_KEYS = ["id", "text", "level", "status", "version", "history", "deprecation"];
-const STATUSES = ["draft", "accepted", "deprecated"];
-const LEVELS = ["must", "should", "may"];
 
 function files(dir, wanted) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -70,130 +79,169 @@ for (const path of files(root, (name) => name.endsWith(".json"))) {
   }
 }
 const name = (id) => id || "(root)";
+const isObject = (thing) => typeof thing === "object" && thing !== null && !Array.isArray(thing);
+const isText = (thing) => typeof thing === "string" && thing !== "";
+const list = (item, key) => (Array.isArray(item[key]) ? item[key].filter(isObject) : []);
+
+function unknownKeys(where, thing, known) {
+  for (const key of Object.keys(thing)) {
+    if (!known.includes(key)) problems.push(`${where}: unknown key "${key}"`);
+  }
+}
 
 // Where each id is used. Stories, requirements and values share one set of ids.
 const owners = new Map();
-const requirementIds = new Set();
+const requirements = new Map();
 const deprecatedIds = new Set();
 const valueIds = new Set();
 for (const [id, item] of items) {
-  for (const thing of [...(item.stories ?? []), ...(item.requirements ?? []), ...(item.values ?? [])]) {
+  if (!isObject(item)) continue;
+  for (const thing of [...list(item, "stories"), ...list(item, "requirements"), ...list(item, "values")]) {
     owners.set(thing.id, [...(owners.get(thing.id) ?? []), id]);
   }
-  for (const requirement of item.requirements ?? []) {
-    requirementIds.add(requirement.id);
-    if (requirement.status === "deprecated" || item.status === "deprecated") deprecatedIds.add(requirement.id);
+  for (const requirement of list(item, "requirements")) {
+    requirements.set(requirement.id, requirement);
+    // In a deprecated item every requirement is deprecated with it.
+    if (requirement.deprecation !== undefined || item.deprecation !== undefined) deprecatedIds.add(requirement.id);
   }
-  for (const value of item.values ?? []) valueIds.add(value.id);
+  for (const value of list(item, "values")) valueIds.add(value.id);
 }
 for (const [code, where] of owners) {
   if (where.length > 1) problems.push(`id ${code} is used ${where.length} times: ${where.map(name).join(", ")}`);
 }
 
-// A prefix belongs to one item, so a new requirement can't take an id
-// another item will want.
-const prefixes = new Map();
-for (const [id, item] of items) {
-  // Values are named for what they are ("mastery.full"), not for their item.
-  for (const thing of [...(item.stories ?? []), ...(item.requirements ?? [])]) {
-    const prefix = String(thing.id).replace(/-?\d+$/, "");
-    const owner = prefixes.get(prefix);
-    if (owner === undefined) prefixes.set(prefix, id);
-    else if (owner !== id) problems.push(`prefix ${prefix} is used by two items: ${name(owner)} and ${name(id)}`);
+/** What a reference names: "item", "item#ID", "#ID" or "ID", each id with an optional "@version". */
+function resolve(reference, bare = false) {
+  if (typeof reference !== "string" || reference === "") return { ok: false };
+  const hash = reference.indexOf("#");
+  if (hash === -1 && !bare) return { ok: items.has(reference), item: true };
+  const target = hash === -1 ? "" : reference.slice(0, hash);
+  const [code, version, ...rest] = reference.slice(hash + 1).split("@");
+  const where = owners.get(code);
+  if (where === undefined || rest.length > 0 || (target !== "" && !where.includes(target))) return { ok: false };
+  if (version !== undefined) {
+    const requirement = requirements.get(code);
+    const number = Number(version);
+    if (!requirement || !/^[1-9]\d*$/.test(version) || number > (requirement.version ?? 1)) return { ok: false };
+  }
+  return { ok: true, code };
+}
+
+function checkDate(where, date) {
+  if (date !== undefined && (typeof date !== "string" || !DATE.test(date))) problems.push(`${where}: date "${date}" is not YYYY-MM-DD`);
+}
+
+function checkDeprecation(where, deprecation) {
+  if (deprecation === undefined) return;
+  if (!isObject(deprecation)) return problems.push(`${where}: deprecation is not an object`);
+  unknownKeys(`${where} deprecation`, deprecation, DEPRECATION_KEYS);
+  if (!isText(deprecation.reason)) problems.push(`${where}: deprecated without a reason`);
+  checkDate(`${where} deprecation`, deprecation.date);
+  if (deprecation.replacedBy !== undefined && !Array.isArray(deprecation.replacedBy)) problems.push(`${where}: replacedBy is not a list`);
+  for (const reference of deprecation.replacedBy ?? []) {
+    if (!resolve(reference).ok) problems.push(`${where}: replacedBy "${reference}" does not exist`);
   }
 }
 
-/** Whether a reference names something: "item", "item#ID", "#ID", each with an optional "@version". */
-function resolves(reference) {
-  const [target, rest] = reference.split("#");
-  if (rest === undefined) return items.has(target);
-  const code = rest.split("@")[0];
-  const where = owners.get(code);
-  return where !== undefined && (target === "" || where.includes(target));
+function checkId(where, thing) {
+  if (typeof thing.id !== "string" || !ID.test(thing.id)) problems.push(`${where}: not a valid id`);
 }
 
-function checkDeprecation(where, thing, inherited) {
-  const deprecated = thing.status === "deprecated";
-  if (deprecated && !thing.deprecation?.reason && !inherited) problems.push(`${where}: deprecated without a deprecation that says why`);
-  if (!deprecated && thing.deprecation) problems.push(`${where}: has a deprecation but is not deprecated`);
-  for (const reference of thing.deprecation?.replacedBy ?? []) {
-    if (!resolves(reference)) problems.push(`${where}: replacedBy "${reference}" does not exist`);
+function checkArray(where, item, key) {
+  if (item[key] !== undefined && !Array.isArray(item[key])) problems.push(`${where}: "${key}" is not a list`);
+  for (const thing of Array.isArray(item[key]) ? item[key] : []) {
+    if (!isObject(thing)) problems.push(`${where}: an entry of "${key}" is not an object`);
   }
 }
 
 for (const [id, item] of items) {
   const here = name(id);
-  for (const key of Object.keys(item)) {
-    if (!ITEM_KEYS.includes(key)) problems.push(`${here}: unknown key "${key}"`);
+  if (!isObject(item)) {
+    problems.push(`${here}: not an object`);
+    continue;
   }
-  if (typeof item.title !== "string" || item.title === "") problems.push(`${here}: no title`);
-  if (item.status !== undefined && !STATUSES.includes(item.status)) problems.push(`${here}: unknown status "${item.status}"`);
-  checkDeprecation(here, item, false);
+  unknownKeys(here, item, ITEM_KEYS);
+  if (!isText(item.title)) problems.push(`${here}: no title`);
+  for (const key of ["$schema", "summary", "description"]) {
+    if (item[key] !== undefined && typeof item[key] !== "string") problems.push(`${here}: "${key}" is not text`);
+  }
+  if (item.order !== undefined && typeof item.order !== "number") problems.push(`${here}: "order" is not a number`);
+  checkDeprecation(here, item.deprecation);
+  for (const key of ["stories", "requirements", "values", "figures"]) checkArray(here, item, key);
 
-  for (const story of item.stories ?? []) {
+  for (const story of list(item, "stories")) {
     const where = `${here}#${story.id}`;
-    for (const key of Object.keys(story)) {
-      if (!STORY_KEYS.includes(key)) problems.push(`${where}: unknown key "${key}"`);
-    }
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(story.id))) problems.push(`${where}: not a valid id`);
-    if (!story.as || !story.want) problems.push(`${where}: a story says who (as) wants what (want)`);
-    if (story.status !== undefined && !STATUSES.includes(story.status)) problems.push(`${where}: unknown status "${story.status}"`);
-    checkDeprecation(where, story, item.status === "deprecated");
+    unknownKeys(where, story, STORY_KEYS);
+    checkId(where, story);
+    if (!isText(story.as) || !isText(story.want)) problems.push(`${where}: a story says who (as) wants what (want)`);
+    if (story.soThat !== undefined && !isText(story.soThat)) problems.push(`${where}: "soThat" is empty`);
+    checkDeprecation(where, story.deprecation);
+    if (story.requirements !== undefined && !Array.isArray(story.requirements)) problems.push(`${where}: "requirements" is not a list`);
     for (const reference of story.requirements ?? []) {
-      const code = reference.split("#").pop().split("@")[0];
-      if (!resolves(reference) || !requirementIds.has(code)) problems.push(`${where}: "${reference}" is not a requirement`);
+      const { ok, code } = resolve(reference);
+      if (!ok || !requirements.has(code)) problems.push(`${where}: "${reference}" is not a requirement`);
     }
   }
 
-  for (const requirement of item.requirements ?? []) {
+  for (const requirement of list(item, "requirements")) {
     const where = `${here}#${requirement.id}`;
-    for (const key of Object.keys(requirement)) {
-      if (!REQUIREMENT_KEYS.includes(key)) problems.push(`${where}: unknown key "${key}"`);
-    }
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(requirement.id))) problems.push(`${where}: not a valid id`);
-    if (typeof requirement.text !== "string" || requirement.text === "") problems.push(`${where}: no text`);
+    unknownKeys(where, requirement, REQUIREMENT_KEYS);
+    checkId(where, requirement);
+    if (!isText(requirement.text)) problems.push(`${where}: no text`);
     if (requirement.level !== undefined && !LEVELS.includes(requirement.level)) problems.push(`${where}: unknown level "${requirement.level}"`);
-    if (requirement.status !== undefined && !STATUSES.includes(requirement.status)) problems.push(`${where}: unknown status "${requirement.status}"`);
-    // In a deprecated item every requirement is deprecated with it.
-    checkDeprecation(where, requirement, item.status === "deprecated");
     const version = requirement.version ?? 1;
-    const history = (requirement.history ?? []).map((earlier) => earlier.version);
-    const expected = Array.from({ length: version - 1 }, (_, index) => index + 1);
-    if (history.join() !== expected.join()) {
-      problems.push(`${where}: at version ${version} its history should be versions [${expected.join(", ")}], not [${history.join(", ")}]`);
+    if (!Number.isInteger(version) || version < 1) problems.push(`${where}: version ${version} is not a whole number from 1`);
+    checkDeprecation(where, requirement.deprecation);
+    if (requirement.history !== undefined && !Array.isArray(requirement.history)) problems.push(`${where}: "history" is not a list`);
+    const history = Array.isArray(requirement.history) ? requirement.history : [];
+    const versions = history.map((earlier) => earlier?.version);
+    const expected = Array.from({ length: Number.isInteger(version) ? version - 1 : 0 }, (_, index) => index + 1);
+    if (versions.join() !== expected.join()) {
+      problems.push(`${where}: at version ${version} its history should be versions [${expected.join(", ")}], not [${versions.join(", ")}]`);
     }
-    for (const earlier of requirement.history ?? []) {
-      if (!earlier.text || !earlier.reason) problems.push(`${where}: version ${earlier.version} in its history needs its text and the reason it was replaced`);
+    for (const earlier of history) {
+      if (!isObject(earlier)) continue;
+      unknownKeys(`${where}@${earlier.version}`, earlier, HISTORY_KEYS);
+      if (!isText(earlier.text) || !isText(earlier.reason)) problems.push(`${where}: version ${earlier.version} in its history needs its text and the reason it was replaced`);
+      if (earlier.level !== undefined && !LEVELS.includes(earlier.level)) problems.push(`${where}@${earlier.version}: unknown level "${earlier.level}"`);
+      checkDate(`${where}@${earlier.version}`, earlier.date);
     }
     // A dotted name in backticks is a value's name ("mastery.full").
     for (const [, named] of String(requirement.text).matchAll(/`([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+)`/g)) {
-      if (!valueIds.has(named) && !/\.(rs|tsx?|mjs|json|sqlite|md|css)$/.test(named)) problems.push(`${where}: names \`${named}\`, which is not a value`);
+      if (!valueIds.has(named)) problems.push(`${where}: names \`${named}\`, which is not a value`);
     }
   }
 
-  for (const value of item.values ?? []) {
+  for (const value of list(item, "values")) {
     const where = `${here}#${value.id}`;
-    for (const key of Object.keys(value)) {
-      if (!VALUE_KEYS.includes(key)) problems.push(`${where}: unknown key "${key}"`);
-    }
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(value.id))) problems.push(`${where}: not a valid id`);
-    const form = VALUE_FORMS[value.type];
-    if (!form) problems.push(`${where}: unknown type "${value.type}"`);
-    else if (!form(value.value)) problems.push(`${where}: ${JSON.stringify(value.value)} is not a ${value.type}`);
-    if (value.dark !== undefined && (value.type !== "color" || !VALUE_FORMS.color(value.dark))) problems.push(`${where}: "dark" is a colour's value in dark mode`);
-    if (value.unit !== undefined && value.type !== "number") problems.push(`${where}: only a number has a unit`);
-    if (value.status !== undefined && !STATUSES.includes(value.status)) problems.push(`${where}: unknown status "${value.status}"`);
-    checkDeprecation(where, value, item.status === "deprecated");
-    for (const earlier of value.history ?? []) {
-      if (earlier.value === undefined || !earlier.reason) problems.push(`${where}: its history needs what it was and the reason it changed`);
+    const type = VALUE_TYPES[value.type];
+    unknownKeys(where, value, [...VALUE_KEYS, ...(type?.keys ?? [])]);
+    checkId(where, value);
+    if (!type) problems.push(`${where}: unknown type "${value.type}"`);
+    else if (!type.form(value.value)) problems.push(`${where}: ${JSON.stringify(value.value)} is not a ${value.type}`);
+    if (value.dark !== undefined && !COLOR.test(String(value.dark))) problems.push(`${where}: "dark" is not a colour`);
+    if (value.unit !== undefined && !isText(value.unit)) problems.push(`${where}: "unit" is empty`);
+    if (value.description !== undefined && typeof value.description !== "string") problems.push(`${where}: "description" is not text`);
+    checkDeprecation(where, value.deprecation);
+    if (value.history !== undefined && !Array.isArray(value.history)) problems.push(`${where}: "history" is not a list`);
+    for (const earlier of Array.isArray(value.history) ? value.history : []) {
+      if (!isObject(earlier)) continue;
+      unknownKeys(`${where} history`, earlier, VALUE_HISTORY_KEYS);
+      const was = earlier.value;
+      const fits = typeof was === "string" || typeof was === "number" || (Array.isArray(was) && was.every((name) => typeof name === "string"));
+      if (!fits || !isText(earlier.reason)) problems.push(`${where}: its history needs what it was and the reason it changed`);
+      if (earlier.dark !== undefined && typeof earlier.dark !== "string") problems.push(`${where}: a "dark" in its history is not text`);
+      checkDate(`${where} history`, earlier.date);
     }
   }
 
+  if (item.related !== undefined && !Array.isArray(item.related)) problems.push(`${here}: "related" is not a list`);
   for (const reference of item.related ?? []) {
-    if (!resolves(reference)) problems.push(`${here}: related "${reference}" does not exist`);
+    if (!resolve(reference).ok) problems.push(`${here}: related "${reference}" does not exist`);
   }
-  for (const figure of item.figures ?? []) {
-    if (!figure.src || !existsSync(join(root, figure.src))) problems.push(`${here}: figure "${figure.src}" is not in .spec`);
+  for (const figure of list(item, "figures")) {
+    unknownKeys(`${here} figure`, figure, FIGURE_KEYS);
+    if (!isText(figure.src) || figure.src.startsWith("/") || !existsSync(join(root, figure.src))) problems.push(`${here}: figure "${figure.src}" is not in .spec`);
   }
 }
 
@@ -208,10 +256,10 @@ for (const folder of CODE) {
       const cited = line.match(/^\s*(?:\/\/|\/\*|\*|#|--)\s*Spec:\s*(.+?)\s*(?:\*\/)?\s*$/);
       if (!cited) return;
       for (const reference of cited[1].split(",")) {
-        const code = reference.trim().split("@")[0];
         const where = `${relative(repo, path).replaceAll("\\", "/")}:${index + 1}`;
+        const { ok, code } = resolve(reference.trim(), true);
         citations += 1;
-        if (!requirementIds.has(code)) problems.push(`${where}: cites ${code}, which is not a requirement`);
+        if (!ok || !requirements.has(code)) problems.push(`${where}: cites ${reference.trim()}, which is not a requirement`);
         else if (deprecatedIds.has(code)) problems.push(`${where}: cites ${code}, which is deprecated`);
       }
     });
@@ -222,5 +270,5 @@ if (problems.length > 0) {
   console.error(`The spec has ${problems.length} problem${problems.length === 1 ? "" : "s"}:\n` + problems.map((p) => `  ${p}`).join("\n"));
   process.exit(1);
 }
-const stories = [...items.values()].reduce((count, item) => count + (item.stories ?? []).length, 0);
-console.log(`spec: ${items.size} items, ${stories} stories, ${requirementIds.size} requirements, ${valueIds.size} values, every id unique; ${citations} citations in the code`);
+const stories = [...items.values()].reduce((count, item) => count + list(item, "stories").length, 0);
+console.log(`spec: ${items.size} items, ${stories} stories, ${requirements.size} requirements, ${valueIds.size} values, every id unique; ${citations} citations in the code`);

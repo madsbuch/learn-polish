@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Study",
   "summary": "A short text on a grammar point or a bit of culture, then the examiner's questions.",
-  "status": "accepted",
   "order": 1,
   "description": "For what is understood rather than drilled: a rule, a conjugation, a custom.",
   "requirements": [
@@ -17,11 +16,17 @@
     {
       "id": "STU-3",
       "text": "The examiner is given the lesson's text and objectives and asks about every objective."
+    },
+    {
+      "id": "CONV-1",
+      "text": "A study lesson has a text and objectives; the examiner asks one question at a time and gives a line of feedback after each answer."
+    },
+    {
+      "id": "CONV-11",
+      "text": "A lesson built on Wikipedia keeps the examiner's questions to what the lesson and its sources say."
     }
   ],
   "related": [
-    "lessons/conversations#CONV-1",
-    "lessons/conversations#CONV-11",
     "lessons/wikipedia"
   ]
 }

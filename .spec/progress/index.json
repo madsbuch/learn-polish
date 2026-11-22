@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Progress and rewards",
   "summary": "XP for real effort, the day done, streaks with freezes, achievements and a daily reminder.",
-  "status": "accepted",
   "order": 5,
   "description": "Rewards that make daily practice a habit, and pay for what was really done.",
   "stories": [
@@ -77,7 +76,6 @@
     {
       "id": "PROG-12",
       "text": "Reset progress erases reviews, days, the XP log, the mastery ledger, passes, mastery, streak freezes, achievements, check-ins and the tutor's conversations together; courses and their content are kept, closed courses stay closed, and the learning log is kept.",
-      "status": "deprecated",
       "deprecation": {
         "reason": "The owner removed Reset progress: nobody needed it, and it left closed courses holding lessons that were no longer mastered.",
         "date": "2026-11-20"
@@ -86,7 +84,6 @@
     {
       "id": "PROG-13",
       "text": "AI costs survive a reset of progress.",
-      "status": "deprecated",
       "deprecation": {
         "reason": "Reset progress was removed, so there is no reset for costs to survive.",
         "date": "2026-11-20"

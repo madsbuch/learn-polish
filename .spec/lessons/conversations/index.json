@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Conversation lessons",
   "summary": "Study, listening and writing lessons: an exchange with an AI that ends in a verdict.",
-  "status": "accepted",
   "order": 3,
   "description": "For what cannot be drilled: a grammar point, a song understood by ear, getting something across in writing. A conversation lesson coming back on its schedule is a check-in.",
   "stories": [
@@ -16,24 +15,9 @@
         "#CONV-2",
         "#CONV-3"
       ]
-    },
-    {
-      "id": "US-CONV-2",
-      "as": "a learner who needs to write Polish in real situations",
-      "want": "to play a situation out with a partner who only understands Polish",
-      "soThat": "I find out whether I can get my point across",
-      "requirements": [
-        "#CONV-6",
-        "#CONV-7",
-        "#CONV-9"
-      ]
     }
   ],
   "requirements": [
-    {
-      "id": "CONV-1",
-      "text": "A study lesson has a text and objectives; the examiner asks one question at a time and gives a line of feedback after each answer."
-    },
     {
       "id": "CONV-2",
       "text": "The examiner asks more questions the more complex the lesson: 2 to 3 for low, 4 to 6 for medium, 7 to 10 for high."
@@ -43,47 +27,13 @@
       "text": "A conversation ends with a verdict of pass, partial or fail, with what to review."
     },
     {
-      "id": "CONV-4",
-      "text": "A listening lesson plays a song with the lyrics hidden unless asked for, then the examiner asks about what was heard; the song can be replayed during the conversation."
-    },
-    {
-      "id": "CONV-5",
-      "text": "A song the tutor makes gets a listening lesson unless the tutor opts out, and any song's page can start one."
-    },
-    {
-      "id": "CONV-6",
-      "text": "A writing lesson is a situation with goals; the partner writes only Polish and answers anything it does not understand by saying so in Polish."
-    },
-    {
-      "id": "CONV-7",
-      "text": "A writing conversation ends as soon as every goal has been got across, or when the learner ends it."
-    },
-    {
-      "id": "CONV-8",
-      "text": "The writing partner has its own model setting and uses the tutor's model when none is chosen."
-    },
-    {
-      "id": "CONV-9",
-      "text": "A writing lesson gives less help after each pass and more after a fail; a partial leaves the help as it is."
-    },
-    {
-      "id": "CONV-10",
-      "text": "A writing lesson is mastered only once it has been passed without help."
-    },
-    {
-      "id": "CONV-11",
-      "text": "A lesson built on Wikipedia keeps the examiner's questions to what the lesson and its sources say."
-    },
-    {
       "id": "CONV-12",
       "text": "A check-in pays 30, 80 or 160 XP for low, medium or high complexity, plus 10 for each goal a writing lesson has; a partial pays half of that and a fail nothing."
     }
   ],
   "related": [
     "lessons",
-    "lessons/wikipedia",
-    "music",
     "tutor/memory",
-    "lessons/mastery#MAST-9"
+    "lessons/mastery"
   ]
 }

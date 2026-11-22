@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The tutor",
   "summary": "An assistant for the whole app that builds courses and lessons and manages them through tools.",
-  "status": "accepted",
   "order": 6,
   "description": "With an OpenRouter key and a model, the Tutor tab is an assistant that acts in the app through tools.",
   "stories": [

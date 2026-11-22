@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Drills",
   "summary": "Runs of exercises over a lesson's own items, graded by the share answered right.",
-  "status": "accepted",
   "order": 1,
   "description": "A drill practises a handful of words, sentences or a dialogue. Its exercises are built fresh each time from the items and their history, which decides how hard each one is.",
   "stories": [
@@ -35,7 +34,7 @@
     },
     {
       "id": "DRILL-2",
-      "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks: `czesc` counts as `cześć`."
+      "text": "Typed answers ignore case, punctuation and spacing, and accept Polish letters typed without their marks."
     },
     {
       "id": "DRILL-3",
@@ -89,6 +88,14 @@
     {
       "id": "DRILL-13",
       "text": "Each word's and sentence's review interval grows with right answers on different days, to at most `review.max-interval`; an item counts once a day."
+    },
+    {
+      "id": "PIC-7",
+      "text": "A drawing that was not finished when the app closed is resumed the next time it starts, by the device that started it."
+    },
+    {
+      "id": "PIC-8",
+      "text": "A scene or story whose drawing failed says so on its page and can be tried again; a picture lesson offers to draw the pictures still missing."
     }
   ],
   "values": [

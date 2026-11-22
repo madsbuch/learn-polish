@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Models, keys and costs",
   "summary": "The learner's own keys and model choices, and a running account of what the AI features cost.",
-  "status": "accepted",
   "order": 2,
   "description": "The app has no account and no server of its own. The AI features run on the learner's keys and chosen models, so what they cost is shown.",
   "stories": [
@@ -84,7 +83,6 @@
   "related": [
     "tutor",
     "speech",
-    "music",
-    "progress#PROG-13"
+    "music"
   ]
 }

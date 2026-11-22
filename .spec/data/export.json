@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Export",
   "summary": "Writes a complete, consistent copy of the database to a file the learner chooses.",
-  "status": "accepted",
   "order": 1,
   "description": "The learner can take their data with them, in a file that opens in any SQLite tool.",
   "stories": [

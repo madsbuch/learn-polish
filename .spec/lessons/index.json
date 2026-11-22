@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Lessons",
   "summary": "The unit of learning: one job each, one type from a flat list, its own schedule and mastery.",
-  "status": "accepted",
   "order": 3,
   "description": "Learning happens in lessons. A lesson's type says everything about it: how it is practised, what its page shows, where it goes in a course and what mastering it takes.",
   "stories": [

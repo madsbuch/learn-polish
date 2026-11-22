@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Courses",
   "summary": "A course is a folder on one theme that lists lessons in order; it can be completed, mastered and closed.",
-  "status": "accepted",
   "order": 2,
   "description": "A course gathers the lessons on one theme: a trip, a hobby, the learner's work. It holds no words of its own and reaches them only through the lessons it lists.",
   "stories": [
@@ -16,7 +15,6 @@
         "#CRS-2",
         "#CRS-15"
       ],
-      "status": "deprecated",
       "deprecation": {
         "reason": "Too specific",
         "date": "2026-11-20"
@@ -54,7 +52,6 @@
     {
       "id": "CRS-5",
       "text": "A lesson can be listed in several courses; it keeps one schedule and one mastery, shown in each.",
-      "status": "deprecated",
       "deprecation": {
         "reason": "It can not, a lesson van be in a single course as that makes integrity easier.",
         "date": "2026-11-20",
@@ -67,7 +64,6 @@
     {
       "id": "CRS-6",
       "text": "A lesson can be moved from one course to another.",
-      "status": "deprecated",
       "deprecation": {
         "reason": "It can not. A new lesson can be created in the other course.",
         "date": "2026-11-20",
@@ -127,12 +123,12 @@
     },
     {
       "id": "CRS-17",
-      "text": "A new course should strive for diversity of lesson types",
+      "text": "A new course should mix several lesson types.",
       "level": "should"
     },
     {
       "id": "CRS-18",
-      "text": "Every lesson is in exactly one course; Other lessons counts as one."
+      "text": "Every lesson is in exactly one course; `course.other-title` counts as one."
     },
     {
       "id": "CRS-19",

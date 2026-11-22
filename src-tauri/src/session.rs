@@ -18,6 +18,8 @@ use crate::ids::*;
 pub(crate) const DIALOGUE_GAPS: usize = 2;
 /// Cards in the memory game: this many Polish/English pairs.
 pub(crate) const MEMORY_PAIRS: usize = 6;
+/// The fewest pairs a memory game or round is played with.
+pub(crate) const MEMORY_PAIRS_MIN: usize = 4;
 /// Sentences in a fill-the-gaps exercise.
 pub(crate) const GAP_SENTENCES: usize = 4;
 /// Once an item has survived this many correct reps we stop showing multiple
@@ -394,7 +396,7 @@ pub(crate) fn picture_memory(words: &[&WordRow], key: String, item_id: LessonId,
             break;
         }
     }
-    if pairs.len() < 4 {
+    if pairs.len() < MEMORY_PAIRS_MIN {
         return None;
     }
     Some(Exercise {
@@ -775,7 +777,7 @@ pub(crate) fn memory_game(words: &[&WordRow], key: String, item_id: LessonId, rn
     let mut pool: Vec<&WordRow> = words.to_vec();
     pool.shuffle(rng);
     let pairs = pick_pairs(&pool, MEMORY_PAIRS, false);
-    if pairs.len() < 4 {
+    if pairs.len() < MEMORY_PAIRS_MIN {
         return None;
     }
     Some(Exercise {

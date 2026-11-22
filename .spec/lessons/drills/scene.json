@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Scene",
   "summary": "One illustrated place full of things to find, name and place.",
-  "status": "accepted",
   "order": 3,
   "description": "Words for the things in a place, learnt where they are: in one drawing of a kitchen, a market stall or a station.",
   "requirements": [
@@ -33,14 +32,36 @@
     {
       "id": "SCN-7",
       "text": "A “Where is it?” sentence the picture does not bear out is never asked."
+    },
+    {
+      "id": "PIC-3",
+      "text": "A scene lesson has 6 to 10 things in one picture and at most 6 sentences saying where something is."
+    },
+    {
+      "id": "PIC-4",
+      "text": "Where a thing is in a scene uses only the prepositions in `scene.prepositions`."
+    },
+    {
+      "id": "PIC-5",
+      "text": "After a scene is drawn, a vision model locates each thing in it; a scene is ready only when at least 5 things are found."
+    }
+  ],
+  "values": [
+    {
+      "id": "scene.prepositions",
+      "type": "list",
+      "value": [
+        "pod",
+        "na",
+        "nad",
+        "obok",
+        "przy",
+        "w"
+      ],
+      "description": "The prepositions a scene's sentences use to say where something is."
     }
   ],
   "related": [
-    "lessons/pictures#PIC-3",
-    "lessons/pictures#PIC-4",
-    "lessons/pictures#PIC-5",
-    "lessons/pictures#PIC-7",
-    "lessons/pictures#PIC-8",
     "tutor/models#AI-6",
     "speech"
   ]

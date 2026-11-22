@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Courses kept offline",
   "summary": "A switch on a course that downloads all of its audio and pictures and keeps them downloaded as it grows.",
-  "status": "accepted",
   "order": 2,
   "description": "For a learner about to be without a connection. Audio and pictures are otherwise made the first time a lesson needs them, which takes the network and the learner's key.",
   "stories": [
@@ -162,7 +161,9 @@
   "related": [
     "courses",
     "speech#SPEECH-1",
-    "lessons/pictures",
+    "lessons/drills/pictures",
+    "lessons/drills/scene",
+    "lessons/drills/story",
     "lessons/conversations",
     "data/sync#SYNC-12",
     "tutor/models"

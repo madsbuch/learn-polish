@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Hearing Polish",
   "summary": "Every Polish line can be read aloud; each clip is made once, stored as MP3 and replayed offline.",
-  "status": "accepted",
   "order": 8,
   "description": "Every Polish line can be heard. The voice is a speech model through OpenRouter, the one option that sounds the same on Android and macOS.",
   "stories": [

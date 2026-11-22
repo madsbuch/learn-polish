@@ -2,9 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The demo course",
   "summary": "First steps: one small course with a lesson of every type, installed once, which then belongs to the learner.",
-  "status": "accepted",
   "order": 1,
-  "description": "First steps / Pierwsze kroki shows a fresh install every kind of lesson. Earlier versions shipped a larger built-in collection, which upgrading retires.",
+  "description": "First steps / Pierwsze kroki shows a fresh install every kind of lesson.",
   "stories": [
     {
       "id": "US-DEMO-1",

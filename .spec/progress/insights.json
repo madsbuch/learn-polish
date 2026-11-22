@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Insights and the learning log",
   "summary": "Every answer is logged in detail, so the learner and the tutor can see what is hard.",
-  "status": "accepted",
   "order": 2,
   "description": "How often the learner is wrong says little; what they find hard says a lot. The learner and the tutor read the same analysis.",
   "stories": [

@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Governing principles",
   "summary": "The owner's rules that settle design questions everywhere in the app.",
-  "status": "accepted",
   "order": 1,
   "description": "The owner's rules. When a change is unclear, or two parts of the app disagree, these decide. They change only on the owner's word.",
   "stories": [

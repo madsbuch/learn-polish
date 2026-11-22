@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Dialogue",
   "summary": "A short everyday dialogue: read and heard, its next lines chosen, one written down.",
-  "status": "accepted",
   "order": 9,
   "description": "A course's conversation, practised as one: the first thing a course's path offers.",
   "requirements": [

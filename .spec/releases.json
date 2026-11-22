@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Builds and releases",
   "summary": "Every merge to main is tested, built for Android and macOS, and published as the rolling latest release.",
-  "status": "accepted",
   "order": 11,
   "description": "One release channel: installing the newest build is always the same download.",
   "stories": [

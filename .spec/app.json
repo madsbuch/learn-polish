@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "The app shell",
   "summary": "Four tabs, a back button that walks back through the app, and a layout that follows the window.",
-  "status": "accepted",
   "order": 10,
   "description": "One interface for a phone, a tablet and a computer, built from a small design system.",
   "stories": [

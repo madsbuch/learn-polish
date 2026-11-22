@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Memory",
   "summary": "Short facts about the learner that the tutor and the examiner share across conversations.",
-  "status": "accepted",
   "order": 1,
   "description": "What the examiner notices in a check-in should reach the tutor, and the other way round.",
   "stories": [

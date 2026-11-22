@@ -2,83 +2,15 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Picture, scene and story lessons",
   "summary": "Drills built on drawings: a picture per word, one illustrated scene, or a story told in panels.",
-  "status": "accepted",
+  "deprecation": {
+    "reason": "Split into one part per lesson type, each with the requirements of its type.",
+    "replacedBy": [
+      "lessons/drills/pictures",
+      "lessons/drills/scene",
+      "lessons/drills/story"
+    ],
+    "date": "2026-11-21"
+  },
   "order": 2,
-  "description": "Lessons built on drawings, for what is learnt faster from a picture than from a translation. The drawings are made by an image model and kept.",
-  "stories": [
-    {
-      "id": "US-PIC-1",
-      "as": "a learner of everyday words",
-      "want": "to learn them from pictures instead of translations",
-      "soThat": "the word attaches to the thing",
-      "requirements": [
-        "#PIC-1",
-        "#PIC-3",
-        "#PIC-6"
-      ]
-    }
-  ],
-  "requirements": [
-    {
-      "id": "PIC-1",
-      "text": "In a picture lesson each word is drawn once and the drawing is kept; the learner sees the picture and picks the word, and sees the word and picks the picture."
-    },
-    {
-      "id": "PIC-2",
-      "text": "A word's picture is stored as a JPEG at most `picture.word-side` on a side."
-    },
-    {
-      "id": "PIC-3",
-      "text": "A scene lesson has 6 to 10 things in one picture and at most 6 sentences saying where something is."
-    },
-    {
-      "id": "PIC-4",
-      "text": "Where a thing is in a scene uses only the prepositions in `scene.prepositions`."
-    },
-    {
-      "id": "PIC-5",
-      "text": "After a scene is drawn, a vision model locates each thing in it; a scene is ready only when at least 5 things are found."
-    },
-    {
-      "id": "PIC-6",
-      "text": "A story lesson has 4 to 8 panels, 1 to 3 sentences under each picture and 1 to 4 characters."
-    },
-    {
-      "id": "PIC-7",
-      "text": "A drawing that was not finished when the app closed is resumed the next time it starts, by the device that started it."
-    },
-    {
-      "id": "PIC-8",
-      "text": "A scene or story whose drawing failed says so on its page and can be tried again; a picture lesson offers to draw the pictures still missing."
-    }
-  ],
-  "values": [
-    {
-      "id": "picture.word-side",
-      "type": "dimension",
-      "value": "512px",
-      "description": "The longest side of a word's stored picture."
-    },
-    {
-      "id": "scene.prepositions",
-      "type": "list",
-      "value": [
-        "pod",
-        "na",
-        "nad",
-        "obok",
-        "przy",
-        "w"
-      ],
-      "description": "The prepositions a scene's sentences use to say where something is."
-    }
-  ],
-  "related": [
-    "lessons/drills",
-    "tutor/models#AI-6",
-    "data#DATA-3",
-    "lessons/drills/pictures",
-    "lessons/drills/scene",
-    "lessons/drills/story"
-  ]
+  "description": "Lessons built on drawings, for what is learnt faster from a picture than from a translation. The drawings are made by an image model and kept."
 }

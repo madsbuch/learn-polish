@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Typing",
   "summary": "Every word written from its meaning.",
-  "status": "accepted",
   "order": 5,
   "description": "For words that are known but need recalling, not just recognising.",
   "requirements": [

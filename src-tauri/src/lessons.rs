@@ -605,7 +605,7 @@ pub fn mastery_gain(grade: Grade, passed_before: bool, elapsed: i64) -> i64 {
 /// Whether a lesson is mastered: passed, with full mastery points, and —
 /// for a type that asks it (writing) — done without help (see examiner's
 /// support levels).
-// Spec: MAST-8, MAST-9
+// Spec: MAST-8, CONV-10
 pub fn is_mastered(passed: bool, mastery: i64, lesson_type: &str, support_level: i64) -> bool {
     let unaided = crate::lesson_types::get(lesson_type).is_ok_and(|t| t.unaided_to_master);
     passed && mastery >= MASTERY_FULL && (!unaided || support_level >= 3)

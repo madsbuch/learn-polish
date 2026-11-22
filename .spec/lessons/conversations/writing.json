@@ -2,9 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Writing",
   "summary": "A situation written out with a partner who understands only the language learnt.",
-  "status": "accepted",
   "order": 3,
   "description": "Getting a point across in writing, in a situation, with help that steps back as the learner gets better.",
+  "stories": [
+    {
+      "id": "US-CONV-2",
+      "as": "a learner who needs to write Polish in real situations",
+      "want": "to play a situation out with a partner who only understands Polish",
+      "soThat": "I find out whether I can get my point across",
+      "requirements": [
+        "#CONV-6",
+        "#CONV-7",
+        "#CONV-9"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "WRT-1",
@@ -21,14 +33,29 @@
     {
       "id": "WRT-4",
       "text": "A mastered writing lesson's help no longer changes."
+    },
+    {
+      "id": "CONV-6",
+      "text": "A writing lesson is a situation with goals; the partner writes only Polish and answers anything it does not understand by saying so in Polish."
+    },
+    {
+      "id": "CONV-7",
+      "text": "A writing conversation ends as soon as every goal has been got across, or when the learner ends it."
+    },
+    {
+      "id": "CONV-8",
+      "text": "The writing partner has its own model setting and uses the tutor's model when none is chosen."
+    },
+    {
+      "id": "CONV-9",
+      "text": "A writing lesson gives less help after each pass and more after a fail; a partial leaves the help as it is."
+    },
+    {
+      "id": "CONV-10",
+      "text": "A writing lesson is mastered only once it has been passed without help."
     }
   ],
   "related": [
-    "lessons/conversations#CONV-6",
-    "lessons/conversations#CONV-7",
-    "lessons/conversations#CONV-8",
-    "lessons/conversations#CONV-9",
-    "lessons/conversations#CONV-10",
-    "lessons/conversations#CONV-12"
+    "tutor/models"
   ]
 }

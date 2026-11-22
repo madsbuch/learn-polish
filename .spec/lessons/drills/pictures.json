@@ -2,9 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Pictures",
   "summary": "Everyday objects learnt from a drawing of each instead of a translation.",
-  "status": "accepted",
   "order": 2,
   "description": "For concrete things, the word attaches to the thing faster from a picture than from English.",
+  "stories": [
+    {
+      "id": "US-PIC-1",
+      "as": "a learner of everyday words",
+      "want": "to learn them from pictures instead of translations",
+      "soThat": "the word attaches to the thing",
+      "requirements": [
+        "#PIC-1",
+        "#PIC-3",
+        "#PIC-6"
+      ]
+    }
+  ],
   "requirements": [
     {
       "id": "PICT-1",
@@ -24,14 +36,28 @@
     },
     {
       "id": "PICT-5",
-      "text": "A picture lesson ends with a memory round matching pictures with their words, when at least four pictured words differ."
+      "text": "A picture lesson ends with a memory round matching pictures with their words, when at least `memory.pairs-min` pictured words differ."
+    },
+    {
+      "id": "PIC-1",
+      "text": "In a picture lesson each word is drawn once and the drawing is kept; the learner sees the picture and picks the word, and sees the word and picks the picture."
+    },
+    {
+      "id": "PIC-2",
+      "text": "A word's picture is stored as a JPEG at most `picture.word-side` on a side."
+    }
+  ],
+  "values": [
+    {
+      "id": "picture.word-side",
+      "type": "dimension",
+      "value": "512px",
+      "description": "The longest side of a word's stored picture."
     }
   ],
   "related": [
-    "lessons/pictures#PIC-1",
-    "lessons/pictures#PIC-2",
-    "lessons/pictures#PIC-7",
-    "lessons/pictures#PIC-8",
-    "tutor/models#AI-6"
+    "lessons/drills/memory",
+    "tutor/models#AI-6",
+    "data#DATA-3"
   ]
 }

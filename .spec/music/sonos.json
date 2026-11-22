@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Playing on a Sonos speaker",
   "summary": "Moves the queue to a Sonos room on the same Wi-Fi, with no Sonos account.",
-  "status": "accepted",
   "order": 3,
   "description": "For learning at the kitchen speaker. The app serves its stored songs on the local network and loads them into the speaker's queue.",
   "stories": [

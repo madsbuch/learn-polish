@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Podcasts",
   "summary": "Spoken episodes written from Wikipedia or today's news and read aloud in the speech voices.",
-  "status": "accepted",
   "order": 2,
   "description": "Listening practice on a subject the learner cares about. An episode is stored as a song, so the player, playlists, casting and listening lessons work on it.",
   "stories": [

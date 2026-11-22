@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Memory cards",
   "summary": "Turn cards to match each word with its meaning.",
-  "status": "accepted",
   "order": 6,
   "description": "A light game over words already met.",
   "requirements": [
@@ -12,11 +11,27 @@
     },
     {
       "id": "MCARD-2",
-      "text": "A memory game has at most six pairs; a lesson with more words plays several games."
+      "text": "A memory game has at most `memory.pairs-max` pairs; a lesson with more words plays several games."
     },
     {
       "id": "MCARD-3",
-      "text": "A group of fewer than four pairs is not played."
+      "text": "A group of fewer than `memory.pairs-min` pairs is not played."
+    }
+  ],
+  "values": [
+    {
+      "id": "memory.pairs-min",
+      "type": "number",
+      "value": 4,
+      "unit": "pairs",
+      "description": "The fewest pairs a memory game or round is played with."
+    },
+    {
+      "id": "memory.pairs-max",
+      "type": "number",
+      "value": 6,
+      "unit": "pairs",
+      "description": "The most pairs in one memory game."
     }
   ],
   "related": [

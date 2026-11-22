@@ -1,8 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Wikipedia sources",
-  "summary": "Study lessons built on Wikipedia articles, kept for offline reading and checked again every three months.",
-  "status": "accepted",
+  "summary": "Study lessons built on Wikipedia articles, kept for offline reading and checked again against their sources.",
   "order": 7,
   "description": "A lesson about a city, a custom or a piece of history should be right, and stay right as its source changes.",
   "stories": [
@@ -61,7 +60,7 @@
     }
   ],
   "related": [
-    "lessons/conversations#CONV-11",
+    "lessons/conversations/study#CONV-11",
     "tutor",
     "music/podcasts"
   ]

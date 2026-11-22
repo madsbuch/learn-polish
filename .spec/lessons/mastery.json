@@ -1,8 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Mastery",
-  "summary": "Points earned by passing, 100 to master, with a ledger of every change.",
-  "status": "accepted",
+  "summary": "Points earned by passing, up to mastery, with a ledger of every change.",
   "order": 6,
   "description": "Mastery says a lesson is known for good. It is earned by passing, never by waiting, and passes further apart are better evidence.",
   "stories": [
@@ -63,7 +62,14 @@
     },
     {
       "id": "MAST-9",
-      "text": "A writing lesson is mastered only when it has also been passed without help."
+      "text": "A writing lesson is mastered only when it has also been passed without help.",
+      "deprecation": {
+        "reason": "It said what CONV-10 says; the rule is kept once, with writing lessons.",
+        "replacedBy": [
+          "#CONV-10"
+        ],
+        "date": "2026-11-21"
+      }
     },
     {
       "id": "MAST-10",
