@@ -19,7 +19,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
-import type { ArticleView, LessonId, SourceId, WikiSource } from "../lib/types";
+import type { ArticleView, LessonId, SourceId, WikiSource } from "../lib/schemas";
 import { ExternalIcon } from "./icons";
 import { Markdown } from "./Markdown";
 import { WikiArticle } from "./WikiArticle";

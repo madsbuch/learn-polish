@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Banner, Button, Card, Choice, ChoiceRow, Field, Screen, Section, Segmented, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { sectionsToText, textToSections } from "../lib/lyrics";
-import type { Settings, SongDraft, SongLength } from "../lib/types";
+import type { Settings, SongDraft, SongLength } from "../lib/schemas";
 
 // ------------------------------------------------------------------ composer
 

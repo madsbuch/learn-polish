@@ -1,4 +1,4 @@
-import type { FileId } from "./types";
+import type { FileId } from "./schemas";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 /**

@@ -54,7 +54,7 @@ Check-in period, minutes per lesson and mastery points come with every type.
 2. **New exercises, if any:** a function in `session.rs` (or the type's
    module) that makes the `Exercise`; its XP in `stats::xp_for_answer`; if it
    is only read, its kind in `practice::READING_KINDS`. On the screens: add
-   the kind to `ExerciseKind` in `src/lib/types.ts`, a module in
+   the kind to `ExerciseKind` in `src/lib/schemas.ts`, a module in
    `src/exercises/`, and list it in `src/exercises/index.ts`.
 3. **A new icon or page section, if any:** an entry in `TYPE_ICONS`
    (`LessonRow.tsx`), a `case` in `section(name)` (`LessonPage.tsx`).

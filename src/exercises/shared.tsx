@@ -1,4 +1,4 @@
-import type { Exercise } from "../lib/types";
+import type { Exercise } from "../lib/schemas";
 import { Field } from "../design";
 import { fileUrl } from "../lib/files";
 import type { AnswerState, ExerciseProps } from "./types";

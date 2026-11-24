@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, Stack, Text } from "../design";
 import { fileUrl } from "../lib/files";
-import type { Exercise, FileId, Pair } from "../lib/types";
+import type { Exercise, FileId, Pair } from "../lib/schemas";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playMatch, playWrong } from "../lib/sounds";
 

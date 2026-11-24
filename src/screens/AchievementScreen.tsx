@@ -1,6 +1,6 @@
 import { Badge, Card, CountUp, Inline, Progress as Meter, Screen, Section, Stack, Text } from "../design";
 import { achievementToGo, unlockedOn } from "../lib/achievements";
-import type { Achievement } from "../lib/types";
+import type { Achievement } from "../lib/schemas";
 
 /**
  * One achievement's own page: its badge, what it is about, exactly what

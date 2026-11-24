@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 
 import { api } from "./api";
 import { onAppResumed, onSyncChanged } from "./events";
-import type { SyncHeld } from "./types";
+import type { SyncHeld } from "./schemas";
 
 /** A burst of incoming batches reloads the screens once, this long after the last. */
 const RELOAD_DEBOUNCE_MS = 1200;

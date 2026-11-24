@@ -6,7 +6,7 @@ import { api, errorMessage } from "../lib/api";
 import { hapticRight, hapticWrong } from "../lib/haptics";
 import { playCorrect, playWrong } from "../lib/sounds";
 import { speakQuietly } from "../lib/speech";
-import type { DictationChecked, DictationItem, SoundRound } from "../lib/types";
+import type { DictationChecked, DictationItem, SoundRound } from "../lib/schemas";
 import { DictationDiff, ListenButtons, useSayOnce } from "./Listen";
 import { SpeakPanel, type Attempt } from "./Speak";
 import { SpeakButton } from "./ui";

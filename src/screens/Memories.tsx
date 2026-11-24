@@ -23,7 +23,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { useSyncReload } from "../lib/sync";
-import type { Memory, MemoryCategory, MemoryId, MemoryOverview } from "../lib/types";
+import type { Memory, MemoryCategory, MemoryId, MemoryOverview } from "../lib/schemas";
 
 const CATEGORIES: { value: MemoryCategory; title: string; label: string }[] = [
   { value: "goal", title: "Goals", label: "Goal" },

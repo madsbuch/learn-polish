@@ -1,6 +1,6 @@
 import { SentenceTiles, tileText } from "../components/SentenceTiles";
 import { Card, Text } from "../design";
-import type { Exercise, ExerciseKind } from "../lib/types";
+import type { Exercise, ExerciseKind } from "../lib/schemas";
 import { defineExercise, type AnswerState, type ExerciseProps } from "./types";
 
 /** The sentence as built so far: each tile as it reads now (its ending, if picked), joined by spaces. */

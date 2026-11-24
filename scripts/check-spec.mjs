@@ -19,15 +19,22 @@
 // - what is dropped carries a `deprecation` that says why; in a deprecated
 //   item everything is dropped with it;
 // - every figure is there;
+// - a shared part copied from another repository (`imports` in the root) is
+//   unchanged: git's id for its folder is the import's `tree`; every story,
+//   requirement and value id in it starts with its permanent id and a dot,
+//   and no id of the product's own does; what the import sets differently or
+//   waives is in the part;
 // - every `Spec: ID` comment in the code cites a requirement the spec has and
-//   has not deprecated;
+//   has neither deprecated nor waived;
 // - no requirement, story, summary or description says a word a term rules
 //   out: the "Not: a, b." that ends a `term.*` value's description; nor does
 //   a string or JSX text in the screens (src/**/*.tsx).
 //
 // Runs in `bun run build`. An id never changes and is never reused.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,7 +43,7 @@ import ts from "typescript";
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const root = join(repo, ".spec");
 
-const ITEM_KEYS = ["$schema", "title", "summary", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related"];
+const ITEM_KEYS = ["$schema", "title", "summary", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related", "shared", "imports"];
 const STORY_KEYS = ["id", "as", "want", "soThat", "requirements", "related", "deprecation"];
 const REQUIREMENT_KEYS = ["id", "text", "level", "version", "history", "related", "deprecation"];
 const HISTORY_KEYS = ["version", "text", "level", "reason", "date"];
@@ -44,6 +51,13 @@ const VALUE_KEYS = ["id", "type", "value", "description", "related", "deprecatio
 const VALUE_HISTORY_KEYS = ["value", "dark", "reason", "date"];
 const DEPRECATION_KEYS = ["reason", "replacedBy", "date"];
 const FIGURE_KEYS = ["src", "alt", "caption"];
+const SHARED_KEYS = ["id", "logo"];
+const IMPORT_KEYS = ["id", "at", "from", "commit", "tree", "order", "values", "waived"];
+const IMPORT_VALUE_KEYS = ["id", "value", "dark", "reason"];
+const WAIVED_KEYS = ["ref", "reason"];
+const SHARED_ID = /^[a-z][a-z0-9-]{1,30}$/;
+const AT = /^[^/.](?:.*[^/])?$/;
+const SHA = /^[0-9a-f]{40}$/;
 const LEVELS = ["must", "should", "may"];
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -62,6 +76,10 @@ const VALUE_TYPES = {
 const CODE = ["src", "src-tauri/src", "src-tauri/plugins", "src-tauri/android", "scripts", "tests"];
 const SKIPPED = new Set(["node_modules", "target", "build", "dist", "gen", ".gradle"]);
 const SOURCE = new Set([".rs", ".ts", ".tsx", ".mjs", ".js", ".css", ".kt", ".kts", ".sql"]);
+/** Files outside those folders that cite the spec too: the crates' manifests and the root's configuration. */
+const ROOT_FILES = ["eslint.config.js", "bunfig.toml"];
+/** JSON files are read by `require`: JSON.parse is the app's boundary alone (src/lib/schemas.ts). */
+const readJson = createRequire(import.meta.url);
 
 function files(dir, wanted) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -77,9 +95,12 @@ function idOf(path) {
 
 const problems = [];
 const items = new Map();
+/** The items that are a folder's own (its index.json). */
+const folders = new Set();
 for (const path of files(root, (name) => name.endsWith(".json"))) {
+  if (path.endsWith("index.json")) folders.add(idOf(path));
   try {
-    items.set(idOf(path), JSON.parse(readFileSync(path, "utf8")));
+    items.set(idOf(path), readJson(path));
   } catch (error) {
     problems.push(`${relative(root, path)}: not valid JSON (${error.message})`);
   }
@@ -259,6 +280,123 @@ for (const [id, item] of items) {
   }
 }
 
+// Shared parts. Only a top-level folder's index.json is one, and only the
+// root imports them.
+/** Git's id for a folder as it is on disk: what `git rev-parse HEAD:<folder>` says once it is committed. */
+function gitTree(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true }).map((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return { name: entry.name, key: `${entry.name}/`, mode: "40000", id: gitTree(path) };
+    const bytes = readFileSync(path);
+    const blob = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest();
+    return { name: entry.name, key: entry.name, mode: (statSync(path).mode & 0o111) !== 0 ? "100755" : "100644", id: blob };
+  });
+  entries.sort((a, b) => Buffer.compare(Buffer.from(a.key), Buffer.from(b.key)));
+  const body = Buffer.concat(entries.map(({ mode, name, id }) => Buffer.concat([Buffer.from(`${mode} ${name}\0`), id])));
+  return createHash("sha1").update(`tree ${body.length}\0`).update(body).digest();
+}
+
+/** The items in a shared part's folder. */
+const inPart = (at, id) => id === at || id.startsWith(`${at}/`);
+const sharedFolders = new Map();
+for (const [id, item] of items) {
+  if (!isObject(item) || item.shared === undefined) continue;
+  const where = `${name(id)} shared`;
+  if (!isObject(item.shared)) {
+    problems.push(`${where}: not an object`);
+    continue;
+  }
+  unknownKeys(where, item.shared, SHARED_KEYS);
+  if (id === "" || id.includes("/") || !folders.has(id)) problems.push(`${where}: only a top-level folder's index.json is a shared part`);
+  if (typeof item.shared.id !== "string" || !SHARED_ID.test(item.shared.id)) problems.push(`${where}: "${item.shared.id}" is not a permanent id`);
+  if (item.shared.logo !== undefined && (!isText(item.shared.logo) || item.shared.logo.startsWith("/") || !existsSync(join(root, item.shared.logo)))) {
+    problems.push(`${where}: logo "${item.shared.logo}" is not in .spec`);
+  }
+  sharedFolders.set(id, item.shared.id);
+}
+for (const [id, item] of items) {
+  if (isObject(item) && id !== "" && item.imports !== undefined) problems.push(`${name(id)}: only the root imports shared parts`);
+}
+
+// Ids of the parts' requirements, stories and parts that the product waives:
+// the code doesn't cite them.
+const waivedIds = new Set();
+const rootItem = items.get("");
+const imports = isObject(rootItem) && Array.isArray(rootItem.imports) ? rootItem.imports : [];
+if (isObject(rootItem) && rootItem.imports !== undefined && !Array.isArray(rootItem.imports)) problems.push(`(root): "imports" is not a list`);
+const imported = new Set();
+for (const part of imports) {
+  if (!isObject(part)) {
+    problems.push(`(root): an entry of "imports" is not an object`);
+    continue;
+  }
+  const where = `(root) imports ${part.id}`;
+  unknownKeys(where, part, IMPORT_KEYS);
+  if (typeof part.id !== "string" || !SHARED_ID.test(part.id)) problems.push(`${where}: "${part.id}" is not a permanent id`);
+  if (!isText(part.from)) problems.push(`${where}: says no repository it is "from"`);
+  if (typeof part.commit !== "string" || !SHA.test(part.commit)) problems.push(`${where}: "commit" is not a commit id`);
+  if (typeof part.tree !== "string" || !SHA.test(part.tree)) problems.push(`${where}: "tree" is not a tree id`);
+  if (part.order !== undefined && typeof part.order !== "number") problems.push(`${where}: "order" is not a number`);
+  if (typeof part.at !== "string" || !AT.test(part.at) || !existsSync(join(root, part.at))) {
+    problems.push(`${where}: its folder "${part.at}" is not in .spec`);
+    continue;
+  }
+  if (imported.has(part.at)) problems.push(`${where}: "${part.at}" is imported twice`);
+  imported.add(part.at);
+  if (sharedFolders.get(part.at) !== part.id) problems.push(`${where}: ${part.at}/index.json is not the shared part "${part.id}"`);
+  // The copy is the part as it was at that commit: nobody edits it here.
+  const tree = gitTree(join(root, part.at)).toString("hex");
+  if (tree !== part.tree) problems.push(`${where}: the copy in ${part.at} has been changed (its tree is ${tree}, not ${part.tree}); change the part where it comes from and copy it again`);
+
+  // Every story, requirement and value id in the part is in its namespace.
+  const values = new Map();
+  for (const [id, item] of items) {
+    if (!inPart(part.at, id) || !isObject(item)) continue;
+    for (const thing of [...list(item, "stories"), ...list(item, "requirements"), ...list(item, "values")]) {
+      if (typeof thing.id === "string" && !thing.id.startsWith(`${part.id}.`)) problems.push(`${name(id)}#${thing.id}: an id in the shared part "${part.id}" starts with "${part.id}."`);
+    }
+    for (const value of list(item, "values")) values.set(value.id, value);
+  }
+
+  if (part.values !== undefined && !Array.isArray(part.values)) problems.push(`${where}: "values" is not a list`);
+  for (const setting of Array.isArray(part.values) ? part.values : []) {
+    if (!isObject(setting)) continue;
+    unknownKeys(`${where} value ${setting.id}`, setting, IMPORT_VALUE_KEYS);
+    const value = values.get(setting.id);
+    if (!value) problems.push(`${where}: sets ${setting.id}, which is not a value of the part`);
+    else if (VALUE_TYPES[value.type] && !VALUE_TYPES[value.type].form(setting.value)) problems.push(`${where}: ${JSON.stringify(setting.value)} is not a ${value.type} for ${setting.id}`);
+    if (!isText(setting.reason)) problems.push(`${where}: sets ${setting.id} without a reason`);
+  }
+
+  if (part.waived !== undefined && !Array.isArray(part.waived)) problems.push(`${where}: "waived" is not a list`);
+  for (const waiver of Array.isArray(part.waived) ? part.waived : []) {
+    if (!isObject(waiver)) continue;
+    unknownKeys(`${where} waived ${waiver.ref}`, waiver, WAIVED_KEYS);
+    if (!isText(waiver.reason)) problems.push(`${where}: waives ${waiver.ref} without a reason`);
+    const ref = String(waiver.ref);
+    if (!ref.includes("#") && inPart(part.at, ref) && items.has(ref)) {
+      for (const [id, item] of items) {
+        if (inPart(ref, id) && isObject(item)) for (const requirement of list(item, "requirements")) waivedIds.add(requirement.id);
+      }
+      continue;
+    }
+    const { ok, code } = resolve(ref);
+    if (!ok || !code.startsWith(`${part.id}.`)) problems.push(`${where}: waives ${ref}, which is not in the part`);
+    else waivedIds.add(code);
+  }
+}
+for (const [at, id] of sharedFolders) {
+  if (!imported.has(at)) problems.push(`${at}: a shared part ("${id}") that the root does not import`);
+}
+// No id of the product's own is in a shared part's namespace.
+const namespaces = [...sharedFolders.values()].map((id) => `${id}.`);
+for (const [id, item] of items) {
+  if (!isObject(item) || [...sharedFolders.keys()].some((at) => inPart(at, id))) continue;
+  for (const thing of [...list(item, "stories"), ...list(item, "requirements"), ...list(item, "values")]) {
+    if (typeof thing.id === "string" && namespaces.some((prefix) => thing.id.startsWith(prefix))) problems.push(`${name(id)}#${thing.id}: the id is in a shared part's namespace`);
+  }
+}
+
 // Spec: TERM-3
 // The words the terms rule out, and every text the spec says them in: what
 // is current, not a history or a deprecation's record. Backticked names and
@@ -325,9 +463,13 @@ for (const path of existsSync(join(repo, "src")) ? files(join(repo, "src"), (fil
 // The code cites the spec: "Spec: RET-1" or "Spec: RET-1, RET-2@2", alone
 // in a comment. Every id cited has to be a requirement the spec still wants.
 let citations = 0;
-for (const folder of CODE) {
-  if (!existsSync(join(repo, folder))) continue;
-  for (const path of files(join(repo, folder), (name) => SOURCE.has(extname(name)))) {
+const cited = [
+  ...CODE.filter((folder) => existsSync(join(repo, folder))).flatMap((folder) => files(join(repo, folder), (name) => SOURCE.has(extname(name)))),
+  ...files(join(repo, "src-tauri"), (name) => name === "Cargo.toml"),
+  ...ROOT_FILES.map((file) => join(repo, file)).filter((path) => existsSync(path)),
+];
+{
+  for (const path of new Set(cited)) {
     const lines = readFileSync(path, "utf8").split("\n");
     lines.forEach((line, index) => {
       const cited = line.match(/^\s*(?:\/\/|\/\*|\*|#|--)\s*Spec:\s*(.+?)\s*(?:\*\/)?\s*$/);
@@ -338,6 +480,7 @@ for (const folder of CODE) {
         citations += 1;
         if (!ok || !requirements.has(code)) problems.push(`${where}: cites ${reference.trim()}, which is not a requirement`);
         else if (deprecatedIds.has(code)) problems.push(`${where}: cites ${code}, which is deprecated`);
+        else if (waivedIds.has(code)) problems.push(`${where}: cites ${code}, which the product waives`);
       }
     });
   }

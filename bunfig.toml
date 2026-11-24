@@ -1,0 +1,6 @@
+# Spec: keel.ENG-3
+# A package version is installed only once it has been published for
+# `keel.deps-minimum-age` (14 days, in seconds), so a compromised release is
+# usually found and pulled before it reaches the app.
+[install]
+minimumReleaseAge = 1209600

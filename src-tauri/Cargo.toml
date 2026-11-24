@@ -96,6 +96,7 @@ strip = true
 
 # No unsafe code, and no `as` casts (they truncate or wrap silently): use
 # From/TryFrom, or the checked helpers in src/convert.rs.
+# Spec: keel.TYP-5, REL-9
 [lints.rust]
 unsafe_code = "forbid"
 

@@ -1,5 +1,5 @@
 import { lessonType } from "./lessonTypes";
-import type { Lesson, Complexity } from "./types";
+import type { Lesson, Complexity } from "./schemas";
 
 /** About how many minutes a lesson takes: its type's, by complexity (lesson_types::minutes). */
 export function lessonMinutes(lesson: Pick<Lesson, "type" | "engine" | "complexity">): number {

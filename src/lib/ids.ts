@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { api } from "./api";
-import type { CourseId, LessonId, ResolvedId, SongId } from "./types";
-import { CourseIdSchema, LessonIdSchema, SongIdSchema } from "./types";
+import type { CourseId, LessonId, ResolvedId, SongId } from "./schemas";
+import { CourseIdSchema, LessonIdSchema, SongIdSchema } from "./schemas";
 
 /**
  * Tagged ids in text (DATA.md): a prefix, an underscore, 26 base32

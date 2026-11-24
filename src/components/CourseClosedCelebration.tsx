@@ -1,6 +1,6 @@
 import { Button, Confetti, CountUp, Stack, Text } from "../design";
 import { useBackLayer } from "../lib/navigation";
-import type { CourseClosed } from "../lib/types";
+import type { CourseClosed } from "../lib/schemas";
 
 /**
  * Closing a mastered course: the learner's own celebration. A trophy rises,

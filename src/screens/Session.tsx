@@ -9,12 +9,12 @@ import { api, errorMessage } from "../lib/api";
 import { useBackLayer } from "../lib/navigation";
 import { beginCard, endCard, flushLog, logEvent, noteInput, noteReveal, setPracticeContext, takeSignals } from "../lib/learnLog";
 import { speakQuietly } from "../lib/speech";
-import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/types";
+import type { AnswerResult, LessonFinished, Exercise, SessionPlan } from "../lib/schemas";
 import type { Miss } from "./SessionSummary";
 import { hapticAlmost, hapticRight, hapticWrong } from "../lib/haptics";
 import { playAlmost, playCorrect, playWrong } from "../lib/sounds";
 import { exerciseModule, type AnswerState, type ExerciseProps } from "../exercises";
-import { WordIdSchema } from "../lib/types";
+import { WordIdSchema } from "../lib/schemas";
 
 /*
  * The practice session: a shell that steps through the plan's exercises. Each

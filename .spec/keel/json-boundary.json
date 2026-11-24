@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "JSON boundary",
+  "summary": "All untrusted JSON is parsed through a zod schema.",
+  "order": 2,
+  "description": "Untrusted JSON is SQLite JSON columns, model output, external API responses, JSON in the settings table, and whatever Tauri commands and plugins return.",
+  "requirements": [
+    {
+      "id": "keel.JSN-1",
+      "text": "`JSON.parse` is called only inside `src/lib/schemas.ts`."
+    },
+    {
+      "id": "keel.JSN-2",
+      "text": "Untrusted JSON and the results of Tauri commands are parsed through a zod schema in `src/lib/schemas.ts`, never cast.",
+      "related": [
+        "#keel.TYP-1"
+      ]
+    },
+    {
+      "id": "keel.JSN-3",
+      "text": "Schemas for model and API output coerce and default, so a sloppy answer degrades instead of failing."
+    }
+  ]
+}

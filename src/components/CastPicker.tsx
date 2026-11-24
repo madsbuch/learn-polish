@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Banner, Button, Inline, List, ListEmpty, ListItem, Sheet, Spinner, Stack, Text } from "../design";
 import { errorMessage } from "../lib/api";
 import { castTo, discoverSpeakers, type QueueItem } from "../lib/player";
-import type { CastDevice } from "../lib/types";
+import type { CastDevice } from "../lib/schemas";
 import { SpeakerIcon } from "./icons";
 
 /**

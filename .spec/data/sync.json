@@ -42,7 +42,10 @@
     },
     {
       "id": "SYNC-4",
-      "text": "On Android the app also syncs in the background about every `sync.background-every`, on unmetered networks only."
+      "text": "On Android the app also syncs in the background about every `sync.background-every`, on unmetered networks only.",
+      "related": [
+        "#keel.TYP-5"
+      ]
     },
     {
       "id": "SYNC-5",

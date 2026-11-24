@@ -4,11 +4,10 @@ import { Button, Inline, Section, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { toast } from "../lib/toast";
-import type { LessonDetail, WordId } from "../lib/types";
+import type { LessonDetail, WordId } from "../lib/schemas";
 import { SpeakButton } from "./ui";
 import { onEvent } from "../lib/events";
-import { z } from "zod";
-import { LessonIdSchema } from "../lib/types";
+import { LessonChangedSchema } from "../lib/schemas";
 
 /**
  * A picture lesson's pictures, one per word. Each can be drawn again or
@@ -24,7 +23,7 @@ export function WordPictures({ lesson, onChanged }: { lesson: LessonDetail; onCh
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
-    const off = onEvent(z.object({ lessonId: LessonIdSchema }), "pictures://word", (event) => {
+    const off = onEvent(LessonChangedSchema, "pictures://word", (event) => {
       if (event.payload.lessonId === lesson.id) changed.current();
     });
     return () => {

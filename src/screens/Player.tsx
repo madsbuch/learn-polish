@@ -37,7 +37,7 @@ import {
   usePlayer,
 } from "../lib/player";
 import { toast } from "../lib/toast";
-import type { SongId } from "../lib/types";
+import type { SongId } from "../lib/schemas";
 
 /**
  * The player, on its own screen: what is playing, the controls, the lyrics

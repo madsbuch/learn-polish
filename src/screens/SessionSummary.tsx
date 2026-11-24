@@ -32,7 +32,7 @@ import {
   type Grade,
   type Tone,
 } from "../lib/summary";
-import type { Impact, MasteryEntry, SessionResult } from "../lib/types";
+import type { Impact, MasteryEntry, SessionResult } from "../lib/schemas";
 
 /** A card missed in a drill, or answered almost right. */
 export interface Miss {

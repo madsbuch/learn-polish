@@ -60,7 +60,7 @@ A new install creates the version 7 tables directly.
 - **Rust**: `src-tauri/src/ids.rs` — one type per prefix (`LessonId`, …):
   `new()`, `derived(namespace, key)`, parsing that names the kind expected,
   serde as a string, Diesel as `Text`. Every `i64` id becomes its type.
-- **Screens**: ids are strings; `src/lib/types.ts` has a branded schema per
+- **Screens**: ids are strings; `src/lib/schemas.ts` has a branded schema per
   kind (`LessonIdSchema`), so mixing kinds is a type error. Draft keys and
   other local storage keyed by an id follow.
 - **Tutor tools**: every id parameter is a string with its pattern

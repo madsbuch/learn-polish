@@ -93,7 +93,10 @@
     },
     {
       "id": "SHELL-12",
-      "text": "The build fails when a screen breaks the design system's mechanical rules."
+      "text": "The build fails when a screen breaks the design system's mechanical rules.",
+      "related": [
+        "#keel.ENG-2"
+      ]
     },
     {
       "id": "SHELL-13",

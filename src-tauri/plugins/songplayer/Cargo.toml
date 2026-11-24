@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
 
+# Spec: keel.TYP-5
 [lints.rust]
 unsafe_code = "forbid"
 

@@ -36,7 +36,7 @@ import { lessonType } from "../lib/lessonTypes";
 import { useSyncReload } from "../lib/sync";
 import { MasteryPoints } from "../components/MasteryPoints";
 import { CHALLENGE_EXPLAINED, CHALLENGE_LABEL, PERIOD_CHOICES, complexityName, complexityTone, dayToDate, dueLabel, kindName, minutes } from "../lib/lessons";
-import type { LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/types";
+import type { LessonDetail, LessonId, PracticeContext, WikiSource } from "../lib/schemas";
 
 /** Sections that head the page, above its columns: a scene, a story. */
 const HEADERS = ["scene", "story"];

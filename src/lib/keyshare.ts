@@ -11,10 +11,12 @@ import {
   scan,
 } from "@tauri-apps/plugin-barcode-scanner";
 
+import { PermissionStateSchema, PlatformSchema, ScannedSchema } from "./schemas";
+
 /** Phones have the scanner plugin; desktops only show their QR code. */
 export const canScan = (() => {
   try {
-    const os = platform();
+    const os = PlatformSchema.parse(platform());
     return os === "android" || os === "ios";
   } catch {
     return false;
@@ -23,8 +25,8 @@ export const canScan = (() => {
 
 /** Asks for the camera if needed. False when the user said no. */
 export async function cameraAllowed(): Promise<boolean> {
-  if ((await checkPermissions()) === "granted") return true;
-  return (await requestPermissions()) === "granted";
+  if (PermissionStateSchema.parse(await checkPermissions()) === "granted") return true;
+  return PermissionStateSchema.parse(await requestPermissions()) === "granted";
 }
 
 export { openAppSettings };
@@ -37,7 +39,7 @@ export { openAppSettings };
 export async function scanQr(): Promise<string | null> {
   document.documentElement.classList.add("scanning");
   try {
-    const result = await scan({ windowed: true, formats: [Format.QRCode] });
+    const result = ScannedSchema.parse(await scan({ windowed: true, formats: [Format.QRCode] }));
     return result.content;
   } catch (cause) {
     if (String(cause).includes("cancel")) return null;

@@ -5,7 +5,7 @@ import { api, errorMessage } from "../lib/api";
 import { useBackLayer } from "../lib/navigation";
 import { cameraAllowed, canScan, cancelScan, openAppSettings, scanQr } from "../lib/keyshare";
 import { toast } from "../lib/toast";
-import type { Settings } from "../lib/types";
+import type { Settings } from "../lib/schemas";
 import { QrIcon, ScanIcon } from "./icons";
 
 /** Copy the API keys to another device: show them as a QR code, or scan one. */

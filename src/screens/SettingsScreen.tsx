@@ -13,7 +13,7 @@ import {
 import { List, ListItem, Screen, Section, SplitView, Text, useWideLayout } from "../design";
 import { api } from "../lib/api";
 import { useThemePreference } from "../lib/theme";
-import type { Settings } from "../lib/types";
+import type { Settings } from "../lib/schemas";
 import { Devices } from "./Devices";
 import { HowToUse } from "./HowToUse";
 import { Memories } from "./Memories";

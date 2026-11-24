@@ -4,7 +4,7 @@ import { Button, Spinner, Text } from "../design";
 import { fileUrl } from "../lib/files";
 import { hapticTick } from "../lib/haptics";
 import { tokens } from "../lib/singAlong";
-import type { GlossWord, LessonId, StoryPanel } from "../lib/types";
+import type { GlossWord, LessonId, StoryPanel } from "../lib/schemas";
 import { PencilIcon } from "./icons";
 import { SlowButton, SpeakButton } from "./ui";
 import { WordChat } from "./WordChat";

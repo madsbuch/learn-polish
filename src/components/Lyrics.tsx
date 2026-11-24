@@ -1,5 +1,5 @@
 import { sectionLabel } from "../lib/lyrics";
-import type { SongSection } from "../lib/types";
+import type { SongSection } from "../lib/schemas";
 
 /**
  * A song's lyrics: English then Polish in the verses, Polish first in the

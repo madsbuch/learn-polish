@@ -15,7 +15,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { AiModel, BenchRun, FeatureUsage } from "../lib/types";
+import type { AiModel, BenchRun, FeatureUsage } from "../lib/schemas";
 import { StarIcon } from "./icons";
 
 // The catalogue is the same for every picker: fetched once per app run.

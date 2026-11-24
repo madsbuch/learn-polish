@@ -20,7 +20,7 @@ import { achievementProgress, unlockedOnShort } from "../lib/achievements";
 import { logEvent } from "../lib/learnLog";
 import { dayLabel, REPORT_ASK } from "../lib/insights";
 import { useMetOverview, type InsightPage } from "./Insights";
-import type { Achievement, DayPoint, DayStat, Stats } from "../lib/types";
+import type { Achievement, DayPoint, DayStat, Stats } from "../lib/schemas";
 
 /** Weeks in the practice grid. */
 const WEEKS = 18;

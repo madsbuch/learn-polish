@@ -3,7 +3,7 @@
  * while it plays (components/FollowLyrics.tsx). Pure, so the transcript can
  * work them out once per song and redraw cheaply many times a second.
  */
-import type { GlossWord, TimedLine } from "./types";
+import type { GlossWord, TimedLine } from "./schemas";
 
 /** A blank opens this many seconds before its line is sung… */
 export const LEAD_S = 4;

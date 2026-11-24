@@ -28,9 +28,12 @@ import {
   ConversationIdSchema,
   CourseIdSchema,
   HardKindSchema,
+  LastShownSchema,
   LessonIdSchema,
+  parseJson,
   PlaylistIdSchema,
   QuickGameKindSchema,
+  RawPresetSchema,
   SongIdSchema,
   SourceIdSchema,
   WordIdSchema,
@@ -40,10 +43,11 @@ import {
   type LessonId,
   type PlaylistId,
   type QuickGameKind,
+  type RawPreset,
   type SongId,
   type SourceId,
   type WordId,
-} from "./types";
+} from "./schemas";
 
 // ------------------------------------------------------------ the addresses
 
@@ -80,27 +84,7 @@ const SETTINGS_WORD: Record<SettingsPage, string> = {
 export const CourseSectionSchema = z.enum(["lessons", "words", "sentences"]);
 export type CourseSection = z.infer<typeof CourseSectionSchema>;
 
-/** The filters a raw-log page opens with (a drill-down presets some). */
-export const RawPresetSchema = z
-  .object({
-    fromDay: z.number().nullable().optional(),
-    toDay: z.number().nullable().optional(),
-    courseId: CourseIdSchema.nullable().optional(),
-    lessonId: LessonIdSchema.nullable().optional(),
-    itemId: z.string().nullable().optional(),
-    role: z.string().nullable().optional(),
-    search: z.string().nullable().optional(),
-    exercise: z.string().nullable().optional(),
-    mistake: z.string().nullable().optional(),
-    topic: z.string().nullable().optional(),
-    grammar: z.string().nullable().optional(),
-    correct: z.boolean().nullable().optional(),
-    source: z.string().nullable().optional(),
-    kind: z.enum(["answers", "events"]).nullable().optional(),
-    context: z.object({ groupBy: z.string(), key: z.string() }).nullable().optional(),
-  })
-  .strict();
-export type RawPreset = z.infer<typeof RawPresetSchema>;
+export type { RawPreset };
 
 /** A "What you've met" or Insights page, under Progress. */
 export type InsightPage =
@@ -296,13 +280,7 @@ function parseInsight(token: string, next: string | undefined): Parsed | null {
       const value = decode(part.slice(2));
       if (value === null) return null;
       if (part.startsWith("f=")) {
-        let json: unknown;
-        try {
-          json = JSON.parse(value);
-        } catch {
-          return null;
-        }
-        const parsed = RawPresetSchema.safeParse(json);
+        const parsed = parseJson(RawPresetSchema, value);
         if (!parsed.success) return null;
         preset = parsed.data;
       } else if (part.startsWith("t=")) title = value;
@@ -847,13 +825,11 @@ function back(): void {
   if (layers.length > 0 || entries.length > 1) window.history.back();
 }
 
-const LastSchema = z.object({ path: z.string(), at: z.number() });
-
 function lastShown(now: number): Address | null {
   try {
     const stored = localStorage.getItem(LAST_KEY);
     if (!stored) return null;
-    const last = LastSchema.safeParse(JSON.parse(stored));
+    const last = parseJson(LastShownSchema, stored);
     if (!last.success || now - last.data.at > RESUME_WITHIN_MS) return null;
     return forResume(parseLenient(last.data.path).address);
   } catch {

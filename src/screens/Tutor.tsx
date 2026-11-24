@@ -30,9 +30,9 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { useTutorJob } from "../lib/tutorJob";
 import { ensurePermission } from "../lib/notifications";
-import type { ChatMessage, Conversation, ConversationId, CourseId, LessonId, SongId, TutorAction } from "../lib/types";
+import type { ChatMessage, Conversation, ConversationId, CourseId, LessonId, SongId, TutorAction } from "../lib/schemas";
 import { onEvent } from "../lib/events";
-import { TutorDoneSchema } from "../lib/types";
+import { TutorDoneSchema } from "../lib/schemas";
 import { useSyncReload } from "../lib/sync";
 import { currentAddress, go, goUp, handoffSlot, swapLast, useEntryKey } from "../lib/navigation";
 

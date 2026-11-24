@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api, errorMessage } from "../../lib/api";
 import { syncReminder } from "../../lib/notifications";
 import { toast } from "../../lib/toast";
-import type { Settings, SettingsPatch } from "../../lib/types";
+import type { Settings, SettingsPatch } from "../../lib/schemas";
 
 /** The Settings sub-screens, each opened from a row of the Settings menu. */
 export type { SettingsPage } from "../../lib/navigation";

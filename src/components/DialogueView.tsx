@@ -11,7 +11,7 @@ import {
   stopConversation,
   subscribeConversation,
 } from "../lib/speech";
-import type { DialogueLine } from "../lib/types";
+import type { DialogueLine } from "../lib/schemas";
 import { CloseIcon, PlayerIcon } from "./icons";
 import { SlowButton, SpeakButton } from "./ui";
 import { WordChat } from "./WordChat";

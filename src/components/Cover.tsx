@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 import { fileUrl } from "../lib/files";
-import type { FileId } from "../lib/types";
+import type { FileId } from "../lib/schemas";
 
 /** A take's cover art (a file id), or a note when Suno sent none. */
 export function Cover({ fileId, size }: { fileId: FileId | null; size: number }) {

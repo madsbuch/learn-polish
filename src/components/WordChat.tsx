@@ -4,7 +4,7 @@ import { Banner, Inline, Sheet, Text, Typing } from "../design";
 import { logEvent } from "../lib/learnLog";
 import { api, errorMessage } from "../lib/api";
 import { useTutorJob } from "../lib/tutorJob";
-import type { ChatMessage, ConversationId } from "../lib/types";
+import type { ChatMessage, ConversationId } from "../lib/schemas";
 import { Composer } from "./Composer";
 import { Markdown } from "./Markdown";
 

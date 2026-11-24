@@ -6,7 +6,7 @@ import { api, errorMessage } from "../lib/api";
 import { idsIn, resolveIds, withTitles } from "../lib/ids";
 import { toast } from "../lib/toast";
 import { buildLabel } from "../build-info";
-import type { DiagnosticEntry } from "../lib/types";
+import { AppVersionSchema, type DiagnosticEntry } from "../lib/schemas";
 
 /**
  * The entries as plain text, to paste into a message. Each id keeps its
@@ -51,7 +51,7 @@ export function Diagnostics() {
   const [version, setVersion] = useState("");
   useEffect(() => {
     getVersion()
-      .then(setVersion)
+      .then((version) => setVersion(AppVersionSchema.parse(version)))
       .catch(() => setVersion("?"));
   }, []);
   const build = `Polski ${version} · ${buildLabel()}`;

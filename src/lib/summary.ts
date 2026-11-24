@@ -1,5 +1,5 @@
 import { dayToDate, MASTERY_FULL, MASTERY_HELD_AT } from "./lessons";
-import type { Impact, MasteryEntry } from "./types";
+import type { Impact, MasteryEntry } from "./schemas";
 
 /*
  * What the summary after a drill or a conversation says, worked out from

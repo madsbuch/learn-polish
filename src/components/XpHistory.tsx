@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, Section, Segmented, Stack, Text } from "../design";
 import { api } from "../lib/api";
 import { dayToDate } from "../lib/lessons";
-import type { XpHistoryDay } from "../lib/types";
+import type { XpHistoryDay } from "../lib/schemas";
 
 type Range = "days" | "weeks";
 

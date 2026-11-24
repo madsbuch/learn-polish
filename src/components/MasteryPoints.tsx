@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Badge, Info, List, ListEmpty, ListItem, Loading, Progress, Section, Sheet, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { dayToDate, MASTERY_FULL, MASTERY_HELD_AT, passesText, writingStep } from "../lib/lessons";
-import type { Lesson, MasteryEntry, MasteryLog } from "../lib/types";
+import type { Lesson, MasteryEntry, MasteryLog } from "../lib/schemas";
 
 /** How mastery points are earned, in one short popover (lessons.rs `mastery_gain`, `credit_mastery`). */
 export function MasteryRules() {

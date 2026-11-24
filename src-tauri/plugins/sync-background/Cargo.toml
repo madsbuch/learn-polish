@@ -19,6 +19,7 @@ tauri-plugin = { version = "2", features = ["build"] }
 
 # No unsafe code here either: the JNI entry point needs `#[no_mangle]`, which
 # the lint counts as unsafe, so it is a macro the app expands (see lib.rs).
+# Spec: keel.TYP-5
 [lints.rust]
 unsafe_code = "forbid"
 

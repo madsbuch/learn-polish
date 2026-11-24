@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { fileUrl } from "../lib/files";
-import type { SceneCard, SceneSpot } from "../lib/types";
+import type { SceneCard, SceneSpot } from "../lib/schemas";
 
 /*
  * A scene lesson's picture with its things on it. The picture keeps its own

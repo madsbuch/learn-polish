@@ -2,9 +2,29 @@
 // schemas: every command result and event payload is parsed with one
 // (src/lib/api.ts, src/lib/events.ts), so a shape that drifts fails loudly
 // at the boundary instead of deep in a screen. Each type is inferred from
-// its schema.
+// its schema. So is every other JSON the screens take in: what the plugins
+// return, a filter in an address, what was kept in localStorage.
 
 import { z } from "zod";
+
+// Spec: keel.JSN-1, keel.JSN-2
+/**
+ * Parses `text` as JSON with `schema`: text that is not JSON fails as a
+ * wrong shape does. The only place the screens call `JSON.parse`.
+ */
+export function parseJson<T>(
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  text: string,
+): z.SafeParseReturnType<unknown, T> {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (cause) {
+    const message = `not JSON (${cause instanceof Error ? cause.message : String(cause)})`;
+    return { success: false, error: new z.ZodError([{ code: "custom", path: [], message }]) };
+  }
+  return schema.safeParse(json);
+}
 
 /**
  * A tagged id (DATA.md): its kind's prefix, an underscore and 26 base32
@@ -2293,3 +2313,77 @@ export const GameAnsweredSchema = z.object({
   tips: z.array(SoundTipSchema),
 });
 export type GameAnswered = z.infer<typeof GameAnsweredSchema>;
+
+// ------------------------------------------------------------ the screens' own
+
+/** The filters a raw-log page opens with (a drill-down presets some), as an address carries them. */
+export const RawPresetSchema = z
+  .object({
+    fromDay: z.number().nullable().optional(),
+    toDay: z.number().nullable().optional(),
+    courseId: CourseIdSchema.nullable().optional(),
+    lessonId: LessonIdSchema.nullable().optional(),
+    itemId: z.string().nullable().optional(),
+    role: z.string().nullable().optional(),
+    search: z.string().nullable().optional(),
+    exercise: z.string().nullable().optional(),
+    mistake: z.string().nullable().optional(),
+    topic: z.string().nullable().optional(),
+    grammar: z.string().nullable().optional(),
+    correct: z.boolean().nullable().optional(),
+    source: z.string().nullable().optional(),
+    kind: z.enum(["answers", "events"]).nullable().optional(),
+    context: z.object({ groupBy: z.string(), key: z.string() }).nullable().optional(),
+  })
+  .strict();
+export type RawPreset = z.infer<typeof RawPresetSchema>;
+
+/** The page last shown, kept in localStorage to resume it (src/lib/navigation.ts). */
+export const LastShownSchema = z.object({ path: z.string(), at: z.number() });
+
+// ------------------------------------------------------------ events
+
+/** A lesson whose word pictures changed (`pictures://word`). */
+export const LessonChangedSchema = z.object({ lessonId: LessonIdSchema });
+/** A course whose offline copy changed (`offline://changed`). */
+export const CourseChangedSchema = z.object({ courseId: CourseIdSchema });
+/** How far a lesson's scene or story has come (`scenes://changed`, `stories://changed`). */
+export const LessonWorkSchema = z.object({ lessonId: LessonIdSchema, status: z.string() });
+/** How far a benchmark run has come (`bench://progress`). */
+export const BenchProgressSchema = z.object({ done: z.number(), total: z.number() });
+/** A course's new picture (`pictures://changed`). */
+export const CoursePictureChangedSchema = z.object({ courseId: CourseIdSchema, fileId: FileIdSchema });
+
+// ------------------------------------------------------------ the plugins
+
+/** The operating system the os plugin names. */
+export const PlatformSchema = z.string();
+/** The app's version, as the app plugin says it. */
+export const AppVersionSchema = z.string();
+/** Whether a permission is granted, as the notification plugin says it. */
+export const GrantedSchema = z.boolean();
+/** A permission's state, as the notification and barcode plugins answer. */
+export const PermissionStateSchema = z.enum(["granted", "denied", "prompt", "prompt-with-rationale"]);
+/** The notifications the notification plugin has scheduled. */
+export const PendingNotificationsSchema = z.array(z.object({ id: z.number() }));
+/** What the barcode scanner read. */
+export const ScannedSchema = z.object({ content: z.string() });
+/** The address a tapped notification carries (`extra.address`), wherever the notification plugin put it. */
+export const NotificationTappedSchema = z.union([
+  z.object({ notification: z.object({ extra: z.object({ address: z.string() }) }) }).transform((n) => n.notification.extra.address),
+  z.object({ extra: z.object({ address: z.string() }) }).transform((n) => n.extra.address),
+]);
+/** A notification of the song player's that was tapped: the address it opens. */
+export const PlayerOpenSchema = z.object({ address: z.string() });
+/** The Android song player's state, as it reports it. */
+export const NativePlayerStateSchema = z.object({
+  playing: z.boolean(),
+  index: z.number(),
+  id: z.string(),
+  position: z.number(),
+  duration: z.number(),
+  ended: z.boolean(),
+  remote: z.boolean(),
+  /** Songs queued in the native player. */
+  count: z.number(),
+});

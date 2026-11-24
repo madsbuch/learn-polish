@@ -17,7 +17,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
-import type { PodcastAudio, Song, WikiSource } from "../lib/types";
+import type { PodcastAudio, Song, WikiSource } from "../lib/schemas";
 import { ExternalIcon } from "./icons";
 import { SourceList } from "./Sources";
 

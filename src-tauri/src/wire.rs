@@ -4,6 +4,7 @@
 
 use serde::de::{Deserialize, Deserializer, IgnoredAny};
 
+// Spec: keel.JSN-3
 /// A field read leniently: a value of the wrong type counts as missing,
 /// instead of failing the whole reply. Use with `#[serde(default,
 /// deserialize_with = "crate::wire::lenient")]` on an `Option<T>`.
@@ -24,6 +25,7 @@ where
     })
 }
 
+// Spec: keel.JSN-3
 /// A list element read leniently: one of the wrong shape is `None`, not a
 /// failed list.
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +51,7 @@ pub fn kept<T>(list: Vec<Lenient<T>>) -> impl Iterator<Item = T> {
     list.into_iter().filter_map(|item| item.0)
 }
 
+// Spec: keel.JSN-3
 /// A number some services send as a number and some as a string.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(untagged)]
@@ -78,6 +81,7 @@ mod tests {
         credits: Option<Number>,
     }
 
+    // Spec: keel.JSN-3
     #[test]
     fn odd_fields_do_not_fail_a_reply() {
         let reply: Reply = serde_json::from_str(r#"{ "duration": "long", "credits": "6.5" }"#).unwrap();

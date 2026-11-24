@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Inline, Stack, Text } from "../design";
 import { api } from "../lib/api";
-import type { WordExample, WordId } from "../lib/types";
+import type { WordExample, WordId } from "../lib/schemas";
 import { SlowButton, SpeakButton } from "./ui";
 
 /**

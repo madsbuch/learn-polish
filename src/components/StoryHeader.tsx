@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { z } from "zod";
 
 import { Banner, Button, Inline, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { onEvent } from "../lib/events";
 import { toast } from "../lib/toast";
-import { LessonIdSchema, type LessonDetail, type PanelId } from "../lib/types";
+import { LessonWorkSchema, type LessonDetail, type PanelId } from "../lib/schemas";
 import { PlayerIcon, StoryIcon } from "./icons";
 import { StoryPicture } from "./Story";
 import { StoryBook } from "./StoryBook";
@@ -25,7 +24,7 @@ export function StoryHeader({ lesson, onChanged }: { lesson: LessonDetail; onCha
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
-    const off = onEvent(z.object({ lessonId: LessonIdSchema, status: z.string() }), "stories://changed", (event) => {
+    const off = onEvent(LessonWorkSchema, "stories://changed", (event) => {
       if (event.payload.lessonId === lesson.id) changed.current();
     });
     return () => {

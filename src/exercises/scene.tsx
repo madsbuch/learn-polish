@@ -5,7 +5,7 @@ import { SpeakButton } from "../components/ui";
 import { Inline, Text } from "../design";
 import { hapticTick, hapticWrong } from "../lib/haptics";
 import { speakQuietly } from "../lib/speech";
-import type { SceneCard, SceneSpot } from "../lib/types";
+import type { SceneCard, SceneSpot } from "../lib/schemas";
 import { Options, pickedAnswer, readingAnswer, TypedField, typedAnswer } from "./shared";
 import { defineExercise, type ExerciseProps } from "./types";
 

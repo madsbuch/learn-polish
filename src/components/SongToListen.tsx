@@ -15,7 +15,7 @@ import {
 import { Cover } from "./Cover";
 import { PlayerIcon } from "./icons";
 import { Lyrics } from "./Lyrics";
-import type { SongId } from "../lib/types";
+import type { SongId } from "../lib/schemas";
 
 /** The take of a song to listen to: its favourite take, once it is ready. */
 export function useSongItem(songId: SongId | null): { item: QueueItem | null; loading: boolean; listed: boolean } {

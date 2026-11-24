@@ -5,9 +5,8 @@ import { api, errorMessage } from "../lib/api";
 import { onEvent } from "../lib/events";
 import { askForNotificationsToFollowDownloads } from "../lib/notifications";
 import { useSyncReload } from "../lib/sync";
-import { z } from "zod";
-import { CourseIdSchema } from "../lib/types";
-import type { CourseId, OfflineStatus } from "../lib/types";
+import { CourseChangedSchema } from "../lib/schemas";
+import type { CourseId, OfflineStatus } from "../lib/schemas";
 
 /** How often the count is read again while a download is on its way. */
 const WATCH_MS = 3000;
@@ -44,7 +43,7 @@ export function CourseOffline({ courseId }: { courseId: CourseId }) {
 
   useEffect(() => {
     reload();
-    const off = onEvent(z.object({ courseId: CourseIdSchema }), "offline://changed", (event) => {
+    const off = onEvent(CourseChangedSchema, "offline://changed", (event) => {
       if (event.payload.courseId === courseId) reload();
     });
     return () => {
