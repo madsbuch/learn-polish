@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Keel",
+  "summary": "Engineering rules for an app of React and TypeScript in a Tauri shell, over SQLite: the stack, the build, type safety and the JSON boundary.",
+  "shared": {
+    "id": "keel",
+    "logo": "keel/logo.png"
+  },
+  "description": "Rules that hold across the whole code base, out of sight like a keel, so that what a compiler or a linter can catch never reaches review.",
+  "requirements": [
+    {
+      "id": "keel.ENG-1",
+      "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust and the frontend queries it through drizzle."
+    },
+    {
+      "id": "keel.ENG-2",
+      "text": "`bun run build` typechecks `src/`, lints everything and bundles, and fails on any type or lint error."
+    },
+    {
+      "id": "keel.ENG-3",
+      "text": "Frontend packages are installed only once they have been published for `keel.deps-minimum-age`."
+    }
+  ],
+  "values": [
+    {
+      "id": "keel.deps-minimum-age",
+      "type": "duration",
+      "value": "14d",
+      "description": "How long a package version must have been published before it is installed."
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Type safety",
+  "summary": "No casts, no non-null assertions, no any, no unsafe Rust.",
+  "order": 1,
+  "requirements": [
+    {
+      "id": "keel.TYP-1",
+      "text": "TypeScript in `src/`, `tests/` and `scripts/` has no type assertions other than `as const`, and no non-null `!`."
+    },
+    {
+      "id": "keel.TYP-2",
+      "text": "TypeScript has no explicit `any`, and in `src/` no value of type `any` flows anywhere."
+    },
+    {
+      "id": "keel.TYP-3",
+      "text": "TypeScript has no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`."
+    },
+    {
+      "id": "keel.TYP-4",
+      "text": "Lint rules cannot be disabled by an `eslint-disable` comment, except `react-hooks/exhaustive-deps`."
+    },
+    {
+      "id": "keel.TYP-5",
+      "text": "Every Rust crate under `src-tauri` forbids unsafe code, except the app crate, which denies it with one exception: the Android JNI entry point for background sync."
+    }
+  ],
+  "related": [
+    "#keel.ENG-2"
+  ]
+}
