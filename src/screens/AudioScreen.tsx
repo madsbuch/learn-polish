@@ -23,9 +23,9 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../lib/toast";
 import { playClip, speak } from "../lib/speech";
-import type { AudioItem, AudioOverview, CacheProgress, CourseAudio, CourseId } from "../lib/types";
+import type { AudioItem, AudioOverview, CacheProgress, CourseAudio, CourseId } from "../lib/schemas";
 import { onEvent } from "../lib/events";
-import { CacheProgressSchema } from "../lib/types";
+import { CacheProgressSchema } from "../lib/schemas";
 
 export function megabytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;

@@ -23,7 +23,7 @@ import {
   useStagger,
 } from "../design";
 import { lessonMinutes, minutes } from "../lib/lessons";
-import type { Lesson, LessonOverview, Stats, CourseProgress } from "../lib/types";
+import type { Lesson, LessonOverview, Stats, CourseProgress } from "../lib/schemas";
 
 function greeting(): string {
   const hour = new Date().getHours();

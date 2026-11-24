@@ -4,6 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { Button, Spinner, Stack, Text } from "../design";
 import { api } from "../lib/api";
 import { buildLabel } from "../build-info";
+import { AppVersionSchema } from "../lib/schemas";
 
 /** One step of starting up, shown while the app loads. */
 export interface BootStep {
@@ -35,7 +36,7 @@ export function Startup({
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 500);
     getVersion()
-      .then(setVersion)
+      .then((version) => setVersion(AppVersionSchema.parse(version)))
       .catch(() => {});
     return () => window.clearInterval(timer);
   }, []);

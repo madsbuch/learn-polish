@@ -28,7 +28,10 @@
   "requirements": [
     {
       "id": "DATA-1",
-      "text": "Progress, courses, tutor conversations, settings, cached speech, pictures and songs are all stored in one SQLite database."
+      "text": "Progress, courses, tutor conversations, settings, cached speech, pictures and songs are all stored in one SQLite database.",
+      "related": [
+        "#keel.ENG-1"
+      ]
     },
     {
       "id": "DATA-2",
@@ -43,7 +46,10 @@
     },
     {
       "id": "DATA-4",
-      "text": "The interface loads pictures, covers and songs by file id through the `media` protocol, with byte ranges for seeking; speech clips are handed over as data; the build fails if a screen loads a file by its path."
+      "text": "The interface loads pictures, covers and songs by file id through the `media` protocol, with byte ranges for seeking; speech clips are handed over as data; the build fails if a screen loads a file by its path.",
+      "related": [
+        "#keel.ENG-2"
+      ]
     },
     {
       "id": "DATA-5",
@@ -71,7 +77,10 @@
     },
     {
       "id": "DATA-11",
-      "text": "Database access is typed against one schema definition, and a test fails if that definition names a table or column the schema the app creates does not have."
+      "text": "Database access is typed against one schema definition, and a test fails if that definition names a table or column the schema the app creates does not have.",
+      "related": [
+        "#keel.ENG-1"
+      ]
     },
     {
       "id": "DATA-12",

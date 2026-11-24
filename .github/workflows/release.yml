@@ -64,6 +64,9 @@ jobs:
       - name: Type-check and build the frontend
         run: bun run build
 
+      - name: Frontend tests
+        run: bun test tests
+
       - name: Rust lints (no unsafe, no `as` casts)
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets

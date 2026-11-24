@@ -23,7 +23,7 @@ import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { playComplete, playMatch, playWrong } from "../lib/sounds";
 import { DictationGame, SayGame, SoundsGame } from "../components/EarGames";
 import { canRecord } from "../lib/mic";
-import type { GameFinished, Pair, QuickGame, QuickGameKind, QuickGames as Overview, Settings } from "../lib/types";
+import type { GameFinished, Pair, QuickGame, QuickGameKind, QuickGames as Overview, Settings } from "../lib/schemas";
 
 /*
  * Quick games, from Home: a minute's play over words already met, outside

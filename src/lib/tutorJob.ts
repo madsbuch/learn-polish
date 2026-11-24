@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 
 import { api } from "./api";
 import { onEvent } from "./events";
-import { AgentStatusSchema, StreamEventSchema, TutorDoneSchema } from "./types";
-import type { ConversationId } from "./types";
+import { AgentStatusSchema, StreamEventSchema, TutorDoneSchema } from "./schemas";
+import type { ConversationId } from "./schemas";
 
 /**
  * Follows a conversation's background reply: whether the tutor is working,

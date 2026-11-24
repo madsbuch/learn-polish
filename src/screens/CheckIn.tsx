@@ -31,7 +31,7 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { JumpToLatest } from "../components/JumpToLatest";
 import { currentItem, usePlayer } from "../lib/player";
 import { dayToDate } from "../lib/lessons";
-import type { Assessment, CheckinId, LessonId, PracticeContext, SongId } from "../lib/types";
+import type { Assessment, CheckinId, LessonId, PracticeContext, SongId } from "../lib/schemas";
 
 /** A writing lesson's situation and goals. */
 export interface Writing {

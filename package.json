@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-design.mjs && node scripts/check-spec.mjs && eslint . && tsc --noEmit && vite build",
+    "build": "node scripts/check-design.mjs && node scripts/check-spec.mjs && node scripts/check-lint-comments.mjs && eslint . && tsc --noEmit && vite build",
     "lint": "eslint .",
     "check:rust": "cd src-tauri && cargo clippy --locked --all-targets",
     "check:design": "node scripts/check-design.mjs",

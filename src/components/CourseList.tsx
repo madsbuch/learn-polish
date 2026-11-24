@@ -1,7 +1,7 @@
 import { Avatar, List, ListItem, Progress, Stack, useStagger } from "../design";
 import { fileUrl } from "../lib/files";
 import { dayToDate } from "../lib/lessons";
-import type { CourseProgress } from "../lib/types";
+import type { CourseProgress } from "../lib/schemas";
 
 /** Where a course stands, in a line: what is left, and what comes next. */
 function courseLine(entry: CourseProgress): string {

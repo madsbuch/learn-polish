@@ -1,6 +1,6 @@
 import type { ReactNode, RefObject } from "react";
 
-import type { DiffWord, Exercise, ExerciseKind, SessionPlan } from "../lib/types";
+import type { DiffWord, Exercise, ExerciseKind, SessionPlan } from "../lib/schemas";
 
 /**
  * Everything a learner can have put in so far on one card. The session owns

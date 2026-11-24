@@ -16,7 +16,7 @@ import {
 } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { dayToDate } from "../lib/lessons";
-import type { CostSummary, FeatureCost } from "../lib/types";
+import type { CostSummary, FeatureCost } from "../lib/schemas";
 
 const FEATURES: Record<string, string> = {
   tutor: "Tutor",

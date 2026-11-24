@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { Avatar, Badge, ListItem } from "../design";
 import { CHALLENGE_LABEL, complexityTone, dueLabel, kindName, minutes } from "../lib/lessons";
-import type { Lesson } from "../lib/types";
+import type { Lesson } from "../lib/schemas";
 import { lessonType } from "../lib/lessonTypes";
 import { ChallengeIcon, DrillIcon, NavIcon, PictureIcon, SceneIcon, StoryIcon, StudyIcon, WriteIcon } from "./icons";
 

@@ -22,9 +22,11 @@
 
 import { platform } from "@tauri-apps/plugin-os";
 
+import { PlatformSchema } from "./schemas";
+
 const os = (() => {
   try {
-    return platform();
+    return PlatformSchema.parse(platform());
   } catch {
     return "";
   }

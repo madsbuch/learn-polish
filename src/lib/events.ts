@@ -2,18 +2,28 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { z } from "zod";
 
 import { logError } from "./log";
-import { SyncActivitySchema, SyncReceivedSchema } from "./types";
-import type { SyncActivity, SyncReceived } from "./types";
+import { SyncActivitySchema, SyncReceivedSchema } from "./schemas";
+import type { SyncActivity, SyncReceived } from "./schemas";
 
 /**
  * Listens to an event from the Rust core, checking each payload against
  * `schema`: a payload of the wrong shape is reported and dropped, never
  * handed to a screen.
  */
-export function onEvent<S extends z.ZodTypeAny>(
+// Spec: keel.JSN-2
+export function onEvent<S extends z.ZodType<unknown, z.ZodTypeDef, unknown>>(
   schema: S,
   name: string,
-  handler: (event: { payload: z.infer<S> }) => void,
+  handler: (event: { payload: z.output<S> }) => void,
+): Promise<UnlistenFn> {
+  return listenChecked<z.output<S>>(schema, name, handler);
+}
+
+/** `onEvent`, typed by what the schema gives (which `onEvent` infers, branded types too). */
+function listenChecked<T>(
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  name: string,
+  handler: (event: { payload: T }) => void,
 ): Promise<UnlistenFn> {
   return listen<unknown>(name, (event) => {
     const parsed = schema.safeParse(event.payload);

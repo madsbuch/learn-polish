@@ -34,7 +34,7 @@ import type {
   PracticeSource,
   RawCursor,
   RawFilter,
-} from "./types";
+} from "./schemas";
 import {
   ActivitySchema,
   ContextStatsSchema,
@@ -116,7 +116,7 @@ import {
   WordExampleSchema,
   XpDaySchema,
   XpHistoryDaySchema,
-} from "./types";
+} from "./schemas";
 
 /** A command's result that did not have the shape its schema says. */
 export class ShapeError extends Error {
@@ -134,12 +134,17 @@ export class ShapeError extends Error {
  * Runs a command in the Rust core and checks its result against `schema`:
  * nothing crosses into the screens unchecked.
  */
-async function call<S extends z.ZodTypeAny>(
+// Spec: keel.JSN-2
+async function call<S extends z.ZodType<unknown, z.ZodTypeDef, unknown>>(
   schema: S,
   command: string,
   args?: InvokeArgs,
-): Promise<z.infer<S>> {
-  const raw = await invokeLogged(command, args);
+): Promise<z.output<S>> {
+  return checked<z.output<S>>(schema, command, await invokeLogged(command, args));
+}
+
+/** A command's result checked against `schema` (typed by `call`, which infers branded types where this would not). */
+function checked<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, command: string, raw: unknown): T {
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     const error = new ShapeError(command, parsed.error.issues);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorMessage } from "./api";
 import { onEvent } from "./events";
-import { AgentStatusSchema, StreamEventSchema } from "./types";
+import { AgentStatusSchema, StreamEventSchema } from "./schemas";
 
 let nextStreamId = 0;
 

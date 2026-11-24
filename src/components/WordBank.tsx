@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Button, Inline, Spinner, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { GoalHelp, LessonId, Phrase } from "../lib/types";
+import type { GoalHelp, LessonId, Phrase } from "../lib/schemas";
 
 /** True when the phrase is already in the message being written. */
 function used(draft: string, phrase: Phrase): boolean {

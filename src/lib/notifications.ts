@@ -10,9 +10,16 @@ import {
 } from "@tauri-apps/plugin-notification";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
-import { z } from "zod";
 
-import { onEvent } from "./events";
+import { onSignal } from "./events";
+import {
+  GrantedSchema,
+  NotificationTappedSchema,
+  PendingNotificationsSchema,
+  PermissionStateSchema,
+  PlatformSchema,
+  PlayerOpenSchema,
+} from "./schemas";
 import { toast } from "./toast";
 
 /**
@@ -31,8 +38,8 @@ const GENERIC = [
 
 export async function ensurePermission(): Promise<boolean> {
   try {
-    if (await isPermissionGranted()) return true;
-    return (await requestPermission()) === "granted";
+    if (GrantedSchema.parse(await isPermissionGranted())) return true;
+    return PermissionStateSchema.parse(await requestPermission()) === "granted";
   } catch {
     // Desktop builds without a notification backend simply opt out.
     return false;
@@ -42,7 +49,7 @@ export async function ensurePermission(): Promise<boolean> {
 async function clearReminder(): Promise<void> {
   try {
     const ours = new Set(Array.from({ length: DAYS_AHEAD + 1 }, (_, i) => FIRST_ID + i));
-    const scheduled = await pending();
+    const scheduled = PendingNotificationsSchema.parse(await pending());
     const ids = scheduled.map((n) => n.id).filter((id) => ours.has(id));
     if (ids.length > 0) await cancel(ids);
   } catch {
@@ -123,7 +130,7 @@ const ASKED_FOR_WORK = "polski.notifications.askedForWork";
  * alive with the screen off is hidden without them.
  */
 export function askForNotificationsWhenWorking(): Promise<UnlistenFn> {
-  return onEvent(z.null(), "work://began", () => {
+  return onSignal("work://began", () => {
     void (async () => {
       try {
         if (localStorage.getItem(ASKED_FOR_WORK)) return;
@@ -132,7 +139,7 @@ export function askForNotificationsWhenWorking(): Promise<UnlistenFn> {
         // No storage: ask anyway; the system asks only once by itself.
       }
       try {
-        if (await isPermissionGranted()) return;
+        if (GrantedSchema.parse(await isPermissionGranted())) return;
       } catch {
         return;
       }
@@ -153,7 +160,7 @@ const ASKED_FOR_DOWNLOADS = "polski.notifications.askedForDownloads";
  */
 export async function askForNotificationsToFollowDownloads(): Promise<void> {
   try {
-    if (platform() !== "android") return;
+    if (PlatformSchema.parse(platform()) !== "android") return;
   } catch {
     return;
   }
@@ -166,20 +173,13 @@ export async function askForNotificationsToFollowDownloads(): Promise<void> {
     // No storage: ask anyway; the system asks only once by itself.
   }
   try {
-    if (await isPermissionGranted()) return;
+    if (GrantedSchema.parse(await isPermissionGranted())) return;
   } catch {
     return;
   }
   toast("Allow notifications to follow the download, even with Polski closed.", "info");
   await ensurePermission();
 }
-
-/** The address a tapped notification carries (`extra.address`), wherever the plugin put it. */
-const TappedSchema = z.union([
-  z.object({ notification: z.object({ extra: z.object({ address: z.string() }) }) }).transform((n) => n.notification.extra.address),
-  z.object({ extra: z.object({ address: z.string() }) }).transform((n) => n.extra.address),
-]);
-const OpenSchema = z.object({ address: z.string() });
 
 /**
  * Calls `open` with the address of a notification the learner taps: a
@@ -194,7 +194,7 @@ export async function onNotificationOpened(open: (address: string) => void): Pro
   const stops: (() => void)[] = [];
   try {
     const listener = await onAction((tapped: unknown) => {
-      const parsed = TappedSchema.safeParse(tapped);
+      const parsed = NotificationTappedSchema.safeParse(tapped);
       if (parsed.success) open(parsed.data);
     });
     stops.push(() => void listener.unregister());
@@ -202,9 +202,9 @@ export async function onNotificationOpened(open: (address: string) => void): Pro
     // No notification plugin here (a computer without one).
   }
   try {
-    if (platform() === "android") {
+    if (PlatformSchema.parse(platform()) === "android") {
       const listener = await addPluginListener("songplayer", "open", (payload: unknown) => {
-        const parsed = OpenSchema.safeParse(payload);
+        const parsed = PlayerOpenSchema.safeParse(payload);
         if (parsed.success) open(parsed.data.address);
       });
       stops.push(() => void listener.unregister());

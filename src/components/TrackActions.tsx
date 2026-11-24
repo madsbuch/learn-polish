@@ -4,7 +4,7 @@ import { Banner, Button, List, ListItem, Sheet, Spinner } from "../design";
 import { PlayerIcon } from "./icons";
 import { api, errorMessage } from "../lib/api";
 import { canShare, shareTrack, type QueueItem } from "../lib/player";
-import type { Playlist, TrackId } from "../lib/types";
+import type { Playlist, TrackId } from "../lib/schemas";
 
 /** Picks a playlist for a take — or makes a new one with it. */
 export function AddToPlaylist({

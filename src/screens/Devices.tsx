@@ -37,7 +37,7 @@ import type {
   SyncDevice,
   SyncOffer,
   SyncStatus,
-} from "../lib/types";
+} from "../lib/schemas";
 
 const PLATFORMS: Record<string, string> = {
   android: "Android",

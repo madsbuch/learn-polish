@@ -1,6 +1,6 @@
 import { api, type AnswerSignals, type LearningEventIn } from "./api";
 import { describe, logError } from "./log";
-import type { PracticeContext } from "./types";
+import type { PracticeContext } from "./schemas";
 
 /*
  * The learning log, from the screens' side (learnlog.rs keeps it).

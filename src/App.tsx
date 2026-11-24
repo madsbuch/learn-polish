@@ -23,7 +23,7 @@ import type {
   SessionPlan,
   Settings,
   Stats,
-} from "./lib/types";
+} from "./lib/schemas";
 import { Exercises } from "./screens/Exercises";
 import { Progress } from "./screens/Progress";
 import { Insights } from "./screens/Insights";
@@ -44,7 +44,7 @@ import { Player } from "./screens/Player";
 import { CourseDetail } from "./screens/CourseDetail";
 import { Tutor, TutorChat, tutorAsks } from "./screens/Tutor";
 import { onEvent, onSignal } from "./lib/events";
-import { FactCheckSchema, TutorDoneSchema } from "./lib/types";
+import { FactCheckSchema, TutorDoneSchema } from "./lib/schemas";
 import { setIdOpeners } from "./lib/ids";
 import { useSyncReload } from "./lib/sync";
 import {

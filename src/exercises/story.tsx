@@ -4,7 +4,7 @@ import { StoryDots, StoryLines, StoryPage, StoryPicture, usePageTurns } from "..
 import { SpeakButton } from "../components/ui";
 import { Badge, Button, CountUp, Inline, Text } from "../design";
 import { fileUrl } from "../lib/files";
-import { LessonIdSchema } from "../lib/types";
+import { LessonIdSchema } from "../lib/schemas";
 import { Options, pickedAnswer, readingAnswer } from "./shared";
 import { defineExercise, type ExerciseProps } from "./types";
 

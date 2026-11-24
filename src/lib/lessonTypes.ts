@@ -5,7 +5,7 @@
  * a new type shows up here without changing them.
  */
 import { api } from "./api";
-import type { Lesson, LessonTypeInfo } from "./types";
+import type { Lesson, LessonTypeInfo } from "./schemas";
 
 let types = new Map<string, LessonTypeInfo>();
 

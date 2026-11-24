@@ -1,4 +1,4 @@
-import type { ExerciseKind } from "../lib/types";
+import type { ExerciseKind } from "../lib/schemas";
 import { recogniseProduce, dialogueGap } from "./choice";
 import { dialogueRead } from "./dialogueRead";
 import { intro, sentenceIntro } from "./intro";

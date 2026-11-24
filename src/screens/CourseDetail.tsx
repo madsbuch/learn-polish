@@ -29,11 +29,10 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { fileUrl } from "../lib/files";
 import { CHALLENGE_EXPLAINED, dayToDate, mastered, MASTERY_FULL, roughDuration, standing, standingText } from "../lib/lessons";
-import type { CourseClosed, CoursePictureStatus, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/types";
+import type { CourseClosed, CoursePictureStatus, CourseProgress, FileId, Lesson, LessonId, Sentence, Word } from "../lib/schemas";
 import { onEvent } from "../lib/events";
 import { useSyncReload } from "../lib/sync";
-import { z } from "zod";
-import { CourseIdSchema, CoursePictureStatusSchema, FileIdSchema } from "../lib/types";
+import { CoursePictureChangedSchema, CoursePictureStatusSchema } from "../lib/schemas";
 
 export type { CourseSection } from "../lib/navigation";
 
@@ -122,7 +121,7 @@ export function CourseDetail({
 
   // Drawn in the background for a new course: show it as soon as it is in.
   useEffect(() => {
-    const off = onEvent(z.object({ courseId: CourseIdSchema, fileId: FileIdSchema }), "pictures://changed", (event) => {
+    const off = onEvent(CoursePictureChangedSchema, "pictures://changed", (event) => {
       if (event.payload.courseId === courseId) setPicture(event.payload.fileId);
     });
     return () => {

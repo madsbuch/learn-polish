@@ -6,7 +6,7 @@ import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { sectionLabel } from "../lib/lyrics";
 import { livePosition, seek, usePlayer, type QueueItem } from "../lib/player";
 import { chooseBlanks, fold, LEAD_S, tokens, type Blank } from "../lib/singAlong";
-import type { GlossWord, SongId, TimedLine, TrackId } from "../lib/types";
+import type { GlossWord, SongId, TimedLine, TrackId } from "../lib/schemas";
 import { WordChat } from "./WordChat";
 import { logEvent } from "../lib/learnLog";
 import { placeUnder, useDismiss, WordPopover, type Tapped } from "./WordPopover";

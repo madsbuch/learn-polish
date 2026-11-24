@@ -78,7 +78,7 @@ import type {
   TopicRow,
   WordContexts,
   WordInContext,
-} from "../lib/types";
+} from "../lib/schemas";
 
 /*
  * Progress → "What you've met" (words, structures, sounds) and "Insights"

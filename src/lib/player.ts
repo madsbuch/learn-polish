@@ -19,9 +19,9 @@ import { platform } from "@tauri-apps/plugin-os";
 import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
 import { logCause } from "./log";
-import type { CastDevice, CastState, Song, SongTrack, TrackId } from "./types";
+import type { CastDevice, CastState, Song, SongTrack, TrackId } from "./schemas";
 import { onEvent } from "./events";
-import { CastStateSchema } from "./types";
+import { CastStateSchema, NativePlayerStateSchema, PlatformSchema } from "./schemas";
 
 export type RepeatMode = "all" | "one" | "off";
 
@@ -86,7 +86,7 @@ function fail(cause: unknown) {
 
 const isAndroid = (() => {
   try {
-    return platform() === "android";
+    return PlatformSchema.parse(platform()) === "android";
   } catch {
     return false;
   }
@@ -109,25 +109,16 @@ function maybeCount(trackId: TrackId | undefined, position: number, duration: nu
 
 // ------------------------------------------------------------------- native
 
-interface NativeState {
-  playing: boolean;
-  index: number;
-  id: string;
-  position: number;
-  duration: number;
-  ended: boolean;
-  remote: boolean;
-  /** Songs queued in the native player. */
-  count: number;
-}
-
 let nativeListening = false;
 let nativeCount = 0;
 
 function listenNative() {
   if (!isAndroid || nativeListening) return;
   nativeListening = true;
-  void addPluginListener<NativeState>("songplayer", "state", (native) => {
+  void addPluginListener("songplayer", "state", (payload: unknown) => {
+    const parsed = NativePlayerStateSchema.safeParse(payload);
+    if (!parsed.success) return;
+    const native = parsed.data;
     // While casting, the speaker's state is the truth.
     if (state.cast || native.remote) return;
     // The queue went from something to nothing on the native side: closed

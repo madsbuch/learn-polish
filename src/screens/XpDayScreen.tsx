@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Badge, Banner, Card, List, ListItem, Screen, Section, Spinner, Stack, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { dayToDate } from "../lib/lessons";
-import type { XpDay, XpRun } from "../lib/types";
+import type { XpDay, XpRun } from "../lib/schemas";
 
 function time(at: number): string {
   return new Date(at * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });

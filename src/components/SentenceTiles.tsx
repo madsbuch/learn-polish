@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { Button, Text, prefersReducedMotion } from "../design";
 import { hapticTick } from "../lib/haptics";
-import type { Exercise, TileEnding } from "../lib/types";
+import type { Exercise, TileEnding } from "../lib/schemas";
 
 /*
  * Sentence tiles: build the Polish sentence from its words. Drag a tile into

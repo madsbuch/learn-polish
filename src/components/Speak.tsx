@@ -7,7 +7,7 @@ import { canScan, openAppSettings } from "../lib/keyshare";
 import { MicError, release, startRecording, type Recording, type Take } from "../lib/mic";
 import { stop as stopSpeech } from "../lib/speech";
 import { toast } from "../lib/toast";
-import type { Spoken } from "../lib/types";
+import type { Spoken } from "../lib/schemas";
 import { MicIcon, PlayerIcon, StopIcon } from "./icons";
 import { DictationDiff } from "./Listen";
 import { SpeakButton } from "./ui";

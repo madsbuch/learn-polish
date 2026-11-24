@@ -24,7 +24,7 @@ change to the schema follows these.
   code, not a table). A new table gets a new prefix, added
   to `ids.rs` and here.
 - **Each kind has its own type**: `LessonId`, `CourseId`, … in Rust; branded
-  strings (`LessonIdSchema`) in `src/lib/types.ts`. Only a correctly tagged id
+  strings (`LessonIdSchema`) in `src/lib/schemas.ts`. Only a correctly tagged id
   parses, so a course id where a lesson id belongs fails at once, with a
   message saying which it got — for the tutor too.
 - **Built-in content gets derived ids** (`ids::derived`): the same namespace

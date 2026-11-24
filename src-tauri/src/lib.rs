@@ -2657,7 +2657,7 @@ mod integration {
 
     /// Every registered lesson type can be made and practised, and every
     /// exercise a drill can produce is one the screens know how to show
-    /// (src/lib/types.ts lists them; src/exercises/ must draw each, or the
+    /// (src/lib/schemas.ts lists them; src/exercises/ must draw each, or the
     /// frontend build fails). A new type without a sample here fails too.
     #[test]
     fn courses_and_lessons_carry_a_cefr_level_that_never_limits() {
@@ -3108,7 +3108,7 @@ mod integration {
         let word = |pl: &str, en: &str| courses::NewWord { pl: pl.into(), en: en.into(), pos: "n-m".into(), ..Default::default() };
         let sentence = |pl: &str, en: &str| courses::NewSentence { pl: pl.into(), en: en.into(), ..Default::default() };
         let line = |speaker: &str, pl: &str, en: &str| courses::NewLine { speaker: speaker.into(), gender: "f".into(), pl: pl.into(), en: en.into() };
-        let screens = include_str!("../../src/lib/types.ts");
+        let screens = include_str!("../../src/lib/schemas.ts");
         let mut ids = std::collections::HashSet::new();
         for (n, kind) in lesson_types::REGISTRY.iter().enumerate() {
             assert!(ids.insert(kind.id), "two types called {}", kind.id);
@@ -3383,7 +3383,7 @@ mod integration {
         assert_eq!(costs.iter().filter(|(f, m)| f == costs::SCENE_SPOTS && m == "stub/vision").count(), 2, "every look is paid for");
 
         // Practised: explore it, find each thing, name each, say where.
-        let screens = include_str!("../../src/lib/types.ts");
+        let screens = include_str!("../../src/lib/schemas.ts");
         let plan = session::build_lesson(conn, lesson_id).unwrap();
         let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
         assert_eq!(kinds[0], "sceneExplore", "{kinds:?}");
@@ -3621,7 +3621,7 @@ mod integration {
 
         // Readable before any picture: every panel, then its question — no
         // picture questions yet — the end, then the words.
-        let screens = include_str!("../../src/lib/types.ts");
+        let screens = include_str!("../../src/lib/schemas.ts");
         let plan = session::build_lesson(&mut conn, lesson_id).unwrap();
         let kinds: Vec<&str> = plan.exercises.iter().map(|e| e.kind.as_str()).collect();
         assert_eq!(&kinds[..11], ["storyPanel", "storyQuestion", "storyPanel", "storyQuestion", "storyPanel", "storyQuestion",
@@ -4203,7 +4203,7 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
 
     /// Writes what the core sends the screens, for each shape, to
     /// target/shapes: `bun run check:shapes` parses every file with its zod
-    /// schema (src/lib/types.ts), so the schemas cannot drift from the structs.
+    /// schema (src/lib/schemas.ts), so the schemas cannot drift from the structs.
     #[test]
     fn shapes_for_the_screens() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/shapes");

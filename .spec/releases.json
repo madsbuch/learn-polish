@@ -56,7 +56,22 @@
     },
     {
       "id": "REL-8",
-      "text": "The app's own code contains no unsafe Rust, and no `as` casts outside two float conversions; the lints fail the build otherwise."
+      "text": "The app's own code contains no unsafe Rust, and no `as` casts outside two float conversions; the lints fail the build otherwise.",
+      "deprecation": {
+        "reason": "The shared part Keel now states the rule on unsafe Rust; the rule on `as` casts is this app's own and stays, on its own.",
+        "replacedBy": [
+          "#keel.TYP-5",
+          "#REL-9"
+        ],
+        "date": "2026-11-24"
+      }
+    },
+    {
+      "id": "REL-9",
+      "text": "The app's own Rust code has no `as` casts outside two float conversions; the lints fail the build otherwise.",
+      "related": [
+        "#keel.TYP-5"
+      ]
     }
   ],
   "related": [

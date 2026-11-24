@@ -12,7 +12,7 @@ import {
   type ConversationLine,
 } from "../lib/speech";
 import { toast } from "../lib/toast";
-import type { LessonId, StoryInfo } from "../lib/types";
+import type { LessonId, StoryInfo } from "../lib/schemas";
 import { CloseIcon, PlayerIcon } from "./icons";
 import { StoryDots, StoryLines, StoryPage, StoryPicture, usePageTurns } from "./Story";
 

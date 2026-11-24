@@ -29,7 +29,10 @@
   "requirements": [
     {
       "id": "POL-1",
-      "text": "The app runs as a native Android app and a native macOS app from one codebase."
+      "text": "The app runs as a native Android app and a native macOS app from one codebase.",
+      "related": [
+        "#keel.ENG-1"
+      ]
     },
     {
       "id": "POL-2",
@@ -56,7 +59,10 @@
     },
     {
       "id": "POL-5",
-      "text": "API keys are kept in the app's database; once saved they are not handed back to the interface as text, only as whether a key is set or as a QR picture."
+      "text": "API keys are kept in the app's database; once saved they are not handed back to the interface as text, only as whether a key is set or as a QR picture.",
+      "related": [
+        "#keel.ENG-1"
+      ]
     },
     {
       "id": "POL-6",

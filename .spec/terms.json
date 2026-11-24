@@ -27,7 +27,10 @@
     },
     {
       "id": "TERM-3",
-      "text": "The build fails when a requirement, story, summary or description of the spec uses a word a term rules out."
+      "text": "The build fails when a requirement, story, summary or description of the spec uses a word a term rules out.",
+      "related": [
+        "#keel.ENG-2"
+      ]
     }
   ],
   "values": [

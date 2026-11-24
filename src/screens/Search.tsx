@@ -15,7 +15,7 @@ import {
   Stack,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { CataloguePage, CourseId, CourseProgress } from "../lib/types";
+import type { CataloguePage, CourseId, CourseProgress } from "../lib/schemas";
 
 type Kind = "words" | "sentences";
 

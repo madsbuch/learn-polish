@@ -1,12 +1,12 @@
 // Parses what the Rust core sends the screens (written to
 // src-tauri/target/shapes by the `shapes_for_the_screens` test) with the zod
-// schemas in src/lib/types.ts, so the two cannot drift apart unnoticed.
+// schemas in src/lib/schemas.ts, so the two cannot drift apart unnoticed.
 // Run with `bun run check:shapes`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
-import * as types from "../src/lib/types";
+import * as types from "../src/lib/schemas";
 
 const dir = join(import.meta.dir, "..", "src-tauri", "target", "shapes");
 const schemas = new Map<string, z.ZodTypeAny>(
@@ -21,11 +21,11 @@ for (const file of files) {
   const [name, list] = file.replace(/\.json$/, "").split(".");
   const schema = schemas.get(name);
   if (!schema) {
-    console.error(`✗ ${file}: no ${name}Schema in src/lib/types.ts`);
+    console.error(`✗ ${file}: no ${name}Schema in src/lib/schemas.ts`);
     failed++;
     continue;
   }
-  const parsed = (list === "list" ? z.array(schema) : schema).safeParse(JSON.parse(readFileSync(join(dir, file), "utf8")));
+  const parsed = types.parseJson(list === "list" ? z.array(schema) : schema, readFileSync(join(dir, file), "utf8"));
   if (parsed.success) {
     console.log(`✓ ${file}`);
   } else {

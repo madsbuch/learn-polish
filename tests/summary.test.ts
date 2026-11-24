@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { celebrates, impactLine, masteryReason, nextLine, scoreText, toneOf } from "../src/lib/summary";
-import type { Impact, MasteryEntry } from "../src/lib/types";
+import { MasteryEntryIdSchema, type Impact, type MasteryEntry } from "../src/lib/schemas";
 
 const impact = (grade: "pass" | "ace", moreRight: number | null, delta: number, reason = "pass_same_day"): Impact => ({
   grade,
@@ -13,8 +13,23 @@ const impact = (grade: "pass" | "ace", moreRight: number | null, delta: number, 
   reason,
 });
 
-const row = (reason: string, delta = 0): MasteryEntry =>
-  ({ reason, delta, before: 40, after: 40 + delta }) as MasteryEntry;
+const row = (reason: string, delta = 0): MasteryEntry => ({
+  id: MasteryEntryIdSchema.parse(`mst_0${"0".repeat(25)}`),
+  at: 0,
+  day: 0,
+  delta,
+  before: 40,
+  after: 40 + delta,
+  grade: "pass",
+  correct: null,
+  almost: null,
+  total: null,
+  daysSince: null,
+  extra: false,
+  via: "drill",
+  reason,
+  text: "",
+});
 
 describe("tone", () => {
   // Spec: SUM-5, SUM-6, SUM-9

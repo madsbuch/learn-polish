@@ -15,9 +15,9 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { AiModel, BenchRun } from "../lib/types";
+import type { AiModel, BenchRun } from "../lib/schemas";
 import { onEvent } from "../lib/events";
-import { z } from "zod";
+import { BenchProgressSchema } from "../lib/schemas";
 
 const PARTS: { key: "polish" | "tools" | "rules"; label: string }[] = [
   { key: "polish", label: "Polish" },
@@ -58,7 +58,7 @@ export function Benchmark({ onClose }: { onClose: () => void }) {
       .aiListModels()
       .then((list) => setModels(list.filter((m) => m.tools && m.voices.length === 0)))
       .catch(() => {});
-    const off = onEvent(z.object({ done: z.number(), total: z.number() }), "bench://progress", (event) =>
+    const off = onEvent(BenchProgressSchema, "bench://progress", (event) =>
       setProgress(event.payload),
     );
     return () => {

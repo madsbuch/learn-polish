@@ -17,7 +17,7 @@ import {
   Text,
 } from "../design";
 import { api, errorMessage } from "../lib/api";
-import type { PodcastCast, PodcastFormat, Settings, SongLength, TopicIdea, WikiHit } from "../lib/types";
+import type { PodcastCast, PodcastFormat, Settings, SongLength, TopicIdea, WikiHit } from "../lib/schemas";
 
 const FORMAT_HINTS: Record<PodcastFormat, string> = {
   pairs: "Each sentence in English, then in Polish — like a song's verses.",

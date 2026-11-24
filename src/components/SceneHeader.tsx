@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { z } from "zod";
 
 import { Banner, Button, Inline, Spinner, Text } from "../design";
 import { api, errorMessage } from "../lib/api";
 import { onEvent } from "../lib/events";
 import { speakQuietly } from "../lib/speech";
 import { toast } from "../lib/toast";
-import { LessonIdSchema, type LessonDetail, type SceneSpot } from "../lib/types";
+import { LessonWorkSchema, type LessonDetail, type SceneSpot } from "../lib/schemas";
 import { ScenePlaceholder, SceneView } from "./Scene";
 
 const STATUS_TEXT = {
@@ -28,7 +27,7 @@ export function SceneHeader({ lesson, onChanged }: { lesson: LessonDetail; onCha
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
-    const off = onEvent(z.object({ lessonId: LessonIdSchema, status: z.string() }), "scenes://changed", (event) => {
+    const off = onEvent(LessonWorkSchema, "scenes://changed", (event) => {
       if (event.payload.lessonId === lesson.id) changed.current();
     });
     return () => {

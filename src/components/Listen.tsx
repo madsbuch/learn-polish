@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { Stack, Text } from "../design";
 import { speakQuietly } from "../lib/speech";
-import type { DiffWord } from "../lib/types";
+import type { DiffWord } from "../lib/schemas";
 import { SlowButton, SpeakButton } from "./ui";
 
 /*

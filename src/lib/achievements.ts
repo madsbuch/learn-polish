@@ -1,4 +1,4 @@
-import type { Achievement } from "./types";
+import type { Achievement } from "./schemas";
 
 /** "4 of 7 days": how far along, in what it counts (every unit takes an s). */
 export function achievementProgress(achievement: Achievement): string {

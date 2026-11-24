@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 import { dayToDate } from "./lessons";
 import type { BadgeTone } from "../design";
-import type { CourseId, Filter, Strength } from "./types";
+import type { CourseId, Filter, Strength } from "./schemas";
 
 /*
  * What the Progress → "What you've met" and "Insights" pages share: the

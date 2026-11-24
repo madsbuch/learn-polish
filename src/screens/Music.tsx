@@ -45,7 +45,7 @@ import {
   usePlayer,
   type QueueItem,
 } from "../lib/player";
-import type { Playlist, PlaylistId, Settings, Song, SongId, SourceId, TrackId, WikiSource } from "../lib/types";
+import type { Playlist, PlaylistId, Settings, Song, SongId, SourceId, TrackId, WikiSource } from "../lib/schemas";
 import { EpisodeSources, PodcastSound } from "../components/Podcast";
 import { SourceReader } from "../components/Sources";
 import { go, goUp, open, useAddress, type Address, type Segment } from "../lib/navigation";
