@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Radio",
+  "summary": "A station that plays the library and keeps making new songs, podcasts and news for it, joined by spoken bridges.",
+  "order": 4,
+  "description": "For listening while doing something else. A mixing agent runs the programme: it plays what the library has, orders new material, and links the items with short spoken bridges, the way a presenter does.",
+  "stories": [
+    {
+      "id": "US-RADIO-1",
+      "as": "a learner listening while doing something else",
+      "want": "a station that keeps making new Polish songs, podcasts and news",
+      "soThat": "I hear new material without asking for each piece",
+      "requirements": [
+        "#RADIO-1",
+        "#RADIO-2",
+        "#RADIO-4",
+        "#RADIO-10"
+      ]
+    },
+    {
+      "id": "US-RADIO-2",
+      "as": "a learner who liked something on the radio",
+      "want": "it kept in my library",
+      "soThat": "I can play it again and practise it",
+      "requirements": [
+        "#RADIO-3",
+        "#RADIO-6"
+      ]
+    },
+    {
+      "id": "US-RADIO-3",
+      "as": "a learner listening to the radio",
+      "want": "spoken bridges between the items, reused when they fit",
+      "soThat": "it sounds like a station and the bridges become familiar Polish",
+      "requirements": [
+        "#RADIO-5",
+        "#RADIO-7",
+        "#RADIO-9"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "RADIO-1",
+      "text": "Tuning in starts a programme that plays songs and episodes from the library while new songs, podcast episodes and news episodes are made for it."
+    },
+    {
+      "id": "RADIO-2",
+      "text": "A mixing agent on the tutor's model chooses what plays next and what is made, from the learner's open courses, their interests and what was played recently.",
+      "related": [
+        "tutor#TUTOR-1",
+        "music/podcasts#POD-5"
+      ]
+    },
+    {
+      "id": "RADIO-3",
+      "text": "Every song and episode the radio makes is kept in the library like one the learner asked for, filed under the course whose words it uses, and marked as made by the radio.",
+      "related": [
+        "principles#PRIN-3",
+        "music#SONG-10"
+      ]
+    },
+    {
+      "id": "RADIO-4",
+      "text": "A new song or episode joins the programme as soon as it is ready; until then the library fills it."
+    },
+    {
+      "id": "RADIO-5",
+      "text": "Between items the radio plays bridges: short spoken lines in the speech voices that introduce what comes next or look back on what just played."
+    },
+    {
+      "id": "RADIO-6",
+      "text": "Bridges are not songs or episodes and never appear in the library."
+    },
+    {
+      "id": "RADIO-7",
+      "text": "Every bridge is kept with its text, its audio and what it is about: the station, or one song or episode. The mixing agent can search the kept bridges and reuse one, or write a new one.",
+      "related": [
+        "speech#SPEECH-1"
+      ]
+    },
+    {
+      "id": "RADIO-8",
+      "text": "A bridge about a song or episode is deleted with it."
+    },
+    {
+      "id": "RADIO-9",
+      "text": "Bridges are spoken in the pairs or the immersion format, chosen for the radio.",
+      "related": [
+        "music/podcasts#POD-3"
+      ]
+    },
+    {
+      "id": "RADIO-10",
+      "text": "The radio shows what is playing and what comes next, including items still being made."
+    },
+    {
+      "id": "RADIO-11",
+      "text": "New material is ordered only while the radio plays."
+    },
+    {
+      "id": "RADIO-12",
+      "text": "Offline, the radio plays the library with kept bridges and makes nothing new."
+    },
+    {
+      "id": "RADIO-13",
+      "text": "The radio plays through the app's one player, so following lyrics, the phone's controls and Sonos work on it.",
+      "related": [
+        "music/player#PLAY-1",
+        "music/player#PLAY-9",
+        "music/sonos#SONOS-3"
+      ]
+    }
+  ],
+  "related": [
+    "music",
+    "music/player",
+    "music/podcasts",
+    "music/sonos"
+  ]
+}
