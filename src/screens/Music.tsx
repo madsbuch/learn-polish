@@ -43,7 +43,7 @@ import {
   syncLibrary,
   toggle,
   usePlayer,
-  type QueueItem,
+  type TakeItem,
 } from "../lib/player";
 import type { Playlist, PlaylistId, Settings, Song, SongId, SourceId, TrackId, WikiSource } from "../lib/schemas";
 import { EpisodeSources, PodcastSound } from "../components/Podcast";
@@ -94,7 +94,7 @@ function showView(view: View): void {
 }
 
 /** Every downloaded take, in library order. */
-function allTakes(songs: Song[]): QueueItem[] {
+function allTakes(songs: Song[]): TakeItem[] {
   return songs
     .filter((song) => song.status === "ready")
     .flatMap((song) => song.tracks.map((track) => ({ song, track })));
@@ -108,8 +108,10 @@ function making(song: Song): string {
 }
 
 /** A row's subtitle: a song's chorus, or that it is a podcast. */
+// Spec: RADIO-3
 function describe(song: Song): string {
-  return song.kind === "podcast" ? `Podcast · ${song.chorusPl}` : `„${song.chorusPl}”`;
+  const what = song.kind === "podcast" ? `Podcast · ${song.chorusPl}` : `„${song.chorusPl}”`;
+  return song.origin?.madeBy === "radio" ? `Radio · ${what}` : what;
 }
 
 function plural(n: number, word: string): string {
@@ -129,9 +131,15 @@ function NowPlaying({ onOpen }: { onOpen: () => void }) {
     <div className="now-playing">
       <List>
         <ListItem
-          leading={<Cover fileId={item.track.imageFileId} size={44} />}
-          title={item.song.title}
-          subtitle={player.cast ? `Now playing on ${player.cast.device.name}` : "Now playing"}
+          leading={<Cover fileId={item.track?.imageFileId ?? null} size={44} />}
+          title={item.song?.title ?? "Radio"}
+          subtitle={
+            player.cast
+              ? `Now playing on ${player.cast.device.name}`
+              : player.owner === "radio"
+                ? "On the radio"
+                : "Now playing"
+          }
           label="Open the player"
           onClick={onOpen}
           trailing={
@@ -192,7 +200,7 @@ export function Music({
   const shownTab = view.kind === "playlist" ? "playlists" : tab;
 
   const tracks = useMemo(() => {
-    const map = new Map<TrackId, QueueItem>();
+    const map = new Map<TrackId, TakeItem>();
     for (const item of allTakes(songs ?? [])) map.set(item.track.id, item);
     return map;
   }, [songs]);
@@ -317,6 +325,15 @@ export function Music({
       {feedback}
 
       <NowPlaying onOpen={() => go({ tab: "music", trail: [{ kind: "playing" }] })} />
+
+      <List>
+        <ListItem
+          leading={<PlayerIcon.radio />}
+          title="Radio"
+          subtitle="Your library, with new songs, podcasts and news made as it plays"
+          onClick={() => go({ tab: "music", trail: [{ kind: "radio" }] })}
+        />
+      </List>
 
       {!ready || !settings.hasKieKey ? (
         <Banner tone="info">
@@ -484,7 +501,7 @@ export function SongScreen({ songId }: { songId: SongId }) {
 }
 
 /** Play and Shuffle for a list of takes. */
-function PlayButtons({ queue }: { queue: QueueItem[] }) {
+function PlayButtons({ queue }: { queue: TakeItem[] }) {
   if (queue.length === 0) return null;
   return (
     <Inline gap={2}>
@@ -507,9 +524,9 @@ function PlayButtons({ queue }: { queue: QueueItem[] }) {
 }
 
 /** A cover that shows play/pause over it while its take is the one playing. */
-function TrackCover({ item, size = 48 }: { item: QueueItem; size?: number }) {
+function TrackCover({ item, size = 48 }: { item: TakeItem; size?: number }) {
   const player = usePlayer();
-  const current = currentItem(player)?.track.id === item.track.id;
+  const current = currentItem(player)?.track?.id === item.track.id;
   return (
     <span className="cover-wrap">
       <Cover fileId={item.track.imageFileId} size={size} />
@@ -524,7 +541,7 @@ function TrackCover({ item, size = 48 }: { item: QueueItem; size?: number }) {
 
 function useIsCurrent(trackId: TrackId): boolean {
   const player = usePlayer();
-  return currentItem(player)?.track.id === trackId;
+  return currentItem(player)?.track?.id === trackId;
 }
 
 /** A row that plays its take when tapped, or pauses it while it plays. */
@@ -534,7 +551,7 @@ function TrackRow({
   onPlay,
   trailing,
 }: {
-  item: QueueItem;
+  item: TakeItem;
   subtitle: string;
   onPlay: () => void;
   trailing?: ReactNode;
@@ -743,8 +760,8 @@ function SongPage({
   const [adding, setAdding] = useState<TrackId | null>(null);
   const exporter = useTrackExport(onMessage);
   const player = usePlayer();
-  const playingId = currentItem(player)?.track.id ?? null;
-  const takes: QueueItem[] = song.tracks.map((track) => ({ song, track }));
+  const playingId = currentItem(player)?.track?.id ?? null;
+  const takes: TakeItem[] = song.tracks.map((track) => ({ song, track }));
   const podcast = song.kind === "podcast";
 
   async function act(action: () => Promise<unknown>, after: () => void = onChanged) {
@@ -759,7 +776,7 @@ function SongPage({
     }
   }
 
-  function play(item: QueueItem) {
+  function play(item: TakeItem) {
     if (item.track.id === playingId) {
       toggle();
       return;
@@ -934,10 +951,10 @@ function SongPage({
 
 // ------------------------------------------------------------------ playlists
 
-function playlistItems(playlist: Playlist, tracks: Map<TrackId, QueueItem>) {
+function playlistItems(playlist: Playlist, tracks: Map<TrackId, TakeItem>) {
   return playlist.entries
     .map((entry) => ({ entry, item: tracks.get(entry.trackId) }))
-    .filter((row): row is { entry: (typeof playlist.entries)[number]; item: QueueItem } => Boolean(row.item));
+    .filter((row): row is { entry: (typeof playlist.entries)[number]; item: TakeItem } => Boolean(row.item));
 }
 
 function PlaylistList({
@@ -949,7 +966,7 @@ function PlaylistList({
   onError,
 }: {
   playlists: Playlist[] | null;
-  tracks: Map<TrackId, QueueItem>;
+  tracks: Map<TrackId, TakeItem>;
   /** The playlist open beside the list (wide windows). */
   current?: PlaylistId;
   onOpen: (playlistId: PlaylistId) => void;
@@ -1023,7 +1040,7 @@ function PlaylistPage({
   onError,
 }: {
   playlist: Playlist;
-  tracks: Map<TrackId, QueueItem>;
+  tracks: Map<TrackId, TakeItem>;
   onChanged: (playlist: Playlist) => void;
   onDeleted: () => void;
   onError: (message: string) => void;

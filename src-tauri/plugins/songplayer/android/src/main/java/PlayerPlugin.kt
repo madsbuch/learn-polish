@@ -49,6 +49,11 @@ class SetQueueArgs {
 }
 
 @InvokeArg
+class AddItemsArgs {
+    lateinit var items: List<QueueItem>
+}
+
+@InvokeArg
 class SeekArgs {
     var seconds: Double = 0.0
 }
@@ -233,32 +238,51 @@ class PlayerPlugin(private val activity: Activity) : Plugin(activity) {
         else -> Player.REPEAT_MODE_ALL
     }
 
+    private fun mediaItem(item: QueueItem): MediaItem {
+        val uri = Uri.fromFile(File(item.path))
+        val metadata = MediaMetadata.Builder()
+            .setTitle(item.title)
+            .setArtist(item.artist)
+            .setAlbumTitle("Polski")
+            .setArtworkUri(item.artwork?.let { Uri.fromFile(File(it)) })
+            .build()
+        return MediaItem.Builder()
+            .setMediaId(item.id)
+            .setUri(uri)
+            // Survives the hand-over to the service; see onAddMediaItems.
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
     @Command
     fun setQueue(invoke: Invoke) {
         val args = invoke.parseArgs(SetQueueArgs::class.java)
         withController(invoke) { c ->
             PlaybackService.instance?.stopRemote()
-            val items = args.items.map { item ->
-                val uri = Uri.fromFile(File(item.path))
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(item.title)
-                    .setArtist(item.artist)
-                    .setAlbumTitle("Polski")
-                    .setArtworkUri(item.artwork?.let { Uri.fromFile(File(it)) })
-                    .build()
-                MediaItem.Builder()
-                    .setMediaId(item.id)
-                    .setUri(uri)
-                    // Survives the hand-over to the service; see onAddMediaItems.
-                    .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
-                    .setMediaMetadata(metadata)
-                    .build()
-            }
+            val items = args.items.map { mediaItem(it) }
             val start = args.index.coerceIn(0, maxOf(0, items.size - 1))
             c.setMediaItems(items, start, (args.position * 1000).toLong())
             c.repeatMode = repeatMode(args.repeat)
             c.prepare()
             if (args.play) c.play()
+            null
+        }
+    }
+
+    /** Adds to the end of the queue while it plays (the radio's programme). */
+    @Command
+    fun addItems(invoke: Invoke) {
+        val args = invoke.parseArgs(AddItemsArgs::class.java)
+        withController(invoke) { c ->
+            val first = c.mediaItemCount
+            val ended = c.playbackState == Player.STATE_ENDED
+            c.addMediaItems(args.items.map { mediaItem(it) })
+            // The queue had run out before these came: go on with them.
+            if (ended && args.items.isNotEmpty()) {
+                c.seekToDefaultPosition(first)
+                c.play()
+            }
             null
         }
     }

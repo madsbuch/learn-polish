@@ -5,6 +5,7 @@ Everything the app's song player uses.
 #### This default permission set includes the following:
 
 - `allow-set-queue`
+- `allow-add-items`
 - `allow-play`
 - `allow-pause`
 - `allow-toggle`
@@ -31,6 +32,32 @@ Everything the app's song player uses.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`songplayer:allow-add-items`
+
+</td>
+<td>
+
+Enables the add_items command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`songplayer:deny-add-items`
+
+</td>
+<td>
+
+Denies the add_items command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

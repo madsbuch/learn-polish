@@ -120,6 +120,8 @@ export type Segment =
   | { kind: "compose"; what: "song" | "podcast" }
   /** The full player. */
   | { kind: "playing" }
+  /** The radio (radio.json). */
+  | { kind: "radio" }
   /** A tutor conversation; "new" until its first reply names it. */
   | { kind: "chat"; id: ConversationId | "new" }
   | { kind: "settings"; page: SettingsPage }
@@ -201,6 +203,7 @@ function formatSegment(seg: Segment, tab: Tab, prev: Segment | null): string[] {
     case "talk":
     case "done":
     case "playing":
+    case "radio":
     case "audio":
     case "search":
     case "progress":
@@ -365,7 +368,9 @@ function parseSegment(tokens: string[], i: number, tab: Tab, prev: Segment | nul
       return tab === "music" && atRoot ? { segment: { kind: "compose", what: next }, used: 2 } : null;
     return { segment: { kind: "chat", id: "new" }, used: 1 };
   }
-  if (token === "playing") return tab === "music" && atRoot ? { segment: { kind: "playing" }, used: 1 } : null;
+  if (token === "playing")
+    return tab === "music" && (atRoot || prev?.kind === "radio") ? { segment: { kind: "playing" }, used: 1 } : null;
+  if (token === "radio") return tab === "music" && atRoot ? { segment: { kind: "radio" }, used: 1 } : null;
   if (token === "audio") return prev?.kind === "settings" ? { segment: { kind: "audio" }, used: 1 } : null;
   if (tab === "exercises" && atRoot && (token === "search" || token === "progress" || token === "games"))
     return { segment: { kind: token }, used: 1 };

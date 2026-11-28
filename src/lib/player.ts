@@ -19,15 +19,50 @@ import { platform } from "@tauri-apps/plugin-os";
 import { fileUrl } from "./files";
 import { api, errorMessage } from "./api";
 import { logCause } from "./log";
-import type { CastDevice, CastState, Song, SongTrack, TrackId } from "./schemas";
+import type { Bridge, CastDevice, CastState, PlayableId, Song, SongTrack, TrackId } from "./schemas";
 import { onEvent } from "./events";
 import { CastStateSchema, NativePlayerStateSchema, PlatformSchema } from "./schemas";
 
 export type RepeatMode = "all" | "one" | "off";
 
-export interface QueueItem {
+/** A take from the library, with its song. */
+export interface TakeItem {
   song: Song;
   track: SongTrack;
+  bridge?: undefined;
+}
+
+/** One of the radio's spoken bridges (RADIO-5). */
+export interface BridgeItem {
+  bridge: Bridge;
+  song?: undefined;
+  track?: undefined;
+}
+
+export type QueueItem = TakeItem | BridgeItem;
+
+/** Who started the queue: the library (a song, a playlist…) or the radio. */
+export type QueueOwner = "library" | "radio";
+
+export function isBridge(item: QueueItem): item is BridgeItem {
+  return item.bridge !== undefined;
+}
+
+/** The id the engines know an item by: its take's, or its bridge's. */
+export function itemId(item: QueueItem): PlayableId {
+  return item.bridge ? item.bridge.id : item.track.id;
+}
+
+/** What the screens and engines show for an item. */
+export function itemTitle(item: QueueItem): { title: string; artist: string } {
+  if (item.bridge) return { title: "Radio", artist: item.bridge.lines[0]?.pl ?? "" };
+  return { title: item.song.title, artist: item.song.chorusPl };
+}
+
+function itemAudio(item: QueueItem) {
+  return item.bridge
+    ? { fileId: item.bridge.audioFileId, path: item.bridge.audioPath, duration: item.bridge.duration }
+    : { fileId: item.track.audioFileId, path: item.track.audioPath, duration: item.track.duration };
 }
 
 export interface PlayerState {
@@ -42,6 +77,8 @@ export interface PlayerState {
   cast: CastState | null;
   /** The last playback problem, for the UI to show. */
   error: string | null;
+  /** Who started the queue. */
+  owner: QueueOwner;
   /** performance.now() when `position` was last reported, to extrapolate. */
   positionAt: number;
 }
@@ -68,8 +105,14 @@ let state: PlayerState = {
   shuffle: false,
   cast: null,
   error: null,
+  owner: "library",
   positionAt: 0,
 };
+
+/** The radio's queue never repeats: it goes on with what the radio adds. */
+function effectiveRepeat(): RepeatMode {
+  return state.owner === "radio" ? "off" : state.repeat;
+}
 
 const listeners = new Set<() => void>();
 
@@ -95,15 +138,17 @@ const isAndroid = (() => {
 // ------------------------------------------------------------- play counts
 
 /** A play counts once per pass, when the learner is half-way through. */
-let counted: { trackId: TrackId } | null = null;
+let counted: { id: PlayableId } | null = null;
 
-function maybeCount(trackId: TrackId | undefined, position: number, duration: number) {
-  if (trackId === undefined) return;
+function maybeCount(item: QueueItem | undefined, position: number, duration: number) {
+  if (item === undefined) return;
+  const id = itemId(item);
   if (position < 5) counted = null; // back at the start: a new pass
-  if (counted?.trackId === trackId) return;
+  if (counted?.id === id) return;
   if (duration > 0 && position / duration > 0.5) {
-    counted = { trackId };
-    void api.songTrackPlayed(trackId).catch(() => {});
+    counted = { id };
+    const done = item.bridge ? api.radioBridgePlayed(item.bridge.id) : api.songTrackPlayed(item.track.id);
+    void done.catch(() => {});
   }
 }
 
@@ -129,15 +174,15 @@ function listenNative() {
       set({ queue: [], index: -1, playing: false, position: 0, duration: 0 });
       return;
     }
-    const index = state.queue.findIndex((item) => String(item.track.id) === native.id);
+    const index = state.queue.findIndex((item) => String(itemId(item)) === native.id);
     const current = state.queue[index >= 0 ? index : native.index];
     set({
       index: index >= 0 ? index : native.index,
       playing: native.playing,
       position: native.position,
-      duration: native.duration || current?.track.duration || 0,
+      duration: native.duration || (current ? itemAudio(current).duration : 0),
     });
-    maybeCount(current?.track.id, native.position, native.duration);
+    maybeCount(current, native.position, native.duration);
   }).catch(fail);
 }
 
@@ -165,17 +210,20 @@ function element(): HTMLAudioElement {
   el.addEventListener("timeupdate", () => {
     if (state.cast) return;
     set({ position: el.currentTime });
-    maybeCount(state.queue[state.index]?.track.id, el.currentTime, el.duration);
+    maybeCount(state.queue[state.index], el.currentTime, el.duration);
   });
   el.addEventListener("ended", () => {
     if (state.cast) return;
-    if (state.repeat === "one") {
+    const repeat = effectiveRepeat();
+    if (repeat === "one") {
       el.currentTime = 0;
       void el.play();
       return;
     }
     const last = state.index >= state.queue.length - 1;
-    if (last && state.repeat === "off") {
+    if (last && repeat === "off") {
+      // The radio may add more; it then goes on (appendToQueue).
+      ranOut = true;
       set({ playing: false, position: 0 });
       return;
     }
@@ -185,12 +233,17 @@ function element(): HTMLAudioElement {
   return audio;
 }
 
+/** The web player reached the end of a queue that does not repeat. */
+let ranOut = false;
+
 function webLoad(index: number, autoplay: boolean) {
   const item = state.queue[index];
   if (!item) return;
+  ranOut = false;
   const a = element();
-  a.src = fileUrl(item.track.audioFileId);
-  set({ index, position: 0, duration: item.track.duration || 0 });
+  const audio = itemAudio(item);
+  a.src = fileUrl(audio.fileId);
+  set({ index, position: 0, duration: audio.duration || 0 });
   updateMediaMetadata(item);
   if (autoplay) void a.play().catch(() => set({ playing: false }));
 }
@@ -213,7 +266,7 @@ function applyCast(cast: CastState | null) {
     }
     return;
   }
-  const index = state.queue.findIndex((item) => item.track.id === cast.trackId);
+  const index = state.queue.findIndex((item) => itemId(item) === cast.trackId);
   set({
     cast,
     playing: cast.playing,
@@ -229,12 +282,12 @@ function castCommand(action: string, value?: number) {
 
 async function startCast(device: CastDevice, index: number) {
   listenCast();
-  const trackIds = state.queue.map((item) => item.track.id);
+  const trackIds = state.queue.map(itemId);
   if (trackIds.length === 0) throw new Error("Pick a song to play first.");
   // Hand over: the phone goes quiet, the speaker takes the queue.
   if (isAndroid) await native("pause");
   else audio?.pause();
-  const cast = await api.castStart(device, trackIds, index, state.repeat);
+  const cast = await api.castStart(device, trackIds, index, effectiveRepeat());
   applyCast(cast);
   if (isAndroid) {
     const control = await api.castControlInfo();
@@ -254,32 +307,63 @@ function shuffled<T>(items: T[], first: number): T[] {
   return head === undefined ? rest : [head, ...rest];
 }
 
+/** What Android's native player is handed for an item. */
+function nativeItem(item: QueueItem) {
+  const { title, artist } = itemTitle(item);
+  return {
+    id: String(itemId(item)),
+    path: itemAudio(item).path,
+    title,
+    artist,
+    artwork: item.track?.imagePath ?? null,
+  };
+}
+
 /** Starts `queue` at `index` — on the speaker if casting, else on the phone. */
-export function playQueue(queue: QueueItem[], index = 0, options?: { shuffle?: boolean }) {
+export function playQueue(
+  queue: QueueItem[],
+  index = 0,
+  options?: { shuffle?: boolean; owner?: QueueOwner },
+) {
   if (queue.length === 0) return;
   const shuffle = options?.shuffle ?? false;
   const ordered = shuffle ? shuffled(queue, index) : queue;
   const start = shuffle ? 0 : index;
   counted = null;
-  set({ queue: ordered, shuffle, index: start, position: 0, error: null });
+  set({ queue: ordered, shuffle, index: start, position: 0, error: null, owner: options?.owner ?? "library" });
 
   if (state.cast) {
     void startCast(state.cast.device, start).catch(fail);
   } else if (isAndroid) {
     void native("set_queue", {
-      items: ordered.map((item) => ({
-        id: String(item.track.id),
-        path: item.track.audioPath,
-        title: item.song.title,
-        artist: item.song.chorusPl,
-        artwork: item.track.imagePath,
-      })),
+      items: ordered.map(nativeItem),
       index: start,
       play: true,
-      repeat: state.repeat,
+      repeat: effectiveRepeat(),
     });
   } else {
     webLoad(start, true);
+  }
+}
+
+/**
+ * Adds to the end of the queue while it plays: the radio's programme
+ * (RADIO-4). A queue that had run out goes on with them.
+ */
+// Spec: RADIO-4, RADIO-13
+export function appendToQueue(items: QueueItem[]) {
+  if (items.length === 0 || state.queue.length === 0) return;
+  const first = state.queue.length;
+  set({ queue: [...state.queue, ...items] });
+  if (state.cast) {
+    void api
+      .castAppend(items.map(itemId))
+      .then(applyCast)
+      .catch(fail);
+  } else if (isAndroid) {
+    void native("add_items", { items: items.map(nativeItem) });
+  } else if (ranOut) {
+    webLoad(first, true);
   }
 }
 
@@ -376,7 +460,7 @@ function applyAwake(enabled: boolean) {
 export const canShare = isAndroid;
 
 /** Opens the phone's share sheet with a take's MP3. */
-export async function shareTrack(item: QueueItem) {
+export async function shareTrack(item: TakeItem) {
   const path = await api.songTrackShareFile(item.track.id);
   await invoke("plugin:songplayer|share_file", {
     path,
@@ -419,15 +503,15 @@ export function cycleRepeat() {
   }
   void api.updateSettings({ playerRepeat: repeat }).catch(() => {});
   set({ repeat });
-  if (state.cast) void api.castSetRepeat(repeat).catch(fail);
-  else if (isAndroid) void native("set_repeat", { repeat });
+  if (state.cast) void api.castSetRepeat(effectiveRepeat()).catch(fail);
+  else if (isAndroid) void native("set_repeat", { repeat: effectiveRepeat() });
 }
 
 export function stopPlayback() {
   if (state.cast) void castCommand("stop");
   if (isAndroid) void native("stop");
   audio?.pause();
-  set({ queue: [], index: -1, playing: false, position: 0, duration: 0, cast: null });
+  set({ queue: [], index: -1, playing: false, position: 0, duration: 0, cast: null, owner: "library" });
 }
 
 /** Finds Sonos rooms. `address` asks one speaker directly. */
@@ -476,15 +560,32 @@ export function resumeCast() {
  */
 export function syncLibrary(songs: Song[]) {
   if (state.queue.length === 0) return;
-  const tracks = new Map<TrackId, QueueItem>();
+  const tracks = new Map<TrackId, TakeItem>();
   for (const song of songs) for (const track of song.tracks) tracks.set(track.id, { song, track });
-  const current = state.queue[state.index];
-  if (current && !tracks.has(current.track.id) && !state.cast) {
+  const kept = keptInLibrary(state, tracks);
+  // The song playing was deleted: it stops (a speaker plays on by itself).
+  if (state.index >= 0 && kept.index < 0 && !state.cast) {
     stopPlayback();
     return;
   }
-  const queue = state.queue.map((item) => tracks.get(item.track.id)).filter((item): item is QueueItem => Boolean(item));
-  set({ queue, index: current ? queue.findIndex((i) => i.track.id === current.track.id) : -1 });
+  set(kept);
+}
+
+/**
+ * The queue with each take brought up to date and deleted takes left out.
+ * The radio's bridges are not in the library and stay (RADIO-6). Exported
+ * for the tests.
+ */
+export function keptInLibrary(
+  player: Pick<PlayerState, "queue" | "index">,
+  tracks: Map<TrackId, TakeItem>,
+): Pick<PlayerState, "queue" | "index"> {
+  const current = player.queue[player.index];
+  const queue = player.queue
+    .map((item) => (item.bridge ? item : tracks.get(item.track.id)))
+    .filter((item): item is QueueItem => Boolean(item));
+  const index = current ? queue.findIndex((i) => itemId(i) === itemId(current)) : -1;
+  return { queue, index };
 }
 
 /**
@@ -501,14 +602,24 @@ export function preferredTake(song: Song): SongTrack | null {
 }
 
 /** One take per finished song, in library order — what "play all" plays. */
-export function libraryQueue(songs: Song[], chosen?: SongTrack): QueueItem[] {
+export function libraryQueue(songs: Song[], chosen?: SongTrack): TakeItem[] {
   return songs
     .filter((song) => song.status === "ready")
     .map((song) => {
       const track = chosen && chosen.songId === song.id ? chosen : preferredTake(song);
       return track ? { song, track } : null;
     })
-    .filter((item): item is QueueItem => item !== null);
+    .filter((item): item is TakeItem => item !== null);
+}
+
+/** Follows the player outside React (the radio does). */
+export function subscribePlayer(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function playerState(): PlayerState {
+  return state;
 }
 
 export function usePlayer(): PlayerState {
@@ -548,11 +659,13 @@ function setupMediaSession() {
 function updateMediaMetadata(item: QueueItem) {
   if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
   try {
+    const { title, artist } = itemTitle(item);
+    const image = item.track?.imageFileId ?? null;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: item.song.title,
-      artist: item.song.chorusPl,
+      title,
+      artist,
       album: "Polski",
-      artwork: item.track.imageFileId !== null ? [{ src: fileUrl(item.track.imageFileId), sizes: "512x512" }] : [],
+      artwork: image !== null ? [{ src: fileUrl(image), sizes: "512x512" }] : [],
     });
   } catch {
     /* MediaMetadata missing in some webviews */

@@ -2,6 +2,7 @@
 // there. Listing them here generates the matching permissions.
 const COMMANDS: &[&str] = &[
     "set_queue",
+    "add_items",
     "play",
     "pause",
     "toggle",

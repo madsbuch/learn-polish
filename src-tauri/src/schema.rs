@@ -498,6 +498,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    /// The radio's spoken bridges (radio.rs).
+    use diesel::sql_types::*;
+    use crate::ids::*;
+
+    bridges (id) {
+        id -> BridgeIdSql,
+        song_id -> Nullable<SongIdSql>,
+        role -> Text,
+        /// JSON: the lines said, [{pl, en}].
+        lines -> Text,
+        format -> Text,
+        voice -> Text,
+        audio_file_id -> FileIdSql,
+        duration -> Double,
+        /// JSON: the lines with when each is said.
+        timed_lines -> Text,
+        play_count -> BigInt,
+        last_played_at -> Nullable<BigInt>,
+        created_at -> BigInt,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use crate::ids::*;
 
@@ -910,6 +933,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     tutor_messages,
     songs,
     song_tracks,
+    bridges,
     playlists,
     playlist_tracks,
     ai_costs,

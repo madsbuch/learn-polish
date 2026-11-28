@@ -2,6 +2,7 @@
 description = "Everything the app's song player uses."
 permissions = [
   "allow-set-queue",
+  "allow-add-items",
   "allow-play",
   "allow-pause",
   "allow-toggle",

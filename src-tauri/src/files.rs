@@ -39,6 +39,9 @@ pub const WORD_IMAGE: &str = "word_image";
 pub const SCENE_IMAGE: &str = "scene_image";
 /// A story lesson's panel picture (stories.rs).
 pub const STORY_IMAGE: &str = "story_image";
+/// A radio bridge's audio (radio.rs): played by the song player, so it keeps
+/// a copy on disk like a song.
+pub const BRIDGE_AUDIO: &str = "bridge_audio";
 
 /// A file's details, without its bytes.
 #[allow(dead_code)] // every column, though not every caller reads each
@@ -187,7 +190,7 @@ pub fn replace_audio(conn: &mut Conn, dir: Option<&Path>, old: FileId, mime: &st
 /// Every file some row points at. This is the one list of the columns that
 /// reference files: a new one belongs here, with a foreign key in the schema.
 pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> {
-    use crate::schema::{scenes, song_tracks, speech_clips, story_panels, courses, wiki_sources, words};
+    use crate::schema::{bridges, scenes, song_tracks, speech_clips, story_panels, courses, wiki_sources, words};
     let mut ids: std::collections::HashSet<FileId> =
         speech_clips::table.select(speech_clips::file_id).load::<FileId>(conn)?.into_iter().collect();
     let takes: Vec<(Option<FileId>, Option<FileId>)> =
@@ -198,6 +201,7 @@ pub fn referenced(conn: &mut Conn) -> Result<std::collections::HashSet<FileId>> 
     ids.extend(words::table.select(words::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     ids.extend(scenes::table.select(scenes::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
     ids.extend(story_panels::table.select(story_panels::image_file_id).load::<Option<FileId>>(conn)?.into_iter().flatten());
+    ids.extend(bridges::table.select(bridges::audio_file_id).load::<FileId>(conn)?);
     Ok(ids)
 }
 
@@ -394,14 +398,15 @@ pub fn sync_to_disk(app: &AppHandle) {
             if let Ok(data) = app.path().app_data_dir() {
                 let _ = std::fs::remove_dir_all(data.join("pictures"));
             }
-            // Only song files keep a copy: the paths of any others go.
+            // Only what the song player plays keeps a copy: the paths of any
+            // others go.
             diesel::sql_query(format!(
                 "DELETE FROM file_paths WHERE file_id IN \
-                 (SELECT id FROM files INDEXED BY files_meta WHERE kind NOT IN ('{SONG_AUDIO}', '{SONG_IMAGE}'))"
+                 (SELECT id FROM files INDEXED BY files_meta WHERE kind NOT IN ('{SONG_AUDIO}', '{SONG_IMAGE}', '{BRIDGE_AUDIO}'))"
             ))
             .execute(&mut *db.lock())?;
             let ids: Vec<FileId> = files::table
-                .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE]))
+                .filter(files::kind.eq_any([SONG_AUDIO, SONG_IMAGE, BRIDGE_AUDIO]))
                 .select(files::id)
                 .load(&mut *db.lock())?;
             for id in ids {

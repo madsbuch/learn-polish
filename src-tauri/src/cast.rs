@@ -22,7 +22,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::db::{self, Conn, Db};
-use crate::schema::{song_tracks, songs};
+use crate::schema::{bridges, song_tracks, songs};
 use crate::error::{Error, Result};
 #[allow(unused_imports)]
 use crate::ids::*;
@@ -64,10 +64,34 @@ pub struct CastDevice {
     pub base_url: String,
 }
 
+/// What a speaker plays: a take, or one of the radio's bridges. Sent and
+/// received as the id itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Playable {
+    Take(TrackId),
+    Bridge(BridgeId),
+}
+
+impl Playable {
+    pub fn parse(id: &str) -> Option<Self> {
+        TrackId::parse(id).map(Playable::Take).or_else(|_| BridgeId::parse(id).map(Playable::Bridge)).ok()
+    }
+}
+
+impl std::fmt::Display for Playable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Playable::Take(id) => id.fmt(f),
+            Playable::Bridge(id) => id.fmt(f),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CastItem {
-    pub track_id: TrackId,
+    pub track_id: Playable,
     pub title: String,
     pub artist: String,
 }
@@ -79,7 +103,7 @@ pub struct CastState {
     pub items: Vec<CastItem>,
     /// Index into `items` of the song Sonos is on.
     pub index: i64,
-    pub track_id: Option<TrackId>,
+    pub track_id: Option<Playable>,
     pub playing: bool,
     /// Raw UPnP state: PLAYING, PAUSED_PLAYBACK, STOPPED, TRANSITIONING.
     pub transport: String,
@@ -577,13 +601,21 @@ where
     Ok(())
 }
 
-/// A take's audio and cover art files.
-fn track_files(conn: &mut Conn, track_id: TrackId) -> Result<Option<(FileId, Option<FileId>)>> {
-    let ids: Option<(Option<FileId>, Option<FileId>)> = song_tracks::table
-        .find(track_id)
-        .select((song_tracks::audio_file_id, song_tracks::image_file_id))
-        .first(conn)
-        .optional()?;
+/// A take's (or a bridge's) audio and cover art files.
+fn track_files(conn: &mut Conn, id: Playable) -> Result<Option<(FileId, Option<FileId>)>> {
+    let ids: Option<(Option<FileId>, Option<FileId>)> = match id {
+        Playable::Take(id) => song_tracks::table
+            .find(id)
+            .select((song_tracks::audio_file_id, song_tracks::image_file_id))
+            .first(conn)
+            .optional()?,
+        Playable::Bridge(id) => bridges::table
+            .find(id)
+            .select(bridges::audio_file_id)
+            .first::<FileId>(conn)
+            .optional()?
+            .map(|audio| (Some(audio), None)),
+    };
     Ok(match ids {
         Some((Some(audio), image)) => Some((audio, image)),
         _ => None,
@@ -611,7 +643,7 @@ async fn handle_connection(app: AppHandle, mut stream: TcpStream, peer: SocketAd
     match parts.as_slice() {
         // /media/<token>/<track>.mp3 and /art/<token>/<track> — for the speaker.
         [kind @ ("media" | "art"), token, file] if *token == server.token => {
-            let Ok(track_id) = TrackId::parse(file.split('.').next().unwrap_or("")) else {
+            let Some(track_id) = Playable::parse(file.split('.').next().unwrap_or("")) else {
                 return respond(&mut stream, "404 Not Found", "text/plain", b"unknown").await;
             };
             let files = {
@@ -663,13 +695,15 @@ struct Session {
     device: CastDevice,
     items: Vec<CastItem>,
     repeat: String,
+    /// Where the speaker reaches this app's server ("http://ip:port").
+    root: String,
     /// The media URL prefix, used to recognise our own tracks.
     media_prefix: String,
     /// Bumped on every new session so an old poller stops.
     generation: u64,
     last: Option<CastState>,
     /// The track whose play has already been counted on this pass.
-    counted: Option<TrackId>,
+    counted: Option<Playable>,
 }
 
 #[derive(Default)]
@@ -699,7 +733,7 @@ fn session_device(app: &AppHandle) -> Result<CastDevice> {
         .ok_or_else(|| Error::msg("Not casting."))
 }
 
-pub fn didl(title: &str, artist: &str, url: &str, art: &str, mime: &str, id: TrackId) -> String {
+pub fn didl(title: &str, artist: &str, url: &str, art: &str, mime: &str, id: Playable) -> String {
     format!(
         "<DIDL-Lite xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
          xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" \
@@ -724,15 +758,18 @@ pub fn play_mode(repeat: &str) -> &'static str {
     }
 }
 
-fn load_items(conn: &mut Conn, track_ids: &[TrackId]) -> Result<Vec<(CastItem, String)>> {
+fn load_items(conn: &mut Conn, track_ids: &[Playable]) -> Result<Vec<(CastItem, String)>> {
     let mut items = Vec::new();
     for id in track_ids {
-        let row: Option<(String, String)> = song_tracks::table
-            .inner_join(songs::table)
-            .filter(song_tracks::id.eq(id))
-            .select((songs::title, songs::chorus_pl))
-            .first(conn)
-            .optional()?;
+        let row: Option<(String, String)> = match id {
+            Playable::Take(take) => song_tracks::table
+                .inner_join(songs::table)
+                .filter(song_tracks::id.eq(take))
+                .select((songs::title, songs::chorus_pl))
+                .first(conn)
+                .optional()?,
+            Playable::Bridge(bridge) => crate::radio::cast_title(conn, *bridge)?,
+        };
         // The audio file's name, for its type and extension.
         let name = match track_files(conn, *id)? {
             Some((audio, _)) => Some(crate::files::info(conn, audio)?.name),
@@ -774,9 +811,7 @@ async fn poll_once(app: &AppHandle) -> Result<CastState> {
     let transport_state = tag_text(&transport, "CurrentTransportState").unwrap_or_default();
     let uri = tag_text(&position, "TrackURI").unwrap_or_default();
     let ours = uri.starts_with(&prefix);
-    let track_id = ours
-        .then(|| uri[prefix.len()..].split('.').next().and_then(|id| TrackId::parse(id).ok()))
-        .flatten();
+    let track_id = ours.then(|| uri[prefix.len()..].split('.').next().and_then(Playable::parse)).flatten();
     let index = track_id
         .and_then(|id| items.iter().position(|item| item.track_id == id))
         .map(crate::convert::count)
@@ -836,14 +871,20 @@ fn spawn_poller(app: AppHandle, generation: u64) {
                         }
                         count
                     };
-                    if let Some(id) = count {
-                        let db = app.state::<Db>();
-                        let _ = diesel::update(song_tracks::table.find(id))
-                            .set((
-                                song_tracks::play_count.eq(song_tracks::play_count + 1),
-                                song_tracks::last_played_at.eq(db::now_secs()),
-                            ))
-                            .execute(&mut *db.lock());
+                    let db = app.state::<Db>();
+                    match count {
+                        Some(Playable::Take(id)) => {
+                            let _ = diesel::update(song_tracks::table.find(id))
+                                .set((
+                                    song_tracks::play_count.eq(song_tracks::play_count + 1),
+                                    song_tracks::last_played_at.eq(db::now_secs()),
+                                ))
+                                .execute(&mut *db.lock());
+                        }
+                        Some(Playable::Bridge(id)) => {
+                            let _ = crate::radio::bridge_played(&mut db.lock(), id);
+                        }
+                        None => {}
                     }
                     let _ = app.emit("cast://state", Some(state));
                 }
@@ -969,7 +1010,7 @@ pub async fn cast_start(
     app: AppHandle,
     db: State<'_, Db>,
     device: CastDevice,
-    track_ids: Vec<TrackId>,
+    track_ids: Vec<Playable>,
     index: i64,
     repeat: String,
 ) -> Result<CastState> {
@@ -988,25 +1029,7 @@ pub async fn cast_start(
     let base = device.base_url.as_str();
 
     soap(base, AV_TRANSPORT, "RemoveAllTracksFromQueue", &[("InstanceID", "0")]).await?;
-    for (item, path) in &items {
-        let ext = path.rsplit('.').next().unwrap_or("mp3");
-        let url = format!("{media_prefix}{}.{ext}", item.track_id);
-        let art = format!("{root}/art/{}/{}", server.token, item.track_id);
-        let metadata = didl(&item.title, &item.artist, &url, &art, mime_for(path), item.track_id);
-        soap(
-            base,
-            AV_TRANSPORT,
-            "AddURIToQueue",
-            &[
-                ("InstanceID", "0"),
-                ("EnqueuedURI", &url),
-                ("EnqueuedURIMetaData", &metadata),
-                ("DesiredFirstTrackNumberEnqueued", "0"),
-                ("EnqueueAsNext", "0"),
-            ],
-        )
-        .await?;
-    }
+    enqueue(base, &root, &server.token, &items).await?;
     let queue = format!("x-rincon-queue:{}#0", device.id);
     soap(
         base,
@@ -1034,6 +1057,7 @@ pub async fn cast_start(
             device,
             items: items.into_iter().map(|(item, _)| item).collect(),
             repeat,
+            root,
             media_prefix,
             generation,
             last: None,
@@ -1051,6 +1075,74 @@ pub async fn cast_start(
     spawn_poller(app.clone(), generation);
     let _ = app.emit("cast://state", Some(state.clone()));
     Ok(state)
+}
+
+/// Adds to the end of the speaker's queue while it plays (the radio's
+/// programme). A speaker that had run out of queue goes on with them.
+#[tauri::command]
+pub async fn cast_append(app: AppHandle, db: State<'_, Db>, track_ids: Vec<Playable>) -> Result<CastState> {
+    let items = {
+        let mut guard = db.lock();
+        let conn = &mut *guard;
+        load_items(conn, &track_ids)?
+    };
+    let (device, root, first) = {
+        let sessions = sessions(&app);
+        let guard = sessions.0.lock().unwrap_or_else(|e| e.into_inner());
+        let session = guard.as_ref().ok_or_else(|| Error::msg("Not casting."))?;
+        (session.device.clone(), session.root.clone(), session.items.len())
+    };
+    let server = ensure_server(&app).await?;
+    let base = device.base_url.as_str();
+    enqueue(base, &root, &server.token, &items).await?;
+    {
+        let sessions = sessions(&app);
+        let mut guard = sessions.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(session) = guard.as_mut() {
+            session.items.extend(items.iter().map(|(item, _)| item.clone()));
+        }
+    }
+    let stopped = current_state(&app).is_ok_and(|s| s.transport == "STOPPED");
+    if stopped && !items.is_empty() {
+        let number = (first + 1).to_string();
+        soap(base, AV_TRANSPORT, "Seek", &[("InstanceID", "0"), ("Unit", "TRACK_NR"), ("Target", &number)]).await?;
+        soap(base, AV_TRANSPORT, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
+    }
+    let state = poll_once(&app).await?;
+    {
+        let sessions = sessions(&app);
+        let mut guard = sessions.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(session) = guard.as_mut() {
+            session.last = Some(state.clone());
+        }
+    }
+    let _ = app.emit("cast://state", Some(state.clone()));
+    Ok(state)
+}
+
+/// Adds items to the end of the speaker's queue, in order.
+async fn enqueue(base: &str, root: &str, token: &str, items: &[(CastItem, String)]) -> Result<()> {
+    let media_prefix = format!("{root}/media/{token}/");
+    for (item, path) in items {
+        let ext = path.rsplit('.').next().unwrap_or("mp3");
+        let url = format!("{media_prefix}{}.{ext}", item.track_id);
+        let art = format!("{root}/art/{token}/{}", item.track_id);
+        let metadata = didl(&item.title, &item.artist, &url, &art, mime_for(path), item.track_id);
+        soap(
+            base,
+            AV_TRANSPORT,
+            "AddURIToQueue",
+            &[
+                ("InstanceID", "0"),
+                ("EnqueuedURI", &url),
+                ("EnqueuedURIMetaData", &metadata),
+                ("DesiredFirstTrackNumberEnqueued", "0"),
+                ("EnqueueAsNext", "0"),
+            ],
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 /// play | pause | toggle | next | previous | seek (seconds) | track (index)
@@ -1273,7 +1365,7 @@ mod tests {
 
     #[test]
     fn metadata_names_the_song() {
-        let meta = didl("Kawa & mleko", "Poproszę <kawę>", "http://h/media/t/1.mp3", "http://h/art/t/1", "audio/mpeg", TrackId::derived("test", "1"));
+        let meta = didl("Kawa & mleko", "Poproszę <kawę>", "http://h/media/t/1.mp3", "http://h/art/t/1", "audio/mpeg", Playable::Take(TrackId::derived("test", "1")));
         assert!(meta.contains("<dc:title>Kawa &amp; mleko</dc:title>"));
         assert!(meta.contains("<dc:creator>Poproszę &lt;kawę&gt;</dc:creator>"));
         assert!(meta.contains("protocolInfo=\"http-get:*:audio/mpeg:*\">http://h/media/t/1.mp3</res>"));

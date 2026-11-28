@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Banner, Button, List, ListItem, Sheet, Spinner } from "../design";
 import { PlayerIcon } from "./icons";
 import { api, errorMessage } from "../lib/api";
-import { canShare, shareTrack, type QueueItem } from "../lib/player";
+import { canShare, shareTrack, type TakeItem } from "../lib/player";
 import type { Playlist, TrackId } from "../lib/schemas";
 
 /** Picks a playlist for a take — or makes a new one with it. */
@@ -92,7 +92,7 @@ export function AddToPlaylist({
 export function useTrackExport(onMessage: (message: string, isError?: boolean) => void) {
   const [busy, setBusy] = useState<"save" | "share" | null>(null);
 
-  async function save(item: QueueItem) {
+  async function save(item: TakeItem) {
     setBusy("save");
     try {
       const where = await api.songTrackSave(item.track.id);
@@ -104,7 +104,7 @@ export function useTrackExport(onMessage: (message: string, isError?: boolean) =
     }
   }
 
-  async function share(item: QueueItem) {
+  async function share(item: TakeItem) {
     setBusy("share");
     try {
       await shareTrack(item);

@@ -117,6 +117,8 @@ pub struct Agent<'a> {
     pub show_status: bool,
     /// A model of its own (e.g. a small, fast one); None uses the main model.
     pub model: Option<String>,
+    /// Offer the memory tools (when memory is on).
+    pub memory: bool,
 }
 
 impl<'a> Agent<'a> {
@@ -146,7 +148,7 @@ impl<'a> Agent<'a> {
             }
         };
         let memory_tools = match &self.tools {
-            Some(_) if crate::memories::enabled(&mut self.db.lock()) => crate::memories::tools(),
+            Some(_) if self.memory && crate::memories::enabled(&mut self.db.lock()) => crate::memories::tools(),
             _ => Vec::new(),
         };
         let all: Vec<&Tool> = self.tools.iter().flatten().chain(memory_tools.iter()).collect();

@@ -174,6 +174,14 @@ export const PlayerIcon = {
       <path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" />
     </Glyph>
   ),
+  radio: () => (
+    <Glyph>
+      <rect x="3" y="8" width="18" height="12.5" rx="2.5" />
+      <path d="M7 8l9.5-4.5" />
+      <circle cx="15.5" cy="14.25" r="2.75" />
+      <path d="M6.5 12.5h4M6.5 16h4" />
+    </Glyph>
+  ),
 };
 
 /** The back arrow on full screens. */

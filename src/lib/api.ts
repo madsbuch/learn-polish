@@ -5,6 +5,8 @@ import { describe, logCause, logError, markLogged } from "./log";
 
 import type {
   BenchRunId,
+  BridgeId,
+  PlayableId,
   CheckinId,
   ConversationId,
   CourseId,
@@ -36,6 +38,8 @@ import type {
   RawFilter,
 } from "./schemas";
 import {
+  ProgrammeItemSchema,
+  RadioStateSchema,
   ActivitySchema,
   ContextStatsSchema,
   RawPageSchema,
@@ -591,10 +595,18 @@ export const api = {
     call(z.array(CastDeviceSchema), "cast_discover", { address }),
   castStart: (
     device: CastDevice,
-    trackIds: TrackId[],
+    trackIds: PlayableId[],
     index: number,
     repeat: string,
   ) => call(CastStateSchema, "cast_start", { device, trackIds, index, repeat }),
+  castAppend: (trackIds: PlayableId[]) => call(CastStateSchema, "cast_append", { trackIds }),
+
+  radioStart: () => call(RadioStateSchema, "radio_start"),
+  radioNext: (count: number) => call(z.array(ProgrammeItemSchema), "radio_next", { count }),
+  radioPlaying: (playing: boolean) => run("radio_playing", { playing }),
+  radioStop: () => run("radio_stop"),
+  radioState: () => call(RadioStateSchema, "radio_state"),
+  radioBridgePlayed: (bridgeId: BridgeId) => run("radio_bridge_played", { bridgeId }),
   castCommand: (action: string, value?: number) =>
     run("cast_command", { action, value }),
   castSetRepeat: (repeat: string) => run("cast_set_repeat", { repeat }),

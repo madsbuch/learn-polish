@@ -38,6 +38,7 @@ mod schema;
 mod session;
 mod songs;
 mod podcasts;
+mod radio;
 mod news;
 mod offline;
 mod speech;
@@ -360,6 +361,13 @@ pub fn run() {
             playlists::song_track_share_file,
             cast::cast_discover,
             cast::cast_start,
+            cast::cast_append,
+            radio::radio_start,
+            radio::radio_next,
+            radio::radio_playing,
+            radio::radio_stop,
+            radio::radio_state,
+            radio::radio_bridge_played,
             cast::cast_command,
             cast::cast_set_repeat,
             cast::cast_state,
@@ -4492,6 +4500,9 @@ INSERT INTO files (id, kind, name, mime, size, sha256, bytes, created_at) VALUES
         write("QuickGames", &crate::games::overview(&mut conn).unwrap());
         write("LessonTypeInfo.list", &crate::lesson_types::lesson_types());
         write("Song.list", &songs::list_songs(&mut conn, false).unwrap());
+        let (radio, programme) = crate::radio::shapes(&mut conn);
+        write("RadioState", &radio);
+        write("ProgrammeItem.list", &programme);
         write("Playlist.list", &playlists::list(&mut conn).unwrap());
         write("MemoryOverview", &crate::memories::commands::overview(&mut conn).unwrap());
         write("XpDay", &crate::xplog::day(&mut conn, today).unwrap());

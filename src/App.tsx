@@ -41,6 +41,7 @@ import { CheckIn, type Writing } from "./screens/CheckIn";
 import { Music, preloadLibrary, SongScreen } from "./screens/Music";
 import { lessonType, loadLessonTypes } from "./lib/lessonTypes";
 import { Player } from "./screens/Player";
+import { RadioScreen } from "./screens/Radio";
 import { CourseDetail } from "./screens/CourseDetail";
 import { Tutor, TutorChat, tutorAsks } from "./screens/Tutor";
 import { onEvent, onSignal } from "./lib/events";
@@ -666,6 +667,14 @@ export default function App() {
         return (
           <Player
             onClose={goUp}
+            onOpenSong={(songId) => go({ tab: "music", trail: [{ kind: "song", id: songId }] })}
+          />
+        );
+      case "radio":
+        return (
+          <RadioScreen
+            onBack={goUp}
+            onOpenPlayer={() => go({ tab: "music", trail: [{ kind: "radio" }, { kind: "playing" }] })}
             onOpenSong={(songId) => go({ tab: "music", trail: [{ kind: "song", id: songId }] })}
           />
         );

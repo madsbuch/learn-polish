@@ -74,6 +74,8 @@ describe("addresses", () => {
       `/music/${id("pl", 8)}`,
       "/music/new/podcast",
       "/music/playing",
+      "/music/radio",
+      "/music/radio/playing",
       "/settings",
       "/settings/how-to",
       "/settings/songs/ai",

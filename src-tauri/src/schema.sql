@@ -280,6 +280,26 @@ CREATE TABLE IF NOT EXISTS song_tracks (
     UNIQUE (song_id, remote_id)
 );
 
+-- The radio's bridges (radio.rs): short spoken lines between the items of
+-- its programme, kept with their audio so they can be played again.
+CREATE TABLE IF NOT EXISTS bridges (
+    id             TEXT PRIMARY KEY NOT NULL,
+    -- The song or episode it is about; NULL: about the station.
+    song_id        TEXT REFERENCES songs(id) ON DELETE CASCADE,
+    role           TEXT    NOT NULL,          -- intro | outro | station
+    lines          TEXT    NOT NULL,          -- JSON: [{pl, en}]
+    format         TEXT    NOT NULL,          -- pairs | immersion
+    voice          TEXT    NOT NULL DEFAULT '',
+    audio_file_id  TEXT NOT NULL REFERENCES files(id),
+    duration       REAL    NOT NULL DEFAULT 0,
+    timed_lines    TEXT    NOT NULL DEFAULT '[]',
+    play_count     INTEGER NOT NULL DEFAULT 0,
+    last_played_at INTEGER,
+    created_at     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS bridges_song ON bridges(song_id);
+
 CREATE TABLE IF NOT EXISTS playlists (
     id         TEXT PRIMARY KEY NOT NULL,
     name       TEXT    NOT NULL,

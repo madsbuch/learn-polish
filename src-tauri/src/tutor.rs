@@ -3338,6 +3338,7 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
         stop_once_answered: false,
         show_status: true,
         model,
+        memory: true,
     };
     let outcome = agent
         .run(wire, |call| {

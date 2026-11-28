@@ -105,7 +105,7 @@ export function CheckIn({
   const started = useRef(false);
   const song = useSongItem(songId).item;
   const player = usePlayer();
-  const songCurrent = song !== null && currentItem(player)?.track.id === song.track.id;
+  const songCurrent = song !== null && currentItem(player)?.track?.id === song.track.id;
 
   // Follows the examiner — until the learner scrolls up to read.
   const scroll = useStickToBottom([lines, live, assessment]);

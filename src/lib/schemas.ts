@@ -61,6 +61,8 @@ export const EntryIdSchema = typeId<"EntryId">("pe");
 export type EntryId = z.infer<typeof EntryIdSchema>;
 export const FileIdSchema = typeId<"FileId">("fl");
 export type FileId = z.infer<typeof FileIdSchema>;
+export const BridgeIdSchema = typeId<"BridgeId">("brg");
+export type BridgeId = z.infer<typeof BridgeIdSchema>;
 export const CheckinIdSchema = typeId<"CheckinId">("ci");
 export type CheckinId = z.infer<typeof CheckinIdSchema>;
 export const CheckinMessageIdSchema = typeId<"CheckinMessageId">("cm");
@@ -921,6 +923,10 @@ export type Stats = z.infer<typeof StatsSchema>;
 export const SongLengthSchema = z.enum(["short", "medium", "long"]);
 export type SongLength = z.infer<typeof SongLengthSchema>;
 
+/** How the radio's bridges are spoken, like a podcast's format. */
+export const RadioFormatSchema = z.enum(["pairs", "immersion"]);
+export type RadioFormat = z.infer<typeof RadioFormatSchema>;
+
 export const SettingsSchema = z.object({
   /** Lessons a day: how many today's list holds. */
   dailyLessons: z.number(),
@@ -956,6 +962,8 @@ export const SettingsSchema = z.object({
   sunoModels: z.array(z.string()),
   /** What the songwriter writes for: about 2, 3 or 4–5 minutes. */
   songLength: SongLengthSchema,
+  /** How the radio's bridges are spoken. */
+  radioFormat: RadioFormatSchema,
   /** Empty until first stored. */
   theme: z.enum(["", "system", "light", "dark"]),
   playerRepeat: z.enum(["", "off", "all", "one"]),
@@ -984,6 +992,7 @@ export const SettingsPatchSchema = z.object({
   speaking: z.boolean().optional(),
   sunoModel: z.string().optional(),
   songLength: SongLengthSchema.optional(),
+  radioFormat: RadioFormatSchema.optional(),
   theme: z.enum(["system", "light", "dark"]).optional(),
   playerRepeat: z.enum(["off", "all", "one"]).optional(),
   haptics: z.boolean().optional(),
@@ -1537,6 +1546,64 @@ export const SongSchema = SongDraftSchema.extend({
 });
 export type Song = z.infer<typeof SongSchema>;
 
+// -------------------------------------------------------------------- radio
+
+/** One line of a radio bridge. */
+export const BridgeLineSchema = z.object({ pl: z.string(), en: z.string() });
+export type BridgeLine = z.infer<typeof BridgeLineSchema>;
+
+/** A spoken bridge between two items of the radio's programme. */
+export const BridgeSchema = z.object({
+  id: BridgeIdSchema,
+  /** The song or episode it is about; null: the station. */
+  songId: SongIdSchema.nullable(),
+  role: z.enum(["intro", "outro", "station"]),
+  lines: z.array(BridgeLineSchema),
+  format: z.string(),
+  audioFileId: FileIdSchema,
+  /** The copy on disk, only for Android's native player. */
+  audioPath: z.string(),
+  duration: z.number(),
+  timedLines: z.array(TimedLineSchema),
+  playCount: z.number(),
+});
+export type Bridge = z.infer<typeof BridgeSchema>;
+
+/** What the radio hands the player: a bridge, or a take with its song. */
+export const ProgrammeItemSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("bridge"), bridge: BridgeSchema }),
+  z.object({ kind: z.literal("take"), song: SongSchema, track: SongTrackSchema }),
+]);
+export type ProgrammeItem = z.infer<typeof ProgrammeItemSchema>;
+
+export const PlannedViewSchema = z.object({
+  kind: z.enum(["bridge", "take"]),
+  title: z.string(),
+  detail: z.string(),
+  songId: SongIdSchema.nullable(),
+});
+export type PlannedView = z.infer<typeof PlannedViewSchema>;
+
+export const MakingViewSchema = z.object({
+  songId: SongIdSchema,
+  title: z.string(),
+  what: z.enum(["song", "podcast", "news"]),
+  status: z.string(),
+});
+export type MakingView = z.infer<typeof MakingViewSchema>;
+
+export const RadioStateSchema = z.object({
+  on: z.boolean(),
+  playing: z.boolean(),
+  /** The mixing agent is choosing what comes next. */
+  thinking: z.boolean(),
+  planned: z.array(PlannedViewSchema),
+  making: z.array(MakingViewSchema),
+  /** Why the radio is not making anything new right now. */
+  note: z.string().nullable(),
+});
+export type RadioState = z.infer<typeof RadioStateSchema>;
+
 export const PlaylistEntrySchema = z.object({
   /** The entry itself; the same take may be in a playlist twice. */
   id: EntryIdSchema,
@@ -1572,8 +1639,12 @@ export const CastDeviceSchema = z.object({
 });
 export type CastDevice = z.infer<typeof CastDeviceSchema>;
 
+/** What a speaker plays: a take, or one of the radio's bridges. */
+export const PlayableIdSchema = z.union([TrackIdSchema, BridgeIdSchema]);
+export type PlayableId = z.infer<typeof PlayableIdSchema>;
+
 export const CastItemSchema = z.object({
-  trackId: TrackIdSchema,
+  trackId: PlayableIdSchema,
   title: z.string(),
   artist: z.string(),
 });
@@ -1583,7 +1654,7 @@ export const CastStateSchema = z.object({
   device: CastDeviceSchema,
   items: z.array(CastItemSchema),
   index: z.number(),
-  trackId: TrackIdSchema.nullable(),
+  trackId: PlayableIdSchema.nullable(),
   playing: z.boolean(),
   transport: z.string(),
   position: z.number(),

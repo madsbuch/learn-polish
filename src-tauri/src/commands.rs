@@ -58,6 +58,7 @@ pub(crate) fn read_settings(conn: &mut Conn) -> Result<Settings> {
         suno_model: songs::suno_model(conn),
         suno_models: songs::SUNO_MODELS.iter().map(|m| m.to_string()).collect(),
         song_length: songs::song_length(conn),
+        radio_format: crate::radio::format(conn),
         theme: db::get_setting(conn, "theme")?
             .filter(|t| matches!(t.as_str(), "system" | "light" | "dark"))
             .unwrap_or_default(),
@@ -130,6 +131,7 @@ pub struct SettingsPatch {
     pub speaking: Option<bool>,
     pub suno_model: Option<String>,
     pub song_length: Option<String>,
+    pub radio_format: Option<String>,
     pub theme: Option<String>,
     pub player_repeat: Option<String>,
     pub haptics: Option<bool>,
@@ -212,6 +214,12 @@ pub async fn update_settings(db: State<'_, Db>, patch: SettingsPatch) -> Result<
             return Err(Error::msg(format!("Unknown song length '{length}'.")));
         }
         db::set_setting(conn, "song_length", &length)?;
+    }
+    if let Some(format) = patch.radio_format {
+        if !crate::radio::FORMATS.contains(&format.as_str()) {
+            return Err(Error::msg(format!("Unknown radio format '{format}'.")));
+        }
+        db::set_setting(conn, crate::radio::FORMAT_SETTING, &format)?;
     }
     if let Some(model) = patch.suno_model {
         if !songs::SUNO_MODELS.contains(&model.as_str()) {

@@ -51,6 +51,7 @@ pub const KINDS: &[(&str, &str)] = &[
     ("mst", "mastery entry"),
     ("gr", "grammar tag"),
     ("tp", "topic"),
+    ("brg", "radio bridge"),
 ];
 
 /// What an id names, by its prefix ("a lesson"), if it is a known kind.
@@ -316,6 +317,8 @@ typed_id!(/// A grammar structure from the built-in vocabulary (grammar.rs):
 typed_id!(/// A topic from the built-in ontology (topics.rs): derived from its key,
     /// the same on every device. Not a table.
     TopicId, TopicIdSql, "tp");
+typed_id!(/// A spoken bridge between two items of the radio's programme (radio.rs).
+    BridgeId, BridgeIdSql, "brg");
 
 #[cfg(test)]
 mod tests {

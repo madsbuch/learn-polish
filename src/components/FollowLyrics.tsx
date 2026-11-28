@@ -4,7 +4,7 @@ import { Button, Switch, Text, useMediaQuery } from "../design";
 import { api } from "../lib/api";
 import { hapticRight, hapticTick, hapticWrong } from "../lib/haptics";
 import { sectionLabel } from "../lib/lyrics";
-import { livePosition, seek, usePlayer, type QueueItem } from "../lib/player";
+import { livePosition, seek, usePlayer, type TakeItem } from "../lib/player";
 import { chooseBlanks, fold, LEAD_S, tokens, type Blank } from "../lib/singAlong";
 import type { GlossWord, SongId, TimedLine, TrackId } from "../lib/schemas";
 import { WordChat } from "./WordChat";
@@ -66,7 +66,7 @@ function useGlossary(songId: SongId): Map<string, GlossWord> {
 
 type Mark = "right" | "missed";
 
-export function FollowLyrics({ item }: { item: QueueItem }) {
+export function FollowLyrics({ item }: { item: TakeItem }) {
   const player = usePlayer();
   const trackId = item.track.id;
   const songId = item.song.id;

@@ -21,7 +21,7 @@ change to the schema follows these.
   thing is in a scene lesson's picture, `pnl_` a story lesson's panel, `att_` an answer in the learning log, `ev_` a
   learning event, `gr_` a grammar tag (`grammar.rs`: derived from its key, kept
   in the code, not a table), `tp_` a topic (`topics.rs`: derived from its key, kept in the
-  code, not a table). A new table gets a new prefix, added
+  code, not a table), `brg_` a radio bridge (`radio.rs`). A new table gets a new prefix, added
   to `ids.rs` and here.
 - **Each kind has its own type**: `LessonId`, `CourseId`, … in Rust; branded
   strings (`LessonIdSchema`) in `src/lib/schemas.ts`. Only a correctly tagged id

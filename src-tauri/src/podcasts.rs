@@ -178,7 +178,7 @@ pub struct TopicIdea {
 // ---------------------------------------------------------------------------
 
 /// What the app knows about the learner's interests, for the writer.
-fn interests(conn: &mut Conn) -> Result<Vec<String>> {
+pub(crate) fn interests(conn: &mut Conn) -> Result<Vec<String>> {
     if !crate::memories::enabled(conn) {
         return Ok(Vec::new());
     }

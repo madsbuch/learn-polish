@@ -304,6 +304,8 @@ pub struct Settings {
     pub suno_models: Vec<String>,
     /// "short" | "medium" | "long" — what the songwriter writes for.
     pub song_length: String,
+    /// How the radio's bridges are spoken: "pairs" | "immersion".
+    pub radio_format: String,
     /// "system" | "light" | "dark", or empty if never stored (the webview's
     /// own copy is then written back).
     pub theme: String,

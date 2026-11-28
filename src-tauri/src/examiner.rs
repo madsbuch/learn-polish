@@ -609,6 +609,7 @@ async fn turn(
         stop_once_answered: true,
         show_status: false,
         model,
+        memory: true,
     };
     let outcome = agent
         .run(wire, |call| {

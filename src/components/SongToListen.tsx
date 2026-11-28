@@ -10,7 +10,7 @@ import {
   preferredTake,
   toggle,
   usePlayer,
-  type QueueItem,
+  type TakeItem,
 } from "../lib/player";
 import { Cover } from "./Cover";
 import { PlayerIcon } from "./icons";
@@ -18,8 +18,8 @@ import { Lyrics } from "./Lyrics";
 import type { SongId } from "../lib/schemas";
 
 /** The take of a song to listen to: its favourite take, once it is ready. */
-export function useSongItem(songId: SongId | null): { item: QueueItem | null; loading: boolean; listed: boolean } {
-  const [item, setItem] = useState<QueueItem | null>(null);
+export function useSongItem(songId: SongId | null): { item: TakeItem | null; loading: boolean; listed: boolean } {
+  const [item, setItem] = useState<TakeItem | null>(null);
   const [loading, setLoading] = useState(songId !== null);
   /** In the library: made, or being made (a script not yet recorded is not). */
   const [listed, setListed] = useState(false);
@@ -45,7 +45,7 @@ export function useSongItem(songId: SongId | null): { item: QueueItem | null; lo
 }
 
 /** Plays or pauses one song, starting it if something else is playing. */
-export function playSong(item: QueueItem, isCurrent: boolean) {
+export function playSong(item: TakeItem, isCurrent: boolean) {
   if (isCurrent) toggle();
   else playQueue(libraryQueue([item.song], item.track), 0);
 }
@@ -70,7 +70,7 @@ export function SongToListen({ songId }: { songId: SongId }) {
       </Card>
     );
   }
-  const current = currentItem(player)?.track.id === item.track.id;
+  const current = currentItem(player)?.track?.id === item.track.id;
   const playing = current && player.playing;
   return (
     <Card>

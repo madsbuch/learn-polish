@@ -33,6 +33,7 @@ const FEATURES: Record<string, string> = {
   explain: "Talk about it (earlier)",
   speech: "Speech",
   "key test": "Key test",
+  radio: "Radio",
 };
 
 const WINDOWS: { value: string; label: string }[] = [

@@ -27,6 +27,7 @@ import {
   cycleRepeat,
   formatTime,
   keepScreenAwake,
+  livePosition,
   next,
   previous,
   seek,
@@ -37,7 +38,7 @@ import {
   usePlayer,
 } from "../lib/player";
 import { toast } from "../lib/toast";
-import type { SongId } from "../lib/schemas";
+import type { Bridge, SongId } from "../lib/schemas";
 
 /**
  * The player, on its own screen: what is playing, the controls, the lyrics
@@ -76,7 +77,8 @@ export function Player({
   }
 
   const cast = player.cast;
-  const duration = player.duration || item.track.duration;
+  const duration = player.duration || (item.bridge ? item.bridge.duration : item.track.duration);
+  const radio = player.owner === "radio";
 
   return (
     <Screen
@@ -91,17 +93,26 @@ export function Player({
         <div className="player-controls">
           <Hero className="player-card">
             <div className="player-cover" data-playing={player.playing}>
-              <Cover fileId={item.track.imageFileId} size={232} />
+              <Cover fileId={item.track?.imageFileId ?? null} size={232} />
             </div>
-            <Stack gap={1} align="center">
-              <h2 className="t-center">{item.song.title}</h2>
-              <Text weight="bold" align="center" selectable>
-                „{item.song.chorusPl}”
-              </Text>
-              <Text variant="small" tone="dim" align="center">
-                {item.song.chorusEn} · take {item.track.ord + 1}
-              </Text>
-            </Stack>
+            {item.bridge ? (
+              <Stack gap={1} align="center">
+                <h2 className="t-center">Polski Radio</h2>
+                <Text variant="small" tone="dim" align="center">
+                  Between the songs
+                </Text>
+              </Stack>
+            ) : (
+              <Stack gap={1} align="center">
+                <h2 className="t-center">{item.song.title}</h2>
+                <Text weight="bold" align="center" selectable>
+                  „{item.song.chorusPl}”
+                </Text>
+                <Text variant="small" tone="dim" align="center">
+                  {item.song.chorusEn} · take {item.track.ord + 1}
+                </Text>
+              </Stack>
+            )}
 
             <Stack gap={1}>
               <input
@@ -133,8 +144,13 @@ export function Player({
                     {player.repeat === "one" ? <b>1</b> : null}
                   </span>
                 }
-                label={`Repeat: ${player.repeat === "one" ? "this song" : player.repeat === "all" ? "all" : "off"}`}
-                off={player.repeat === "off"}
+                label={
+                  radio
+                    ? "The radio does not repeat"
+                    : `Repeat: ${player.repeat === "one" ? "this song" : player.repeat === "all" ? "all" : "off"}`
+                }
+                off={radio || player.repeat === "off"}
+                disabled={radio}
                 onClick={cycleRepeat}
               />
               <IconButton variant="inverse" icon={<PlayerIcon.previous />} label="Previous" onClick={previous} />
@@ -189,6 +205,7 @@ export function Player({
             ) : null}
           </Hero>
 
+          {item.bridge ? null : (
           <ActionBar>
             <Action icon={<PlayerIcon.addToPlaylist />} label="Playlist" onClick={() => setAdding(true)} />
             {exporter.canShare ? (
@@ -209,6 +226,7 @@ export function Player({
             />
             <Action icon={<MoreIcon />} label="Song" onClick={() => onOpenSong(item.song.id)} />
           </ActionBar>
+          )}
         </div>
 
         <Stack gap={3} className="player-panel">
@@ -221,29 +239,79 @@ export function Player({
             ]}
           />
           {panel === "lyrics" ? (
-            <FollowLyrics item={item} />
+            item.bridge ? (
+              <BridgeLines bridge={item.bridge} />
+            ) : (
+              <FollowLyrics item={item} />
+            )
           ) : (
             <List>
-              {player.queue.map((entry, index) => (
-                <ListItem
-                  key={`${entry.track.id}-${index}`}
-                  leading={<Cover fileId={entry.track.imageFileId} size={44} />}
-                  title={entry.song.title}
-                  subtitle={`${index === player.index ? "Playing · " : ""}take ${entry.track.ord + 1} · ${formatTime(entry.track.duration)}`}
-                  selected={index === player.index}
-                  chevron={false}
-                  onClick={() => skipTo(index)}
-                />
-              ))}
+              {player.queue.map((entry, index) =>
+                entry.bridge ? (
+                  <ListItem
+                    key={`${entry.bridge.id}-${index}`}
+                    title="Bridge"
+                    subtitle={`${index === player.index ? "Playing · " : ""}${entry.bridge.lines[0]?.pl ?? ""}`}
+                    selected={index === player.index}
+                    chevron={false}
+                    onClick={() => skipTo(index)}
+                  />
+                ) : (
+                  <ListItem
+                    key={`${entry.track.id}-${index}`}
+                    leading={<Cover fileId={entry.track.imageFileId} size={44} />}
+                    title={entry.song.title}
+                    subtitle={`${index === player.index ? "Playing · " : ""}take ${entry.track.ord + 1} · ${formatTime(entry.track.duration)}`}
+                    selected={index === player.index}
+                    chevron={false}
+                    onClick={() => skipTo(index)}
+                  />
+                ),
+              )}
             </List>
           )}
         </Stack>
       </div>
 
       {picking ? <CastPicker fallbackQueue={player.queue} onClose={() => setPicking(false)} /> : null}
-      {adding ? (
+      {adding && !item.bridge ? (
         <AddToPlaylist trackId={item.track.id} onClose={() => setAdding(false)} onDone={(text) => toast(text)} />
       ) : null}
     </Screen>
+  );
+}
+
+/**
+ * What a radio bridge says, line by line, the line being said marked: the
+ * Polish to read along, the English under it.
+ */
+function BridgeLines({ bridge }: { bridge: Bridge }) {
+  const player = usePlayer();
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!player.playing) return;
+    const timer = window.setInterval(() => tick((n) => n + 1), 250);
+    return () => window.clearInterval(timer);
+  }, [player.playing]);
+  const now = livePosition(player);
+  const polish = bridge.timedLines.filter((line) => line.lang === "pl");
+  const lines = polish.length > 0 ? polish : bridge.lines.map((l) => ({ text: l.pl, gloss: l.en, start: 0, end: 0 }));
+  return (
+    <List>
+      {lines.map((line, index) => (
+        <ListItem
+          key={index}
+          title={
+            <Text tone="polish" selectable>
+              {line.text}
+            </Text>
+          }
+          subtitle={line.gloss ?? ""}
+          selected={line.end > 0 && now >= line.start && now < line.end}
+          chevron={false}
+          onClick={line.end > 0 ? () => seek(line.start) : undefined}
+        />
+      ))}
+    </List>
   );
 }

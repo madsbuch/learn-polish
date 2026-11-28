@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 18;
+pub(crate) const SCHEMA_VERSION: i64 = 19;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -779,6 +779,8 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     add_column(conn, "courses", "offline_at", "INTEGER")?;
     // Version 18: a lesson is in exactly one course (courses::add_lesson).
     one_course_per_lesson(conn)?;
+    // Version 19: the radio's bridges (radio.rs) — a new table, made by the
+    // schema above.
     // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
     conn.batch_execute(
         "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);
@@ -1855,7 +1857,7 @@ mod tests {
             vault_revocations, speech_clips, wiki_sources, lessons, course_lessons, course_words, course_sentences, course_lines, checkins,
             checkin_messages, tutor_conversations, tutor_messages, songs, song_tracks, playlists,
             playlist_tracks, ai_costs, memories, word_examples, xp_log, scenes, scene_spots, stories,
-            story_panels, attempts, learning_events, mastery_log,
+            story_panels, attempts, learning_events, mastery_log, bridges,
         );
     }
 }

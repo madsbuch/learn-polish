@@ -37,6 +37,8 @@ pub const SONGS: &str = "songs";
 pub const SPEECH: &str = "speech";
 pub const KEY_TEST: &str = "key test";
 pub const BENCHMARK: &str = "benchmark";
+/// The radio's mixing agent (radio.rs).
+pub const RADIO: &str = "radio";
 
 /// Logs one request. A failure to log must never fail the feature, so callers
 /// ignore the result; it is returned for tests.

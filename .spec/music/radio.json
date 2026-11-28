@@ -14,7 +14,8 @@
         "#RADIO-1",
         "#RADIO-2",
         "#RADIO-4",
-        "#RADIO-10"
+        "#RADIO-10",
+        "#RADIO-14"
       ]
     },
     {
@@ -46,10 +47,19 @@
     },
     {
       "id": "RADIO-2",
-      "text": "A mixing agent on the tutor's model chooses what plays next and what is made, from the learner's open courses, their interests and what was played recently.",
+      "text": "A mixing agent on the tutor's model keeps `radio.ahead` songs or episodes planned and chooses what is made, from the learner's open courses, their interests and what was played recently.",
       "related": [
         "tutor#TUTOR-1",
         "music/podcasts#POD-5"
+      ],
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A mixing agent on the tutor's model chooses what plays next and what is made, from the learner's open courses, their interests and what was played recently.",
+          "reason": "How far ahead it plans is decided once, as a named value.",
+          "date": "2026-11-28"
+        }
       ]
     },
     {
@@ -66,7 +76,16 @@
     },
     {
       "id": "RADIO-5",
-      "text": "Between items the radio plays bridges: short spoken lines in the speech voices that introduce what comes next or look back on what just played."
+      "text": "Between items the radio plays bridges: short spoken lines in the speech voices, at most `radio.bridge-lines` each, that introduce what comes next or look back on what just played.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Between items the radio plays bridges: short spoken lines in the speech voices that introduce what comes next or look back on what just played.",
+          "reason": "A bridge needs a limit to stay a bridge.",
+          "date": "2026-11-28"
+        }
+      ]
     },
     {
       "id": "RADIO-6",
@@ -110,6 +129,41 @@
         "music/player#PLAY-9",
         "music/sonos#SONOS-3"
       ]
+    },
+    {
+      "id": "RADIO-14",
+      "text": "When the mixing agent has planned nothing, the next item is picked without a model: a new item the radio made first, else what was played longest ago, with a kept bridge about it when there is one."
+    },
+    {
+      "id": "RADIO-15",
+      "text": "At most `radio.making` new items are being made for the radio at once."
+    },
+    {
+      "id": "RADIO-16",
+      "text": "What the radio makes gets no listening lesson."
+    }
+  ],
+  "values": [
+    {
+      "id": "radio.ahead",
+      "type": "number",
+      "value": 3,
+      "unit": "items",
+      "description": "How many songs or episodes the mixing agent keeps planned."
+    },
+    {
+      "id": "radio.making",
+      "type": "number",
+      "value": 2,
+      "unit": "items",
+      "description": "How many new items are made for the radio at once."
+    },
+    {
+      "id": "radio.bridge-lines",
+      "type": "number",
+      "value": 3,
+      "unit": "lines",
+      "description": "The most lines in one bridge."
     }
   ],
   "related": [

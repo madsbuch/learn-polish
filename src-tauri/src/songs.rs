@@ -127,7 +127,8 @@ pub struct SongOrigin {
     /// (their headlines, outlets, dates and links).
     pub news: bool,
     pub news_items: Vec<crate::news::Headline>,
-    /// Who made it: "composer" (the learner, on the Music tab) or "tutor".
+    /// Who made it: "composer" (the learner, on the Music tab), "tutor" or
+    /// "radio".
     pub made_by: String,
     /// What the lyrics or script had to meet, word for word (the tutor's).
     pub requirements: String,
@@ -180,12 +181,13 @@ pub struct OriginStep {
     pub before: Option<Box<SongDraft>>,
 }
 
-/// "tutor", or else "composer".
+/// "tutor" or "radio", or else "composer".
+// Spec: RADIO-3
 pub fn made_by(by: &str) -> &'static str {
-    if by == "tutor" {
-        "tutor"
-    } else {
-        "composer"
+    match by {
+        "tutor" => "tutor",
+        "radio" => "radio",
+        _ => "composer",
     }
 }
 
@@ -1745,11 +1747,13 @@ pub async fn song_delete(db: State<'_, Db>, song_id: SongId) -> Result<()> {
     delete_song(&mut db.lock(), song_id)
 }
 
-/// Deletes a song, its takes and their files. Its takes leave every playlist.
+/// Deletes a song, its takes and their files. Its takes leave every playlist,
+/// and the radio's bridges about it go with it.
 pub fn delete_song(conn: &mut Conn, song_id: SongId) -> Result<()> {
     let takes = song_tracks::table.filter(song_tracks::song_id.eq(song_id));
-    let ids = take_files(takes.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?);
+    let mut ids = take_files(takes.select((song_tracks::audio_file_id, song_tracks::image_file_id)).load(conn)?);
     diesel::delete(takes).execute(conn)?;
+    ids.extend(crate::radio::delete_bridges_about(conn, song_id)?);
     files::delete(conn, &ids)?;
     diesel::delete(songs::table.find(song_id)).execute(conn)?;
     Ok(())
