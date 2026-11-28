@@ -42,6 +42,8 @@ const AHEAD: usize = 3;
 const MAKING: usize = 2;
 /// The most lines in a bridge (`radio.bridge-lines`).
 const BRIDGE_LINES: usize = 3;
+/// Songs between two spoken episodes (`radio.songs-per-episode`).
+const SONGS_PER_EPISODE: usize = 3;
 /// How often the session looks at what it is making, when nothing wakes it.
 const TICK: Duration = Duration::from_secs(4);
 /// After a failed turn the agent rests this long; the fallback plays on.
@@ -374,6 +376,84 @@ fn take_of(conn: &mut Conn, song_id: SongId) -> Result<Option<TrackId>> {
         .optional()?)
 }
 
+// ---------------------------------------------------------------------------
+// The mix: a music station, with now and then something spoken
+// ---------------------------------------------------------------------------
+
+/// What an item is, for the mix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Kind {
+    Song,
+    /// A podcast or news episode.
+    Episode,
+    /// News from an earlier day: not played.
+    OldNews,
+}
+
+/// When the learner's day began, in seconds (as db::today counts days).
+fn day_start(conn: &mut Conn) -> i64 {
+    db::today(conn) * 86_400 - db::get_setting_i64(conn, "tz_offset_minutes", 0) * 60
+}
+
+fn classify(kind: &str, origin: &str, created_at: i64, today: i64) -> Kind {
+    if kind != "podcast" {
+        return Kind::Song;
+    }
+    let news = serde_json::from_str::<songs::SongOrigin>(origin).is_ok_and(|o| o.news);
+    if news && created_at < today {
+        Kind::OldNews
+    } else {
+        Kind::Episode
+    }
+}
+
+fn kind_of(conn: &mut Conn, song_id: SongId) -> Result<Kind> {
+    let today = day_start(conn);
+    let (kind, origin, created_at): (String, String, i64) = song_rows::table
+        .find(song_id)
+        .select((song_rows::kind, song_rows::origin, song_rows::created_at))
+        .first(conn)?;
+    Ok(classify(&kind, &origin, created_at, today))
+}
+
+/// Songs since the last spoken episode in `entries` (oldest first): all of
+/// them when there was none.
+fn songs_since_episode(conn: &mut Conn, entries: &[Entry]) -> Result<usize> {
+    let mut songs = 0;
+    for entry in entries.iter().rev() {
+        if let Entry::Take(song_id, _) = entry {
+            match kind_of(conn, *song_id) {
+                Ok(Kind::Song) => songs += 1,
+                Ok(_) => return Ok(songs),
+                // Deleted since: it does not count either way.
+                Err(_) => {}
+            }
+        }
+    }
+    Ok(songs)
+}
+
+/// Whether the library has a finished song to play.
+fn has_songs(conn: &mut Conn) -> Result<bool> {
+    let any: Option<SongId> = song_tracks::table
+        .inner_join(song_rows::table)
+        .filter(song_rows::status.eq("ready"))
+        .filter(song_rows::kind.ne("podcast"))
+        .filter(song_tracks::audio_file_id.is_not_null())
+        .select(song_tracks::song_id)
+        .first(conn)
+        .optional()?;
+    Ok(any.is_some())
+}
+
+/// Whether a podcast or news episode may come after `entries`: only after
+/// `radio.songs-per-episode` songs since the last one, so the station opens
+/// with a song too — unless there is no song to play.
+// Spec: RADIO-17
+fn episode_may_follow(conn: &mut Conn, entries: &[Entry]) -> Result<bool> {
+    Ok(songs_since_episode(conn, entries)? >= SONGS_PER_EPISODE || !has_songs(conn)?)
+}
+
 /// What to play next when the agent has planned nothing: a new item the radio
 /// made, first; else what was played longest ago, leaving out what played
 /// just now; with a kept bridge about it, or now and then one about the
@@ -383,31 +463,46 @@ fn pick_next(conn: &mut Conn, handed: &[Entry], ready_orders: &[SongId]) -> Resu
     let recent: Vec<Entry> = handed.iter().rev().take(RECENT).copied().collect();
     let recent_songs: Vec<SongId> = recent.iter().filter_map(|e| e.song()).collect();
 
+    let episodes_ok = episode_may_follow(conn, handed)?;
+    let fits = |kind: Kind| kind == Kind::Song || (kind == Kind::Episode && episodes_ok);
+
     let mut song = None;
     for id in ready_orders {
         if let Some(track) = take_of(conn, *id)? {
-            song = Some((*id, track));
-            break;
+            if fits(kind_of(conn, *id)?) {
+                song = Some((*id, track));
+                break;
+            }
         }
     }
     if song.is_none() {
         // Every finished song and episode with audio, by when it last played.
-        let rows: Vec<(SongId, TrackId, Option<i64>)> = song_tracks::table
+        let today = day_start(conn);
+        let rows: Vec<(SongId, TrackId, Option<i64>, String, String, i64)> = song_tracks::table
             .inner_join(song_rows::table)
             .filter(song_rows::status.eq("ready"))
             .filter(song_tracks::audio_file_id.is_not_null())
             .order((song_tracks::play_count.desc(), song_tracks::ord))
-            .select((song_tracks::song_id, song_tracks::id, song_tracks::last_played_at))
+            .select((
+                song_tracks::song_id,
+                song_tracks::id,
+                song_tracks::last_played_at,
+                song_rows::kind,
+                song_rows::origin,
+                song_rows::created_at,
+            ))
             .load(conn)?;
-        let mut candidates: Vec<(SongId, TrackId, i64)> = Vec::new();
-        for (song_id, track_id, played) in rows {
+        let mut candidates: Vec<(SongId, TrackId, i64, Kind)> = Vec::new();
+        for (song_id, track_id, played, kind, origin, created_at) in rows {
             match candidates.iter_mut().find(|c| c.0 == song_id) {
                 // The first row of a song is its take played most; its last
                 // play is the latest of any take.
                 Some(c) => c.2 = c.2.max(played.unwrap_or(0)),
-                None => candidates.push((song_id, track_id, played.unwrap_or(0))),
+                None => candidates.push((song_id, track_id, played.unwrap_or(0), classify(&kind, &origin, created_at, today))),
             }
         }
+        // Spec: RADIO-17, RADIO-19
+        candidates.retain(|c| fits(c.3));
         // With a small library, only what played last is left out.
         let keep_out = recent_songs.len().min(candidates.len().saturating_sub(1));
         let left_out = &recent_songs[..keep_out];
@@ -430,15 +525,19 @@ fn pick_next(conn: &mut Conn, handed: &[Entry], ready_orders: &[SongId]) -> Resu
         .collect();
     let fresh = |bridges: Vec<Bridge>| bridges.into_iter().find(|b| !recent_bridges.contains(&b.id)).map(|b| b.id);
     let mut out = Vec::new();
-    if let Some(intro) = fresh(kept_bridges(conn, Some(song_id), Some("intro"), 10)?) {
-        out.push(Entry::Bridge(intro));
-    } else {
-        // A station bridge when the last few items had none.
-        let quiet = handed.iter().rev().take(3).all(|e| matches!(e, Entry::Take(..)));
-        if quiet && handed.len() >= 3 {
-            if let Some(station) = fresh(kept_bridges(conn, None, Some("station"), 10)?) {
-                out.push(Entry::Bridge(station));
-            }
+    // Every item comes after a bridge: one about it, else one about the
+    // station — one not heard just now if there is one, else the one heard
+    // longest ago (the last one heard is never said twice in a row).
+    // Spec: RADIO-20
+    let after_bridge = matches!(handed.last(), Some(Entry::Bridge(_)));
+    if !after_bridge {
+        let last_bridge = recent_bridges.first().copied();
+        let stations = kept_bridges(conn, None, Some("station"), 20)?;
+        let bridge = fresh(kept_bridges(conn, Some(song_id), Some("intro"), 10)?)
+            .or_else(|| fresh(stations.clone()))
+            .or_else(|| stations.iter().map(|b| b.id).find(|id| Some(*id) != last_bridge));
+        if let Some(bridge) = bridge {
+            out.push(Entry::Bridge(bridge));
         }
     }
     out.push(Entry::Take(song_id, track_id));
@@ -770,41 +869,49 @@ fn spawn_session(app: AppHandle, generation: u64) {
 // ---------------------------------------------------------------------------
 
 const RULES: &str = "\
-You run a radio station for someone learning Polish: Polski Radio. You are \
-its mixing agent and presenter. You decide what plays next, order new songs, \
-podcast episodes and news for the station, and write the short spoken \
-bridges between items.
+You run Polski Radio, a music station for someone learning Polish. You are \
+its mixing agent and its presenter: you decide what plays, order new songs \
+for it, now and then a podcast or the news, and you speak between every two \
+items.
 
-How the station works:
-- The listener hears items in the order you put them on the programme with \
-add_to_programme. Keep the programme a few songs or episodes ahead; you are \
-told how many are planned.
-- New material you order (make_song, make_podcast, make_news) takes minutes. \
-It lands in the listener's library and you are told when it is ready: then \
-put it on the programme, with a bridge that introduces it. Until then, play \
-the library.
-- Keep something new in the making while the listener listens, but not more \
-than you are allowed at once. Vary it: mostly songs, a podcast now and then, \
-and news at most once a day (if today's news already exists, play that).
-- Make new material from what the listener is learning: name an open course \
-(by its id) when it fits, so it is filed there; draw subjects from their \
-interests.
-- Mix the library: what has not played for a while, a mix of songs and \
-episodes, never the same item twice in a row.
+The programme:
+- It is a music station. Songs are three or four minutes; a podcast or news \
+episode is five to ten minutes of talk. Play at least three songs between \
+two episodes, and open with a song. The app holds you to this: an episode \
+too soon is refused, and you are told how many songs are still needed.
+- Every song and episode comes after a bridge. Put the programme together as \
+bridge, item, bridge, item: an item that would follow another item directly \
+is refused.
+- Keep a few songs or episodes planned with add_to_programme; you are told \
+how many are.
+- Mix the library: what has not played for a while, never the same item \
+twice in a row. News is played only on the day it was made.
+
+New material:
+- What you order takes minutes and lands in the listener's library. You are \
+told when it is ready: then put it on the programme, with a bridge that \
+introduces it as new. Until then, play the library.
+- Keep something new in the making while the listener listens, up to the \
+number allowed at once. Order songs, mostly: a podcast or the news only \
+after three new songs (the app holds you to this too), and the news at most \
+once a day.
+- Make new songs from what the listener is learning: name an open course by \
+its id when it fits, so the song uses its words and is filed there. Draw \
+podcast subjects from their interests.
 
 Bridges:
 - A bridge is one to three short lines, each a Polish sentence and its \
-English, like a presenter speaking between records: introduce what comes \
-next (role intro, about that item), look back on what just played (role \
-outro, about it), or say something about the station (role station).
-- Use the item's own words: a word or two from its chorus or subject, so the \
-bridge prepares the ear for it.
+English, as a presenter speaks between records: introduce what comes next \
+(role intro, about that item), or say something about the station, the time \
+of day or what was just heard (role station, or role outro about the item \
+that just played).
+- Make them lively and warm, not a summary: a word or two from the next \
+item's chorus or subject, so the bridge prepares the ear for it.
 - Polish at the listener's level: short and clear. No ids, no markup, no \
 emoji in what is said.
-- Bridges are kept and can be played again. Before writing one, look for a \
-kept bridge that fits with find_bridges and reuse it by its id when it does; \
-write a new one when nothing fits or the kept ones have played often.
-- Not every item needs a bridge: about every other item is right.
+- Bridges are kept. Before writing one, look for a kept bridge that fits with \
+find_bridges and reuse it by its id; write a new one when nothing fits or the \
+kept ones have played often.
 
 When you have planned enough, stop calling tools and answer with one short \
 line on what you planned.";
@@ -974,6 +1081,23 @@ fn briefing(conn: &mut Conn, generation: u64) -> Result<String> {
         "\nOn the programme, not played yet ({takes} songs or episodes; keep {AHEAD} planned):\n{}\n",
         if planned_lines.is_empty() { "  (nothing)".to_string() } else { format!("  - {}", planned_lines.join("\n  - ")) }
     ));
+    let sequence: Vec<Entry> = handed.iter().chain(planned.iter()).copied().collect();
+    let next_is = match sequence.last() {
+        Some(Entry::Take(..)) => "The programme ends with a song or episode: what you add next starts with a bridge.",
+        Some(Entry::Bridge(_)) => "The programme ends with a bridge: what you add next starts with the item it introduces.",
+        None => "Nothing has played yet: start with a bridge that welcomes the listener, then a song.",
+    };
+    let songs = songs_since_episode(conn, &sequence)?;
+    let episode = if episode_may_follow(conn, &sequence)? {
+        "a podcast or news episode may come next".to_string()
+    } else {
+        format!("{} more song(s) before a podcast or news episode", SONGS_PER_EPISODE - songs.min(SONGS_PER_EPISODE))
+    };
+    out.push_str(&format!("{next_is}\nSongs since the last episode: {songs}; {episode}.\n"));
+    let songs_ordered = orders.iter().rev().take_while(|o| o.what == "song").count();
+    out.push_str(&format!(
+        "Songs you ordered since the last podcast or news you ordered: {songs_ordered} (an episode may be ordered after {SONGS_PER_EPISODE}).\n"
+    ));
     let mut making = Vec::new();
     let mut ready = Vec::new();
     for order in orders.iter().filter(|o| !o.planned) {
@@ -1107,9 +1231,12 @@ fn list_library(conn: &mut Conn, arguments: &str) -> Result<Value> {
         .select((song_tracks::song_id, song_tracks::last_played_at, song_tracks::play_count))
         .load(conn)?;
     let now = db::now_secs();
+    let today = day_start(conn);
     let mut rows: Vec<(i64, Value)> = songs::list_songs(conn, false)?
         .into_iter()
         .filter(|s| s.status == "ready" && !s.tracks.is_empty())
+        // Yesterday's news is not played (RADIO-19).
+        .filter(|s| !(s.origin.news && s.created_at < today))
         .filter(|s| args.course_id.is_none() || s.course_id == args.course_id)
         .filter(|s| match args.kind.as_str() {
             "song" => s.kind == "song",
@@ -1134,6 +1261,7 @@ fn list_library(conn: &mut Conn, arguments: &str) -> Result<Value> {
                     "plays": plays,
                     "last_played_days_ago": last.map(|t| (now - t) / 86_400),
                     "made_days_ago": (now - s.created_at) / 86_400,
+                    "minutes": (s.tracks.iter().map(|t| t.duration).fold(0.0, f64::max) / 60.0).round(),
                 }),
             )
         })
@@ -1187,16 +1315,58 @@ struct ProgrammeArgs {
     items: Vec<ProgrammeArg>,
 }
 
+/// Whether a song or episode may go on the programme next, and if not, why
+/// (for the agent).
+// Spec: RADIO-17, RADIO-19
+fn mix_allows(conn: &mut Conn, generation: u64, song_id: SongId) -> std::result::Result<(), String> {
+    let kind = kind_of(conn, song_id).map_err(|e| e.to_string())?;
+    if kind == Kind::OldNews {
+        return Err(format!("{song_id} is news from an earlier day; news plays only on its day."));
+    }
+    if kind == Kind::Song {
+        return Ok(());
+    }
+    let sequence: Vec<Entry> = with_session(generation, |s| s.handed.iter().chain(s.planned.iter()).copied().collect())
+        .unwrap_or_default();
+    let songs = songs_since_episode(conn, &sequence).map_err(|e| e.to_string())?;
+    if episode_may_follow(conn, &sequence).map_err(|e| e.to_string())? {
+        Ok(())
+    } else {
+        Err(format!(
+            "{song_id} is a spoken episode, and this is a music station: put {} more song(s) on first.",
+            SONGS_PER_EPISODE - songs
+        ))
+    }
+}
+
+/// Whether a song or episode may go on next: only after a bridge.
+// Spec: RADIO-20
+fn bridged(generation: u64, song_id: SongId) -> std::result::Result<(), String> {
+    let last = with_session(generation, |s| s.planned.back().or(s.handed.last()).copied()).flatten();
+    match last {
+        Some(Entry::Take(..)) => Err(format!(
+            "{song_id} would follow a song or episode directly: put a bridge before it (a kept one or a new one)."
+        )),
+        _ => Ok(()),
+    }
+}
+
 async fn add_to_programme(app: &AppHandle, db: &Db, generation: u64, arguments: &str) -> Result<Value> {
     let args: ProgrammeArgs = parse(arguments)?;
     let mut added = Vec::new();
     let mut problems = Vec::new();
     for item in args.items.into_iter().take(6) {
         let entry = match item {
-            ProgrammeArg { song_id: Some(song_id), .. } => match take_of(&mut db.lock(), song_id)? {
-                Some(track) => Ok(Entry::Take(song_id, track)),
-                None => Err(format!("{song_id} is not ready to play.")),
-            },
+            ProgrammeArg { song_id: Some(song_id), .. } => {
+                let mut guard = db.lock();
+                let conn = &mut *guard;
+                match take_of(conn, song_id)? {
+                    Some(track) => mix_allows(conn, generation, song_id)
+                        .and_then(|()| bridged(generation, song_id))
+                        .map(|()| Entry::Take(song_id, track)),
+                    None => Err(format!("{song_id} is not ready to play.")),
+                }
+            }
             ProgrammeArg { bridge_id: Some(id), .. } => match load_bridge(&mut db.lock(), id)? {
                 Some(_) => Ok(Entry::Bridge(id)),
                 None => Err(format!("There is no bridge {id}.")),
@@ -1273,6 +1443,18 @@ async fn order(app: &AppHandle, db: &Db, generation: u64, name: &str, arguments:
     }
     if in_flight >= MAKING {
         return Err(Error::msg(format!("{in_flight} items are being made already; wait until one is ready.")));
+    }
+    // Spec: RADIO-18
+    if name != "make_song" {
+        let songs_ordered = with_session(generation, |s| s.orders.iter().rev().take_while(|o| o.what == "song").count())
+            .unwrap_or(0);
+        let can_sing = songs::kie_key(&mut db.lock()).is_ok();
+        if can_sing && songs_ordered < SONGS_PER_EPISODE {
+            return Err(Error::msg(format!(
+                "This is a music station: order {} more song(s) before another podcast or news.",
+                SONGS_PER_EPISODE - songs_ordered
+            )));
+        }
     }
     let course_id = match args.course_id {
         Some(id) => {
@@ -1470,6 +1652,81 @@ mod tests {
         assert_eq!(pick_next(&mut conn, &handed, &[]).unwrap(), vec![Entry::Take(only, take)]);
         let mut empty = scratch("empty");
         assert!(pick_next(&mut empty, &[], &[]).unwrap().is_empty());
+    }
+
+    /// A finished podcast (or news) episode.
+    fn episode(conn: &mut Conn, title: &str, news: bool, made_at: i64) -> (SongId, TrackId) {
+        let (id, track) = song(conn, title, None);
+        let origin = serde_json::to_string(&songs::SongOrigin { news, ..Default::default() }).unwrap();
+        diesel::update(song_rows::table.find(id))
+            .set((song_rows::kind.eq("podcast"), song_rows::origin.eq(origin), song_rows::created_at.eq(made_at)))
+            .execute(conn)
+            .unwrap();
+        (id, track)
+    }
+
+    fn take(entries: &[Entry]) -> Option<Entry> {
+        entries.iter().copied().find(|e| matches!(e, Entry::Take(..)))
+    }
+
+    // Spec: RADIO-17, RADIO-19
+    #[test]
+    fn music_first_and_only_todays_news() {
+        let mut conn = scratch("mix");
+        db::set_setting(&mut conn, "tz_offset_minutes", "0").unwrap();
+        // Songs that have played; an episode and old news that never have,
+        // so on age alone they would come first.
+        let a = song(&mut conn, "A", Some(10));
+        let b = song(&mut conn, "B", Some(20));
+        let c = song(&mut conn, "C", Some(30));
+        let talk = episode(&mut conn, "Talk", false, db::now_secs());
+        let old_news = episode(&mut conn, "Old news", true, db::now_secs() - 3 * 86_400);
+        let as_entry = |(s, t): (SongId, TrackId)| Entry::Take(s, t);
+
+        // The station opens with a song.
+        assert_eq!(take(&pick_next(&mut conn, &[], &[]).unwrap()), Some(as_entry(a)));
+        // Two songs are not enough for talk; three are.
+        let two = [as_entry(a), as_entry(b)];
+        assert_eq!(take(&pick_next(&mut conn, &two, &[]).unwrap()), Some(as_entry(c)));
+        let three = [as_entry(a), as_entry(b), as_entry(c)];
+        assert_eq!(take(&pick_next(&mut conn, &three, &[]).unwrap()), Some(as_entry(talk)));
+        // After the episode, songs again; yesterday's news never.
+        let after = [as_entry(a), as_entry(b), as_entry(c), as_entry(talk)];
+        let next = take(&pick_next(&mut conn, &after, &[]).unwrap()).unwrap();
+        assert!(next != as_entry(old_news) && next != as_entry(talk));
+        assert!(episode_may_follow(&mut conn, &three).unwrap());
+        assert!(!episode_may_follow(&mut conn, &after).unwrap());
+        // A ready episode the radio made waits for its songs too.
+        assert_eq!(take(&pick_next(&mut conn, &two, &[talk.0]).unwrap()), Some(as_entry(c)));
+    }
+
+    #[test]
+    fn talk_plays_when_there_are_no_songs() {
+        let mut conn = scratch("talk-only");
+        let talk = episode(&mut conn, "Talk", false, db::now_secs());
+        assert_eq!(take(&pick_next(&mut conn, &[], &[]).unwrap()), Some(Entry::Take(talk.0, talk.1)));
+    }
+
+    // Spec: RADIO-20
+    #[test]
+    fn every_item_comes_after_a_bridge() {
+        let mut conn = scratch("bridged");
+        let a = song(&mut conn, "A", Some(10));
+        let b = song(&mut conn, "B", Some(20));
+        let first = bridge(&mut conn, None, "station");
+        let second = bridge(&mut conn, None, "station");
+        let played = [Entry::Take(a.0, a.1)];
+        let next = pick_next(&mut conn, &played, &[]).unwrap();
+        assert!(matches!(next.as_slice(), [Entry::Bridge(_), Entry::Take(..)]), "{next:?}");
+        // The bridge just heard is not said again: the other one is.
+        let Entry::Bridge(said) = next[0] else { unreachable!() };
+        let again = [Entry::Take(a.0, a.1), Entry::Bridge(said), Entry::Take(b.0, b.1)];
+        let next = pick_next(&mut conn, &again, &[]).unwrap();
+        let other = if said == first { second } else { first };
+        assert_eq!(next[0], Entry::Bridge(other));
+        // Right after a bridge, no second one.
+        let after_bridge = [Entry::Take(a.0, a.1), Entry::Bridge(said)];
+        assert!(matches!(pick_next(&mut conn, &after_bridge, &[]).unwrap().as_slice(), [Entry::Take(..)]));
     }
 
     // Spec: RADIO-5
