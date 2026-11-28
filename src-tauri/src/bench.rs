@@ -260,27 +260,27 @@ fn score_tools(task: ToolTask, turn: &ai::Turn) -> (f64, String) {
                 return (0.0, format!("did not call {wanted}"));
             };
             /// What is scored of a create_course / create_writing_lesson call:
-            /// each part leniently, so one odd part costs only its points.
+            /// arguments of the wrong shape score as unreadable.
             #[derive(serde::Deserialize)]
             struct Args {
                 #[serde(default)]
-                goals: Vec<crate::wire::Lenient<serde::de::IgnoredAny>>,
-                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                goals: Vec<serde::de::IgnoredAny>,
+                #[serde(default)]
                 scenario: Option<String>,
                 #[serde(default)]
-                words: Vec<crate::wire::Lenient<BenchWord>>,
+                words: Vec<BenchWord>,
                 #[serde(default)]
-                sentences: Vec<crate::wire::Lenient<serde::de::IgnoredAny>>,
+                sentences: Vec<serde::de::IgnoredAny>,
             }
             #[derive(serde::Deserialize)]
             struct BenchWord {
-                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                #[serde(default)]
                 pl: Option<String>,
-                #[serde(default, deserialize_with = "crate::wire::lenient")]
+                #[serde(default)]
                 en: Option<String>,
             }
             let Ok(args) = serde_json::from_str::<Args>(&call.function.arguments) else {
-                return (0.1, "the call's arguments were not valid JSON".into());
+                return (0.1, "the call's arguments did not fit the tool".into());
             };
             let mut score: f64 = 0.3;
             let mut notes = Vec::new();
@@ -294,9 +294,9 @@ fn score_tools(task: ToolTask, turn: &ai::Turn) -> (f64, String) {
                 if words.len() == 10 { score += 0.2 } else { notes.push(format!("{} words, not 10", words.len())) }
                 if sentences == 5 { score += 0.15 } else { notes.push(format!("{sentences} sentences, not 5")) }
                 let polish: Vec<String> =
-                    words.iter().filter_map(|w| w.0.as_ref()?.pl.as_deref()).map(str::to_lowercase).collect();
+                    words.iter().filter_map(|w| w.pl.as_deref()).map(str::to_lowercase).collect();
                 if polish.len() == words.len()
-                    && words.iter().all(|w| w.0.as_ref().and_then(|w| w.en.as_deref()).is_some_and(|e| !e.is_empty()))
+                    && words.iter().all(|w| w.en.as_deref().is_some_and(|e| !e.is_empty()))
                 {
                     score += 0.1
                 } else {

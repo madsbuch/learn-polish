@@ -10,7 +10,16 @@
   "requirements": [
     {
       "id": "keel.ENG-1",
-      "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust and the frontend queries it through drizzle."
+      "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust, through diesel.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust and the frontend queries it through drizzle.",
+          "reason": "The stack uses diesel, with the SQLite database in Rust; the frontend doesn't query it through drizzle.",
+          "date": "2026-11-28"
+        }
+      ]
     },
     {
       "id": "keel.ENG-2",

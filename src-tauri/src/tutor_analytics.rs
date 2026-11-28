@@ -365,7 +365,6 @@ struct AnnotateArgs {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RawArgs {
     #[serde(default)]
     period: String,

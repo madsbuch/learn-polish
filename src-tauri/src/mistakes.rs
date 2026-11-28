@@ -66,7 +66,6 @@ pub struct Graded<'a> {
 /// and how it went (r right, a Polish letters off, w wrong, e wrong ending,
 /// m missing, x extra, o out of order).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct WordResult {
     pub e: String,
     pub g: String,

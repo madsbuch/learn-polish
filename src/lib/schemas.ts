@@ -2317,25 +2317,23 @@ export type GameAnswered = z.infer<typeof GameAnsweredSchema>;
 // ------------------------------------------------------------ the screens' own
 
 /** The filters a raw-log page opens with (a drill-down presets some), as an address carries them. */
-export const RawPresetSchema = z
-  .object({
-    fromDay: z.number().nullable().optional(),
-    toDay: z.number().nullable().optional(),
-    courseId: CourseIdSchema.nullable().optional(),
-    lessonId: LessonIdSchema.nullable().optional(),
-    itemId: z.string().nullable().optional(),
-    role: z.string().nullable().optional(),
-    search: z.string().nullable().optional(),
-    exercise: z.string().nullable().optional(),
-    mistake: z.string().nullable().optional(),
-    topic: z.string().nullable().optional(),
-    grammar: z.string().nullable().optional(),
-    correct: z.boolean().nullable().optional(),
-    source: z.string().nullable().optional(),
-    kind: z.enum(["answers", "events"]).nullable().optional(),
-    context: z.object({ groupBy: z.string(), key: z.string() }).nullable().optional(),
-  })
-  .strict();
+export const RawPresetSchema = z.object({
+  fromDay: z.number().nullable().optional(),
+  toDay: z.number().nullable().optional(),
+  courseId: CourseIdSchema.nullable().optional(),
+  lessonId: LessonIdSchema.nullable().optional(),
+  itemId: z.string().nullable().optional(),
+  role: z.string().nullable().optional(),
+  search: z.string().nullable().optional(),
+  exercise: z.string().nullable().optional(),
+  mistake: z.string().nullable().optional(),
+  topic: z.string().nullable().optional(),
+  grammar: z.string().nullable().optional(),
+  correct: z.boolean().nullable().optional(),
+  source: z.string().nullable().optional(),
+  kind: z.enum(["answers", "events"]).nullable().optional(),
+  context: z.object({ groupBy: z.string(), key: z.string() }).nullable().optional(),
+});
 export type RawPreset = z.infer<typeof RawPresetSchema>;
 
 /** The page last shown, kept in localStorage to resume it (src/lib/navigation.ts). */

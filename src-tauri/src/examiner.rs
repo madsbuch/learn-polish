@@ -813,8 +813,8 @@ struct RawGoal {
     #[serde(default, alias = "name", alias = "title")]
     goal: String,
     #[serde(default, alias = "phrases", alias = "vocabulary")]
-    words: Vec<crate::wire::Lenient<RawPhrase>>,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    words: Vec<RawPhrase>,
+    #[serde(default)]
     starter: Option<RawPhrase>,
 }
 
@@ -823,22 +823,22 @@ struct RawGoal {
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum RawBank {
-    List(Vec<crate::wire::Lenient<RawGoal>>),
+    List(Vec<RawGoal>),
     Wrapped {
         #[serde(alias = "help", alias = "bank", alias = "items", alias = "word_bank")]
-        goals: Vec<crate::wire::Lenient<RawGoal>>,
+        goals: Vec<RawGoal>,
     },
 }
 
-/// A word bank from a model's reply, read leniently: `{"goals": [...]}` or
+/// A word bank from a model's reply: `{"goals": [...]}` or
 /// a bare list, phrases as objects or strings. None when nothing usable is in it.
 fn parse_bank(text: &str) -> Option<Vec<GoalHelp>> {
     let goals = match crate::ai::json_in::<RawBank>(text).ok()? {
         RawBank::List(goals) | RawBank::Wrapped { goals } => goals,
     };
-    let help: Vec<GoalHelp> = crate::wire::kept(goals)
+    let help: Vec<GoalHelp> = goals.into_iter()
         .filter_map(|g| {
-            let words: Vec<Phrase> = crate::wire::kept(g.words).filter_map(RawPhrase::phrase).collect();
+            let words: Vec<Phrase> = g.words.into_iter().filter_map(RawPhrase::phrase).collect();
             let starter = match g.starter.and_then(RawPhrase::phrase) {
                 Some(starter) => starter,
                 None => words.first()?.clone(),

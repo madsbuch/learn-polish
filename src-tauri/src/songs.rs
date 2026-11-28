@@ -728,7 +728,7 @@ async fn kie_json<T: serde::de::DeserializeOwned>(request: reqwest::RequestBuild
 pub async fn credits(key: &str) -> Result<f64> {
     let balance: crate::wire::Number =
         kie_json(crate::http::downloads().get(format!("{KIE_BASE_URL}/chat/credit")).bearer_auth(key)).await?;
-    balance.value().ok_or_else(|| Error::msg("kie.ai did not report a credit balance."))
+    Ok(balance.0)
 }
 
 /// kie.ai's answer to a new task.
@@ -807,13 +807,13 @@ pub enum TaskState {
 /// A take as kie.ai lists it (snake_case or camelCase, by endpoint).
 #[derive(Debug, Default, Deserialize)]
 struct KieTrack {
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     id: Option<String>,
-    #[serde(default, alias = "audioUrl", deserialize_with = "crate::wire::lenient")]
+    #[serde(default, alias = "audioUrl")]
     audio_url: Option<String>,
-    #[serde(default, alias = "imageUrl", deserialize_with = "crate::wire::lenient")]
+    #[serde(default, alias = "imageUrl")]
     image_url: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     duration: Option<f64>,
 }
 
@@ -834,13 +834,13 @@ enum KieTracks {
 pub struct RecordInfo {
     #[serde(default)]
     state: String,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     response: Option<KieTracks>,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     result_json: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     fail_msg: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     credits_consumed: Option<crate::wire::Number>,
 }
 
@@ -893,7 +893,7 @@ async fn task_state(key: &str, task_id: &str) -> Result<(TaskState, Option<f64>)
             .bearer_auth(key),
     )
     .await?;
-    let credits = data.credits_consumed.as_ref().and_then(crate::wire::Number::value);
+    let credits = data.credits_consumed.map(|c| c.0);
     Ok((parse_task(data), credits))
 }
 
@@ -949,9 +949,9 @@ const TIMESTAMP_MODEL: &str = "ai-music-api/timeStamped-lyrics";
 #[derive(Debug, Deserialize)]
 struct AlignedWord {
     word: String,
-    #[serde(default, alias = "start_s", rename = "startS", deserialize_with = "crate::wire::lenient")]
+    #[serde(default, alias = "start_s", rename = "startS")]
     start: Option<f64>,
-    #[serde(default, alias = "end_s", rename = "endS", deserialize_with = "crate::wire::lenient")]
+    #[serde(default, alias = "end_s", rename = "endS")]
     end: Option<f64>,
 }
 
@@ -963,7 +963,7 @@ pub struct AlignedWords {
     code: Option<i64>,
     #[serde(default)]
     msg: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::lenient")]
+    #[serde(default)]
     data: Option<Box<AlignedWords>>,
     #[serde(default, alias = "aligned_words", rename = "alignedWords")]
     words: Option<Vec<AlignedWord>>,
@@ -1964,7 +1964,7 @@ mod tests {
         assert!(matches!(parse_task(wire(data)), TaskState::Done(t) if t[0].id == "c"));
 
         assert_eq!(parse_task(wire(serde_json::json!({ "state": "generating" }))), TaskState::Pending);
-        let credits = |v| wire::<RecordInfo>(v).credits_consumed.and_then(|c| c.value());
+        let credits = |v| wire::<RecordInfo>(v).credits_consumed.map(|c| c.0);
         assert_eq!(credits(serde_json::json!({ "creditsConsumed": 12 })), Some(12.0));
         assert_eq!(credits(serde_json::json!({ "creditsConsumed": "6.5" })), Some(6.5));
         assert_eq!(credits(serde_json::json!({})), None);

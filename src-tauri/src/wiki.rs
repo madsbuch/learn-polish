@@ -745,11 +745,11 @@ fn parse_verdict(text: &str) -> Result<Option<(String, String)>> {
     let end = text.rfind('}').ok_or_else(|| Error::msg("The fact check gave no answer."))?;
     #[derive(Deserialize)]
     struct Verdict {
-        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        #[serde(default)]
         outdated: Option<bool>,
-        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        #[serde(default)]
         changes: Option<String>,
-        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        #[serde(default)]
         lesson: Option<String>,
     }
     let verdict: Verdict = serde_json::from_str(&text[start..=end])
