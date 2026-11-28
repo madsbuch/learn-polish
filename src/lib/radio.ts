@@ -26,7 +26,29 @@ let on = false;
 let asking = false;
 let quietUntil = 0;
 let lastPlaying: boolean | null = null;
+/** The queue as last reported to the core, to report only changes. */
+let lastQueued = "";
 let unsubscribe: (() => void) | null = null;
+
+function seconds(item: QueueItem): number {
+  return item.bridge ? item.bridge.duration : item.track.duration;
+}
+
+/**
+ * Tells the core how much the player still holds after what plays now, so
+ * it plans by what is really ahead (RADIO-2). Sent when the queue moves on
+ * or grows, not on every tick of the position.
+ */
+// Spec: RADIO-2
+function reportQueued(player: PlayerState) {
+  const key = `${player.index}:${player.queue.length}`;
+  if (key === lastQueued) return;
+  lastQueued = key;
+  const current = player.queue[player.index];
+  const rest = current ? Math.max(0, (player.duration || seconds(current)) - player.position) : 0;
+  const after = player.queue.slice(player.index + 1).reduce((sum, item) => sum + seconds(item), 0);
+  void api.radioQueued(rest + after).catch((cause: unknown) => logCause("radio", cause));
+}
 
 function toQueueItem(item: ProgrammeItem): QueueItem {
   return item.kind === "bridge" ? { bridge: item.bridge } : { song: item.song, track: item.track };
@@ -51,6 +73,7 @@ export async function tuneIn(): Promise<void> {
   }
   on = true;
   lastPlaying = null;
+  lastQueued = "";
   quietUntil = 0;
   playQueue(first.map(toQueueItem), 0, { owner: "radio" });
   unsubscribe?.();
@@ -85,6 +108,7 @@ function follow(player: PlayerState) {
     lastPlaying = player.playing;
     void api.radioPlaying(player.playing).catch((cause: unknown) => logCause("radio", cause));
   }
+  reportQueued(player);
   const ahead = player.queue.length - player.index - 1;
   if (ahead >= KEEP || asking || Date.now() < quietUntil) return;
   asking = true;

@@ -59,12 +59,12 @@
     },
     {
       "id": "RADIO-2",
-      "text": "A mixing agent on the tutor's model plans more of the programme whenever less than `radio.ahead` of it is planned, and chooses what is made, from the learner's open courses, their interests and what was played recently.",
+      "text": "A mixing agent on the tutor's model plans more of the programme whenever less than `radio.ahead` is ahead, counting what the player already holds, and chooses what is made, from the learner's open courses, their interests and what was played recently.",
       "related": [
         "tutor#TUTOR-1",
         "music/podcasts#POD-5"
       ],
-      "version": 3,
+      "version": 4,
       "history": [
         {
           "version": 1,
@@ -76,6 +76,12 @@
           "version": 2,
           "text": "A mixing agent on the tutor's model keeps `radio.ahead` songs or episodes planned and chooses what is made, from the learner's open courses, their interests and what was played recently.",
           "reason": "Counting songs left the programme unbounded and the count meant little; how long the programme runs is what matters, and a round may plan past it.",
+          "date": "2026-11-28"
+        },
+        {
+          "version": 3,
+          "text": "A mixing agent on the tutor's model plans more of the programme whenever less than `radio.ahead` of it is planned, and chooses what is made, from the learner's open courses, their interests and what was played recently.",
+          "reason": "The screen counted what the player holds and the agent did not, so it kept planning with more than enough ahead.",
           "date": "2026-11-28"
         }
       ]
@@ -129,13 +135,19 @@
     },
     {
       "id": "RADIO-10",
-      "text": "The radio shows what is playing, what comes next and how long that runs, including items still being made.",
-      "version": 2,
+      "text": "The radio shows what is playing, what comes next and how long that runs, including items still being made, and that it is planning ahead while less than `radio.ahead` is ahead.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "The radio shows what is playing and what comes next, including items still being made.",
           "reason": "The learner wants to see how much radio is ready.",
+          "date": "2026-11-28"
+        },
+        {
+          "version": 2,
+          "text": "The radio shows what is playing, what comes next and how long that runs, including items still being made.",
+          "reason": "The spinner showed for every round of the agent, also with plenty ahead.",
           "date": "2026-11-28"
         }
       ]

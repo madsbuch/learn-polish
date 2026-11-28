@@ -1599,6 +1599,8 @@ export const RadioStateSchema = z.object({
   playing: z.boolean(),
   /** The mixing agent is choosing what comes next. */
   thinking: z.boolean(),
+  /** …because less than `radio.ahead` is ahead. */
+  planning: z.boolean(),
   planned: z.array(PlannedViewSchema),
   making: z.array(MakingViewSchema),
   /** Why the radio is not making anything new right now. */

@@ -189,8 +189,8 @@ export function RadioScreen({
                   />
                 );
               })}
-              {radio?.thinking ? (
-                <ListItem leading={<Spinner />} title="Choosing what comes next…" chevron={false} />
+              {radio?.planning ? (
+                <ListItem leading={<Spinner />} title="Planning ahead…" chevron={false} />
               ) : null}
             </List>
           </Section>

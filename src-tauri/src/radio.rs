@@ -334,6 +334,9 @@ struct Session {
     rest_until: Option<Instant>,
     /// Why the agent is not planning (no key, a failed turn).
     note: Option<String>,
+    /// What the player still holds after what plays now, in seconds, as it
+    /// last said: counted with the planned programme.
+    queued: f64,
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
@@ -373,6 +376,15 @@ fn seconds_of(conn: &mut Conn, entry: Entry) -> f64 {
 /// How long the entries play together, in seconds.
 fn seconds_planned(conn: &mut Conn, entries: &[Entry]) -> f64 {
     entries.iter().map(|e| seconds_of(conn, *e)).sum()
+}
+
+/// How much is ahead: what the player holds after what plays now, and the
+/// planned programme. The agent plans while it is under `radio.ahead`.
+// Spec: RADIO-2
+fn seconds_ahead(conn: &mut Conn, generation: u64) -> f64 {
+    let (planned, queued) =
+        with_session(generation, |s| (s.planned.iter().copied().collect::<Vec<_>>(), s.queued)).unwrap_or_default();
+    seconds_planned(conn, &planned) + queued
 }
 
 /// A song's take as the radio plays it: the one played most.
@@ -627,6 +639,8 @@ pub struct RadioState {
     pub playing: bool,
     /// The mixing agent is choosing what comes next.
     pub thinking: bool,
+    /// It is, because less than `radio.ahead` is ahead.
+    pub planning: bool,
     /// Chosen, not yet handed to the player.
     pub planned: Vec<PlannedView>,
     /// New songs and episodes the radio ordered and has not played yet.
@@ -639,10 +653,19 @@ pub struct RadioState {
 fn state_of(conn: &mut Conn) -> RadioState {
     let snapshot = session()
         .as_ref()
-        .map(|s| (s.playing, s.thinking, s.planned.iter().copied().collect::<Vec<_>>(), s.orders.clone(), s.note.clone()));
-    let Some((playing, thinking, planned, orders, note)) = snapshot else {
-        return RadioState { on: false, playing: false, thinking: false, planned: Vec::new(), making: Vec::new(), note: None };
+        .map(|s| (s.generation, s.playing, s.thinking, s.planned.iter().copied().collect::<Vec<_>>(), s.orders.clone(), s.note.clone()));
+    let Some((generation, playing, thinking, planned, orders, note)) = snapshot else {
+        return RadioState {
+            on: false,
+            playing: false,
+            thinking: false,
+            planning: false,
+            planned: Vec::new(),
+            making: Vec::new(),
+            note: None,
+        };
     };
+    let planning = thinking && seconds_ahead(conn, generation) < AHEAD;
     let title_of = |conn: &mut Conn, id: SongId| -> (String, String) {
         song_rows::table
             .find(id)
@@ -685,7 +708,7 @@ fn state_of(conn: &mut Conn) -> RadioState {
         })
         .filter(|m| m.status != "draft")
         .collect();
-    RadioState { on: true, playing, thinking, planned, making, note }
+    RadioState { on: true, playing, thinking, planning, planned, making, note }
 }
 
 // ---------------------------------------------------------------------------
@@ -706,6 +729,7 @@ pub async fn radio_start(app: AppHandle, db: State<'_, Db>) -> Result<RadioState
         thinking: false,
         rest_until: None,
         note: None,
+        queued: 0.0,
     });
     spawn_session(app.clone(), generation);
     changed(&app);
@@ -786,6 +810,18 @@ pub async fn radio_stop(app: AppHandle) -> Result<()> {
     Ok(())
 }
 
+/// What the player still holds after what plays now, in seconds.
+// Spec: RADIO-2
+#[tauri::command]
+pub async fn radio_queued(app: AppHandle, seconds: f64) -> Result<()> {
+    let seconds = if seconds.is_finite() { seconds.max(0.0) } else { 0.0 };
+    if session().as_mut().map(|s| s.queued = seconds).is_some() {
+        wake().notify_one();
+        changed(&app);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn radio_state(db: State<'_, Db>) -> Result<RadioState> {
     Ok(state_of(&mut db.lock()))
@@ -807,14 +843,8 @@ fn spawn_session(app: AppHandle, generation: u64) {
                 () = wake().notified() => {}
                 () = tokio::time::sleep(TICK) => {}
             }
-            let Some((playing, thinking, resting, planned, orders)) = with_session(generation, |s| {
-                (
-                    s.playing,
-                    s.thinking,
-                    s.rest_until.is_some_and(|until| Instant::now() < until),
-                    s.planned.iter().copied().collect::<Vec<_>>(),
-                    s.orders.clone(),
-                )
+            let Some((playing, thinking, resting, orders)) = with_session(generation, |s| {
+                (s.playing, s.thinking, s.rest_until.is_some_and(|until| Instant::now() < until), s.orders.clone())
             }) else {
                 return;
             };
@@ -859,8 +889,8 @@ fn spawn_session(app: AppHandle, generation: u64) {
                 continue;
             }
             // Spec: RADIO-2
-            let planned = seconds_planned(&mut db.lock(), &planned);
-            if planned >= AHEAD && !newly_ready {
+            let ahead = seconds_ahead(&mut db.lock(), generation);
+            if ahead >= AHEAD && !newly_ready {
                 continue;
             }
             with_session(generation, |s| s.thinking = true);
@@ -902,8 +932,8 @@ too soon is refused, and you are told how many songs are still needed.
 - Every song and episode comes after a bridge. Put the programme together as \
 bridge, item, bridge, item: an item that would follow another item directly \
 is refused.
-- Keep at least twenty minutes planned with add_to_programme; you are told \
-how much is. Add a bridge together with the item it introduces, in the same \
+- Keep at least twenty minutes ahead with add_to_programme; you are told how \
+much is, counting what the player already holds. Once there is, stop. Add a bridge together with the item it introduces, in the same \
 call: if the item is refused, so is its bridge.
 - Mix the library: what has not played for a while, never the same item \
 twice in a row. News is played only on the day it was made.
@@ -1094,10 +1124,10 @@ fn briefing(conn: &mut Conn, generation: u64) -> Result<String> {
     ));
     let planned_lines: Vec<String> = planned.iter().map(|e| describe(conn, *e)).collect();
     let takes = planned.iter().filter(|e| matches!(e, Entry::Take(..))).count();
-    let minutes = (seconds_planned(conn, &planned) / 60.0).round();
+    let minutes = (seconds_ahead(conn, generation) / 60.0).round();
     let ahead = (AHEAD / 60.0).round();
     out.push_str(&format!(
-        "\nOn the programme, not played yet ({takes} songs or episodes, {minutes} minutes; keep at least {ahead} minutes planned):\n{}\n",
+        "\nOn the programme, not played yet ({takes} songs or episodes; with what the player already holds, {minutes} minutes are ahead; keep at least {ahead} minutes ahead):\n{}\n",
         if planned_lines.is_empty() { "  (nothing)".to_string() } else { format!("  - {}", planned_lines.join("\n  - ")) }
     ));
     let sequence: Vec<Entry> = handed.iter().chain(planned.iter()).copied().collect();
@@ -1439,9 +1469,8 @@ async fn add_to_programme(app: &AppHandle, db: &Db, generation: u64, arguments: 
         }
     }
     changed(app);
-    let planned = with_session(generation, |s| s.planned.iter().copied().collect::<Vec<_>>()).unwrap_or_default();
-    let minutes = (seconds_planned(&mut db.lock(), &planned) / 60.0).round();
-    Ok(json!({ "added": added, "problems": problems, "minutes_planned": minutes }))
+    let minutes = (seconds_ahead(&mut db.lock(), generation) / 60.0).round();
+    Ok(json!({ "added": added, "problems": problems, "minutes_ahead": minutes }))
 }
 
 #[derive(Deserialize, Default)]
@@ -1763,6 +1792,7 @@ mod tests {
             thinking: false,
             rest_until: None,
             note: None,
+            queued: 0.0,
         });
         // One song since the start: talk is refused.
         assert!(song_fits(&mut conn, generation, talk.0).unwrap_err().contains("music station"));

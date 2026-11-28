@@ -609,6 +609,7 @@ export const api = {
   radioPlaying: (playing: boolean) => run("radio_playing", { playing }),
   radioStop: () => run("radio_stop"),
   radioState: () => call(RadioStateSchema, "radio_state"),
+  radioQueued: (seconds: number) => run("radio_queued", { seconds }),
   radioBridgePlayed: (bridgeId: BridgeId) => run("radio_bridge_played", { bridgeId }),
   castCommand: (action: string, value?: number) =>
     run("cast_command", { action, value }),

@@ -368,6 +368,7 @@ pub fn run() {
             radio::radio_playing,
             radio::radio_stop,
             radio::radio_state,
+            radio::radio_queued,
             radio::radio_bridge_played,
             cast::cast_command,
             cast::cast_set_repeat,
