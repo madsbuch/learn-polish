@@ -151,17 +151,22 @@ class RemotePlayer(
         if (items != null) {
             for (i in 0 until items.length()) {
                 val item = items.getJSONObject(i)
-                val id = item.optLong("trackId")
+                // Ids are strings ("tk_…", or "brg_…" for a radio bridge), and
+                // the same take can be queued twice: the position keeps each
+                // item's uid unique, which SimpleBasePlayer requires (a
+                // duplicate throws and takes the app down).
+                val id = item.optString("trackId")
+                val uid = "$i:$id"
                 val metadata = MediaMetadata.Builder()
                     .setTitle(item.optString("title"))
                     .setArtist(item.optString("artist"))
                     .setAlbumTitle("Playing on $deviceName")
                     .build()
                 playlist.add(
-                    MediaItemData.Builder(id)
+                    MediaItemData.Builder(uid)
                         .setMediaItem(
                             MediaItem.Builder()
-                                .setMediaId(id.toString())
+                                .setMediaId(uid)
                                 .setMediaMetadata(metadata)
                                 .build(),
                         )

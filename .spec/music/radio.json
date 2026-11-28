@@ -36,7 +36,19 @@
       "requirements": [
         "#RADIO-5",
         "#RADIO-7",
-        "#RADIO-9"
+        "#RADIO-9",
+        "#RADIO-20"
+      ]
+    },
+    {
+      "id": "US-RADIO-4",
+      "as": "a learner who tunes in for music",
+      "want": "mostly songs, with talk now and then",
+      "soThat": "it feels like a radio, not a lecture",
+      "requirements": [
+        "#RADIO-17",
+        "#RADIO-18",
+        "#RADIO-19"
       ]
     }
   ],
@@ -132,7 +144,16 @@
     },
     {
       "id": "RADIO-14",
-      "text": "When the mixing agent has planned nothing, the next item is picked without a model: a new item the radio made first, else what was played longest ago, with a kept bridge about it when there is one."
+      "text": "When the mixing agent has planned nothing, the next item is picked without a model: a new item the radio made first, else what was played longest ago, after a kept bridge about it or, failing that, one about the station.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "When the mixing agent has planned nothing, the next item is picked without a model: a new item the radio made first, else what was played longest ago, with a kept bridge about it when there is one.",
+          "reason": "Songs played back to back without a word between them; every item now gets a bridge when one is kept.",
+          "date": "2026-11-28"
+        }
+      ]
     },
     {
       "id": "RADIO-15",
@@ -141,6 +162,22 @@
     {
       "id": "RADIO-16",
       "text": "What the radio makes gets no listening lesson."
+    },
+    {
+      "id": "RADIO-17",
+      "text": "The radio is a music station: a podcast or news episode plays only after `radio.songs-per-episode` songs since the last one, and the programme opens with a song, unless the library has no songs."
+    },
+    {
+      "id": "RADIO-18",
+      "text": "Of what the radio orders, a podcast or news episode comes only after `radio.songs-per-episode` new songs since the last one, unless songs cannot be made."
+    },
+    {
+      "id": "RADIO-19",
+      "text": "A news episode plays on the radio only on the day it was made."
+    },
+    {
+      "id": "RADIO-20",
+      "text": "Every song and episode on the programme comes after a bridge."
     }
   ],
   "values": [
@@ -164,6 +201,13 @@
       "value": 3,
       "unit": "lines",
       "description": "The most lines in one bridge."
+    },
+    {
+      "id": "radio.songs-per-episode",
+      "type": "number",
+      "value": 3,
+      "unit": "songs",
+      "description": "The fewest songs between two spoken episodes on the radio."
     }
   ],
   "related": [
