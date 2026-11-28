@@ -96,6 +96,10 @@ export function RadioScreen({
 
   const current = on ? currentItem(player) : null;
   const upNext: QueueItem[] = on ? player.queue.slice(player.index + 1) : [];
+  // How long what comes up runs: on the phone, and planned in the core.
+  const comingUp =
+    upNext.reduce((sum, item) => sum + (item.bridge ? item.bridge.duration : item.track.duration), 0) +
+    (radio?.planned ?? []).reduce((sum, planned) => sum + planned.duration, 0);
 
   return (
     <Screen
@@ -153,7 +157,7 @@ export function RadioScreen({
             </List>
           </Section>
 
-          <Section title="Coming up">
+          <Section title={comingUp > 0 ? `Coming up · ${Math.round(comingUp / 60)} min` : "Coming up"}>
             <List>
               {upNext.map((item, index) =>
                 item.bridge ? (

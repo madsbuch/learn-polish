@@ -59,17 +59,23 @@
     },
     {
       "id": "RADIO-2",
-      "text": "A mixing agent on the tutor's model keeps `radio.ahead` songs or episodes planned and chooses what is made, from the learner's open courses, their interests and what was played recently.",
+      "text": "A mixing agent on the tutor's model plans more of the programme whenever less than `radio.ahead` of it is planned, and chooses what is made, from the learner's open courses, their interests and what was played recently.",
       "related": [
         "tutor#TUTOR-1",
         "music/podcasts#POD-5"
       ],
-      "version": 2,
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "A mixing agent on the tutor's model chooses what plays next and what is made, from the learner's open courses, their interests and what was played recently.",
           "reason": "How far ahead it plans is decided once, as a named value.",
+          "date": "2026-11-28"
+        },
+        {
+          "version": 2,
+          "text": "A mixing agent on the tutor's model keeps `radio.ahead` songs or episodes planned and chooses what is made, from the learner's open courses, their interests and what was played recently.",
+          "reason": "Counting songs left the programme unbounded and the count meant little; how long the programme runs is what matters, and a round may plan past it.",
           "date": "2026-11-28"
         }
       ]
@@ -123,7 +129,16 @@
     },
     {
       "id": "RADIO-10",
-      "text": "The radio shows what is playing and what comes next, including items still being made."
+      "text": "The radio shows what is playing, what comes next and how long that runs, including items still being made.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The radio shows what is playing and what comes next, including items still being made.",
+          "reason": "The learner wants to see how much radio is ready.",
+          "date": "2026-11-28"
+        }
+      ]
     },
     {
       "id": "RADIO-11",
@@ -178,15 +193,26 @@
     {
       "id": "RADIO-20",
       "text": "Every song and episode on the programme comes after a bridge."
+    },
+    {
+      "id": "RADIO-21",
+      "text": "A bridge goes on the programme only with the item it introduces: when that item is refused, so is the bridge."
     }
   ],
   "values": [
     {
       "id": "radio.ahead",
       "type": "number",
-      "value": 3,
-      "unit": "items",
-      "description": "How many songs or episodes the mixing agent keeps planned."
+      "value": 20,
+      "unit": "minutes",
+      "description": "How much of the programme the mixing agent keeps planned at least.",
+      "history": [
+        {
+          "value": 3,
+          "reason": "Planned by how long it plays, not by how many items: 20 minutes, which a round may pass.",
+          "date": "2026-11-28"
+        }
+      ]
     },
     {
       "id": "radio.making",

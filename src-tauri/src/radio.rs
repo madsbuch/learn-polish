@@ -36,8 +36,9 @@ pub const FORMAT_SETTING: &str = "radio_format";
 // Spec: RADIO-9
 pub const FORMATS: &[&str] = &["pairs", "immersion"];
 
-/// How many songs and episodes the agent keeps planned (`radio.ahead`).
-const AHEAD: usize = 3;
+/// The agent plans another round while less than this is planned, in
+/// seconds (`radio.ahead`). A round may plan more.
+const AHEAD: f64 = 20.0 * 60.0;
 /// How many new items are made for the radio at once (`radio.making`).
 const MAKING: usize = 2;
 /// The most lines in a bridge (`radio.bridge-lines`).
@@ -361,6 +362,19 @@ fn changed(app: &AppHandle) {
     let _ = app.emit("radio://changed", ());
 }
 
+/// How long an entry plays, in seconds.
+fn seconds_of(conn: &mut Conn, entry: Entry) -> f64 {
+    match entry {
+        Entry::Take(_, track) => song_tracks::table.find(track).select(song_tracks::duration).first(conn).unwrap_or(0.0),
+        Entry::Bridge(id) => bridges::table.find(id).select(bridges::duration).first(conn).unwrap_or(0.0),
+    }
+}
+
+/// How long the entries play together, in seconds.
+fn seconds_planned(conn: &mut Conn, entries: &[Entry]) -> f64 {
+    entries.iter().map(|e| seconds_of(conn, *e)).sum()
+}
+
 /// A song's take as the radio plays it: the one played most.
 fn take_of(conn: &mut Conn, song_id: SongId) -> Result<Option<TrackId>> {
     let ready: Option<String> = song_rows::table.find(song_id).select(song_rows::status).first(conn).optional()?;
@@ -591,6 +605,8 @@ pub struct PlannedView {
     pub title: String,
     pub detail: String,
     pub song_id: Option<SongId>,
+    /// How long it plays, in seconds.
+    pub duration: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -642,11 +658,13 @@ fn state_of(conn: &mut Conn) -> RadioState {
         .map(|entry| match entry {
             Entry::Take(song_id, _) => {
                 let (title, detail) = title_of(conn, song_id);
-                PlannedView { kind: "take".into(), title, detail, song_id: Some(song_id) }
+                let duration = seconds_of(conn, entry);
+                PlannedView { kind: "take".into(), title, detail, song_id: Some(song_id), duration }
             }
             Entry::Bridge(id) => {
                 let first = cast_title(conn, id).ok().flatten().map(|t| t.1).unwrap_or_default();
-                PlannedView { kind: "bridge".into(), title: first, detail: String::new(), song_id: None }
+                let duration = seconds_of(conn, entry);
+                PlannedView { kind: "bridge".into(), title: first, detail: String::new(), song_id: None, duration }
             }
         })
         .collect();
@@ -794,7 +812,7 @@ fn spawn_session(app: AppHandle, generation: u64) {
                     s.playing,
                     s.thinking,
                     s.rest_until.is_some_and(|until| Instant::now() < until),
-                    s.planned.iter().filter(|e| matches!(e, Entry::Take(..))).count(),
+                    s.planned.iter().copied().collect::<Vec<_>>(),
                     s.orders.clone(),
                 )
             }) else {
@@ -840,6 +858,8 @@ fn spawn_session(app: AppHandle, generation: u64) {
             if !playing || thinking || resting {
                 continue;
             }
+            // Spec: RADIO-2
+            let planned = seconds_planned(&mut db.lock(), &planned);
             if planned >= AHEAD && !newly_ready {
                 continue;
             }
@@ -882,8 +902,9 @@ too soon is refused, and you are told how many songs are still needed.
 - Every song and episode comes after a bridge. Put the programme together as \
 bridge, item, bridge, item: an item that would follow another item directly \
 is refused.
-- Keep a few songs or episodes planned with add_to_programme; you are told \
-how many are.
+- Keep at least twenty minutes planned with add_to_programme; you are told \
+how much is. Add a bridge together with the item it introduces, in the same \
+call: if the item is refused, so is its bridge.
 - Mix the library: what has not played for a while, never the same item \
 twice in a row. News is played only on the day it was made.
 
@@ -1073,8 +1094,10 @@ fn briefing(conn: &mut Conn, generation: u64) -> Result<String> {
     ));
     let planned_lines: Vec<String> = planned.iter().map(|e| describe(conn, *e)).collect();
     let takes = planned.iter().filter(|e| matches!(e, Entry::Take(..))).count();
+    let minutes = (seconds_planned(conn, &planned) / 60.0).round();
+    let ahead = (AHEAD / 60.0).round();
     out.push_str(&format!(
-        "\nOn the programme, not played yet ({takes} songs or episodes; keep {AHEAD} planned):\n{}\n",
+        "\nOn the programme, not played yet ({takes} songs or episodes, {minutes} minutes; keep at least {ahead} minutes planned):\n{}\n",
         if planned_lines.is_empty() { "  (nothing)".to_string() } else { format!("  - {}", planned_lines.join("\n  - ")) }
     ));
     let sequence: Vec<Entry> = handed.iter().chain(planned.iter()).copied().collect();
@@ -1337,6 +1360,15 @@ fn mix_allows(conn: &mut Conn, generation: u64, song_id: SongId) -> std::result:
     }
 }
 
+/// Whether a song or episode may go on the programme now, bridge aside: it
+/// is ready and the mix allows it. Its take, if so.
+// Spec: RADIO-17, RADIO-19
+fn song_fits(conn: &mut Conn, generation: u64, song_id: SongId) -> std::result::Result<TrackId, String> {
+    let track = take_of(conn, song_id).map_err(|e| e.to_string())?.ok_or_else(|| format!("{song_id} is not ready to play."))?;
+    mix_allows(conn, generation, song_id)?;
+    Ok(track)
+}
+
 /// Whether a song or episode may go on next: only after a bridge.
 // Spec: RADIO-20
 fn bridged(generation: u64, song_id: SongId) -> std::result::Result<(), String> {
@@ -1353,17 +1385,25 @@ async fn add_to_programme(app: &AppHandle, db: &Db, generation: u64, arguments: 
     let args: ProgrammeArgs = parse(arguments)?;
     let mut added = Vec::new();
     let mut problems = Vec::new();
-    for item in args.items.into_iter().take(6) {
+    let mut items = args.items.into_iter().take(6).peekable();
+    while let Some(item) = items.next() {
+        // A bridge goes on only with what it introduces: when that would be
+        // refused, the bridge is left out too (and never spoken).
+        // Spec: RADIO-21
+        if item.song_id.is_none() {
+            if let Some(next) = items.peek().and_then(|n| n.song_id) {
+                let fits = song_fits(&mut db.lock(), generation, next);
+                if let Err(problem) = fits {
+                    problems.push(format!("{problem} Its bridge was left out too."));
+                    items.next();
+                    continue;
+                }
+            }
+        }
         let entry = match item {
             ProgrammeArg { song_id: Some(song_id), .. } => {
-                let mut guard = db.lock();
-                let conn = &mut *guard;
-                match take_of(conn, song_id)? {
-                    Some(track) => mix_allows(conn, generation, song_id)
-                        .and_then(|()| bridged(generation, song_id))
-                        .map(|()| Entry::Take(song_id, track)),
-                    None => Err(format!("{song_id} is not ready to play.")),
-                }
+                let fits = song_fits(&mut db.lock(), generation, song_id);
+                fits.and_then(|track| bridged(generation, song_id).map(|()| Entry::Take(song_id, track)))
             }
             ProgrammeArg { bridge_id: Some(id), .. } => match load_bridge(&mut db.lock(), id)? {
                 Some(_) => Ok(Entry::Bridge(id)),
@@ -1399,8 +1439,9 @@ async fn add_to_programme(app: &AppHandle, db: &Db, generation: u64, arguments: 
         }
     }
     changed(app);
-    let planned = with_session(generation, |s| s.planned.iter().filter(|e| matches!(e, Entry::Take(..))).count()).unwrap_or(0);
-    Ok(json!({ "added": added, "problems": problems, "songs_and_episodes_planned": planned }))
+    let planned = with_session(generation, |s| s.planned.iter().copied().collect::<Vec<_>>()).unwrap_or_default();
+    let minutes = (seconds_planned(&mut db.lock(), &planned) / 60.0).round();
+    Ok(json!({ "added": added, "problems": problems, "minutes_planned": minutes }))
 }
 
 #[derive(Deserialize, Default)]
@@ -1703,6 +1744,37 @@ mod tests {
         let mut conn = scratch("talk-only");
         let talk = episode(&mut conn, "Talk", false, db::now_secs());
         assert_eq!(take(&pick_next(&mut conn, &[], &[]).unwrap()), Some(Entry::Take(talk.0, talk.1)));
+    }
+
+    // Spec: RADIO-17
+    #[test]
+    fn the_programme_holds_the_mix() {
+        let mut conn = scratch("full");
+        let s: Vec<(SongId, TrackId)> = (0..4).map(|n| song(&mut conn, &format!("S{n}"), Some(n))).collect();
+        let talk = episode(&mut conn, "Talk", false, db::now_secs());
+        // Its own generation: no other test touches the session.
+        let generation = u64::MAX - 7;
+        *session() = Some(Session {
+            generation,
+            playing: true,
+            planned: VecDeque::new(),
+            handed: vec![Entry::Take(s[0].0, s[0].1)],
+            orders: Vec::new(),
+            thinking: false,
+            rest_until: None,
+            note: None,
+        });
+        // One song since the start: talk is refused.
+        assert!(song_fits(&mut conn, generation, talk.0).unwrap_err().contains("music station"));
+        for (song_id, track) in &s[1..3] {
+            assert_eq!(song_fits(&mut conn, generation, *song_id), Ok(*track));
+            with_session(generation, |x| x.planned.push_back(Entry::Take(*song_id, *track)));
+        }
+        // Three songs, played and planned: talk may follow; and the
+        // programme takes more than it needs (overshooting is fine).
+        assert_eq!(song_fits(&mut conn, generation, talk.0), Ok(talk.1));
+        assert_eq!(song_fits(&mut conn, generation, s[3].0), Ok(s[3].1));
+        *session() = None;
     }
 
     // Spec: RADIO-20

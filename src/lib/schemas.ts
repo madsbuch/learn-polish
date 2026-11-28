@@ -1581,6 +1581,8 @@ export const PlannedViewSchema = z.object({
   title: z.string(),
   detail: z.string(),
   songId: SongIdSchema.nullable(),
+  /** How long it plays, in seconds. */
+  duration: z.number(),
 });
 export type PlannedView = z.infer<typeof PlannedViewSchema>;
 
