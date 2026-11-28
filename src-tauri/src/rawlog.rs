@@ -46,7 +46,7 @@ pub struct ContextRef {
 /// Which rows. Everything optional; filters that only answers have
 /// (exercise, mistake, right or wrong, grammar, a drill-down) leave events out.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct RawFilter {
     #[serde(default)]
     pub from_day: Option<i64>,

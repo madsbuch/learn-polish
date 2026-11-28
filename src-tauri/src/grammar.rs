@@ -485,7 +485,6 @@ pub fn words_of(text: &str) -> Vec<(String, String)> {
 
 /// One token as the tutor gives it.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct TokenIn {
     pub form: String,
     #[serde(default)]

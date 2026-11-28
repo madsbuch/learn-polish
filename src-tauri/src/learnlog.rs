@@ -51,7 +51,7 @@ fn now_ms() -> i64 {
 /// How an answer was given, as the screen saw it. All optional: an answer
 /// from somewhere that doesn't measure these logs zeros.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Signals {
     /// From the card showing to the first tap or key.
     #[serde(default)]
@@ -102,7 +102,7 @@ pub const SOURCES: &[(&str, &str)] = &[
 /// a check-in (`checkin_start`) and a game, and handed back with every
 /// answer and event.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct PracticeContext {
     #[serde(default)]
     pub source: String,
@@ -172,7 +172,7 @@ pub fn direction(exercise: &str) -> &'static str {
 /// screen: its key in the drill, its place in the run, the hint under the
 /// prompt, the tiles offered, the picture.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct CardShown {
     #[serde(default)]
     pub key: String,
@@ -194,7 +194,6 @@ pub struct CardShown {
 
 /// A check-in's verdict, kept with its answer.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct Verdict {
     pub result: String,
     pub xp: i64,
@@ -206,7 +205,6 @@ pub struct Verdict {
 
 /// What an attempt keeps beyond its columns (versioned by `v`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct AttemptDetails {
     pub v: u32,
     /// Word by word (a sentence, tiles, a dictation, speech).
@@ -355,10 +353,10 @@ fn v1() -> u32 {
     DETAILS_VERSION
 }
 
-/// What an event keeps beyond its columns (versioned by `v`; strict: a
-/// field not listed here is refused, so the shape can't drift).
+/// What an event keeps beyond its columns (versioned by `v`; a field of the
+/// wrong type is refused, one not listed here is dropped).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct EventDetails {
     #[serde(default = "v1")]
     pub v: u32,
@@ -394,7 +392,7 @@ pub struct EventDetails {
 
 /// An event from the screens.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct EventIn {
     pub kind: String,
     #[serde(default)]
@@ -526,12 +524,15 @@ pub fn note(
 mod tests {
     use super::*;
 
+    // Spec: keel.JSN-3
     #[test]
     fn event_details_are_strict_and_versioned() {
         let ok: EventIn = serde_json::from_str(r#"{"kind":"lesson_left","details":{"atCard":3,"ofCards":12}}"#).unwrap();
         assert_eq!(ok.details.v, 2);
         assert_eq!(ok.details.at_card, Some(3));
-        assert!(serde_json::from_str::<EventIn>(r#"{"kind":"lesson_left","details":{"mood":"bad"}}"#).is_err());
+        let unnamed: EventIn = serde_json::from_str(r#"{"kind":"lesson_left","details":{"mood":"bad"}}"#).unwrap();
+        assert_eq!(unnamed.details, EventDetails { v: 2, ..EventDetails::default() }, "a field it doesn't name is dropped");
+        assert!(serde_json::from_str::<EventIn>(r#"{"kind":"lesson_left","details":{"atCard":"three"}}"#).is_err());
         assert!(check_event(&EventIn { kind: "nap".into(), ..EventIn::default() }).is_err());
         assert!(check_event(&EventIn { kind: "talk_opened".into(), item_id: "42".into(), ..EventIn::default() }).is_err());
         let written = serde_json::to_string(&EventDetails { v: 2, slow: Some(true), ..EventDetails::default() }).unwrap();

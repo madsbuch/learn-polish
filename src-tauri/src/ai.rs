@@ -160,7 +160,7 @@ pub async fn generate_image_shaped(
     }
     #[derive(Deserialize)]
     struct ImageUsage {
-        #[serde(default, deserialize_with = "crate::wire::lenient")]
+        #[serde(default)]
         cost: Option<f64>,
     }
     let body: ImageReply = response
@@ -320,7 +320,7 @@ struct ChatRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<&'a serde_json::Value>,
     /// `{"type": "json_object"}` when the answer must be JSON. Providers that
-    /// cannot do it ignore it; the reply is still parsed leniently.
+    /// cannot do it ignore it; the JSON is then found in the reply ([`json_in`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<ResponseFormat>,
     /// Asks OpenRouter to report what the request cost, for the cost center.
@@ -674,7 +674,7 @@ pub fn json_in<T: serde::de::DeserializeOwned>(text: &str) -> std::result::Resul
 /// Shows a vision model a picture and asks about it; the answer must follow
 /// `schema` (a JSON Schema, sent as a strict structured output where the
 /// provider has it: elsewhere it is still asked for in the prompt and read
-/// leniently with [`json_in`]).
+/// out of the reply with [`json_in`]).
 pub async fn look_at_image(
     key: &str,
     model: &str,

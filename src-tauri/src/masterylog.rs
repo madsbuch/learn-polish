@@ -54,7 +54,6 @@ pub struct Go<'a> {
 
 /// The numbers behind a row, small and typed, versioned by `v`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct Details {
     pub v: u32,
     /// What the rule gave before the 0–100 bounds and the cap.
@@ -416,11 +415,14 @@ mod tests {
         assert_eq!(describe(&row("", None, None, false, 100, 100, "mastered")), "Mastered, for good (100 points)");
     }
 
+    // Spec: keel.JSN-3
     #[test]
     fn details_are_strict_and_versioned() {
         let d = Details { v: DETAILS_VERSION, gain: Some(10), cap: Some(90), first_pass_day: Some(5) };
         let json = serde_json::to_string(&d).unwrap();
         assert_eq!(serde_json::from_str::<Details>(&json).unwrap(), d);
-        assert!(serde_json::from_str::<Details>(r#"{"v":1,"surprise":1}"#).is_err());
+        let unnamed = serde_json::from_str::<Details>(r#"{"v":1,"surprise":1}"#).unwrap();
+        assert_eq!(unnamed, Details { v: 1, ..Details::default() }, "a field it doesn't name is dropped");
+        assert!(serde_json::from_str::<Details>(r#"{"v":1,"gain":"ten"}"#).is_err());
     }
 }
