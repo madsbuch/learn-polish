@@ -6,8 +6,11 @@
 //! tool runs here, in Rust, against the same SQLite database the rest of the
 //! app uses, so what the tutor makes is immediately practisable.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+use tokio::sync::watch;
 
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -37,12 +40,14 @@ const HISTORY_LIMIT: i64 = 30;
 /// Tool rounds per learner message. Creating a course takes one or two;
 /// the cap only stops a confused model from looping.
 const MAX_ROUNDS: usize = 8;
+/// Tool calls per learner message: `counsel.max-steps`, as this app sets it.
+const MAX_STEPS: usize = 30;
 
 // ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
 
-// Spec: TUTOR-6, TERM-2
+// Spec: TUTOR-6, TERM-2, counsel.IDN-1, counsel.IDN-4
 pub(crate) const RULES: &str = "\
 You are the tutor in Polski, an app for learning Polish. You explain Polish, suggest what to \
 practise, and — when asked — change the app with your tools.
@@ -279,8 +284,11 @@ pub(crate) fn learner_state(conn: &mut Conn) -> Result<String> {
     let playlists = playlists::list(conn)?;
 
     let none = || "  (none)".to_string();
+    // Spec: counsel.IDN-2
+    let now = db::local_clock(conn);
     Ok(format!(
-        "The learner right now:\n\
+        "{now}\n\
+         The learner right now:\n\
          - {xp} XP, streak {streak} days{done}, {seen} of {total} words met.\n\
          - Due now ({due_count}):\n{due}\n\
          - Study lessons:\n{studies}\n\
@@ -3011,7 +3019,34 @@ fn append(
     content: &str,
     actions: &[TutorAction],
 ) -> Result<MessageId> {
+    insert_message(conn, conversation_id, role, content, actions, None, &[])
+}
+
+/// Stores the tutor's answer with the model that wrote it and every tool
+/// call it made, with its result.
+// Spec: counsel.CHT-6
+pub(crate) fn append_answer(
+    conn: &mut Conn,
+    conversation_id: ConversationId,
+    content: &str,
+    actions: &[TutorAction],
+    model: Option<&str>,
+    calls: &[crate::agent::CallRecord],
+) -> Result<MessageId> {
+    insert_message(conn, conversation_id, "assistant", content, actions, model, calls)
+}
+
+fn insert_message(
+    conn: &mut Conn,
+    conversation_id: ConversationId,
+    role: &str,
+    content: &str,
+    actions: &[TutorAction],
+    model: Option<&str>,
+    calls: &[crate::agent::CallRecord],
+) -> Result<MessageId> {
     let actions = if actions.is_empty() { None } else { Some(serde_json::to_string(actions)?) };
+    let calls = if calls.is_empty() { None } else { Some(serde_json::to_string(calls)?) };
     let now = db::now_secs();
     let id = diesel::insert_into(tutor_messages::table)
         .values((
@@ -3020,6 +3055,8 @@ fn append(
             tutor_messages::role.eq(role),
             tutor_messages::content.eq(content),
             tutor_messages::actions.eq(actions),
+            tutor_messages::model.eq(model),
+            tutor_messages::tool_calls.eq(calls),
             tutor_messages::created_at.eq(now),
         ))
         .returning(tutor_messages::id)
@@ -3142,6 +3179,24 @@ pub async fn app_visibility(visible: bool) -> Result<()> {
     Ok(())
 }
 
+/// The switch that stops each reply being written, by conversation.
+fn stops() -> &'static Mutex<HashMap<ConversationId, watch::Sender<bool>>> {
+    static STOPS: OnceLock<Mutex<HashMap<ConversationId, watch::Sender<bool>>>> = OnceLock::new();
+    STOPS.get_or_init(Mutex::default)
+}
+
+/// Stops the reply the tutor is writing in a conversation. What it wrote so
+/// far is kept as the reply, and so is what it already did in the app. Does
+/// nothing when no reply is being written.
+// Spec: counsel.AGT-2
+#[tauri::command]
+pub async fn tutor_stop(conversation_id: ConversationId) -> Result<()> {
+    if let Some(stop) = stops().lock().map_err(|_| Error::msg("The tutor's state is broken; restart the app."))?.get(&conversation_id) {
+        stop.send_replace(true);
+    }
+    Ok(())
+}
+
 /// The stream id a conversation's background reply streams under, so a
 /// screen opened later can follow it.
 fn job_stream(conversation_id: ConversationId) -> String {
@@ -3236,10 +3291,17 @@ fn start_job(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId) -
     let app = app.clone();
     // With the screen off, Android would freeze the app half-way through.
     let busy = crate::work::begin(&app, "The tutor is writing a reply…");
+    let (stop, stopped) = watch::channel(false);
+    if let Ok(mut stops) = stops().lock() {
+        stops.insert(conversation_id, stop);
+    }
     tauri::async_runtime::spawn(async move {
         let _busy = busy;
         let db = app.state::<Db>();
-        let result = answer(&app, &db, conversation_id).await;
+        let result = answer(&app, &db, conversation_id, stopped).await;
+        if let Ok(mut stops) = stops().lock() {
+            stops.remove(&conversation_id);
+        }
         let done = {
             let mut guard = db.lock();
             let conn = &mut *guard;
@@ -3294,7 +3356,12 @@ fn notify_done(app: &tauri::AppHandle, db: &Db, done: &JobDone) {
 }
 
 /// Runs one reply to the conversation's last message and stores it.
-async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId) -> Result<ChatMessage> {
+async fn answer(
+    app: &tauri::AppHandle,
+    db: &Db,
+    conversation_id: ConversationId,
+    stop: watch::Receiver<bool>,
+) -> Result<ChatMessage> {
     let stream_id = job_stream(conversation_id);
     let (wire, model, word_chat) = {
         let mut guard = db.lock();
@@ -3335,6 +3402,8 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
         stream_id: &stream_id,
         tools: Some(tool_definitions()),
         max_rounds: MAX_ROUNDS,
+        max_calls: Some(MAX_STEPS),
+        stop: Some(stop),
         stop_once_answered: false,
         show_status: true,
         model,
@@ -3399,12 +3468,20 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
         lesson_id: None,
     }));
     let mut reply = outcome.text;
-    // Even when the conversation fails half-way, whatever the tools already
-    // did in the app is real, so it is recorded and shown.
-    if let Some(error) = outcome.failed {
+    if outcome.stopped {
+        // What it wrote and did before the learner stopped it stays.
+        if !reply.is_empty() {
+            reply.push_str("\n\n");
+        }
+        reply.push_str("_(Stopped.)_");
+    } else if let Some(error) = outcome.failed {
+        // Even when the conversation fails half-way, whatever the tools
+        // already did in the app is real, so it is recorded and shown.
         if actions.is_empty() {
+            // Noted in Diagnostics by the job (start_job).
             return Err(error);
         }
+        crate::diagnostics::note("tutor", format!("Conversation {conversation_id}: {error}"));
         reply.push_str(&format!("\n\n_(The answer was cut short: {error})_"));
     }
     if reply.trim().is_empty() {
@@ -3412,7 +3489,8 @@ async fn answer(app: &tauri::AppHandle, db: &Db, conversation_id: ConversationId
     }
     let mut guard = db.lock();
     let conn = &mut *guard;
-    let id = append(conn, conversation_id, "assistant", &reply, &actions)?;
+    let model = Some(outcome.model.as_str()).filter(|m| !m.is_empty());
+    let id = append_answer(conn, conversation_id, &reply, &actions, model, &outcome.calls)?;
     Ok(ChatMessage { id, conversation_id, role: "assistant".into(), content: reply, actions })
 }
 

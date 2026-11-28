@@ -222,7 +222,7 @@ mod legacy {
     }
 }
 
-pub(crate) const SCHEMA_VERSION: i64 = 19;
+pub(crate) const SCHEMA_VERSION: i64 = 20;
 
 /// The schema up to version 6 (integer ids): what an older database is
 /// brought to before it is converted to version 7 (upgrade_v7.rs).
@@ -781,6 +781,10 @@ fn migrate(conn: &mut Conn) -> Result<()> {
     one_course_per_lesson(conn)?;
     // Version 19: the radio's bridges (radio.rs) — a new table, made by the
     // schema above.
+    // Version 20: a tutor answer keeps the model that wrote it and its tool
+    // calls (tutor.rs). Answers from before have neither.
+    add_column(conn, "tutor_messages", "model", "TEXT")?;
+    add_column(conn, "tutor_messages", "tool_calls", "TEXT")?;
     // The raw log's filters (rawlog.rs), on columns the ALTERs above add.
     conn.batch_execute(
         "CREATE INDEX IF NOT EXISTS attempts_at ON attempts(at);
@@ -1760,6 +1764,19 @@ pub fn now_secs() -> i64 {
 pub fn today(conn: &mut Conn) -> i64 {
     let offset_minutes = get_setting_i64(conn, "tz_offset_minutes", 0);
     (now_secs() + offset_minutes * 60).div_euclid(86_400)
+}
+
+/// The learner's date and time now, in their time zone, as an agent is told
+/// it: "It is Saturday 2026-11-28, 14:05."
+pub fn local_clock(conn: &mut Conn) -> String {
+    let local = now_secs() + get_setting_i64(conn, "tz_offset_minutes", 0) * 60;
+    let day = local.div_euclid(86_400);
+    let (year, month, date) = crate::commands::civil_date(day);
+    // Day 0, 1970-01-01, was a Thursday.
+    const WEEKDAYS: [&str; 7] = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
+    let weekday = WEEKDAYS[usize::try_from(day.rem_euclid(7)).unwrap_or(0)];
+    let minutes = local.rem_euclid(86_400) / 60;
+    format!("It is {weekday} {year}-{month:02}-{date:02}, {:02}:{:02}.", minutes / 60, minutes % 60)
 }
 
 /// The id of the course at a position in the course list (1-based).

@@ -65,6 +65,9 @@
     {
       "id": "TUTOR-6",
       "text": "The tutor is told to reply in the language the learner writes in, in English when that is unclear, and to hold a conversation in Polish only when asked.",
+      "related": [
+        "#counsel.IDN-4"
+      ],
       "version": 2,
       "history": [
         {
@@ -77,7 +80,10 @@
     },
     {
       "id": "TUTOR-7",
-      "text": "Replies stream in as they are generated and are rendered as Markdown built from elements, never from model-written markup; the one exception is mathematics, rendered to MathML with untrusted commands off."
+      "text": "Replies stream in as they are generated and are rendered as Markdown built from elements, never from model-written markup; the one exception is mathematics, rendered to MathML with untrusted commands off.",
+      "related": [
+        "#counsel.CHT-7"
+      ]
     },
     {
       "id": "TUTOR-8",
@@ -89,15 +95,25 @@
     },
     {
       "id": "TUTOR-10",
-      "text": "A reply is written by a background task and survives leaving the screen; one finished off screen arrives as a notification."
+      "text": "A reply is written by a background task and survives leaving the screen; one finished off screen arrives as a notification.",
+      "related": [
+        "#counsel.AGT-5"
+      ]
     },
     {
       "id": "TUTOR-11",
-      "text": "A reply cut off by the app closing is marked as interrupted, with a button to ask again."
+      "text": "A reply cut off by the app closing is marked as interrupted, with a button to ask again.",
+      "related": [
+        "#counsel.AGT-6"
+      ]
     },
     {
       "id": "TUTOR-12",
-      "text": "The learner can keep several conversations, listed most recently used first, each with its own history and titled after its first question until renamed."
+      "text": "The learner can keep several conversations, listed most recently used first, each with its own history and titled after its first question until renamed.",
+      "related": [
+        "#counsel.CHT-1",
+        "#counsel.CHT-8"
+      ]
     },
     {
       "id": "TUTOR-13",
@@ -113,7 +129,10 @@
     },
     {
       "id": "TUTOR-15",
-      "text": "While a reply is being written on Android, the app is kept alive with a quiet notification."
+      "text": "While a reply is being written on Android, the app is kept alive with a quiet notification.",
+      "related": [
+        "#counsel.AGT-5"
+      ]
     }
   ],
   "related": [

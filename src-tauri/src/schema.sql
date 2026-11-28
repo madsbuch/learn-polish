@@ -242,7 +242,12 @@ CREATE TABLE IF NOT EXISTS tutor_messages (
     content    TEXT    NOT NULL,
     actions    TEXT,
     created_at INTEGER NOT NULL,
-    conversation_id TEXT REFERENCES tutor_conversations(id) ON DELETE CASCADE
+    conversation_id TEXT REFERENCES tutor_conversations(id) ON DELETE CASCADE,
+    -- The model that wrote an answer.
+    model      TEXT,
+    -- An answer's tool calls, in order, with what each gave back:
+    -- JSON [{name, arguments, result}].
+    tool_calls TEXT
 );
 
 CREATE TABLE IF NOT EXISTS songs (

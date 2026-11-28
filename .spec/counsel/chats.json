@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Chats",
+  "summary": "Each conversation is a chat of its own, kept to come back to.",
+  "order": 3,
+  "requirements": [
+    {
+      "id": "counsel.CHT-1",
+      "text": "Each conversation is a chat of its own, and the agent sees only the messages of the chat it answers in."
+    },
+    {
+      "id": "counsel.CHT-2",
+      "text": "The list of chats is the history of the chats the user has had."
+    },
+    {
+      "id": "counsel.CHT-3",
+      "text": "A new chat can be started from the list of chats and from an open chat."
+    },
+    {
+      "id": "counsel.CHT-4",
+      "text": "A chat that is opened again shows all of it, with its queries and changes, and continues where it left off.",
+      "related": [
+        "#counsel.ACT-4"
+      ]
+    },
+    {
+      "id": "counsel.CHT-5",
+      "text": "A chat can be deleted, once the user confirms it."
+    },
+    {
+      "id": "counsel.CHT-6",
+      "text": "Chats are kept in the app's database, with every message, tool call and result, and which model wrote each answer."
+    },
+    {
+      "id": "counsel.CHT-7",
+      "text": "The chat renders the common text formats the agent answers in, such as Markdown, instead of showing their markup."
+    },
+    {
+      "id": "counsel.CHT-8",
+      "text": "A chat is named by the agent, with a tool it has for that, or by the first message the user sent in it, truncated."
+    }
+  ]
+}

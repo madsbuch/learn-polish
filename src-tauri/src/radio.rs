@@ -957,12 +957,8 @@ fn briefing(conn: &mut Conn, generation: u64) -> Result<String> {
     // The learner's local time, as the rest of the app keeps it (db::today).
     let offset = db::get_setting_i64(conn, "tz_offset_minutes", 0) * 60;
     let day = db::today(conn);
-    let local = db::now_secs() + offset;
-    let (year, month, date) = crate::commands::civil_date(day);
-    const WEEKDAYS: [&str; 7] = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
-    let weekday = WEEKDAYS[usize::try_from(day.rem_euclid(7)).unwrap_or(0)];
-    let minutes = local.rem_euclid(86_400) / 60;
-    out.push_str(&format!("It is {weekday} {year}-{month:02}-{date:02}, {:02}:{:02}.\n", minutes / 60, minutes % 60));
+    out.push_str(&db::local_clock(conn));
+    out.push('\n');
     let recent: Vec<String> = handed.iter().rev().take(10).rev().map(|e| describe(conn, *e)).collect();
     out.push_str(&format!(
         "\nPlayed or playing now, oldest first:\n{}\n",
@@ -1059,6 +1055,8 @@ async fn think(app: &AppHandle, db: &Db, generation: u64) -> Result<()> {
         stream_id: "radio",
         tools: Some(tools()),
         max_rounds: MAX_ROUNDS,
+        max_calls: None,
+        stop: None,
         stop_once_answered: false,
         show_status: false,
         model: None,

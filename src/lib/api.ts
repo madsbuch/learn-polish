@@ -436,6 +436,9 @@ export const api = {
   /** Asks again after a reply failed. */
   tutorRetry: (conversationId: ConversationId) =>
     run("tutor_retry", { conversationId }),
+  /** Stops the reply being written; what it wrote and did so far is kept. */
+  tutorStop: (conversationId: ConversationId) =>
+    run("tutor_stop", { conversationId }),
   /** Whether the app is on screen: off screen, finished replies notify. */
   appVisibility: (visible: boolean) => run("app_visibility", { visible }),
   /** A study lesson's Wikipedia sources. */

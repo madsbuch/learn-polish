@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Acting",
+  "summary": "The agent changes the app when the user asks, through actions the product defines.",
+  "order": 5,
+  "description": "An action is a change the product lets the agent make, such as adding an entry or opening a screen. Adding and editing happen at once.",
+  "requirements": [
+    {
+      "id": "counsel.ACT-1",
+      "text": "The agent changes the app only through actions the product defines, never by writing SQL.",
+      "related": [
+        "#counsel.DAT-1"
+      ]
+    },
+    {
+      "id": "counsel.ACT-2",
+      "text": "An action makes its change the way the app's own screens make it, with the same checks, and the change shows at once wherever that data shows."
+    },
+    {
+      "id": "counsel.ACT-3",
+      "text": "The agent makes a change only when the user asked for it; a change it thinks of itself, it proposes and waits."
+    },
+    {
+      "id": "counsel.ACT-4",
+      "text": "An action that adds or edits happens at once.",
+      "history": [
+        {
+          "version": 1,
+          "text": "An action that adds or edits happens at once, and shows in the chat as what changed, with a way to open it in the app and an undo.",
+          "reason": "Adds and edits need no undo. Slackened so a product can meet it with what it already has.",
+          "date": "2026-11-28"
+        }
+      ],
+      "version": 2
+    },
+    {
+      "id": "counsel.ACT-5",
+      "text": "An action makes all of its change or none of it, and one that fails tells the agent why."
+    },
+    {
+      "id": "counsel.ACT-6",
+      "text": "The agent can open a screen or an item in the app for the user.",
+      "level": "should"
+    }
+  ]
+}

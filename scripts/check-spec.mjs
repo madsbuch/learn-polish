@@ -19,6 +19,7 @@
 // - what is dropped carries a `deprecation` that says why; in a deprecated
 //   item everything is dropped with it;
 // - every figure is there;
+// - groundwork is only on a shared part's own index.json;
 // - a shared part copied from another repository (`imports` in the root) is
 //   unchanged: git's id for its folder is the import's `tree`; every story,
 //   requirement and value id in it starts with its permanent id and a dot,
@@ -43,7 +44,7 @@ import ts from "typescript";
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const root = join(repo, ".spec");
 
-const ITEM_KEYS = ["$schema", "title", "summary", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related", "shared", "imports"];
+const ITEM_KEYS = ["$schema", "title", "summary", "deprecation", "order", "description", "stories", "requirements", "values", "figures", "related", "shared", "imports", "groundwork"];
 const STORY_KEYS = ["id", "as", "want", "soThat", "requirements", "related", "deprecation"];
 const REQUIREMENT_KEYS = ["id", "text", "level", "version", "history", "related", "deprecation"];
 const HISTORY_KEYS = ["version", "text", "level", "reason", "date"];
@@ -313,6 +314,22 @@ for (const [id, item] of items) {
     problems.push(`${where}: logo "${item.shared.logo}" is not in .spec`);
   }
   sharedFolders.set(id, item.shared.id);
+}
+// Groundwork (what the app must be like before a shared part is built) is on
+// a shared part's own index.json: sentences, or { text, ways }.
+for (const [id, item] of items) {
+  if (!isObject(item) || item.groundwork === undefined) continue;
+  const where = `${name(id)} groundwork`;
+  if (item.shared === undefined) problems.push(`${where}: only a shared part's index.json has groundwork`);
+  if (!Array.isArray(item.groundwork)) {
+    problems.push(`${where}: not a list`);
+    continue;
+  }
+  for (const entry of item.groundwork) {
+    const ok = isText(entry) || (isObject(entry) && isText(entry.text) && (entry.ways === undefined || (Array.isArray(entry.ways) && entry.ways.every(isText))));
+    if (!ok) problems.push(`${where}: an entry is neither a sentence nor { text, ways }`);
+    else if (isObject(entry)) unknownKeys(`${where} entry`, entry, ["text", "ways"]);
+  }
 }
 for (const [id, item] of items) {
   if (isObject(item) && id !== "" && item.imports !== undefined) problems.push(`${name(id)}: only the root imports shared parts`);

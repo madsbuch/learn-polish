@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Settings",
+  "summary": "The user's OpenRouter API key, and the model the agent runs on.",
+  "order": 2,
+  "description": "The agent has a section of its own in the app's settings, named after its profession.",
+  "requirements": [
+    {
+      "id": "counsel.SET-1",
+      "text": "The user enters an OpenRouter API key in the agent's settings."
+    },
+    {
+      "id": "counsel.SET-2",
+      "text": "A key can be checked with OpenRouter, either automatically when it is saved or by the user with a button, whichever fits the product best, and the settings say whether it was accepted and, if not, why.",
+      "history": [
+        {
+          "version": 1,
+          "text": "A key is checked with OpenRouter when it is saved, and the settings say whether it was accepted and, if not, why.",
+          "reason": "A key can be checked automatically or by hand with a check button, whichever fits best.",
+          "date": "2026-11-28"
+        }
+      ],
+      "version": 2
+    },
+    {
+      "id": "counsel.SET-3",
+      "text": "The settings list the models OpenRouter offers, the complete list as OpenRouter provides it, and the user chooses one."
+    },
+    {
+      "id": "counsel.SET-4",
+      "text": "Each model in the list shows its name, its provider and its price per million input and output tokens.",
+      "history": [
+        {
+          "version": 1,
+          "text": "Each model in the list shows its name, its provider, how much context it takes and its price per million input and output tokens.",
+          "reason": "How much context a model takes is left out of the list.",
+          "date": "2026-11-28"
+        }
+      ],
+      "version": 2
+    },
+    {
+      "id": "counsel.SET-5",
+      "text": "The list of models can be searched by name and provider.",
+      "level": "should"
+    },
+    {
+      "id": "counsel.SET-6",
+      "text": "When the list of models can't be fetched, the settings say why and keep the chosen model."
+    }
+  ]
+}

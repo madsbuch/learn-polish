@@ -306,6 +306,7 @@ pub fn run() {
             tutor::tutor_history,
             tutor::tutor_rename,
             tutor::tutor_delete,
+            tutor::tutor_stop,
             courses::commands::course_delete,
             courses::commands::course_close,
             courses::commands::course_rename,
@@ -1007,6 +1008,39 @@ mod integration {
         let left: i64 = t::files::table.count().get_result(&mut conn).unwrap();
         assert_eq!(left, 0);
         assert!(!on_disk.exists(), "and their copies on disk");
+    }
+
+    // Spec: counsel.CHT-6
+    #[test]
+    fn a_tutor_answer_keeps_its_model_and_tool_calls() {
+        let mut conn = scratch_db("tutor-answer-record");
+        let id = tutor::create_conversation(&mut conn, "Make me a course").unwrap();
+        let calls = vec![crate::agent::CallRecord {
+            name: "list_courses".into(),
+            arguments: "{}".into(),
+            result: r#"{"courses":[]}"#.into(),
+        }];
+        tutor::append_answer(&mut conn, id, "Done.", &[], Some("some/model"), &calls).unwrap();
+        let (model, stored): (Option<String>, Option<String>) = t::tutor_messages::table
+            .filter(t::tutor_messages::conversation_id.eq(id))
+            .select((t::tutor_messages::model, t::tutor_messages::tool_calls))
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(model.as_deref(), Some("some/model"));
+        assert_eq!(serde_json::from_str::<Vec<crate::agent::CallRecord>>(&stored.unwrap()).unwrap(), calls);
+    }
+
+    // Spec: counsel.IDN-2
+    #[test]
+    fn agents_are_told_the_learners_date_and_time() {
+        let mut conn = scratch_db("local-clock");
+        db::set_setting(&mut conn, "tz_offset_minutes", "60").unwrap();
+        let clock = db::local_clock(&mut conn);
+        let local = db::now_secs() + 3600;
+        let (y, m, d) = commands::civil_date(local.div_euclid(86_400));
+        assert!(clock.starts_with("It is ") && clock.contains(&format!("{y}-{m:02}-{d:02}, ")), "{clock}");
+        assert!(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].iter().any(|w| clock.contains(w)));
+        assert!(tutor::learner_state(&mut conn).unwrap().starts_with(&clock), "the tutor gets it");
     }
 
     #[test]

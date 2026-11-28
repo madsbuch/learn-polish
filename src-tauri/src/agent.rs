@@ -13,9 +13,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::watch;
 
 use crate::ai::{self, ToolCall, Wire};
 use crate::db::Db;
@@ -88,6 +89,16 @@ impl<T> ToolOutput<T> {
 
 pub type ToolFuture<'a, T> = Pin<Box<dyn Future<Output = ToolOutput<T>> + Send + 'a>>;
 
+/// One tool call of a run and what it gave back, kept with the answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CallRecord {
+    pub name: String,
+    /// As the model wrote them (JSON text).
+    pub arguments: String,
+    /// What the model was sent back (JSON text).
+    pub result: String,
+}
+
 /// How a run ended. A run that failed half-way still reports what its tools
 /// already did, since that happened in the app.
 pub struct Outcome<T> {
@@ -96,6 +107,12 @@ pub struct Outcome<T> {
     pub extras: Vec<T>,
     /// What memory tools saved or changed, one line each, for the learner.
     pub remembered: Vec<String>,
+    /// Every tool call made, in order, with its result.
+    pub calls: Vec<CallRecord>,
+    /// The model that wrote the answer (empty when none could be chosen).
+    pub model: String,
+    /// The user stopped the run; what was written and done so far is kept.
+    pub stopped: bool,
     pub failed: Option<Error>,
 }
 
@@ -110,6 +127,11 @@ pub struct Agent<'a> {
     pub tools: Option<Vec<Tool>>,
     /// Tool rounds before tools are withheld, so the model has to answer.
     pub max_rounds: usize,
+    /// Tool calls before tools are withheld, so the model has to answer;
+    /// None for no cap but the rounds.
+    pub max_calls: Option<usize>,
+    /// Becomes true when the user stops the run. None: it can't be stopped.
+    pub stop: Option<watch::Receiver<bool>>,
     /// End the turn as soon as the model has said something (the examiner asks
     /// one question per turn); otherwise go on while it calls tools.
     pub stop_once_answered: bool,
@@ -131,7 +153,15 @@ impl<'a> Agent<'a> {
         // The whole loop, tools and all, keeps the app alive (work.rs): not
         // only its requests, but the moments between them.
         let _busy = crate::work::begin(self.app, "Working with the AI…");
-        let mut outcome = Outcome { text: String::new(), extras: Vec::new(), remembered: Vec::new(), failed: None };
+        let mut outcome = Outcome {
+            text: String::new(),
+            extras: Vec::new(),
+            remembered: Vec::new(),
+            calls: Vec::new(),
+            model: String::new(),
+            stopped: false,
+            failed: None,
+        };
         let (key, model) = {
             let conn = &mut *self.db.lock();
             let model = match &self.model {
@@ -139,7 +169,10 @@ impl<'a> Agent<'a> {
                 _ => ai::require_model(conn),
             };
             match (ai::api_key(conn), model) {
-                (Ok(key), Ok(model)) => (key, model),
+                (Ok(key), Ok(model)) => {
+                    outcome.model.clone_from(&model);
+                    (key, model)
+                }
                 (Err(error), _) | (_, Err(error)) => {
                     outcome.failed = Some(error);
                     emit_stream(self.app, self.stream_id, None, true, outcome.failed.as_ref().map(|e| e.to_string()));
@@ -155,18 +188,36 @@ impl<'a> Agent<'a> {
         let tools = self.tools.as_ref().map(|_| Value::Array(all.iter().map(|t| t.definition.clone()).collect()));
 
         for round in 0..self.max_rounds.max(1) {
-            let offer = tools.as_ref().filter(|_| round + 1 < self.max_rounds);
+            if self.stopped() {
+                outcome.stopped = true;
+                break;
+            }
+            // Spec: counsel.AGT-3
+            let calls_left = self.max_calls.map_or(usize::MAX, |max| max.saturating_sub(outcome.calls.len()));
+            let offer = tools.as_ref().filter(|_| round + 1 < self.max_rounds && calls_left > 0);
             // Text from successive rounds is one reply; keep the paragraphs apart.
             let mut separated = outcome.text.is_empty();
+            // What has streamed of this round, kept should the user stop it.
+            let mut partial = String::new();
             let (app, id) = (self.app.clone(), self.stream_id.to_string());
-            let turn = ai::stream_turn(&key, &model, &wire, offer, |delta| {
+            let streaming = ai::stream_turn(&key, &model, &wire, offer, |delta| {
                 if !separated {
                     emit_stream(&app, &id, Some("\n\n"), false, None);
                     separated = true;
                 }
+                partial.push_str(delta);
                 emit_stream(&app, &id, Some(delta), false, None);
-            })
-            .await;
+            });
+            // Spec: counsel.AGT-2
+            let turn = tokio::select! {
+                turn = streaming => Some(turn),
+                () = self.stop_requested() => None,
+            };
+            let Some(turn) = turn else {
+                push_paragraph(&mut outcome.text, &partial);
+                outcome.stopped = true;
+                break;
+            };
             let turn = match turn {
                 Ok(turn) => turn,
                 Err(error) => {
@@ -176,13 +227,7 @@ impl<'a> Agent<'a> {
             };
             let _ = crate::costs::record_tokens(&mut self.db.lock(), self.name, &model, turn.cost, "", turn.tokens);
 
-            let text = turn.text.trim();
-            if !text.is_empty() {
-                if !outcome.text.is_empty() {
-                    outcome.text.push_str("\n\n");
-                }
-                outcome.text.push_str(text);
-            }
+            push_paragraph(&mut outcome.text, &turn.text);
             if turn.tool_calls.is_empty() {
                 break;
             }
@@ -190,6 +235,20 @@ impl<'a> Agent<'a> {
             wire.push(Wire::tool_request(&turn.text, turn.tool_calls.clone()));
             let mut ends_turn = false;
             for tool_call in turn.tool_calls {
+                // A tool that has started runs to its end (it is one
+                // transaction); the rest of the round is not run.
+                if self.stopped() {
+                    outcome.stopped = true;
+                    break;
+                }
+                let id = tool_call.id.clone();
+                let (name, arguments) = (tool_call.function.name.clone(), tool_call.function.arguments.clone());
+                // Calls past the cap are answered without being run.
+                if self.max_calls.is_some_and(|max| outcome.calls.len() >= max) {
+                    let result = serde_json::json!({ "error": "No more tool calls for this answer: answer with what you have." });
+                    wire.push(Wire::tool_result(&id, result.to_string()));
+                    continue;
+                }
                 if self.show_status {
                     let label = all
                         .iter()
@@ -200,7 +259,6 @@ impl<'a> Agent<'a> {
                         StatusEvent { id: self.stream_id.to_string(), label: label.into() },
                     );
                 }
-                let id = tool_call.id.clone();
                 let result = if crate::memories::is_tool(&tool_call.function.name) {
                     let saved = crate::memories::run_tool(
                         &mut self.db.lock(),
@@ -216,7 +274,12 @@ impl<'a> Agent<'a> {
                     ends_turn |= output.ends_turn;
                     output.result
                 };
+                // Spec: counsel.CHT-6
+                outcome.calls.push(CallRecord { name, arguments, result: result.to_string() });
                 wire.push(Wire::tool_result(&id, result.to_string()));
+            }
+            if outcome.stopped {
+                break;
             }
             if ends_turn || (self.stop_once_answered && !outcome.text.is_empty()) {
                 break;
@@ -226,6 +289,37 @@ impl<'a> Agent<'a> {
         emit_stream(self.app, self.stream_id, None, true, outcome.failed.as_ref().map(|e| e.to_string()));
         outcome
     }
+}
+
+impl Agent<'_> {
+    fn stopped(&self) -> bool {
+        self.stop.as_ref().is_some_and(|stop| *stop.borrow())
+    }
+
+    /// Resolves once the user stops the run; never, when it can't be stopped.
+    async fn stop_requested(&self) {
+        match self.stop.clone() {
+            Some(mut stop) => {
+                if stop.wait_for(|stopped| *stopped).await.is_err() {
+                    // The sender is gone: no stop can come any more.
+                    std::future::pending::<()>().await;
+                }
+            }
+            None => std::future::pending::<()>().await,
+        }
+    }
+}
+
+/// Adds a round's text to the reply, a blank line apart from what came before.
+fn push_paragraph(reply: &mut String, text: &str) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if !reply.is_empty() {
+        reply.push_str("\n\n");
+    }
+    reply.push_str(text);
 }
 
 /// OpenRouter's error for a model without tool support is cryptic; this says
@@ -246,6 +340,15 @@ pub fn explain_failure(error: Error, model: &str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rounds_are_paragraphs_of_one_reply() {
+        let mut reply = String::new();
+        push_paragraph(&mut reply, "  ");
+        push_paragraph(&mut reply, " Dzień dobry! ");
+        push_paragraph(&mut reply, "Half a senten");
+        assert_eq!(reply, "Dzień dobry!\n\nHalf a senten");
+    }
 
     #[test]
     fn tool_only_models_get_a_helpful_error() {

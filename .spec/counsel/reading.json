@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Reading",
+  "summary": "The agent can read the app's data, with SQL or read tools that can't write.",
+  "order": 4,
+  "description": "The app's data is its SQLite database, and whatever the product keeps beside it. The more of it the agent can read, the better it answers, so it reads freely; what keeps the data safe is that reading can't change it.",
+  "requirements": [
+    {
+      "id": "counsel.DAT-1",
+      "text": "The agent can read the app's data, through read-only SQL or through read tools the product gives it, and nothing it reads with can change data.",
+      "history": [
+        {
+          "version": 1,
+          "text": "The agent can run SQL on the app's SQLite database, on a connection opened read-only, so no statement it runs can change the data.",
+          "reason": "Read-only SQL is one way to read, not the only one; a product's own read tools do as well.",
+          "date": "2026-11-28"
+        }
+      ],
+      "version": 2
+    }
+  ]
+}

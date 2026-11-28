@@ -31,7 +31,8 @@
       "id": "AI-1",
       "text": "The chat model is chosen from the catalogue loaded from OpenRouter; none is built in.",
       "related": [
-        "#POL-6"
+        "#POL-6",
+        "#counsel.SET-3"
       ]
     },
     {

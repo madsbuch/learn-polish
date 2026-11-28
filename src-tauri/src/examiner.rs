@@ -604,6 +604,8 @@ async fn turn(
         stream_id,
         tools: Some(tools()),
         max_rounds: MAX_ROUNDS,
+        max_calls: None,
+        stop: None,
         // One question per turn. Memory calls alone are not an answer, so after
         // them the examiner gets another round to say something.
         stop_once_answered: true,

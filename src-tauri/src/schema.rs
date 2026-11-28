@@ -466,6 +466,10 @@ diesel::table! {
         actions -> Nullable<Text>,
         created_at -> BigInt,
         conversation_id -> Nullable<ConversationIdSql>,
+        /// The model that wrote an answer.
+        model -> Nullable<Text>,
+        /// JSON: an answer's tool calls, in order, [{name, arguments, result}].
+        tool_calls -> Nullable<Text>,
     }
 }
 

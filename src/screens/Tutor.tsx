@@ -382,6 +382,11 @@ function Chat({
   // is stored.
   const job = useTutorJob(conversationId);
   const sending = job.working;
+  // Stop was tapped; the reply ends at the next point it can.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!sending) setStopping(false);
+  }, [sending]);
   const live = job.text;
   const status = job.status;
   const [localError, setError] = useState<string | null>(null);
@@ -600,6 +605,23 @@ function Chat({
                   {status ?? "Thinking…"}
                 </Text>
               </Inline>
+            ) : null}
+            {conversationId !== null ? (
+              // Spec: counsel.AGT-2
+              <Button
+                size="sm"
+                variant="plain"
+                loading={stopping}
+                onClick={() => {
+                  setStopping(true);
+                  api.tutorStop(conversationId).catch((cause: unknown) => {
+                    setStopping(false);
+                    setError(errorMessage(cause));
+                  });
+                }}
+              >
+                Stop
+              </Button>
             ) : null}
           </div>
         ) : null}
